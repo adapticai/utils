@@ -1,0 +1,21 @@
+name: Auto Publish NPM Package
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/**'
+      - '*.json'
+      - '*.mjs'
+      - 'types/**'
+      - '*.ts'
+
+jobs:
+  publish-npm-package:
+    uses: adapticai/workflows/.github/workflows/publish-npm-package.yml@main
+    with:
+      git_user_name: ${{ github.actor }}
+      git_user_email: ${{ github.actor }}@users.noreply.github.com
+    secrets:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
