@@ -1,4 +1,4 @@
-# Adaptic Utilities
+# @adaptic/utils
 
 Last updated: 20 Feb 2025
 
