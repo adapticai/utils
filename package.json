@@ -25,8 +25,8 @@
     "test": "npm run build && node dist/test.js"
   },
   "dependencies": {
+    "@adaptic/backend-legacy": "^0.0.3",
     "@apollo/client": "^3.13.8",
-    "@adaptic/backend-legacy": "^1.0.353",
     "chalk": "^5.4.1",
     "date-fns": "^4.1.0",
     "date-fns-tz": "^3.2.0",
@@ -48,7 +48,8 @@
     "@types/ws": "^8.18.1",
     "lightweight-charts": "^5.0.8",
     "react": "^19.1.0",
-    "rollup": "^4.44.2",
+    "rollup": "^4.46.2",
+    "rollup-cli": "^1.0.9",
     "typescript": "^5.8.3"
   }
 }
