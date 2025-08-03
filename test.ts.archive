@@ -1,0 +1,959 @@
+/*
+
+
+async function testStockStream() {
+  const timeToWaitMins = 3;
+  console.log(`Starting WebSocket test for ${timeToWaitMins} minutes...`);
+
+  // Set up type-safe event handlers
+  marketDataAPI.on('stock-t', (trade: AlpacaTradeStream) => {
+    log(
+      `Received trade for ${trade.S}: Price=$${trade.p.toFixed(2)}, Size=${trade.s.toLocaleString()}, Exchange=${
+        trade.x
+      }, Time=${new Date(trade.t).toLocaleString('en-US', { timeZone: 'America/New_York' })}`
+    );
+  });
+
+  marketDataAPI.on('stock-q', (quote: AlpacaQuoteStream) => {
+    log(
+      `Received quote for ${quote.S}: Ask=$${quote.ap.toFixed(2)}x${quote.as.toLocaleString()}, Bid=$${quote.bp.toFixed(
+        2
+      )}x${quote.bs.toLocaleString()}, Time=${new Date(quote.t).toLocaleString('en-US', {
+        timeZone: 'America/New_York',
+      })}`
+    );
+  });
+
+  marketDataAPI.on('stock-b', (bar: AlpacaBarStream) => {
+    log(
+      `Received bar for ${bar.S}: O/H/L/C/V/VW/N=${bar.o.toFixed(2)}/${bar.h.toFixed(2)}/${bar.l.toFixed(
+        2
+      )}/${bar.c.toFixed(2)}/${bar.v.toLocaleString()}/${bar.vw.toFixed(2)}/${bar.n.toLocaleString()}, Time=${new Date(
+        bar.t
+      ).toLocaleString('en-US', { timeZone: 'America/New_York' })}`
+    );
+  });
+
+  // Additional event handlers for other message types
+  marketDataAPI.on('stock-d', (dailyBar) => {
+    log(
+      `Received daily bar for ${dailyBar.S}: OHLCV=${dailyBar.o.toFixed(2)}/${dailyBar.h.toFixed(
+        2
+      )}/${dailyBar.l.toFixed(2)}/${dailyBar.c.toFixed(2)}/${dailyBar.v.toLocaleString()}, Time=${new Date(
+        dailyBar.t
+      ).toLocaleString('en-US', { timeZone: 'America/New_York' })}`
+    );
+  });
+
+  marketDataAPI.on('stock-u', (updatedBar) => {
+    log(
+      `Received updated bar for ${updatedBar.S}: OHLCV=${updatedBar.o.toFixed(2)}/${updatedBar.h.toFixed(
+        2
+      )}/${updatedBar.l.toFixed(2)}/${updatedBar.c.toFixed(2)}/${updatedBar.v.toLocaleString()}, Time=${new Date(
+        updatedBar.t
+      ).toLocaleString('en-US', { timeZone: 'America/New_York' })}`
+    );
+  });
+
+  marketDataAPI.on('stock-s', (status) => {
+    log(
+      `Received trading status for ${status.S}: ${status.sm} (${status.sc}) - ${status.rm} (${
+        status.rc
+      }), Time=${new Date(status.t).toLocaleString('en-US', { timeZone: 'America/New_York' })}`
+    );
+  });
+
+  marketDataAPI.on('stock-c', (correction) => {
+    log(
+      `Received trade correction for ${correction.S}: Original=${correction.op.toFixed(
+        2
+      )} -> Corrected=${correction.cp.toFixed(2)}, Time=${new Date(correction.t).toLocaleString('en-US', {
+        timeZone: 'America/New_York',
+      })}`
+    );
+  });
+
+  marketDataAPI.on('stock-x', (cancel) => {
+    log(
+      `Received trade cancel for ${cancel.S}: Price=$${cancel.p.toFixed(
+        2
+      )}, Size=${cancel.s.toLocaleString()}, Time=${new Date(cancel.t).toLocaleString('en-US', {
+        timeZone: 'America/New_York',
+      })}`
+    );
+  });
+
+  marketDataAPI.on('stock-l', (luld) => {
+    console.log(
+      `Received LULD for ${luld.S}: Limit Up=$${luld.lup.toFixed(2)}, Limit Down=$${luld.ldp.toFixed(
+        2
+      )}, Time=${new Date(luld.t).toLocaleString('en-US', { timeZone: 'America/New_York' })}`
+    );
+  });
+
+  marketDataAPI.on('stock-i', (imbalance) => {
+    console.log(
+      `Received order imbalance for ${imbalance.S}: Price=$${imbalance.p.toFixed(2)}, Time=${new Date(
+        imbalance.t
+      ).toLocaleString('en-US', { timeZone: 'America/New_York' })}`
+    );
+  });
+
+  marketDataAPI.on('stock-data', (data) => {
+    // Generic handler for all stock data
+    // console.log(`Received stock data: ${JSON.stringify(data)}`);
+  });
+
+  // Set mode to test (only FAKEPACA data available)
+  console.log('Setting mode to test for FAKEPACA data...');
+  marketDataAPI.setMode('test');
+
+  // Connect to the stock stream FIRST
+  console.log('Connecting to stock stream...');
+  marketDataAPI.connectStockStream();
+
+  // Wait a moment for connection to establish before subscribing
+  await new Promise((resolve) => setTimeout(resolve, 2000));
+
+  // Subscribe to test data
+  console.log('Subscribing to FAKEPACA trades, quotes, and bars...');
+  marketDataAPI.subscribe('stock', {
+    trades: ['FAKEPACA'],
+    quotes: ['FAKEPACA'],
+    bars: ['FAKEPACA'],
+  });
+
+  console.log('Subscribed to FAKEPACA trades, FAKEPACA quotes, and FAKEPACA bars');
+
+  setTimeout(() => {
+    console.log('Unsubscribing...');
+    marketDataAPI.unsubscribe('stock', {
+      trades: ['FAKEPACA'],
+      quotes: ['FAKEPACA'],
+      bars: ['FAKEPACA'],
+    });
+    log('Disconnecting...');
+    marketDataAPI.disconnectStockStream();
+    log('Disconnected');
+    log('Exiting...');
+    process.exit(0);
+  }, timeToWaitMins * 60000);
+}
+
+// Run the test
+async function testHistoricalOptionsBarsPagination(): Promise<void> {
+  console.log('Starting historical options bars pagination test...');
+
+  try {
+    // Test with AAPL options contracts (example contract symbols)
+    // Note: These are example option contract symbols, real ones would be in format like "AAPL241220C00150000"
+    const optionSymbols = ['AAPL250117C00200000', 'AAPL250117P00200000']; // Call and Put options
+
+    // Test with a small limit to trigger pagination if data exists
+    const response = await marketDataAPI.getHistoricalOptionsBars({
+      symbols: optionSymbols,
+      timeframe: '1Hour',
+      start: '2024-01-01T00:00:00Z',
+      end: '2024-01-31T00:00:00Z',
+      limit: 50, // Small limit to trigger pagination
+      sort: 'asc',
+    });
+
+    console.log('Test Results:');
+    console.log(`Next page token (should be undefined): ${response.next_page_token}`);
+
+    optionSymbols.forEach((symbol) => {
+      if (response.bars[symbol]) {
+        console.log(`${symbol}: ${response.bars[symbol].length.toLocaleString()} bars fetched`);
+        if (response.bars[symbol].length > 0) {
+          const firstBar = response.bars[symbol][0];
+          const lastBar = response.bars[symbol][response.bars[symbol].length - 1];
+          console.log(
+            `  First bar timestamp: ${new Date(firstBar.t).toLocaleString('en-US', { timeZone: 'America/New_York' })}`
+          );
+          console.log(
+            `  Last bar timestamp: ${new Date(lastBar.t).toLocaleString('en-US', { timeZone: 'America/New_York' })}`
+          );
+          console.log(`  First bar close: $${firstBar.c.toFixed(2)}`);
+          console.log(`  Last bar close: $${lastBar.c.toFixed(2)}`);
+          console.log(`  Volume range: ${firstBar.v.toLocaleString()} to ${lastBar.v.toLocaleString()}`);
+        }
+      } else {
+        console.log(`${symbol}: No bars found in response`);
+      }
+    });
+
+    // Calculate total bars across all symbols
+    const totalBars = Object.values(response.bars).reduce((total, bars) => total + bars.length, 0);
+    console.log(`Total bars across all symbols: ${totalBars.toLocaleString()}`);
+
+    console.log('Historical options bars pagination test completed successfully!');
+  } catch (error) {
+    console.error(`Test failed with error: ${error}`);
+    if (error instanceof Error) {
+      console.error(`Error details: ${error.message}`);
+
+      // If it's an authentication or access error, provide helpful info
+      if (error.message.includes('401') || error.message.includes('403')) {
+        console.log('Note: Options data may require specific subscription level or authentication.');
+      } else if (error.message.includes('400')) {
+        console.log(
+          'Note: Option contract symbols may be invalid or expired. Try with valid, active option contracts.'
+        );
+      }
+    }
+  }
+}
+
+async function testHistoricalBarsPagination(): Promise<void> {
+  console.log('Starting historical bars pagination test...');
+
+  try {
+    // Test with a small limit to trigger pagination
+    const response = await marketDataAPI.getHistoricalBars({
+      symbols: ['AAPL'],
+      timeframe: '1Min',
+      start: '2025-03-01T09:30:00-04:00',
+      end: '2025-03-31T09:30:00-04:00',
+      sort: 'asc',
+    });
+
+    console.log('Test Results:');
+    console.log(`Currency: ${response.currency}`);
+    console.log(`Next page token (should be null): ${response.next_page_token}`);
+
+    if (response.bars.AAPL) {
+      console.log(`Total AAPL bars fetched: ${response.bars.AAPL.length.toLocaleString()}`);
+      if (response.bars.AAPL.length > 0) {
+        const firstBar = response.bars.AAPL[0];
+        const lastBar = response.bars.AAPL[response.bars.AAPL.length - 1];
+        console.log(
+          `First bar timestamp: ${new Date(firstBar.t).toLocaleString('en-US', { timeZone: 'America/New_York' })}`
+        );
+        console.log(
+          `Last bar timestamp: ${new Date(lastBar.t).toLocaleString('en-US', { timeZone: 'America/New_York' })}`
+        );
+        console.log(`First bar close: $${firstBar.c.toFixed(2)}`);
+        console.log(`Last bar close: $${lastBar.c.toFixed(2)}`);
+      }
+    } else {
+      console.log('No AAPL bars found in response');
+    }
+
+    console.log('Historical bars pagination test completed successfully!');
+  } catch (error) {
+    console.error(`Test failed with error: ${error}`);
+    if (error instanceof Error) {
+      console.error(`Error details: ${error.message}`);
+    }
+  }
+}
+
+function testGetTradingDate() {
+  console.log('=== Testing getTradingDate function ===\n');
+
+  // February 2025 tests (EST period - UTC-5)
+  console.log('📅 February 2025 Tests (EST - UTC-5):');
+  const februaryTests = [
+    '2025-02-01T00:00:00Z',           // UTC midnight -> should be Feb 1 in NY (7pm previous day)
+    '2025-02-01T05:00:00Z',           // UTC 5am -> should be Feb 1 in NY (midnight)
+    '2025-02-01T06:00:00Z',           // UTC 6am -> should be Feb 1 in NY (1am)
+    '2025-02-01T23:59:59Z',           // UTC late night -> should be Feb 1 in NY
+    '2025-02-01T00:00:00-05:00',      // NY midnight EST
+    '2025-02-01T00:00:00-04:00',      // EDT format but in February (should still work)
+    '2025-02-15T04:59:59Z',           // Just before NY midnight
+    '2025-02-15T05:00:00Z',           // Exactly NY midnight
+    '2025-02-15T05:00:01Z',           // Just after NY midnight
+  ];
+
+  februaryTests.forEach((dateStr) => {
+    const result = adptc.time.getTradingDate(dateStr);
+    const nyTime = new Date(dateStr).toLocaleString('en-US', {
+      timeZone: 'America/New_York',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    });
+    console.log(`  ${dateStr} -> ${result} (NY time: ${nyTime})`);
+  });
+
+  console.log('\n📅 May 2025 Tests (EDT - UTC-4):');
+  const mayTests = [
+    '2025-05-01T00:00:00Z',           // UTC midnight -> should be May 1 in NY (8pm previous day)
+    '2025-05-01T04:00:00Z',           // UTC 4am -> should be May 1 in NY (midnight)
+    '2025-05-01T05:00:00Z',           // UTC 5am -> should be May 1 in NY (1am)
+    '2025-05-01T23:59:59Z',           // UTC late night -> should be May 1 in NY
+    '2025-05-01T00:00:00-04:00',      // NY midnight EDT
+    '2025-05-01T00:00:00-05:00',      // EST format but in May (should still work)
+    '2025-05-25T03:59:59Z',           // Just before NY midnight
+    '2025-05-25T04:00:00Z',           // Exactly NY midnight
+    '2025-05-25T04:00:01Z',           // Just after NY midnight
+  ];
+
+  mayTests.forEach((dateStr) => {
+    const result = adptc.time.getTradingDate(dateStr);
+    const nyTime = new Date(dateStr).toLocaleString('en-US', {
+      timeZone: 'America/New_York',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    });
+    console.log(`  ${dateStr} -> ${result} (NY time: ${nyTime})`);
+  });
+
+  console.log('\n📅 Daylight Saving Transition Tests:');
+  // DST starts March 9, 2025 (spring forward)
+  // DST ends November 2, 2025 (fall back)
+  const dstTests = [
+    '2025-03-08T23:59:59Z',           // Before DST starts
+    '2025-03-09T06:59:59Z',           // Just before spring forward (1:59:59 AM EST)
+    '2025-03-09T07:00:00Z',           // Right at spring forward (3:00:00 AM EDT)
+    '2025-03-09T08:00:00Z',           // After spring forward
+    '2025-11-02T05:59:59Z',           // Before fall back (1:59:59 AM EDT)
+    '2025-11-02T06:00:00Z',           // Right at fall back (1:00:00 AM EST)
+    '2025-11-02T07:00:00Z',           // After fall back
+  ];
+
+  dstTests.forEach((dateStr) => {
+    const result = adptc.time.getTradingDate(dateStr);
+    const nyTime = new Date(dateStr).toLocaleString('en-US', {
+      timeZone: 'America/New_York',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    });
+    console.log(`  ${dateStr} -> ${result} (NY time: ${nyTime})`);
+  });
+
+  console.log('\n📅 Different Input Format Tests:');
+
+  // Test with millisecond timestamps
+  const timestampTests = [
+    Date.parse('2025-02-15T00:00:00Z'),    // February UTC midnight as timestamp
+    Date.parse('2025-05-25T00:00:00Z'),    // May UTC midnight as timestamp
+    Date.now(),                            // Current time
+  ];
+
+  timestampTests.forEach((timestamp) => {
+    const result = adptc.time.getTradingDate(timestamp);
+    const date = new Date(timestamp);
+    const nyTime = date.toLocaleString('en-US', {
+      timeZone: 'America/New_York',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    });
+    console.log(`  ${timestamp} (${date.toISOString()}) -> ${result} (NY time: ${nyTime})`);
+  });
+
+  // Test with Date objects
+  console.log('\n📅 Date Object Tests:');
+  const dateObjectTests = [
+    new Date('2025-02-15T00:00:00Z'),
+    new Date('2025-05-25T00:00:00Z'),
+    new Date('2025-02-15T05:00:00Z'),      // NY midnight in February
+    new Date('2025-05-25T04:00:00Z'),      // NY midnight in May
+  ];
+
+  dateObjectTests.forEach((dateObj) => {
+    const result = adptc.time.getTradingDate(dateObj);
+    const nyTime = dateObj.toLocaleString('en-US', {
+      timeZone: 'America/New_York',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    });
+    console.log(`  ${dateObj.toISOString()} -> ${result} (NY time: ${nyTime})`);
+  });
+
+  console.log('\n=== End getTradingDate Tests ===\n');
+}
+
+testGetTradingDate();
+
+// Run the test
+// testHistoricalOptionsBarsPagination();
+//testHistoricalBarsPagination();
+
+
+// Test news
+const compareNews = async () => {
+  const tickerToTest = 'MRVL';
+  const limit = 10;
+  const start = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const end = new Date();
+  const alpacaNews = await adptc.alpaca.news(tickerToTest, { limit, sort: 'desc', start, end });
+
+  console.log(`Fetching a limit of ${limit} news articles for ${tickerToTest} from ${start} to ${end}`);
+  // console.log the news but only the title, summary, and date
+  const listOfDates = alpacaNews.news.map((news) => new Date(news.date));
+  const earliestDate = Math.min(...listOfDates.map((date) => date.getTime()));
+  const latestDate = Math.max(...listOfDates.map((date) => date.getTime()));
+  const earliestDateString = new Date(earliestDate).toLocaleString();
+  const latestDateString = new Date(latestDate).toLocaleString();
+  console.log( `Retrieved ${listOfDates.length} news articles. Earliest (from minimum date) is ${earliestDateString} and latest (from maximum date) is ${latestDateString}`);
+
+  // console log the last article
+  console.log(alpacaNews);
+};
+
+compareNews();
+
+
+// test fetchTickerNews
+
+import { adaptic as adptc } from './index';
+import 'dotenv/config';
+
+testFetchTickerNews();
+*/
+
+/** Test fetchTickerInfo
+import { adaptic as adptc } from './index';
+import 'dotenv/config';
+
+const testFetchTickerInfo = async () => {
+  const tickerToTest = 'MWA';
+  const tickerInfo = await adptc.polygon.fetchTickerInfo(tickerToTest);
+  console.log(tickerInfo);
+}
+
+testFetchTickerInfo();
+
+*/
+
+/*
+import { getStartAndEndTimestamps, getStartAndEndDates, getMarketStatus, MarketTimeUtil } from './market-time';
+import { MarketTimeParams, Period, IntradayReporting } from './types/market-time-types';
+import {formatToUSEastern } from './time-utils';
+import { fetchBars, fetchNews } from './crypto';
+async function getMarketTimestamps(
+  period: Period,
+  intraday_reporting: IntradayReporting
+): Promise<{ startTime: Date; endTime: Date }> {
+  const params: MarketTimeParams = {
+    period,
+    timezone: 'America/New_York',
+    outputFormat: 'iso',
+    intraday_reporting,
+  };
+
+  const { start, end } = await getStartAndEndTimestamps(params);
+  return {
+    startTime: new Date(start),
+    endTime: new Date(end),
+  };
+}
+
+// copy of function exported elsewhere
+const timeDiffString = (milliseconds: number): string => {
+  const seconds = Math.floor(milliseconds / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+
+  const remainingHours = hours % 24;
+  const remainingMinutes = minutes % 60;
+
+  const parts: string[] = [];
+  if (days > 0) parts.push(`${days} day${days > 1 ? 's' : ''}`);
+  if (remainingHours > 0) parts.push(`${remainingHours} hour${remainingHours > 1 ? 's' : ''}`);
+  if (remainingMinutes > 0) parts.push(`${remainingMinutes} minute${remainingMinutes > 1 ? 's' : ''}`);
+
+  return parts.join(', ');
+};
+
+async function testMarketStatus() {
+  try {
+    const status = await getMarketStatus();
+    console.log('Market Status:', JSON.stringify(status, null, 2));
+
+    console.log(
+      `Next status time difference in days, hours, minutes:`,
+      timeDiffString(status.nextStatusTimeDifference)
+    );
+  } catch (error) {
+    console.error('Error:', error);
+  }
+}
+
+async function testGetDates() {
+  const times = await getStartAndEndDates({
+    period: '1D',
+    intraday_reporting: 'extended_hours',
+  });
+  console.log(`Start and end timestamps: START at ${times.start}, END at ${times.end}`);
+}
+
+async function testMarketTime(dateTimeString: string, label: string) {
+  console.log(`Testing for ${label} Eastern time`);
+
+  // create MarketTimeParams object with specified ET date and time
+  const endDateET = new Date(dateTimeString);
+
+  const params: MarketTimeParams = {
+    period: '1D',
+    timezone: 'America/New_York',
+    outputFormat: 'iso',
+    intraday_reporting: 'extended_hours',
+    end: endDateET,
+  };
+
+  const result = await getStartAndEndTimestamps(params);
+  console.log(
+    `Start and end timestamps for ${label}: START at ${formatToUSEastern(
+      new Date(result.start)
+    )}, END at ${formatToUSEastern(new Date(result.end))}`
+  );
+}
+
+async function runTest() {
+  // First test market day and market hours determination
+  // Now test the timestamp ranges
+
+  // console.log(`Test 1: Extended hours test\n`);
+  // const [oneDay, oneWeek, oneMonth, YTD] = await Promise.all([
+  //   getMarketTimestamps('1D', 'extended_hours'),
+  //   getMarketTimestamps('1W', 'extended_hours'),
+  //   getMarketTimestamps('1M', 'extended_hours'),
+  //   getMarketTimestamps('YTD', 'extended_hours'),
+  // ]);
+
+  // console.log(`Market time stamps (US ET) (extended hours):
+  //   * Past day: ${formatToUSEastern(oneDay.startTime)} to ${formatToUSEastern(oneDay.endTime)}
+  //   * Past week: ${formatToUSEastern(oneWeek.startTime)} to ${formatToUSEastern(oneWeek.endTime)}
+  //   * Past month: ${formatToUSEastern(oneMonth.startTime)} to ${formatToUSEastern(oneMonth.endTime)}
+  //   * Year to date: ${formatToUSEastern(YTD.startTime)} to ${formatToUSEastern(YTD.endTime)}
+  // `);
+
+  // console.log(`Test 2: Continuous hours test\n`);
+  // const [continuousOneDay, continuousOneMonth, continuousYTD] = await Promise.all([
+  //   getMarketTimestamps('1D', 'continuous'),
+  //   getMarketTimestamps('1M', 'continuous'),
+  //   getMarketTimestamps('YTD', 'continuous'),
+  // ]);
+
+  // console.log(`Market time stamps (US ET) (continuous hours):
+  //   * Past day: ${formatToUSEastern(continuousOneDay.startTime)} to ${formatToUSEastern(continuousOneDay.endTime)}
+  //   * Past month: ${formatToUSEastern(continuousOneMonth.startTime)} to ${formatToUSEastern(continuousOneMonth.endTime)}
+  //   * Year to date: ${formatToUSEastern(continuousYTD.startTime)} to ${formatToUSEastern(continuousYTD.endTime)}
+  // `);
+
+  // const testTimes = [
+  //   ['2024-11-13T04:45:00-05:00', '13-Nov-24 at 4:45am'],
+  //   ['2024-11-13T09:01:00-05:00', '13-Nov-24 at 9:01am'],
+  //   ['2024-11-13T11:15:00-05:00', '13-Nov-24 at 11:15am'],
+  //   ['2024-11-13T16:01:00-05:00', '13-Nov-24 at 4:01pm'],
+  //   ['2024-11-13T18:30:00-05:00', '13-Nov-24 at 6:30pm'],
+  //   ['2024-11-13T21:15:00-05:00', '13-Nov-24 at 9:15pm'],
+  // ];
+
+  // const lastTradingDate = await getLastTradingDateYYYYMMDD();
+  // console.log(`Last trading date: ${lastTradingDate}`);
+  // await Promise.all(testTimes.map(([time, label]) => testMarketTime(time, label)));
+
+  // await testGetDates();
+
+  const testDates = [
+    '2024-11-28T03:00:00-05:00',
+    '2024-11-28T08:00:00-05:00',
+    '2024-11-28T11:00:00-05:00',
+    '2024-11-28T17:00:00-05:00',
+    '2024-11-28T21:00:00-05:00',
+
+    '2024-11-29T03:00:00-05:00',
+    '2024-11-29T08:00:00-05:00',
+    '2024-11-29T11:00:00-05:00',
+    '2024-11-29T17:00:00-05:00',
+    '2024-11-29T21:00:00-05:00',
+
+    '2024-11-30T03:00:00-05:00',
+    '2024-11-30T08:00:00-05:00',
+    '2024-11-30T11:00:00-05:00',
+    '2024-11-30T17:00:00-05:00',
+    '2024-11-30T21:00:00-05:00',
+
+    '2024-12-02T03:00:00-05:00',
+    '2024-12-02T08:00:00-05:00',
+    '2024-12-02T11:00:00-05:00',
+    '2024-12-02T17:00:00-05:00',
+    '2024-12-02T21:00:00-05:00',
+
+    '2024-12-24T03:00:00-05:00',
+    '2024-12-24T08:00:00-05:00',
+    '2024-12-24T11:00:00-05:00',
+    '2024-12-24T17:00:00-05:00',
+    '2024-12-24T21:00:00-05:00',
+
+    '2024-12-25T03:00:00-05:00',
+    '2024-12-25T08:00:00-05:00',
+    '2024-12-25T11:00:00-05:00',
+    '2024-12-25T17:00:00-05:00',
+    '2024-12-25T21:00:00-05:00',
+
+    '2024-12-26T03:00:00-05:00',
+    '2024-12-26T08:00:00-05:00',
+    '2024-12-26T11:00:00-05:00',
+    '2024-12-26T17:00:00-05:00',
+    '2024-12-26T21:00:00-05:00',
+
+    '2024-12-27T03:00:00-05:00',
+    '2024-12-27T08:00:00-05:00',
+    '2024-12-27T11:00:00-05:00',
+    '2024-12-27T17:00:00-05:00',
+    '2024-12-27T21:00:00-05:00',
+
+    '2025-01-01T03:00:00-05:00',
+    '2025-01-01T08:00:00-05:00',
+    '2025-01-01T11:00:00-05:00',
+    '2025-01-01T17:00:00-05:00',
+    '2025-01-01T21:00:00-05:00',
+
+    '2025-01-02T03:00:00-05:00',
+    '2025-01-02T08:00:00-05:00',
+    '2025-01-02T11:00:00-05:00',
+    '2025-01-02T17:00:00-05:00',
+    '2025-01-02T21:00:00-05:00',
+
+    '2025-01-03T03:00:00-05:00',
+    '2025-01-03T08:00:00-05:00',
+    '2025-01-03T11:00:00-05:00',
+    '2025-01-03T17:00:00-05:00',
+    '2025-01-03T21:00:00-05:00',
+  ];
+
+  const mu = new MarketTimeUtil();
+
+  testDates.forEach(async (testDate) => {
+    const startAndEnd = await mu.getMarketTimePeriod({
+      period: '1D',
+      end: new Date(testDate),
+      intraday_reporting: 'extended_hours',
+    });
+    console.log(`Start and end for ${testDate}: START at ${startAndEnd.start}, END at ${startAndEnd.end}`);
+  });
+
+  const ms = await getMarketStatus();
+  console.log('Market Status:\n\n', ms);
+  //console.log(unixTimetoUSEastern(1732078800000));
+}
+
+async function testGetLastFullTradingDate() {
+  const lastFullDate = await getLastFullTradingDate();
+  console.log(lastFullDate);
+}
+
+const testFetchBars = async () => {
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+  const bars = await fetchBars({
+    symbols: ['BTC/USD'],
+    timeframe: '1Min',
+    start: oneHourAgo,
+  });
+  console.log(bars);
+};
+
+const testFetchCryptoNews = async () => {
+  const news = await fetchNews(
+    {
+      symbol: 'BTC/USD',
+      start: new Date(Date.now() - 24 * 60 * 60 * 1000),
+    },
+    {
+      APIKey: 'xxx',
+      APISecret: 'xxx',
+    }
+  );
+  console.log(news);
+};
+
+const testFetchNews = async () => {
+  console.log(`Testing fetchNews from Adaptic...`);
+  const news = await adptc.alpaca.news('AAPL');
+  console.log(news);
+}
+
+const testGoogleSheets = async () => {
+  const logSheet = '1EQlabj3xgMPPpIKlka7LH5L8hJbZyRur-6pBXnsu6R0';
+  await adptc.gs.addRow(
+    {
+      spreadsheetId: logSheet,
+      sheetName: 'Sheet1',
+    },
+    ['SPY', '604', '20981382']
+  );
+};
+
+const testAssistant = async () => {
+  try {
+    console.log('Testing Adaptic assistant...');
+
+    if (!process.env.POLYGON_API_KEY) {
+      throw new Error('Polygon API key is not defined in environment variables.');
+    }
+
+    const query = `Retrieve the last 365 days of TSLA price data and return the current price, 50 day EMA, and 200 day EMA. Return a JSON object.`;
+    const response = await adptc.assistant.call(query, { useCI: true, response_format: 'json' });
+
+    //const query = 'Iterate through numbers between 1000 and 1030. If the number is a multiple of 3, print "fizz". If the number is a multiple of 5, print "buzz". If the number is a multiple of both 3 and 5, print "fizzbuzz". Otherwise, print the number itself.';
+
+    console.log('Assistant Response:', JSON.stringify(response, null, 2));
+    console.log('Token Usage:', response.usage);
+    console.log('Assistant/Thread IDs:', response.metadata);
+  } catch (error) {
+    console.error('Assistant Test Error:', error instanceof Error ? error.message : String(error));
+    throw error; // Re-throw to ensure test failure
+  }
+};
+
+const testFetchTrades = async () => {
+  const trades = await adptc.backend.fetchTrades(new Date(Date.now() - 48 * 60 * 60 * 1000));
+  if (trades) {
+    console.log(`Retrieved ${trades.length} trades`);
+  }
+};
+
+testFetchTrades();
+
+const testFetchOrders= async () => {
+  const orders = await adptc.alpaca.orders.getAll(
+    { alpacaApiKey: 'PKBCOQPMAZ911G7PHQ8R', alpacaApiSecret: 'BogLYDsXVbhXJlWyrUywbsAfnce2k90BYTCyKOcc' },
+    {status: 'closed', limit: 10 }
+  );
+  if (orders) {
+    console.log(`Retrieved ${orders.length} orders`);
+  }
+};
+
+testFetchOrders();
+
+
+const testgetLFTD = async () => {
+  const dateArrayForTesting = [
+    new Date('2025-01-21T19:00:00-05:00'), // 21 jan 2025, 7pm
+    new Date('2025-01-21T15:00:00-05:00'), // 21 jan 2025, 3pm
+    new Date('2025-01-21T07:00:00-05:00'), // 21 jan 2025, 7am
+    new Date('2025-01-20T15:00:00-05:00'), // 20 jan 2025, 3pm
+    new Date('2025-01-19T05:00:00-05:00'), // 19 jan 2025, 5am
+    new Date('2025-01-18T15:00:00-05:00'), // 18 jan 2025, 3pm
+    new Date('2025-01-17T21:00:00-05:00'), // 17 jan 2025, 9pm
+    new Date('2025-01-17T13:00:00-05:00'), // 17 jan 2025, 1pm
+  ];
+
+  console.log('Testing getLastFullTradingDate with different dates:');
+  for (const testDate of dateArrayForTesting) {
+    const lastFullDate = await adptc.time.getLastFullTradingDate(testDate);
+    console.log(`\nInput date: ${testDate.toLocaleString('en-US', { timeZone: 'America/New_York' })}`);
+    console.log(
+      `Last full trading date (UTC): ${lastFullDate.date.toISOString()}`
+    );
+    console.log(
+      `Last full trading date (ET): ${lastFullDate.date.toLocaleString('en-US', { timeZone: 'America/New_York' })} (${lastFullDate.YYYYMMDD})`
+    );
+    const marketOpenClose = adptc.time.getMarketOpenClose({ date: lastFullDate.date });
+    console.log(`Market Open & Close: `, marketOpenClose);
+  }
+};
+
+const testGetStartAndEndDates = async () => {
+  const testDate = new Date('2024-12-24T09:00:00-05:00');
+  const saedates = await adptc.time.getStartAndEndDates({ referenceDate: testDate, intraday_reporting: 'extended_hours' });
+  console.log(`Checking start and end dates for ${testDate.toLocaleString('en-US', { timeZone: 'America/New_York' })}`);
+  console.log(`Start: ${saedates.start?.toLocaleString('en-US', { timeZone: 'America/New_York' })}`);
+  console.log(`End: ${saedates.end?.toLocaleString('en-US', { timeZone: 'America/New_York' })}`);
+};
+
+const testFetchDailyOpenClose = async () => {
+  const testDate = new Date('2024-12-24T00:00:00-05:00');
+  const dailyOpenClose = await adptc.polygon.fetchDailyOpenClose('TSLA', testDate);
+  console.log(`Checking daily open/close for ${testDate.toLocaleString('en-US', { timeZone: 'America/New_York' })}`);
+  console.log(dailyOpenClose);
+};
+
+const testMarketOpenClose = async () => {
+  const testDate = new Date('2025-01-21T09:45:00-05:00');
+  const { marketOpen, open, close, openExt, closeExt } = adptc.time.getMarketOpenClose({ date: testDate });
+  console.log(`Checking market open/close for ${testDate.toLocaleString('en-US', { timeZone: 'America/New_York' })}`);
+  console.log(`Market Open: ${marketOpen}`);
+  console.log(`Regular Market Hours:`);
+  console.log(`  Open: ${open?.toLocaleString('en-US', { timeZone: 'America/New_York' })}`);
+  console.log(`  Close: ${close?.toLocaleString('en-US', { timeZone: 'America/New_York' })}`);
+  console.log(`Extended Market Hours:`);
+  console.log(`  Open: ${openExt?.toLocaleString('en-US', { timeZone: 'America/New_York' })}`);
+  console.log(`  Close: ${closeExt?.toLocaleString('en-US', { timeZone: 'America/New_York' })}`);
+};
+
+const testFetchNewsFromAV = async () => {
+  const startTime = new Date('2025-01-21T12:00:00-05:00');
+  const endTime = new Date('2025-01-22T00:00:00-05:00');
+  console.log('Limited dates:', startTime, endTime)
+  const news = await adptc.av.fetchTickerNews('TSLA', {start: startTime, end: endTime, limit: 10});
+  const articleDates = news.map(article => adptc.av.convertYYYYMMDDTHHMMSSToDate(article.time_published));
+  console.log (`Retrieved ${articleDates.length} articles`);
+  // console log in descending order
+  console.log(articleDates.sort((a, b) => a.getTime() - b.getTime()).reverse());
+
+  const testFetchTickerInfo = async () => {
+  const tickerToTest = 'FTAI';
+  console.log(`Fetching ticker info for ${tickerToTest}`);
+  const tickerInfo = await adptc.polygon.fetchTickerInfo(tickerToTest);
+  console.log(tickerInfo);
+}
+}
+
+const testFetchTrades = async () => {
+  const testTicker = 'TSLA';
+  const testTimeStamp = new Date('2025-01-24T10:00:00-05:00');
+  console.log(
+    `Retrieving trades for ${testTicker} at ${testTimeStamp.toLocaleString('en-US', {
+      timeZone: 'America/New_York',
+    })} New York time`
+  );
+
+  try {
+    const trades = await adptc.polygon.fetchTrades(testTicker, {
+      timestamplte: testTimeStamp.valueOf(),
+      limit: 10,
+      order: 'asc',
+    });
+
+    console.log(`Retrieved ${trades.results.length} trades`);
+    console.log('First few trades:');
+    trades.results.slice(0, 3).forEach((trade, index) => {
+      const tradeTime = new Date(trade.participant_timestamp / 1000000); // Convert nanoseconds to milliseconds
+      console.log(`Trade ${index + 1}:
+        Time: ${tradeTime.toLocaleString('en-US', { timeZone: 'America/New_York' })}
+        Price: $${trade.price}
+        Size: ${trade.size}
+        Exchange: ${trade.exchange}
+      `);
+    });
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error('Error fetching trades:', error.message);
+    } else {
+      console.error('Unknown error occurred while fetching trades');
+    }
+  }
+};
+
+
+
+*/
+
+/* testing fetchPortfolioHistory
+import { adaptic as adptc, PortfolioHistoryParams } from './index';
+import { getApolloClient } from '@adaptic/backend-legacy';
+const danasAlpacaAccountIdInAdaptic = 'f97d0934-a65f-4af7-b0ee-0521db3006cc';
+const client = getApolloClient();
+const testFetchPortfolioHistory = async () => {
+  try {
+    const params: PortfolioHistoryParams = {
+      period: '2D',
+      timeframe: '1D'
+    }
+    const history = await adptc.alpaca.portfolioHistory(danasAlpacaAccountIdInAdaptic, params, client);
+    if (!history) return;
+    console.log(`Received portfolio history:`, history)
+
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error('Error fetching portfolio history:', error.message);
+    } else {
+      console.error('Unknown error occurred while fetching portfolio history');
+    }
+  }
+};
+
+\*/
+
+/* testing fetchPortfolioHistory with date
+import { adaptic as adptc, PortfolioHistoryParams } from './index';
+import { getApolloClient } from '@adaptic/backend-legacy';
+const danasAlpacaAccountIdInAdaptic = 'f97d0934-a65f-4af7-b0ee-0521db3006cc';
+const client = getApolloClient();
+const testFetchPortfolioHistory = async () => {
+  try {
+    const params: PortfolioHistoryParams = {
+      period: '1D',
+      timeframe: '1Min'
+    }
+    const history = await adptc.alpaca.portfolioHistory({params, accountId: danasAlpacaAccountIdInAdaptic, client});
+    if (!history) return;
+    console.log(`Received portfolio history:`, history)
+
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error('Error fetching portfolio history:', error.message);
+    } else {
+      console.error('Unknown error occurred while fetching portfolio history');
+    }
+  }
+};
+
+testFetchPortfolioHistory();
+\*/
+
+/* testing getMarketStatus
+import {adaptic as adptc} from './index';
+const testMarketStatus = async () => {
+  const testTimeStrings = [
+    '2024-12-24T08:30:00-05:00',
+    '2024-12-24T13:30:00-05:00',
+    '2024-12-25T09:30:00-05:00',
+    '2025-01-31T03:30:00-05:00',
+    '2025-01-31T04:30:00-05:00',
+    '2025-01-31T08:30:00-05:00',
+    '2025-01-31T09:29:00-05:00',
+    '2025-01-31T09:31:00-05:00',
+    '2025-01-31T14:00:00-05:00',
+    '2025-01-31T16:00:00-05:00',
+    '2025-01-31T17:00:00-05:00',
+    '2025-01-31T21:00:00-05:00',
+  ]
+  for (const timeString of testTimeStrings) {
+    const testTime = new Date(timeString);
+    try {
+      const mp = adptc.time.getMarketStatus({ date: testTime }).marketPeriod;
+      console.log(`Market Period for ${testTime.toLocaleString('en-US', { timeZone: 'America/New_York' })}: ${mp}`);
+    } catch (error) {
+      console.error('Error:', error instanceof Error ? error.message : String(error));
+    }
+  }
+}
+testMarketStatus();
+*/
+
+/*
+import {adaptic as adptc} from './index';
+import 'dotenv/config';
+const poly_api_key = process.env.POLYGON_API_KEY;
+const testFetchTickerInfo = async () => {
+  const tickerToTest = 'HIMX';
+  console.log(`Fetching ticker info for ${tickerToTest}`);
+  const tickerInfo = await adptc.polygon.fetchTickerInfo(tickerToTest, { apiKey: poly_api_key });
+  console.log(tickerInfo);
+}
+
+testFetchTickerInfo();
+*/

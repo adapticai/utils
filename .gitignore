@@ -1,0 +1,10 @@
+# Dependency directories
+.env
+node/modules
+node_modules
+*.log
+.npmcache
+*.zip
+dist/
+.DS_Store
+.aider*

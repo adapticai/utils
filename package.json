@@ -1,0 +1,54 @@
+{
+  "name": "@adaptic/utils",
+  "version": "0.0.359",
+  "author": "Adaptic.ai",
+  "description": "Utility functions used in Adaptic app and Lambda functions",
+  "always-build-npm": true,
+  "main": "dist/index.cjs",
+  "module": "dist/index.mjs",
+  "types": "dist/types/index.d.ts",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs",
+      "types": "./dist/types/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "clean": "rm -rf dist",
+    "build": "npm run clean && rollup -c",
+    "prepublishOnly": "npm run build",
+    "test": "npm run build && node dist/test.js"
+  },
+  "dependencies": {
+    "@apollo/client": "^3.13.8",
+    "@adaptic/backend-legacy": "^1.0.353",
+    "chalk": "^5.4.1",
+    "date-fns": "^4.1.0",
+    "date-fns-tz": "^3.2.0",
+    "ms": "^2.1.3",
+    "p-limit": "^6.2.0",
+    "ws": "^8.18.3"
+  },
+  "peerDependencies": {
+    "react": "^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0"
+  },
+  "license": "ISC",
+  "devDependencies": {
+    "@rollup/plugin-commonjs": "^28.0.6",
+    "@rollup/plugin-json": "^6.1.0",
+    "@rollup/plugin-node-resolve": "^16.0.1",
+    "@rollup/plugin-typescript": "^12.1.4",
+    "@types/date-fns": "^2.6.3",
+    "@types/ms": "^2.1.0",
+    "@types/ws": "^8.18.1",
+    "lightweight-charts": "^5.0.8",
+    "react": "^19.1.0",
+    "rollup": "^4.44.2",
+    "typescript": "^5.8.3"
+  }
+}

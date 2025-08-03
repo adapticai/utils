@@ -1,0 +1,8 @@
+---
+description: Testing, creating test files, running tests
+globs: 
+alwaysApply: false
+---
+When creating tests to test modifications, modify src/test.ts. Add a function and the necessary imports, then make sure that function is called at the bottom of the file.
+Then, we run those tests with `npm run test`. 
+The reason we have to do this is that this package is built with rollup and is an npm package, so we can't compile and run arbitrary TypeScript files.
