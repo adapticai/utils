@@ -25,7 +25,7 @@
     "test": "npm run build && node dist/test.js"
   },
   "dependencies": {
-    "@adaptic/backend-legacy": "^0.0.4",
+    "@adaptic/backend-legacy": "^0.0.8",
     "@apollo/client": "^3.13.8",
     "chalk": "^5.4.1",
     "date-fns": "^4.1.0",
