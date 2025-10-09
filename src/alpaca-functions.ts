@@ -911,17 +911,19 @@ export async function makeRequest(
 
     const response = await fetch(url, fetchOptions);
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`Alpaca API error (${response.status}): ${errorText}`, {
-        account: auth.adapticAccountId || 'direct',
-        source: 'AlpacaAPI',
-        type: 'error'
-      });
-      throw new Error(`Alpaca API error (${response.status}): ${errorText}`);
+    // Handle 207 Multi-Status responses (used by closeAll positions)
+    if (response.status === 207 || response.ok) {
+      return await response.json();
     }
 
-    return await response.json();
+    // Handle errors
+    const errorText = await response.text();
+    console.error(`Alpaca API error (${response.status}): ${errorText}`, {
+      account: auth.adapticAccountId || 'direct',
+      source: 'AlpacaAPI',
+      type: 'error'
+    });
+    throw new Error(`Alpaca API error (${response.status}): ${errorText}`);
   } catch (err) {
     const error = err as Error;
     console.error(`Error in makeRequest: ${error.message}`, {
@@ -1107,9 +1109,10 @@ export async function closeAllPositions(
       );
     }
   } else {
-    await makeRequest(auth, {
+    const response = await makeRequest(auth, {
       endpoint: '/v2/positions', method: 'DELETE', queryString: cancel_orders ? '?cancel_orders=true' : ''
     });
+    return response;
   }
 }
 
