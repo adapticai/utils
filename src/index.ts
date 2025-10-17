@@ -16,6 +16,17 @@ import * as ta from './technical-analysis';
 import { AlpacaTradingAPI } from './alpaca-trading-api';
 import { AlpacaMarketDataAPI } from './alpaca-market-data-api';
 
+// Cache utilities
+export {
+  StampedeProtectedCache,
+  createStampedeProtectedCache,
+  DEFAULT_CACHE_OPTIONS,
+  type StampedeProtectedCacheOptions,
+  type CacheEntry,
+  type CacheStats,
+  type CacheLoader,
+} from './cache/stampede-protected-cache';
+
 // Re-export all types
 export * from './types';
 
