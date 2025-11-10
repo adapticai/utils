@@ -3,7 +3,7 @@ name: Auto Publish NPM Package
 on:
   push:
     branches:
-      - main
+      - master
     paths:
       - 'src/**'
       - '*.json'
