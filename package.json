@@ -1,6 +1,6 @@
 {
   "name": "@adaptic/utils",
-  "version": "0.0.369",
+  "version": "0.0.370",
   "author": "Adaptic.ai",
   "description": "Utility functions used in Adaptic app and Lambda functions",
   "always-build-npm": true,
@@ -25,7 +25,7 @@
     "test": "npm run build && node dist/test.js"
   },
   "dependencies": {
-    "@adaptic/backend-legacy": "^0.0.17",
+    "@adaptic/backend-legacy": "0.0.25",
     "@adaptic/lumic-utils": "^1.0.6",
     "@apollo/client": "^3.13.8",
     "chalk": "^5.4.1",
