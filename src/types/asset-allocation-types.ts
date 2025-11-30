@@ -122,7 +122,7 @@ export interface AssetClassCharacteristics {
   liquidityScore: number;
 
   /** Correlation with other asset classes */
-  correlations: Map<AllocationAssetClass, AssetClass, number>;
+  correlations: Map<AllocationAssetClass, number>;
 
   /** Current market cap or total value available */
   marketSize: number;
@@ -285,7 +285,7 @@ export interface RiskAnalysis {
   currencyRisk: number;
 
   /** Risk decomposition by asset class */
-  riskDecomposition: Map<AllocationAssetClass, AssetClass, number>;
+  riskDecomposition: Map<AllocationAssetClass, number>;
 }
 
 /**
@@ -360,19 +360,19 @@ export interface AllocationInput {
   accountSize: number;
 
   /** Current positions (if any) */
-  currentPositions?: Map<AllocationAssetClass, AssetClass, number>;
+  currentPositions?: Map<AllocationAssetClass, number>;
 
   /** User preferences */
   preferences?: AllocationPreferences;
 
   /** Asset class characteristics */
-  assetCharacteristics: AllocationAssetClassCharacteristics[];
+  assetCharacteristics: AssetClassCharacteristics[];
 
   /** Additional constraints */
   constraints?: AllocationConstraint[];
 
   /** Historical performance data (optional) */
-  historicalData?: Map<AllocationAssetClass, AssetClass, HistoricalData>;
+  historicalData?: Map<AllocationAssetClass, HistoricalData>;
 }
 
 /**

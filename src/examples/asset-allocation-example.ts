@@ -239,7 +239,7 @@ export async function aggressiveGrowthPortfolio() {
 export async function rebalancePortfolio() {
   console.log('\n=== Portfolio Rebalancing Example ===\n');
 
-  const currentPositions = new Map<AssetClass, number>([
+  const currentPositions = new Map<AllocationAssetClass, number>([
     ['EQUITIES', 45000],
     ['OPTIONS', 20000],
     ['ETF', 25000],

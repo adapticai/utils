@@ -62,7 +62,7 @@ export class AssetAllocationEngine {
       {
         profile: 'CONSERVATIVE',
         description: 'Capital preservation focused with minimal volatility',
-        baseAllocations: new Map<AssetClass, number>([
+        baseAllocations: new Map<AllocationAssetClass, number>([
           ['EQUITIES', 0.20],
           ['OPTIONS', 0.05],
           ['FUTURES', 0.00],
@@ -81,7 +81,7 @@ export class AssetAllocationEngine {
       {
         profile: 'MODERATE_CONSERVATIVE',
         description: 'Income focused with moderate growth potential',
-        baseAllocations: new Map<AssetClass, number>([
+        baseAllocations: new Map<AllocationAssetClass, number>([
           ['EQUITIES', 0.30],
           ['OPTIONS', 0.10],
           ['FUTURES', 0.05],
@@ -100,7 +100,7 @@ export class AssetAllocationEngine {
       {
         profile: 'MODERATE',
         description: 'Balanced growth and income with managed volatility',
-        baseAllocations: new Map<AssetClass, number>([
+        baseAllocations: new Map<AllocationAssetClass, number>([
           ['EQUITIES', 0.40],
           ['OPTIONS', 0.15],
           ['FUTURES', 0.10],
@@ -119,7 +119,7 @@ export class AssetAllocationEngine {
       {
         profile: 'MODERATE_AGGRESSIVE',
         description: 'Growth focused with higher volatility tolerance',
-        baseAllocations: new Map<AssetClass, number>([
+        baseAllocations: new Map<AllocationAssetClass, number>([
           ['EQUITIES', 0.50],
           ['OPTIONS', 0.20],
           ['FUTURES', 0.10],
@@ -138,7 +138,7 @@ export class AssetAllocationEngine {
       {
         profile: 'AGGRESSIVE',
         description: 'Maximum growth with high volatility acceptance',
-        baseAllocations: new Map<AssetClass, number>([
+        baseAllocations: new Map<AllocationAssetClass, number>([
           ['EQUITIES', 0.45],
           ['OPTIONS', 0.25],
           ['FUTURES', 0.15],
@@ -332,7 +332,7 @@ export class AssetAllocationEngine {
   /**
    * Get base allocations from risk profile
    */
-  private getBaseAllocations(riskProfile: RiskProfile): Map<AssetClass, number> {
+  private getBaseAllocations(riskProfile: RiskProfile): Map<AllocationAssetClass, number> {
     const profile = this.defaultRiskProfiles.get(riskProfile);
     if (!profile) {
       throw new Error(`Unknown risk profile: ${riskProfile}`);
@@ -344,10 +344,10 @@ export class AssetAllocationEngine {
    * Adjust allocations based on market conditions
    */
   private adjustForMarketConditions(
-    baseAllocations: Map<AssetClass, number>,
+    baseAllocations: Map<AllocationAssetClass, number>,
     condition: MarketCondition,
     metrics: MarketMetrics
-  ): Map<AssetClass, number> {
+  ): Map<AllocationAssetClass, number> {
     const adjusted = new Map(baseAllocations);
 
     switch (condition) {
@@ -420,8 +420,8 @@ export class AssetAllocationEngine {
    * Scale allocation for a specific asset class
    */
   private scaleAllocation(
-    allocations: Map<AssetClass, number>,
-    assetClass: AssetClass,
+    allocations: Map<AllocationAssetClass, number>,
+    assetClass: AllocationAssetClass,
     scaleFactor: number
   ): void {
     const current = allocations.get(assetClass) || 0;
@@ -431,7 +431,7 @@ export class AssetAllocationEngine {
   /**
    * Normalize allocations to sum to 1.0
    */
-  private normalizeAllocations(allocations: Map<AssetClass, number>): Map<AssetClass, number> {
+  private normalizeAllocations(allocations: Map<AllocationAssetClass, number>): Map<AllocationAssetClass, number> {
     const total = Array.from(allocations.values()).reduce((sum, val) => sum + val, 0);
 
     if (total === 0) {
@@ -441,7 +441,7 @@ export class AssetAllocationEngine {
       return allocations;
     }
 
-    const normalized = new Map<AssetClass, number>();
+    const normalized = new Map<AllocationAssetClass, number>();
     allocations.forEach((value, key) => {
       normalized.set(key, value / total);
     });
@@ -453,11 +453,11 @@ export class AssetAllocationEngine {
    * Apply user constraints and preferences
    */
   private applyConstraints(
-    allocations: Map<AssetClass, number>,
+    allocations: Map<AllocationAssetClass, number>,
     preferences?: AllocationPreferences,
     constraints?: AllocationConstraint[],
     characteristics?: AssetClassCharacteristics[]
-  ): Map<AssetClass, number> {
+  ): Map<AllocationAssetClass, number> {
     const constrained = new Map(allocations);
 
     // Apply exclusions
@@ -525,11 +525,11 @@ export class AssetAllocationEngine {
    * Optimize allocations using specified objective
    */
   private optimizeAllocations(
-    allocations: Map<AssetClass, number>,
+    allocations: Map<AllocationAssetClass, number>,
     characteristics: AssetClassCharacteristics[],
     accountSize: number,
     riskProfile: RiskProfile
-  ): Map<AssetClass, number> {
+  ): Map<AllocationAssetClass, number> {
     const charMap = new Map(characteristics.map(c => [c.assetClass, c]));
 
     switch (this.config.objective) {
@@ -557,13 +557,13 @@ export class AssetAllocationEngine {
    * Maximize Sharpe ratio allocation
    */
   private maximizeSharpeRatio(
-    allocations: Map<AssetClass, number>,
-    characteristics: Map<AssetClass, AssetClassCharacteristics>
-  ): Map<AssetClass, number> {
-    const optimized = new Map<AssetClass, number>();
+    allocations: Map<AllocationAssetClass, number>,
+    characteristics: Map<AllocationAssetClass, AssetClassCharacteristics>
+  ): Map<AllocationAssetClass, number> {
+    const optimized = new Map<AllocationAssetClass, number>();
 
     // Calculate excess returns (return - risk-free rate)
-    const excessReturns = new Map<AssetClass, number>();
+    const excessReturns = new Map<AllocationAssetClass, number>();
     allocations.forEach((_, asset) => {
       const char = characteristics.get(asset);
       if (char) {
@@ -574,7 +574,7 @@ export class AssetAllocationEngine {
 
     // Weight by Sharpe ratio (simplified)
     let totalSharpe = 0;
-    const sharpeRatios = new Map<AssetClass, number>();
+    const sharpeRatios = new Map<AllocationAssetClass, number>();
 
     allocations.forEach((_, asset) => {
       const char = characteristics.get(asset);
@@ -599,7 +599,7 @@ export class AssetAllocationEngine {
     }
 
     // Blend with original allocations (50/50 blend)
-    const blended = new Map<AssetClass, number>();
+    const blended = new Map<AllocationAssetClass, number>();
     allocations.forEach((originalWeight, asset) => {
       const optimizedWeight = optimized.get(asset) || 0;
       blended.set(asset, 0.5 * originalWeight + 0.5 * optimizedWeight);
@@ -612,14 +612,14 @@ export class AssetAllocationEngine {
    * Minimize portfolio risk
    */
   private minimizeRisk(
-    allocations: Map<AssetClass, number>,
-    characteristics: Map<AssetClass, AssetClassCharacteristics>
-  ): Map<AssetClass, number> {
-    const optimized = new Map<AssetClass, number>();
+    allocations: Map<AllocationAssetClass, number>,
+    characteristics: Map<AllocationAssetClass, AssetClassCharacteristics>
+  ): Map<AllocationAssetClass, number> {
+    const optimized = new Map<AllocationAssetClass, number>();
 
     // Weight inversely to volatility
     let totalInvVol = 0;
-    const invVolatilities = new Map<AssetClass, number>();
+    const invVolatilities = new Map<AllocationAssetClass, number>();
 
     allocations.forEach((_, asset) => {
       const char = characteristics.get(asset);
@@ -643,7 +643,7 @@ export class AssetAllocationEngine {
     }
 
     // Blend with original
-    const blended = new Map<AssetClass, number>();
+    const blended = new Map<AllocationAssetClass, number>();
     allocations.forEach((originalWeight, asset) => {
       const optimizedWeight = optimized.get(asset) || 0;
       blended.set(asset, 0.6 * optimizedWeight + 0.4 * originalWeight);
@@ -656,18 +656,18 @@ export class AssetAllocationEngine {
    * Maximize expected return
    */
   private maximizeReturn(
-    allocations: Map<AssetClass, number>,
-    characteristics: Map<AssetClass, AssetClassCharacteristics>,
+    allocations: Map<AllocationAssetClass, number>,
+    characteristics: Map<AllocationAssetClass, AssetClassCharacteristics>,
     riskProfile: RiskProfile
-  ): Map<AssetClass, number> {
+  ): Map<AllocationAssetClass, number> {
     const profile = this.defaultRiskProfiles.get(riskProfile);
     if (!profile) return allocations;
 
-    const optimized = new Map<AssetClass, number>();
+    const optimized = new Map<AllocationAssetClass, number>();
 
     // Weight by expected return, but cap by volatility constraint
     let totalAdjustedReturn = 0;
-    const adjustedReturns = new Map<AssetClass, number>();
+    const adjustedReturns = new Map<AllocationAssetClass, number>();
 
     allocations.forEach((_, asset) => {
       const char = characteristics.get(asset);
@@ -696,7 +696,7 @@ export class AssetAllocationEngine {
     }
 
     // Blend with original
-    const blended = new Map<AssetClass, number>();
+    const blended = new Map<AllocationAssetClass, number>();
     allocations.forEach((originalWeight, asset) => {
       const optimizedWeight = optimized.get(asset) || 0;
       blended.set(asset, 0.5 * optimizedWeight + 0.5 * originalWeight);
@@ -709,9 +709,9 @@ export class AssetAllocationEngine {
    * Risk parity allocation (equal risk contribution)
    */
   private riskParityAllocation(
-    allocations: Map<AssetClass, number>,
-    characteristics: Map<AssetClass, AssetClassCharacteristics>
-  ): Map<AssetClass, number> {
+    allocations: Map<AllocationAssetClass, number>,
+    characteristics: Map<AllocationAssetClass, AssetClassCharacteristics>
+  ): Map<AllocationAssetClass, number> {
     // Simplified risk parity: weight inversely to volatility
     return this.minimizeRisk(allocations, characteristics);
   }
@@ -720,13 +720,13 @@ export class AssetAllocationEngine {
    * Maximize diversification
    */
   private maximizeDiversification(
-    allocations: Map<AssetClass, number>,
-    characteristics: Map<AssetClass, AssetClassCharacteristics>
-  ): Map<AssetClass, number> {
-    const optimized = new Map<AssetClass, number>();
+    allocations: Map<AllocationAssetClass, number>,
+    characteristics: Map<AllocationAssetClass, AssetClassCharacteristics>
+  ): Map<AllocationAssetClass, number> {
+    const optimized = new Map<AllocationAssetClass, number>();
 
     // Calculate average correlation for each asset
-    const avgCorrelations = new Map<AssetClass, number>();
+    const avgCorrelations = new Map<AllocationAssetClass, number>();
 
     allocations.forEach((_, asset) => {
       const char = characteristics.get(asset);
@@ -746,7 +746,7 @@ export class AssetAllocationEngine {
 
     // Weight inversely to average correlation
     let totalInvCorr = 0;
-    const invCorrelations = new Map<AssetClass, number>();
+    const invCorrelations = new Map<AllocationAssetClass, number>();
 
     avgCorrelations.forEach((avgCorr, asset) => {
       const invCorr = 1 / (0.1 + avgCorr); // Add small constant to avoid division by zero
@@ -767,7 +767,7 @@ export class AssetAllocationEngine {
     }
 
     // Blend with original
-    const blended = new Map<AssetClass, number>();
+    const blended = new Map<AllocationAssetClass, number>();
     allocations.forEach((originalWeight, asset) => {
       const optimizedWeight = optimized.get(asset) || 0;
       blended.set(asset, 0.5 * optimizedWeight + 0.5 * originalWeight);
@@ -780,7 +780,7 @@ export class AssetAllocationEngine {
    * Calculate comprehensive portfolio metrics
    */
   private calculatePortfolioMetrics(
-    allocations: Map<AssetClass, number>,
+    allocations: Map<AllocationAssetClass, number>,
     characteristics: AssetClassCharacteristics[]
   ): PortfolioMetrics {
     const charMap = new Map(characteristics.map(c => [c.assetClass, c]));
@@ -864,7 +864,7 @@ export class AssetAllocationEngine {
    * Perform comprehensive risk analysis
    */
   private performRiskAnalysis(
-    allocations: Map<AssetClass, number>,
+    allocations: Map<AllocationAssetClass, number>,
     characteristics: AssetClassCharacteristics[],
     riskProfile: RiskProfile
   ): RiskAnalysis {
@@ -919,7 +919,7 @@ export class AssetAllocationEngine {
     const currencyRisk = (forexWeight + cryptoWeight) * 50;
 
     // Risk decomposition by asset class
-    const riskDecomposition = new Map<AssetClass, number>();
+    const riskDecomposition = new Map<AllocationAssetClass, number>();
     let totalRiskContribution = 0;
 
     allocations.forEach((weight, asset) => {
@@ -955,7 +955,7 @@ export class AssetAllocationEngine {
    * Calculate diversification metrics
    */
   private calculateDiversification(
-    allocations: Map<AssetClass, number>,
+    allocations: Map<AllocationAssetClass, number>,
     characteristics: AssetClassCharacteristics[]
   ): DiversificationMetrics {
     const charMap = new Map(characteristics.map(c => [c.assetClass, c]));
@@ -1060,8 +1060,8 @@ export class AssetAllocationEngine {
    * Generate rebalancing actions
    */
   private generateRebalancingActions(
-    currentPositions: Map<AssetClass, number>,
-    targetAllocations: Map<AssetClass, number>,
+    currentPositions: Map<AllocationAssetClass, number>,
+    targetAllocations: Map<AllocationAssetClass, number>,
     accountSize: number
   ): RebalancingAction[] {
     const actions: RebalancingAction[] = [];
@@ -1107,7 +1107,7 @@ export class AssetAllocationEngine {
    * Build detailed asset allocations
    */
   private buildAssetAllocations(
-    allocations: Map<AssetClass, number>,
+    allocations: Map<AllocationAssetClass, number>,
     accountSize: number,
     characteristics: AssetClassCharacteristics[],
     portfolioMetrics: PortfolioMetrics,
@@ -1163,7 +1163,7 @@ export class AssetAllocationEngine {
    * Generate rationale for asset allocation
    */
   private generateAllocationRationale(
-    asset: AssetClass,
+    asset: AllocationAssetClass,
     weight: number,
     characteristics: AssetClassCharacteristics | undefined,
     riskProfile: RiskProfile
@@ -1244,7 +1244,7 @@ export class AssetAllocationEngine {
    * Generate warnings based on allocation
    */
   private generateWarnings(
-    allocations: Map<AssetClass, number>,
+    allocations: Map<AllocationAssetClass, number>,
     riskAnalysis: RiskAnalysis,
     input: AllocationInput
   ): string[] {
