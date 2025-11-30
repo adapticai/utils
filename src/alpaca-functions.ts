@@ -1523,6 +1523,17 @@ export async function updateConfiguration(
       allocUpdatePromise
     ]);
 
+    console.log('=== PROMISE.ALL RESULTS ===');
+    console.log('updatedAllocation from Promise.all:', updatedAllocation);
+    console.log('updatedAllocation fields:', {
+      stocks: updatedAllocation?.stocks,
+      options: updatedAllocation?.options,
+      futures: updatedAllocation?.futures,
+      etfs: updatedAllocation?.etfs,
+      forex: updatedAllocation?.forex,
+      crypto: updatedAllocation?.crypto,
+    });
+
     if (!alpacaResponse.ok) {
       console.error('Failed to update account configuration at Alpaca:', alpacaResponse.statusText);
       throw new Error(`Failed to update account config at Alpaca: ${alpacaResponse.statusText}`);
@@ -1536,6 +1547,16 @@ export async function updateConfiguration(
     // Merge final data from Alpaca + local DB fields
     // Type assertion for fields that may not exist in backend-legacy yet
     const updatedAccountWithAllocation = updatedAlpacaAccount as any;
+
+    console.log('=== ALLOCATION SOURCES ===');
+    console.log('updatedAllocation (from allocation.update):', updatedAllocation);
+    console.log('updatedAccountWithAllocation.allocation (from alpacaAccount.update):', updatedAccountWithAllocation.allocation);
+    console.log('updatedConfig.allocation (original input):', updatedConfig.allocation);
+
+    const selectedAllocation = updatedAllocation || updatedAccountWithAllocation.allocation || updatedConfig.allocation;
+    console.log('=== SELECTED ALLOCATION (final) ===');
+    console.log('Selected allocation:', selectedAllocation);
+
     const finalConfig: AccountConfiguration = {
       ...alpacaData,
       marketOpen: updatedAlpacaAccount.marketOpen,
@@ -1549,7 +1570,7 @@ export async function updateConfiguration(
       cryptoTradingPairs: updatedAlpacaAccount.cryptoTradingPairs,
       cryptoTradeAllocationPct: updatedAlpacaAccount.cryptoTradeAllocationPct,
       autoAllocation: updatedAccountWithAllocation.autoAllocation,
-      allocation: updatedAllocation || updatedAccountWithAllocation.allocation || updatedConfig.allocation,
+      allocation: selectedAllocation,
 
       enablePortfolioTrailingStop: updatedAlpacaAccount.enablePortfolioTrailingStop,
       portfolioTrailPercent: updatedAlpacaAccount.portfolioTrailPercent,
