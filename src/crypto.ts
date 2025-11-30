@@ -1,4 +1,11 @@
-import type { CryptoBarsParams, CryptoBarsResponse, CryptoBar, AlpacaNewsArticle } from './types/alpaca-types.js';
+import type {
+  CryptoBarsParams,
+  CryptoBarsResponse,
+  CryptoBar,
+  AlpacaNewsArticle,
+  LatestTradesResponse,
+  LatestQuotesResponse
+} from './types/alpaca-types.js';
 import { logIfDebug } from './misc-utils.js';
 
 const ALPACA_API_BASE = 'https://data.alpaca.markets/v1beta3';
@@ -181,4 +188,128 @@ export async function fetchNews(
   }
 
   return newsArticles;
+}
+
+/**
+ * Fetches the latest trades for the specified cryptocurrency symbols.
+ * This function retrieves the most recent trade price and volume for each symbol.
+ *
+ * @param params - The parameters for fetching latest trades.
+ * @param params.symbols - An array of cryptocurrency symbols to fetch data for (e.g., ['BTC-USD', 'ETH-USD']).
+ * @param params.loc - The location identifier (default: 'us'). Options: 'us' (Alpaca US), 'us-1' (Kraken US), 'eu-1' (Kraken EU).
+ * @param auth - The Alpaca authentication object containing API key and secret.
+ * @returns A promise that resolves to an object containing the latest trade for each symbol.
+ * @throws Will throw an error if required parameters are missing or if fetching fails.
+ */
+export async function fetchLatestTrades(
+  params: {
+    symbols: string[];
+    loc?: string;
+  },
+  auth: AlpacaAuth
+): Promise<LatestTradesResponse> {
+  const { symbols, loc = 'us' } = params;
+
+  if (!auth.APIKey || !auth.APISecret) {
+    throw new Error('Alpaca API key and secret are required');
+  }
+  if (!symbols || symbols.length === 0) {
+    throw new Error('At least one symbol is required');
+  }
+
+  // Convert symbols array to comma-separated string
+  const symbolsParam = symbols.join(',');
+
+  const queryParams = new URLSearchParams({
+    symbols: symbolsParam,
+  });
+
+  const url = `${ALPACA_API_BASE}/crypto/${loc}/latest/trades?${queryParams}`;
+
+  logIfDebug(`Fetching crypto latest trades from: ${url}`);
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'APCA-API-KEY-ID': auth.APIKey,
+        'APCA-API-SECRET-KEY': auth.APISecret,
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Alpaca API error (${response.status}): ${errorText}`);
+    }
+
+    const data: LatestTradesResponse = await response.json();
+
+    logIfDebug(`Received latest trades for ${Object.keys(data.trades).length} symbols`);
+
+    return data;
+  } catch (error) {
+    logIfDebug(`Error fetching crypto latest trades: ${error}`);
+    throw error;
+  }
+}
+
+/**
+ * Fetches the latest quotes (bid/ask prices) for the specified cryptocurrency symbols.
+ * This function retrieves the most recent bid and ask prices for each symbol.
+ *
+ * @param params - The parameters for fetching latest quotes.
+ * @param params.symbols - An array of cryptocurrency symbols to fetch data for (e.g., ['BTC-USD', 'ETH-USD']).
+ * @param params.loc - The location identifier (default: 'us'). Options: 'us' (Alpaca US), 'us-1' (Kraken US), 'eu-1' (Kraken EU).
+ * @param auth - The Alpaca authentication object containing API key and secret.
+ * @returns A promise that resolves to an object containing the latest quote for each symbol.
+ * @throws Will throw an error if required parameters are missing or if fetching fails.
+ */
+export async function fetchLatestQuotes(
+  params: {
+    symbols: string[];
+    loc?: string;
+  },
+  auth: AlpacaAuth
+): Promise<LatestQuotesResponse> {
+  const { symbols, loc = 'us' } = params;
+
+  if (!auth.APIKey || !auth.APISecret) {
+    throw new Error('Alpaca API key and secret are required');
+  }
+  if (!symbols || symbols.length === 0) {
+    throw new Error('At least one symbol is required');
+  }
+
+  // Convert symbols array to comma-separated string
+  const symbolsParam = symbols.join(',');
+
+  const queryParams = new URLSearchParams({
+    symbols: symbolsParam,
+  });
+
+  const url = `${ALPACA_API_BASE}/crypto/${loc}/latest/quotes?${queryParams}`;
+
+  logIfDebug(`Fetching crypto latest quotes from: ${url}`);
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'APCA-API-KEY-ID': auth.APIKey,
+        'APCA-API-SECRET-KEY': auth.APISecret,
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Alpaca API error (${response.status}): ${errorText}`);
+    }
+
+    const data: LatestQuotesResponse = await response.json();
+
+    logIfDebug(`Received latest quotes for ${Object.keys(data.quotes).length} symbols`);
+
+    return data;
+  } catch (error) {
+    logIfDebug(`Error fetching crypto latest quotes: ${error}`);
+    throw error;
+  }
 }

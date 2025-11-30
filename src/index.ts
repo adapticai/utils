@@ -100,6 +100,8 @@ export const adaptic = {
   crypto: {
     fetchBars: crypto.fetchBars,
     fetchNews: crypto.fetchNews,
+    fetchLatestTrades: crypto.fetchLatestTrades,
+    fetchLatestQuotes: crypto.fetchLatestQuotes,
   },
   format: {
     capitalize: ft.capitalize,
