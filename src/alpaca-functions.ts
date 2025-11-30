@@ -1548,14 +1548,15 @@ export async function updateConfiguration(
     // Type assertion for fields that may not exist in backend-legacy yet
     const updatedAccountWithAllocation = updatedAlpacaAccount as any;
 
-    console.log('=== ALLOCATION SOURCES ===');
-    console.log('updatedAllocation (from allocation.update):', updatedAllocation);
-    console.log('updatedAccountWithAllocation.allocation (from alpacaAccount.update):', updatedAccountWithAllocation.allocation);
-    console.log('updatedConfig.allocation (original input):', updatedConfig.allocation);
+    // FIX: Use the validated input allocation instead of mutation response
+    // The mutation response may return stale/cached data, but we already validated
+    // and sent the correct values to the database, so use updatedConfig.allocation
+    const selectedAllocation = updatedConfig.allocation || updatedAllocation || updatedAccountWithAllocation.allocation;
 
-    const selectedAllocation = updatedAllocation || updatedAccountWithAllocation.allocation || updatedConfig.allocation;
-    console.log('=== SELECTED ALLOCATION (final) ===');
-    console.log('Selected allocation:', selectedAllocation);
+    console.log('=== ALLOCATION DEBUG (will be removed after fix verified) ===');
+    console.log('Using updatedConfig.allocation (validated input):', updatedConfig.allocation);
+    console.log('Ignoring potentially stale updatedAllocation:', updatedAllocation);
+    console.log('Final allocation:', selectedAllocation);
 
     const finalConfig: AccountConfiguration = {
       ...alpacaData,
