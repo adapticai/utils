@@ -1315,11 +1315,16 @@ export async function getConfiguration(account: types.AlpacaAccount): Promise<Ac
 
     const dataFromAlpaca = (await alpacaResponse.json()) as AccountConfiguration;
 
-    // Fetch allocation data if it exists
-    const allocationData = freshAlpacaAccount.allocation || {
+    // Fetch allocation data with expanded asset types and defaults
+    // Type assertion to handle fields that may not exist in backend-legacy yet
+    const accountWithAllocation = freshAlpacaAccount as any;
+    const allocationData = accountWithAllocation.allocation || {
       stocks: 70,
-      crypto: 30,
-      etfs: 10
+      options: 0,
+      futures: 0,
+      etfs: 10,
+      forex: 0,
+      crypto: 20
     };
 
     // Merge DB fields onto the returned object
@@ -1336,6 +1341,7 @@ export async function getConfiguration(account: types.AlpacaAccount): Promise<Ac
       cryptoTradingEnabled: freshAlpacaAccount.cryptoTradingEnabled ?? false,
       cryptoTradingPairs: freshAlpacaAccount.cryptoTradingPairs ?? [],
       cryptoTradeAllocationPct: freshAlpacaAccount.cryptoTradeAllocationPct ?? 5.0,
+      autoAllocation: accountWithAllocation.autoAllocation ?? false,
       allocation: allocationData,
 
       enablePortfolioTrailingStop: freshAlpacaAccount.enablePortfolioTrailingStop,
@@ -1398,6 +1404,7 @@ export async function updateConfiguration(
     delete configForAlpaca.cryptoTradingEnabled;
     delete configForAlpaca.cryptoTradingPairs;
     delete configForAlpaca.cryptoTradeAllocationPct;
+    delete configForAlpaca.autoAllocation;
     delete configForAlpaca.allocation;
 
     delete configForAlpaca.enablePortfolioTrailingStop;
@@ -1429,8 +1436,21 @@ export async function updateConfiguration(
     const client = await getSharedApolloClient();
 
     // Check if we need to update allocation
-    let allocUpdatePromise: Promise<types.Allocation | null> = Promise.resolve(null);
+    let allocUpdatePromise: Promise<any> = Promise.resolve(null);
     if (updatedConfig.allocation) {
+      // Validate allocation percentages sum to 100%
+      const totalAllocation =
+        (updatedConfig.allocation.stocks ?? 0) +
+        (updatedConfig.allocation.options ?? 0) +
+        (updatedConfig.allocation.futures ?? 0) +
+        (updatedConfig.allocation.etfs ?? 0) +
+        (updatedConfig.allocation.forex ?? 0) +
+        (updatedConfig.allocation.crypto ?? 0);
+
+      if (Math.abs(totalAllocation - 100) > 0.01) {
+        throw new Error(`Allocation percentages must sum to 100%. Current total: ${totalAllocation}%`);
+      }
+
       // If account already has an allocation, update it, otherwise create one
       if (account.allocation) {
         allocUpdatePromise = adaptic.allocation.update({
@@ -1439,24 +1459,31 @@ export async function updateConfiguration(
             id: account.id,
           },
           alpacaAccountId: account.id,
-          stocks: updatedConfig.allocation.stocks,
-          crypto: updatedConfig.allocation.crypto,
-          etfs: updatedConfig.allocation.etfs,
-        } as types.Allocation, client);
+          stocks: updatedConfig.allocation.stocks ?? 0,
+          options: updatedConfig.allocation.options ?? 0,
+          futures: updatedConfig.allocation.futures ?? 0,
+          etfs: updatedConfig.allocation.etfs ?? 0,
+          forex: updatedConfig.allocation.forex ?? 0,
+          crypto: updatedConfig.allocation.crypto ?? 0,
+        } as any, client);
       } else {
         allocUpdatePromise = adaptic.allocation.create({
-          stocks: updatedConfig.allocation.stocks,
-          crypto: updatedConfig.allocation.crypto,
-          etfs: updatedConfig.allocation.etfs,
+          stocks: updatedConfig.allocation.stocks ?? 0,
+          options: updatedConfig.allocation.options ?? 0,
+          futures: updatedConfig.allocation.futures ?? 0,
+          etfs: updatedConfig.allocation.etfs ?? 0,
+          forex: updatedConfig.allocation.forex ?? 0,
+          crypto: updatedConfig.allocation.crypto ?? 0,
           alpacaAccount: {
             id: account.id,
           },
           alpacaAccountId: account.id
-        } as types.Allocation, client);
+        } as any, client);
       }
     }
 
     // Meanwhile, update the DB-based fields in @adaptic/backend-legacy
+    // Use type assertion for fields that may not exist in backend-legacy yet
     const adapticUpdatePromise = adaptic.alpacaAccount.update({
       id: account.id,
       user: {
@@ -1474,6 +1501,7 @@ export async function updateConfiguration(
       cryptoTradingEnabled: updatedConfig.cryptoTradingEnabled,
       cryptoTradingPairs: updatedConfig.cryptoTradingPairs,
       cryptoTradeAllocationPct: updatedConfig.cryptoTradeAllocationPct,
+      autoAllocation: updatedConfig.autoAllocation,
 
       enablePortfolioTrailingStop: updatedConfig.enablePortfolioTrailingStop,
       portfolioTrailPercent: updatedConfig.portfolioTrailPercent,
@@ -1487,7 +1515,7 @@ export async function updateConfiguration(
       firstReducedTrailPercentage100: updatedConfig.firstReducedTrailPercentage100,
       secondReducedTrailPercentage100: updatedConfig.secondReducedTrailPercentage100,
       minimumPriceChangePercent100: updatedConfig.minimumPriceChangePercent100,
-    } as types.AlpacaAccount, client);
+    } as any, client);
 
     const [alpacaResponse, updatedAlpacaAccount, updatedAllocation] = await Promise.all([
       alpacaUpdatePromise,
@@ -1506,6 +1534,8 @@ export async function updateConfiguration(
     }
 
     // Merge final data from Alpaca + local DB fields
+    // Type assertion for fields that may not exist in backend-legacy yet
+    const updatedAccountWithAllocation = updatedAlpacaAccount as any;
     const finalConfig: AccountConfiguration = {
       ...alpacaData,
       marketOpen: updatedAlpacaAccount.marketOpen,
@@ -1518,7 +1548,8 @@ export async function updateConfiguration(
       cryptoTradingEnabled: updatedAlpacaAccount.cryptoTradingEnabled,
       cryptoTradingPairs: updatedAlpacaAccount.cryptoTradingPairs,
       cryptoTradeAllocationPct: updatedAlpacaAccount.cryptoTradeAllocationPct,
-      allocation: updatedAllocation || updatedAlpacaAccount.allocation || updatedConfig.allocation,
+      autoAllocation: updatedAccountWithAllocation.autoAllocation,
+      allocation: updatedAllocation || updatedAccountWithAllocation.allocation || updatedConfig.allocation,
 
       enablePortfolioTrailingStop: updatedAlpacaAccount.enablePortfolioTrailingStop,
       portfolioTrailPercent: updatedAlpacaAccount.portfolioTrailPercent,

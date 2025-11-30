@@ -27,6 +27,15 @@ export {
   type CacheLoader,
 } from './cache/stampede-protected-cache';
 
+// Asset Allocation utilities
+export {
+  AssetAllocationEngine,
+  generateOptimalAllocation,
+  getDefaultRiskProfile
+} from './asset-allocation-algorithm';
+
+export * from './types/asset-allocation-types';
+
 // Re-export all types
 export * from './types';
 

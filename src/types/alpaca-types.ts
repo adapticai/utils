@@ -27,9 +27,12 @@ export interface AlpacaAccountGetOptions {
  */
 
 export interface AllocationConfig {
-  stocks: number;
-  crypto: number;
-  etfs: number;
+  stocks?: number;
+  options?: number;
+  futures?: number;
+  etfs?: number;
+  forex?: number;
+  crypto?: number;
 }
 
 export interface AccountConfiguration {
@@ -49,6 +52,7 @@ export interface AccountConfiguration {
   cryptoTradeAllocationPct?: number;
 
   // Allocation Strategy
+  autoAllocation?: boolean;
   allocation?: AllocationConfig;
 
   // Regulatory & Safety Settings
