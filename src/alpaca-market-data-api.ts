@@ -1,5 +1,5 @@
-import { log as baseLog } from "./logging";
-import { LogOptions } from "./types/logging-types";
+import { log as baseLog } from './logging';
+import { LogOptions } from './types/logging-types';
 import {
   Bar,
   AlpacaQuote,
@@ -30,23 +30,26 @@ import {
   DataFeed,
   AlpacaStockStreamMessage,
   AlpacaOptionStreamMessage,
+  AlpacaCryptoStreamMessage,
   StockStreamEventName,
   OptionStreamEventName,
+  CryptoStreamEventName,
   StockStreamEventMap,
   OptionStreamEventMap,
-} from "./types/alpaca-types";
-import { getLastFullTradingDate } from "./market-time";
-import { EventEmitter } from "events";
-import WebSocket from "ws";
+  CryptoStreamEventMap,
+} from './types/alpaca-types';
+import { getLastFullTradingDate } from './market-time';
+import { EventEmitter } from 'events';
+import WebSocket from 'ws';
 
-const log = (message: string, options: LogOptions = { type: "info" }) => {
-  baseLog(message, { ...options, source: "AlpacaMarketDataAPI" });
+const log = (message: string, options: LogOptions = { type: 'info' }) => {
+  baseLog(message, { ...options, source: 'AlpacaMarketDataAPI' });
 };
 
 // Default settings for market data API
-const DEFAULT_ADJUSTMENT = "all" as const;
-const DEFAULT_FEED = "sip" as DataFeed;
-const DEFAULT_CURRENCY = "USD" as const;
+const DEFAULT_ADJUSTMENT = 'all' as const;
+const DEFAULT_FEED = 'sip' as DataFeed;
+const DEFAULT_CURRENCY = 'USD' as const;
 
 /**
  * Parameters for retrieving historical market data bars
@@ -88,7 +91,7 @@ export interface HistoricalBarsParams {
    * - asc: Oldest to newest (default)
    * - desc: Newest to oldest
    */
-  sort?: "asc" | "desc";
+  sort?: 'asc' | 'desc';
 }
 
 /**
@@ -127,6 +130,7 @@ export interface LatestBarsResponse {
   /** Currency of the price data in ISO 4217 format */
   currency: string;
 }
+
 
 /**
  * Response from last trade endpoint for a single symbol
@@ -167,62 +171,55 @@ export class AlpacaMarketDataAPI extends EventEmitter {
   private dataURL: string;
   private apiURL: string;
   private v1beta1url: string;
-  private stockStreamUrl: string = "wss://stream.data.alpaca.markets/v2/sip"; // production values
-  private optionStreamUrl: string =
-    "wss://stream.data.alpaca.markets/v1beta3/options"; // production values
+  private stockStreamUrl: string = 'wss://stream.data.alpaca.markets/v2/sip'; // production values
+  private optionStreamUrl: string = 'wss://stream.data.alpaca.markets/v1beta3/options'; // production values
+  private cryptoStreamUrl: string = 'wss://stream.data.alpaca.markets/v1beta3/crypto/us'; // production values
   private stockWs: WebSocket | null = null;
   private optionWs: WebSocket | null = null;
-  private stockSubscriptions: Record<string, string[]> = {
-    trades: [],
-    quotes: [],
-    bars: [],
-  };
-  private optionSubscriptions: Record<string, string[]> = {
-    trades: [],
-    quotes: [],
-    bars: [],
-  };
+  private cryptoWs: WebSocket | null = null;
+  private stockSubscriptions: Record<string, string[]> = { trades: [], quotes: [], bars: [] };
+  private optionSubscriptions: Record<string, string[]> = { trades: [], quotes: [], bars: [] };
+  private cryptoSubscriptions: Record<string, string[]> = { trades: [], quotes: [], bars: [] };
 
-  public setMode(mode: "sandbox" | "test" | "production" = "production"): void {
-    if (mode === "sandbox") {
-      // sandbox mode
-      this.stockStreamUrl = "wss://stream.data.sandbox.alpaca.markets/v2/sip";
-      this.optionStreamUrl =
-        "wss://stream.data.sandbox.alpaca.markets/v1beta3/options";
-    } else if (mode === "test") {
-      // test mode, can only use ticker FAKEPACA
-      this.stockStreamUrl = "wss://stream.data.alpaca.markets/v2/test";
-      this.optionStreamUrl = "wss://stream.data.alpaca.markets/v1beta3/options"; // there's no test mode for options
-    } else {
-      // production
-      this.stockStreamUrl = "wss://stream.data.alpaca.markets/v2/sip";
-      this.optionStreamUrl = "wss://stream.data.alpaca.markets/v1beta3/options";
+  public setMode(mode: 'sandbox' | 'test' | 'production' = 'production'): void {
+    if (mode === 'sandbox') { // sandbox mode
+      this.stockStreamUrl = 'wss://stream.data.sandbox.alpaca.markets/v2/sip';
+      this.optionStreamUrl = 'wss://stream.data.sandbox.alpaca.markets/v1beta3/options';
+      this.cryptoStreamUrl = 'wss://stream.data.sandbox.alpaca.markets/v1beta3/crypto/us';
+    } else if (mode === 'test') { // test mode, can only use ticker FAKEPACA
+      this.stockStreamUrl = 'wss://stream.data.alpaca.markets/v2/test';
+      this.optionStreamUrl = 'wss://stream.data.alpaca.markets/v1beta3/options'; // there's no test mode for options
+      this.cryptoStreamUrl = 'wss://stream.data.alpaca.markets/v1beta3/crypto/us'; // there's no test mode for crypto
+    } else { // production
+      this.stockStreamUrl = 'wss://stream.data.alpaca.markets/v2/sip';
+      this.optionStreamUrl = 'wss://stream.data.alpaca.markets/v1beta3/options';
+      this.cryptoStreamUrl = 'wss://stream.data.alpaca.markets/v1beta3/crypto/us';
     }
   }
 
-  public getMode(): "sandbox" | "test" | "production" {
-    if (this.stockStreamUrl.includes("sandbox")) {
-      return "sandbox";
-    } else if (this.stockStreamUrl.includes("test")) {
-      return "test";
+  public getMode(): 'sandbox' | 'test' | 'production' {
+    if (this.stockStreamUrl.includes('sandbox')) {
+      return 'sandbox';
+    } else if (this.stockStreamUrl.includes('test')) {
+      return 'test';
     } else {
-      return "production";
+      return 'production';
     }
   }
 
   private constructor() {
     super();
-    this.dataURL = "https://data.alpaca.markets/v2";
+    this.dataURL = 'https://data.alpaca.markets/v2';
     this.apiURL =
-      process.env.ALPACA_ACCOUNT_TYPE === "PAPER"
-        ? "https://paper-api.alpaca.markets/v2"
-        : "https://api.alpaca.markets/v2"; // used by some, e.g. getAssets
-    this.v1beta1url = "https://data.alpaca.markets/v1beta1"; // used for options endpoints
-    this.setMode("production"); // sets stockStreamUrl and optionStreamUrl
+      process.env.ALPACA_ACCOUNT_TYPE === 'PAPER'
+        ? 'https://paper-api.alpaca.markets/v2'
+        : 'https://api.alpaca.markets/v2'; // used by some, e.g. getAssets
+    this.v1beta1url = 'https://data.alpaca.markets/v1beta1'; // used for options endpoints
+    this.setMode('production'); // sets stockStreamUrl and optionStreamUrl
     this.headers = {
-      "APCA-API-KEY-ID": process.env.ALPACA_API_KEY!,
-      "APCA-API-SECRET-KEY": process.env.ALPACA_SECRET_KEY!,
-      "Content-Type": "application/json",
+      'APCA-API-KEY-ID': process.env.ALPACA_API_KEY!,
+      'APCA-API-SECRET-KEY': process.env.ALPACA_SECRET_KEY!,
+      'Content-Type': 'application/json',
     };
   }
 
@@ -234,96 +231,97 @@ export class AlpacaMarketDataAPI extends EventEmitter {
   }
 
   // Type-safe event emitter methods
-  public on<K extends StockStreamEventName>(
-    event: K,
-    listener: (data: StockStreamEventMap[K]) => void,
-  ): this;
-  public on<K extends OptionStreamEventName>(
-    event: K,
-    listener: (data: OptionStreamEventMap[K]) => void,
-  ): this;
-  public on(event: string | symbol, listener: (...args: any[]) => void): this {
+  public on<K extends StockStreamEventName>(event: K, listener: (data: StockStreamEventMap[K]) => void): this;
+  public on<K extends OptionStreamEventName>(event: K, listener: (data: OptionStreamEventMap[K]) => void): this;
+  public on<K extends CryptoStreamEventName>(event: K, listener: (data: CryptoStreamEventMap[K]) => void): this;
+  public on(event: string | symbol, listener: (...args: unknown[]) => void): this {
     return super.on(event, listener);
   }
 
-  public emit<K extends StockStreamEventName>(
-    event: K,
-    data: StockStreamEventMap[K],
-  ): boolean;
-  public emit<K extends OptionStreamEventName>(
-    event: K,
-    data: OptionStreamEventMap[K],
-  ): boolean;
-  public emit(event: string | symbol, ...args: any[]): boolean {
+  public emit<K extends StockStreamEventName>(event: K, data: StockStreamEventMap[K]): boolean;
+  public emit<K extends OptionStreamEventName>(event: K, data: OptionStreamEventMap[K]): boolean;
+  public emit<K extends CryptoStreamEventName>(event: K, data: CryptoStreamEventMap[K]): boolean;
+  public emit(event: string | symbol, ...args: unknown[]): boolean {
     return super.emit(event, ...args);
   }
 
-  private connect(streamType: "stock" | "option"): void {
-    const url =
-      streamType === "stock" ? this.stockStreamUrl : this.optionStreamUrl;
-    const ws = new WebSocket(url);
-    if (streamType === "stock") {
-      this.stockWs = ws;
+  private connect(streamType: 'stock' | 'option' | 'crypto'): void {
+    let url: string;
+    if (streamType === 'stock') {
+      url = this.stockStreamUrl;
+    } else if (streamType === 'option') {
+      url = this.optionStreamUrl;
     } else {
-      this.optionWs = ws;
+      url = this.cryptoStreamUrl;
     }
 
-    ws.on("open", () => {
-      log(`${streamType} stream connected`, { type: "info" });
+    const ws = new WebSocket(url);
+    if (streamType === 'stock') {
+      this.stockWs = ws;
+    } else if (streamType === 'option') {
+      this.optionWs = ws;
+    } else {
+      this.cryptoWs = ws;
+    }
+
+    ws.on('open', () => {
+      log(`${streamType} stream connected`, { type: 'info' });
       const authMessage = {
-        action: "auth",
+        action: 'auth',
         key: process.env.ALPACA_API_KEY!,
         secret: process.env.ALPACA_SECRET_KEY!,
       };
       ws.send(JSON.stringify(authMessage));
     });
 
-    ws.on("message", (data: WebSocket.Data) => {
-      //log(`RAW MESSASGE: ${data.toString()}`);
+    ws.on('message', (data: WebSocket.Data) => {
       const messages = JSON.parse(data.toString());
       for (const message of messages) {
-        if (message.T === "success" && message.msg === "authenticated") {
-          log(`${streamType} stream authenticated`, { type: "info" });
+        if (message.T === 'success' && message.msg === 'authenticated') {
+          log(`${streamType} stream authenticated`, { type: 'info' });
           this.sendSubscription(streamType);
-        } else if (message.T === "error") {
-          log(`${streamType} stream error: ${message.msg}`, { type: "error" });
+        } else if (message.T === 'error') {
+          log(`${streamType} stream error: ${message.msg} (code: ${message.code})`, { type: 'error' });
         } else if (message.S) {
           super.emit(`${streamType}-${message.T}`, message);
-          super.emit(
-            `${streamType}-data`,
-            message as AlpacaStockStreamMessage | AlpacaOptionStreamMessage,
-          );
+          super.emit(`${streamType}-data`, message as AlpacaStockStreamMessage | AlpacaOptionStreamMessage | AlpacaCryptoStreamMessage);
         }
       }
     });
 
-    ws.on("close", () => {
-      log(`${streamType} stream disconnected`, { type: "warn" });
-      if (streamType === "stock") {
+    ws.on('close', () => {
+      log(`${streamType} stream disconnected`, { type: 'warn' });
+      if (streamType === 'stock') {
         this.stockWs = null;
-      } else {
+      } else if (streamType === 'option') {
         this.optionWs = null;
+      } else {
+        this.cryptoWs = null;
       }
       // Optional: implement reconnect logic
     });
 
-    ws.on("error", (error: Error) => {
-      log(`${streamType} stream error: ${error.message}`, { type: "error" });
+    ws.on('error', (error: Error) => {
+      log(`${streamType} stream error: ${error.message}`, { type: 'error' });
     });
   }
 
-  private sendSubscription(streamType: "stock" | "option"): void {
-    const ws = streamType === "stock" ? this.stockWs : this.optionWs;
-    const subscriptions =
-      streamType === "stock"
-        ? this.stockSubscriptions
-        : this.optionSubscriptions;
+  private sendSubscription(streamType: 'stock' | 'option' | 'crypto'): void {
+    let ws: WebSocket | null;
+    let subscriptions: Record<string, string[]>;
+
+    if (streamType === 'stock') {
+      ws = this.stockWs;
+      subscriptions = this.stockSubscriptions;
+    } else if (streamType === 'option') {
+      ws = this.optionWs;
+      subscriptions = this.optionSubscriptions;
+    } else {
+      ws = this.cryptoWs;
+      subscriptions = this.cryptoSubscriptions;
+    }
     if (ws && ws.readyState === WebSocket.OPEN) {
-      const subMessagePayload: {
-        trades?: string[];
-        quotes?: string[];
-        bars?: string[];
-      } = {};
+      const subMessagePayload: { trades?: string[]; quotes?: string[]; bars?: string[] } = {};
 
       if (subscriptions.trades.length > 0) {
         subMessagePayload.trades = subscriptions.trades;
@@ -337,7 +335,7 @@ export class AlpacaMarketDataAPI extends EventEmitter {
 
       if (Object.keys(subMessagePayload).length > 0) {
         const subMessage = {
-          action: "subscribe",
+          action: 'subscribe',
           ...subMessagePayload,
         };
         ws.send(JSON.stringify(subMessage));
@@ -347,13 +345,19 @@ export class AlpacaMarketDataAPI extends EventEmitter {
 
   public connectStockStream(): void {
     if (!this.stockWs) {
-      this.connect("stock");
+      this.connect('stock');
     }
   }
 
   public connectOptionStream(): void {
     if (!this.optionWs) {
-      this.connect("option");
+      this.connect('option');
+    }
+  }
+
+  public connectCryptoStream(): void {
+    if (!this.cryptoWs) {
+      this.connect('crypto');
     }
   }
 
@@ -369,70 +373,94 @@ export class AlpacaMarketDataAPI extends EventEmitter {
     }
   }
 
-  public subscribe(
-    streamType: "stock" | "option",
-    subscriptions: { trades?: string[]; quotes?: string[]; bars?: string[] },
-  ): void {
-    const currentSubscriptions =
-      streamType === "stock"
-        ? this.stockSubscriptions
-        : this.optionSubscriptions;
+  public disconnectCryptoStream(): void {
+    if (this.cryptoWs) {
+      this.cryptoWs.close();
+    }
+  }
+
+  /**
+   * Check if a specific stream is connected
+   * @param streamType - The type of stream to check
+   * @returns True if the stream is connected
+   */
+  public isStreamConnected(streamType: 'stock' | 'option' | 'crypto'): boolean {
+    if (streamType === 'stock') {
+      return this.stockWs !== null && this.stockWs.readyState === WebSocket.OPEN;
+    } else if (streamType === 'option') {
+      return this.optionWs !== null && this.optionWs.readyState === WebSocket.OPEN;
+    } else {
+      return this.cryptoWs !== null && this.cryptoWs.readyState === WebSocket.OPEN;
+    }
+  }
+
+  public subscribe(streamType: 'stock' | 'option' | 'crypto', subscriptions: { trades?: string[]; quotes?: string[]; bars?: string[] }): void {
+    let currentSubscriptions: Record<string, string[]>;
+    if (streamType === 'stock') {
+      currentSubscriptions = this.stockSubscriptions;
+    } else if (streamType === 'option') {
+      currentSubscriptions = this.optionSubscriptions;
+    } else {
+      currentSubscriptions = this.cryptoSubscriptions;
+    }
+
     Object.entries(subscriptions).forEach(([key, value]) => {
       if (value) {
-        currentSubscriptions[key] = [
-          ...new Set([...(currentSubscriptions[key] || []), ...value]),
-        ];
+        currentSubscriptions[key] = [...new Set([...(currentSubscriptions[key] || []), ...value])];
       }
     });
 
     this.sendSubscription(streamType);
   }
 
-  public unsubscribe(
-    streamType: "stock" | "option",
-    subscriptions: { trades?: string[]; quotes?: string[]; bars?: string[] },
-  ): void {
-    const currentSubscriptions =
-      streamType === "stock"
-        ? this.stockSubscriptions
-        : this.optionSubscriptions;
+  public unsubscribe(streamType: 'stock' | 'option' | 'crypto', subscriptions: { trades?: string[]; quotes?: string[]; bars?: string[] }): void {
+    let currentSubscriptions: Record<string, string[]>;
+    if (streamType === 'stock') {
+      currentSubscriptions = this.stockSubscriptions;
+    } else if (streamType === 'option') {
+      currentSubscriptions = this.optionSubscriptions;
+    } else {
+      currentSubscriptions = this.cryptoSubscriptions;
+    }
+
     Object.entries(subscriptions).forEach(([key, value]) => {
       if (value) {
-        currentSubscriptions[key] = (currentSubscriptions[key] || []).filter(
-          (s) => !value.includes(s),
-        );
+        currentSubscriptions[key] = (currentSubscriptions[key] || []).filter(s => !value.includes(s));
       }
     });
     const unsubMessage = {
-      action: "unsubscribe",
-      ...subscriptions,
+        action: 'unsubscribe',
+        ...subscriptions,
     };
 
-    const ws = streamType === "stock" ? this.stockWs : this.optionWs;
+    let ws: WebSocket | null;
+    if (streamType === 'stock') {
+      ws = this.stockWs;
+    } else if (streamType === 'option') {
+      ws = this.optionWs;
+    } else {
+      ws = this.cryptoWs;
+    }
+
     if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify(unsubMessage));
+        ws.send(JSON.stringify(unsubMessage));
     }
   }
 
   private async makeRequest(
     endpoint: string,
-    method: string = "GET",
+    method: string = 'GET',
     params?: Record<string, any>,
-    baseUrlName: "data" | "api" | "v1beta1" = "data",
+    baseUrlName: 'data' | 'api' | 'v1beta1' = 'data',
   ): Promise<any> {
-    const baseUrl =
-      baseUrlName === "data"
-        ? this.dataURL
-        : baseUrlName === "api"
-          ? this.apiURL
-          : this.v1beta1url;
+    const baseUrl = baseUrlName === 'data' ? this.dataURL : baseUrlName === 'api' ? this.apiURL : this.v1beta1url;
     const url = new URL(`${baseUrl}${endpoint}`);
-
+    
     try {
       if (params) {
         Object.entries(params).forEach(([key, value]) => {
           if (Array.isArray(value)) {
-            url.searchParams.append(key, value.join(","));
+            url.searchParams.append(key, value.join(','));
           } else if (value !== undefined) {
             url.searchParams.append(key, value.toString());
           }
@@ -446,24 +474,17 @@ export class AlpacaMarketDataAPI extends EventEmitter {
 
       if (!response.ok) {
         const errorText = await response.text();
-        log(`Market Data API error (${response.status}): ${errorText}`, {
-          type: "error",
-        });
-        throw new Error(
-          `Market Data API error (${response.status}): ${errorText}`,
-        );
+        log(`Market Data API error (${response.status}): ${errorText}`, { type: 'error' });
+        throw new Error(`Market Data API error (${response.status}): ${errorText}`);
       }
 
       const data = await response.json();
       return data;
     } catch (err) {
       const error = err as Error;
-      log(
-        `Error in makeRequest: ${error.message}. Endpoint: ${endpoint}. Url: ${url.toString()}`,
-        { type: "error" },
-      );
+      log(`Error in makeRequest: ${error.message}. Endpoint: ${endpoint}. Url: ${url.toString()}`, { type: 'error' });
       if (error instanceof TypeError) {
-        log(`Network error details: ${error.stack}`, { type: "error" });
+        log(`Network error details: ${error.stack}`, { type: 'error' });
       }
       throw error;
     }
@@ -475,29 +496,24 @@ export class AlpacaMarketDataAPI extends EventEmitter {
    * @param params Parameters for historical bars request
    * @returns Historical bars data with all pages combined
    */
-  async getHistoricalBars(
-    params: HistoricalBarsParams,
-  ): Promise<HistoricalBarsResponse> {
+  async getHistoricalBars(params: HistoricalBarsParams): Promise<HistoricalBarsResponse> {
     const symbols = params.symbols;
-    const symbolsStr = symbols.join(",");
+    const symbolsStr = symbols.join(',');
     let allBars: { [symbol: string]: Bar[] } = {};
     let pageToken: string | null = null;
     let hasMorePages = true;
     let totalBarsCount = 0;
     let pageCount = 0;
-    let currency = "";
-
+    let currency = '';
+    
     // Initialize bar arrays for each symbol
-    symbols.forEach((symbol) => {
+    symbols.forEach(symbol => {
       allBars[symbol] = [];
     });
 
-    log(
-      `Starting historical bars fetch for ${symbolsStr} (${params.timeframe}, ${params.start || "no start"} to ${params.end || "no end"})`,
-      {
-        type: "info",
-      },
-    );
+    log(`Starting historical bars fetch for ${symbolsStr} (${params.timeframe}, ${params.start || 'no start'} to ${params.end || 'no end'})`, {
+      type: 'info'
+    });
 
     while (hasMorePages) {
       pageCount++;
@@ -508,16 +524,10 @@ export class AlpacaMarketDataAPI extends EventEmitter {
         ...(pageToken && { page_token: pageToken }),
       };
 
-      const response: HistoricalBarsResponse = await this.makeRequest(
-        "/stocks/bars",
-        "GET",
-        requestParams,
-      );
-
+      const response: HistoricalBarsResponse = await this.makeRequest('/stocks/bars', 'GET', requestParams);
+      
       if (!response.bars) {
-        log(`No bars data found in response for ${symbolsStr}`, {
-          type: "warn",
-        });
+        log(`No bars data found in response for ${symbolsStr}`, { type: 'warn' });
         break;
       }
 
@@ -535,9 +545,9 @@ export class AlpacaMarketDataAPI extends EventEmitter {
         if (bars && bars.length > 0) {
           allBars[symbol] = [...allBars[symbol], ...bars];
           pageBarsCount += bars.length;
-
+          
           // Track date range for this page
-          bars.forEach((bar) => {
+          bars.forEach(bar => {
             const barDate = new Date(bar.t);
             if (!earliestTimestamp || barDate < earliestTimestamp) {
               earliestTimestamp = barDate;
@@ -554,38 +564,26 @@ export class AlpacaMarketDataAPI extends EventEmitter {
       hasMorePages = !!pageToken;
 
       // Enhanced logging with date range and progress info
-      const dateRangeStr =
-        earliestTimestamp && latestTimestamp
-          ? `${(earliestTimestamp as Date).toLocaleDateString("en-US", { timeZone: "America/New_York" })} to ${(latestTimestamp as Date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}`
-          : "unknown range";
-
-      log(
-        `Page ${pageCount}: Fetched ${pageBarsCount.toLocaleString()} bars (total: ${totalBarsCount.toLocaleString()}) for ${symbolsStr}, date range: ${dateRangeStr}${hasMorePages ? ", more pages available" : ", complete"}`,
-        {
-          type: "info",
-        },
-      );
+      const dateRangeStr = earliestTimestamp && latestTimestamp 
+        ? `${(earliestTimestamp as Date).toLocaleDateString('en-US', { timeZone: 'America/New_York' })} to ${(latestTimestamp as Date).toLocaleDateString('en-US', { timeZone: 'America/New_York' })}`
+        : 'unknown range';
+      
+      log(`Page ${pageCount}: Fetched ${pageBarsCount.toLocaleString()} bars (total: ${totalBarsCount.toLocaleString()}) for ${symbolsStr}, date range: ${dateRangeStr}${hasMorePages ? ', more pages available' : ', complete'}`, {
+        type: 'info'
+      });
 
       // Prevent infinite loops
       if (pageCount > 1000) {
-        log(
-          `Stopping pagination after ${pageCount} pages to prevent infinite loop`,
-          { type: "warn" },
-        );
+        log(`Stopping pagination after ${pageCount} pages to prevent infinite loop`, { type: 'warn' });
         break;
       }
     }
 
     // Final summary
-    const symbolCounts = Object.entries(allBars)
-      .map(([symbol, bars]) => `${symbol}: ${bars.length}`)
-      .join(", ");
-    log(
-      `Historical bars fetch complete: ${totalBarsCount.toLocaleString()} total bars across ${pageCount} pages (${symbolCounts})`,
-      {
-        type: "info",
-      },
-    );
+    const symbolCounts = Object.entries(allBars).map(([symbol, bars]) => `${symbol}: ${bars.length}`).join(', ');
+    log(`Historical bars fetch complete: ${totalBarsCount.toLocaleString()} total bars across ${pageCount} pages (${symbolCounts})`, {
+      type: 'info'
+    });
 
     return {
       bars: allBars,
@@ -601,11 +599,8 @@ export class AlpacaMarketDataAPI extends EventEmitter {
    * @returns Latest bar data for each symbol
    
    */
-  async getLatestBars(
-    symbols: string[],
-    currency?: string,
-  ): Promise<LatestBarsResponse> {
-    return this.makeRequest("/stocks/bars/latest", "GET", {
+  async getLatestBars(symbols: string[], currency?: string): Promise<LatestBarsResponse> {
+    return this.makeRequest('/stocks/bars/latest', 'GET', {
       symbols,
       feed: DEFAULT_FEED,
       currency: currency || DEFAULT_CURRENCY,
@@ -618,7 +613,7 @@ export class AlpacaMarketDataAPI extends EventEmitter {
    * @returns Last trade details including price, size, exchange, and conditions
    */
   async getLastTrade(symbol: string): Promise<LastTradeResponse> {
-    return this.makeRequest(`/v1/last/stocks/${symbol}`, "GET");
+    return this.makeRequest(`/v1/last/stocks/${symbol}`, 'GET');
   }
 
   /**
@@ -629,12 +624,8 @@ export class AlpacaMarketDataAPI extends EventEmitter {
    * @returns Latest trade data for each symbol
    
    */
-  async getLatestTrades(
-    symbols: string[],
-    feed?: DataFeed,
-    currency?: string,
-  ): Promise<LatestTradesResponse> {
-    return this.makeRequest("/stocks/trades/latest", "GET", {
+  async getLatestTrades(symbols: string[], feed?: DataFeed, currency?: string): Promise<LatestTradesResponse> {
+    return this.makeRequest('/stocks/trades/latest', 'GET', {
       symbols,
       feed: feed || DEFAULT_FEED,
       currency: currency || DEFAULT_CURRENCY,
@@ -648,23 +639,17 @@ export class AlpacaMarketDataAPI extends EventEmitter {
    * @param currency Optional currency in ISO 4217 format
    * @returns Latest quote data for each symbol
    */
-  async getLatestQuotes(
-    symbols: string[],
-    feed?: DataFeed,
-    currency?: string,
-  ): Promise<LatestQuotesResponse> {
+  async getLatestQuotes(symbols: string[], feed?: DataFeed, currency?: string): Promise<LatestQuotesResponse> {
     // Return empty response if symbols array is empty to avoid API error
     if (!symbols || symbols.length === 0) {
-      log("No symbols provided to getLatestQuotes, returning empty response", {
-        type: "warn",
-      });
+      log('No symbols provided to getLatestQuotes, returning empty response', { type: 'warn' });
       return {
         quotes: {},
         currency: currency || DEFAULT_CURRENCY,
       };
     }
 
-    return this.makeRequest("/stocks/quotes/latest", "GET", {
+    return this.makeRequest('/stocks/quotes/latest', 'GET', {
       symbols,
       feed: feed || DEFAULT_FEED,
       currency: currency || DEFAULT_CURRENCY,
@@ -681,9 +666,9 @@ export class AlpacaMarketDataAPI extends EventEmitter {
   async getLatestQuote(
     symbol: string,
     feed?: DataFeed,
-    currency?: string,
+    currency?: string
   ): Promise<{ quote: AlpacaQuote; symbol: string; currency: string }> {
-    return this.makeRequest(`/stocks/${symbol}/quotes/latest`, "GET", {
+    return this.makeRequest(`/stocks/${symbol}/quotes/latest`, 'GET', {
       feed: feed || DEFAULT_FEED,
       currency,
     });
@@ -695,26 +680,20 @@ export class AlpacaMarketDataAPI extends EventEmitter {
    * @param referenceDate Optional reference date to get the previous close for
    * @returns Previous day's closing price data
    */
-  async getPreviousClose(
-    symbol: string,
-    referenceDate?: Date,
-  ): Promise<Bar | null> {
+  async getPreviousClose(symbol: string, referenceDate?: Date): Promise<Bar | null> {
     const date = referenceDate || new Date();
     const prevMarketDate = getLastFullTradingDate(date);
 
     const response = await this.getHistoricalBars({
       symbols: [symbol],
-      timeframe: "1Day",
+      timeframe: '1Day',
       start: prevMarketDate.date.toISOString(),
       end: prevMarketDate.date.toISOString(),
       limit: 1,
     });
 
     if (!response.bars[symbol] || response.bars[symbol].length === 0) {
-      log(`No previous close data available for ${symbol}`, {
-        type: "error",
-        symbol,
-      });
+      log(`No previous close data available for ${symbol}`, { type: 'error', symbol });
       return null;
     }
 
@@ -728,14 +707,10 @@ export class AlpacaMarketDataAPI extends EventEmitter {
    * @param end End time in milliseconds
    * @returns Array of hourly price bars
    */
-  async getHourlyPrices(
-    symbol: string,
-    start: number,
-    end: number,
-  ): Promise<Bar[]> {
+  async getHourlyPrices(symbol: string, start: number, end: number): Promise<Bar[]> {
     const response = await this.getHistoricalBars({
       symbols: [symbol],
-      timeframe: "1Hour",
+      timeframe: '1Hour',
       start: new Date(start).toISOString(),
       end: new Date(end).toISOString(),
       limit: 96, // Last 96 hours (4 days)
@@ -751,14 +726,10 @@ export class AlpacaMarketDataAPI extends EventEmitter {
    * @param end End time in milliseconds
    * @returns Array of half-hourly price bars
    */
-  async getHalfHourlyPrices(
-    symbol: string,
-    start: number,
-    end: number,
-  ): Promise<Bar[]> {
+  async getHalfHourlyPrices(symbol: string, start: number, end: number): Promise<Bar[]> {
     const response = await this.getHistoricalBars({
       symbols: [symbol],
-      timeframe: "30Min",
+      timeframe: '30Min',
       start: new Date(start).toISOString(),
       end: new Date(end).toISOString(),
       limit: 16 * 2 * 4, // last 4 days, 16 hours per day, 2 bars per hour
@@ -774,14 +745,10 @@ export class AlpacaMarketDataAPI extends EventEmitter {
    * @param end End time in milliseconds
    * @returns Array of daily price bars
    */
-  async getDailyPrices(
-    symbol: string,
-    start: number,
-    end: number,
-  ): Promise<Bar[]> {
+  async getDailyPrices(symbol: string, start: number, end: number): Promise<Bar[]> {
     const response = await this.getHistoricalBars({
       symbols: [symbol],
-      timeframe: "1Day",
+      timeframe: '1Day',
       start: new Date(start).toISOString(),
       end: new Date(end).toISOString(),
       limit: 100, // Last 100 days
@@ -798,12 +765,7 @@ export class AlpacaMarketDataAPI extends EventEmitter {
    * @param end End time in milliseconds
    * @returns Array of intraday price bars
    */
-  async getIntradayPrices(
-    symbol: string,
-    minutePeriod: number,
-    start: number,
-    end: number,
-  ): Promise<Bar[]> {
+  async getIntradayPrices(symbol: string, minutePeriod: number, start: number, end: number): Promise<Bar[]> {
     const timeframe = `${minutePeriod}Min` as TimeFrame;
     const response = await this.getHistoricalBars({
       symbols: [symbol],
@@ -822,7 +784,7 @@ export class AlpacaMarketDataAPI extends EventEmitter {
    */
   static analyzeBars(bars: Bar[]): string {
     if (!bars || bars.length === 0) {
-      return "No price data available";
+      return 'No price data available';
     }
 
     const firstBar = bars[0];
@@ -852,12 +814,9 @@ export class AlpacaMarketDataAPI extends EventEmitter {
    * @returns Array of AlpacaAsset objects
    * @see https://docs.alpaca.markets/reference/get-v2-assets-1
    */
-  async getAssets(params?: {
-    status?: string;
-    asset_class?: string;
-  }): Promise<AlpacaAsset[]> {
+  async getAssets(params?: { status?: string; asset_class?: string }): Promise<AlpacaAsset[]> {
     // Endpoint: GET /v2/assets
-    return this.makeRequest("/assets", "GET", params, "api"); // use apiURL
+    return this.makeRequest('/assets', 'GET', params, 'api'); // use apiURL
   }
 
   /**
@@ -868,12 +827,7 @@ export class AlpacaMarketDataAPI extends EventEmitter {
    */
   async getAsset(symbolOrAssetId: string): Promise<AlpacaAsset> {
     // Endpoint: GET /v2/assets/{symbol_or_asset_id}
-    return this.makeRequest(
-      `/assets/${encodeURIComponent(symbolOrAssetId)}`,
-      "GET",
-      undefined,
-      "api",
-    );
+    return this.makeRequest(`/assets/${encodeURIComponent(symbolOrAssetId)}`, 'GET', undefined, 'api');
   }
 
   // ===== OPTIONS MARKET DATA METHODS =====
@@ -885,15 +839,13 @@ export class AlpacaMarketDataAPI extends EventEmitter {
    * @returns Options chain data with snapshots for each contract
    * @see https://docs.alpaca.markets/reference/optionchain
    */
-  async getOptionsChain(
-    params: OptionsChainParams,
-  ): Promise<OptionsChainResponse> {
+  async getOptionsChain(params: OptionsChainParams): Promise<OptionsChainResponse> {
     const { underlying_symbol, ...queryParams } = params;
     return this.makeRequest(
       `/options/snapshots/${encodeURIComponent(underlying_symbol)}`,
-      "GET",
+      'GET',
       queryParams,
-      "v1beta1",
+      'v1beta1'
     );
   }
 
@@ -904,17 +856,10 @@ export class AlpacaMarketDataAPI extends EventEmitter {
    
    * @see https://docs.alpaca.markets/reference/optionlatesttrades
    */
-  async getLatestOptionsTrades(
-    params: LatestOptionsTradesParams,
-  ): Promise<LatestOptionsTradesResponse> {
+  async getLatestOptionsTrades(params: LatestOptionsTradesParams): Promise<LatestOptionsTradesResponse> {
     // Remove limit and page_token as they're not supported by this endpoint
     const { limit, page_token, ...requestParams } = params;
-    return this.makeRequest(
-      "/options/trades/latest",
-      "GET",
-      requestParams,
-      "v1beta1",
-    );
+    return this.makeRequest('/options/trades/latest', 'GET', requestParams, 'v1beta1');
   }
 
   /**
@@ -924,17 +869,10 @@ export class AlpacaMarketDataAPI extends EventEmitter {
    
    * @see https://docs.alpaca.markets/reference/optionlatestquotes
    */
-  async getLatestOptionsQuotes(
-    params: LatestOptionsQuotesParams,
-  ): Promise<LatestOptionsQuotesResponse> {
+  async getLatestOptionsQuotes(params: LatestOptionsQuotesParams): Promise<LatestOptionsQuotesResponse> {
     // Remove limit and page_token as they're not supported by this endpoint
     const { limit, page_token, ...requestParams } = params;
-    return this.makeRequest(
-      "/options/quotes/latest",
-      "GET",
-      requestParams,
-      "v1beta1",
-    );
+    return this.makeRequest('/options/quotes/latest', 'GET', requestParams, 'v1beta1');
   }
 
   /**
@@ -945,28 +883,23 @@ export class AlpacaMarketDataAPI extends EventEmitter {
    
    * @see https://docs.alpaca.markets/reference/optionbars
    */
-  async getHistoricalOptionsBars(
-    params: HistoricalOptionsBarsParams,
-  ): Promise<HistoricalOptionsBarsResponse> {
+  async getHistoricalOptionsBars(params: HistoricalOptionsBarsParams): Promise<HistoricalOptionsBarsResponse> {
     const symbols = params.symbols;
-    const symbolsStr = symbols.join(",");
+    const symbolsStr = symbols.join(',');
     let allBars: { [symbol: string]: OptionBar[] } = {};
     let pageToken: string | null = null;
     let hasMorePages = true;
     let totalBarsCount = 0;
     let pageCount = 0;
-
+    
     // Initialize bar arrays for each symbol
-    symbols.forEach((symbol) => {
+    symbols.forEach(symbol => {
       allBars[symbol] = [];
     });
 
-    log(
-      `Starting historical options bars fetch for ${symbolsStr} (${params.timeframe}, ${params.start || "no start"} to ${params.end || "no end"})`,
-      {
-        type: "info",
-      },
-    );
+    log(`Starting historical options bars fetch for ${symbolsStr} (${params.timeframe}, ${params.start || 'no start'} to ${params.end || 'no end'})`, {
+      type: 'info'
+    });
 
     while (hasMorePages) {
       pageCount++;
@@ -975,17 +908,10 @@ export class AlpacaMarketDataAPI extends EventEmitter {
         ...(pageToken && { page_token: pageToken }),
       };
 
-      const response: HistoricalOptionsBarsResponse = await this.makeRequest(
-        "/options/bars",
-        "GET",
-        requestParams,
-        "v1beta1",
-      );
-
+      const response: HistoricalOptionsBarsResponse = await this.makeRequest('/options/bars', 'GET', requestParams, 'v1beta1');
+      
       if (!response.bars) {
-        log(`No options bars data found in response for ${symbolsStr}`, {
-          type: "warn",
-        });
+        log(`No options bars data found in response for ${symbolsStr}`, { type: 'warn' });
         break;
       }
 
@@ -998,9 +924,9 @@ export class AlpacaMarketDataAPI extends EventEmitter {
         if (bars && bars.length > 0) {
           allBars[symbol] = [...allBars[symbol], ...bars];
           pageBarsCount += bars.length;
-
+          
           // Track date range for this page
-          bars.forEach((bar) => {
+          bars.forEach(bar => {
             const barDate = new Date(bar.t);
             if (!earliestTimestamp || barDate < earliestTimestamp) {
               earliestTimestamp = barDate;
@@ -1017,38 +943,26 @@ export class AlpacaMarketDataAPI extends EventEmitter {
       hasMorePages = !!pageToken;
 
       // Enhanced logging with date range and progress info
-      const dateRangeStr =
-        earliestTimestamp && latestTimestamp
-          ? `${(earliestTimestamp as Date).toLocaleDateString("en-US", { timeZone: "America/New_York" })} to ${(latestTimestamp as Date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}`
-          : "unknown range";
-
-      log(
-        `Page ${pageCount}: Fetched ${pageBarsCount.toLocaleString()} option bars (total: ${totalBarsCount.toLocaleString()}) for ${symbolsStr}, date range: ${dateRangeStr}${hasMorePages ? ", more pages available" : ", complete"}`,
-        {
-          type: "info",
-        },
-      );
+      const dateRangeStr = earliestTimestamp && latestTimestamp 
+        ? `${(earliestTimestamp as Date).toLocaleDateString('en-US', { timeZone: 'America/New_York' })} to ${(latestTimestamp as Date).toLocaleDateString('en-US', { timeZone: 'America/New_York' })}`
+        : 'unknown range';
+      
+      log(`Page ${pageCount}: Fetched ${pageBarsCount.toLocaleString()} option bars (total: ${totalBarsCount.toLocaleString()}) for ${symbolsStr}, date range: ${dateRangeStr}${hasMorePages ? ', more pages available' : ', complete'}`, {
+        type: 'info'
+      });
 
       // Prevent infinite loops
       if (pageCount > 1000) {
-        log(
-          `Stopping options bars pagination after ${pageCount} pages to prevent infinite loop`,
-          { type: "warn" },
-        );
+        log(`Stopping options bars pagination after ${pageCount} pages to prevent infinite loop`, { type: 'warn' });
         break;
       }
     }
 
     // Final summary
-    const symbolCounts = Object.entries(allBars)
-      .map(([symbol, bars]) => `${symbol}: ${bars.length}`)
-      .join(", ");
-    log(
-      `Historical options bars fetch complete: ${totalBarsCount.toLocaleString()} total bars across ${pageCount} pages (${symbolCounts})`,
-      {
-        type: "info",
-      },
-    );
+    const symbolCounts = Object.entries(allBars).map(([symbol, bars]) => `${symbol}: ${bars.length}`).join(', ');
+    log(`Historical options bars fetch complete: ${totalBarsCount.toLocaleString()} total bars across ${pageCount} pages (${symbolCounts})`, {
+      type: 'info'
+    });
 
     return {
       bars: allBars,
@@ -1064,28 +978,23 @@ export class AlpacaMarketDataAPI extends EventEmitter {
    
    * @see https://docs.alpaca.markets/reference/optiontrades
    */
-  async getHistoricalOptionsTrades(
-    params: HistoricalOptionsTradesParams,
-  ): Promise<HistoricalOptionsTradesResponse> {
+  async getHistoricalOptionsTrades(params: HistoricalOptionsTradesParams): Promise<HistoricalOptionsTradesResponse> {
     const symbols = params.symbols;
-    const symbolsStr = symbols.join(",");
+    const symbolsStr = symbols.join(',');
     let allTrades: { [symbol: string]: OptionTrade[] } = {};
     let pageToken: string | null = null;
     let hasMorePages = true;
     let totalTradesCount = 0;
     let pageCount = 0;
-
+    
     // Initialize trades arrays for each symbol
-    symbols.forEach((symbol) => {
+    symbols.forEach(symbol => {
       allTrades[symbol] = [];
     });
 
-    log(
-      `Starting historical options trades fetch for ${symbolsStr} (${params.start || "no start"} to ${params.end || "no end"})`,
-      {
-        type: "info",
-      },
-    );
+    log(`Starting historical options trades fetch for ${symbolsStr} (${params.start || 'no start'} to ${params.end || 'no end'})`, {
+      type: 'info'
+    });
 
     while (hasMorePages) {
       pageCount++;
@@ -1094,17 +1003,10 @@ export class AlpacaMarketDataAPI extends EventEmitter {
         ...(pageToken && { page_token: pageToken }),
       };
 
-      const response: HistoricalOptionsTradesResponse = await this.makeRequest(
-        "/options/trades",
-        "GET",
-        requestParams,
-        "v1beta1",
-      );
-
+      const response: HistoricalOptionsTradesResponse = await this.makeRequest('/options/trades', 'GET', requestParams, 'v1beta1');
+      
       if (!response.trades) {
-        log(`No options trades data found in response for ${symbolsStr}`, {
-          type: "warn",
-        });
+        log(`No options trades data found in response for ${symbolsStr}`, { type: 'warn' });
         break;
       }
 
@@ -1117,9 +1019,9 @@ export class AlpacaMarketDataAPI extends EventEmitter {
         if (trades && trades.length > 0) {
           allTrades[symbol] = [...allTrades[symbol], ...trades];
           pageTradesCount += trades.length;
-
+          
           // Track date range for this page
-          trades.forEach((trade) => {
+          trades.forEach(trade => {
             const tradeDate = new Date(trade.t);
             if (!earliestTimestamp || tradeDate < earliestTimestamp) {
               earliestTimestamp = tradeDate;
@@ -1136,38 +1038,26 @@ export class AlpacaMarketDataAPI extends EventEmitter {
       hasMorePages = !!pageToken;
 
       // Enhanced logging with date range and progress info
-      const dateRangeStr =
-        earliestTimestamp && latestTimestamp
-          ? `${(earliestTimestamp as Date).toLocaleDateString("en-US", { timeZone: "America/New_York" })} to ${(latestTimestamp as Date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}`
-          : "unknown range";
-
-      log(
-        `Page ${pageCount}: Fetched ${pageTradesCount.toLocaleString()} option trades (total: ${totalTradesCount.toLocaleString()}) for ${symbolsStr}, date range: ${dateRangeStr}${hasMorePages ? ", more pages available" : ", complete"}`,
-        {
-          type: "info",
-        },
-      );
+      const dateRangeStr = earliestTimestamp && latestTimestamp 
+        ? `${(earliestTimestamp as Date).toLocaleDateString('en-US', { timeZone: 'America/New_York' })} to ${(latestTimestamp as Date).toLocaleDateString('en-US', { timeZone: 'America/New_York' })}`
+        : 'unknown range';
+      
+      log(`Page ${pageCount}: Fetched ${pageTradesCount.toLocaleString()} option trades (total: ${totalTradesCount.toLocaleString()}) for ${symbolsStr}, date range: ${dateRangeStr}${hasMorePages ? ', more pages available' : ', complete'}`, {
+        type: 'info'
+      });
 
       // Prevent infinite loops
       if (pageCount > 1000) {
-        log(
-          `Stopping options trades pagination after ${pageCount} pages to prevent infinite loop`,
-          { type: "warn" },
-        );
+        log(`Stopping options trades pagination after ${pageCount} pages to prevent infinite loop`, { type: 'warn' });
         break;
       }
     }
 
     // Final summary
-    const symbolCounts = Object.entries(allTrades)
-      .map(([symbol, trades]) => `${symbol}: ${trades.length}`)
-      .join(", ");
-    log(
-      `Historical options trades fetch complete: ${totalTradesCount.toLocaleString()} total trades across ${pageCount} pages (${symbolCounts})`,
-      {
-        type: "info",
-      },
-    );
+    const symbolCounts = Object.entries(allTrades).map(([symbol, trades]) => `${symbol}: ${trades.length}`).join(', ');
+    log(`Historical options trades fetch complete: ${totalTradesCount.toLocaleString()} total trades across ${pageCount} pages (${symbolCounts})`, {
+      type: 'info'
+    });
 
     return {
       trades: allTrades,
@@ -1183,17 +1073,10 @@ export class AlpacaMarketDataAPI extends EventEmitter {
    
    * @see https://docs.alpaca.markets/reference/optionsnapshots
    */
-  async getOptionsSnapshot(
-    params: OptionsSnapshotsParams,
-  ): Promise<OptionsSnapshotsResponse> {
+  async getOptionsSnapshot(params: OptionsSnapshotsParams): Promise<OptionsSnapshotsResponse> {
     // Remove limit and page_token as they may not be supported by this endpoint
     const { limit, page_token, ...requestParams } = params;
-    return this.makeRequest(
-      "/options/snapshots",
-      "GET",
-      requestParams,
-      "v1beta1",
-    );
+    return this.makeRequest('/options/snapshots', 'GET', requestParams, 'v1beta1');
   }
 
   /**
@@ -1204,15 +1087,8 @@ export class AlpacaMarketDataAPI extends EventEmitter {
    
    * @see https://docs.alpaca.markets/reference/optionmetaconditions
    */
-  async getOptionsConditionCodes(
-    tickType: OptionTickType,
-  ): Promise<OptionsConditionCodesResponse> {
-    return this.makeRequest(
-      `/options/meta/conditions/${tickType}`,
-      "GET",
-      undefined,
-      "v1beta1",
-    );
+  async getOptionsConditionCodes(tickType: OptionTickType): Promise<OptionsConditionCodesResponse> {
+    return this.makeRequest(`/options/meta/conditions/${tickType}`, 'GET', undefined, 'v1beta1');
   }
 
   /**
@@ -1223,12 +1099,7 @@ export class AlpacaMarketDataAPI extends EventEmitter {
    * @see https://docs.alpaca.markets/reference/optionmetaexchanges
    */
   async getOptionsExchangeCodes(): Promise<OptionsExchangeCodesResponse> {
-    return this.makeRequest(
-      "/options/meta/exchanges",
-      "GET",
-      undefined,
-      "v1beta1",
-    );
+    return this.makeRequest('/options/meta/exchanges', 'GET', undefined, 'v1beta1');
   }
 
   /**
@@ -1238,7 +1109,7 @@ export class AlpacaMarketDataAPI extends EventEmitter {
    */
   static analyzeOptionBars(bars: OptionBar[]): string {
     if (!bars || bars.length === 0) {
-      return "No option price data available";
+      return 'No option price data available';
     }
 
     const firstBar = bars[0];
@@ -1247,8 +1118,7 @@ export class AlpacaMarketDataAPI extends EventEmitter {
     const percentChange = (priceChange / firstBar.o) * 100;
 
     const volumeChange = lastBar.v - firstBar.v;
-    const percentVolumeChange =
-      firstBar.v > 0 ? (volumeChange / firstBar.v) * 100 : 0;
+    const percentVolumeChange = firstBar.v > 0 ? (volumeChange / firstBar.v) * 100 : 0;
 
     const high = Math.max(...bars.map((bar) => bar.h));
     const low = Math.min(...bars.map((bar) => bar.l));
@@ -1270,21 +1140,17 @@ export class AlpacaMarketDataAPI extends EventEmitter {
    */
   static formatOptionGreeks(greeks: any): string {
     if (!greeks) {
-      return "No greeks data available";
+      return 'No greeks data available';
     }
 
     const parts: string[] = [];
-    if (greeks.delta !== undefined)
-      parts.push(`Delta: ${greeks.delta.toFixed(4)}`);
-    if (greeks.gamma !== undefined)
-      parts.push(`Gamma: ${greeks.gamma.toFixed(4)}`);
-    if (greeks.theta !== undefined)
-      parts.push(`Theta: ${greeks.theta.toFixed(4)}`);
-    if (greeks.vega !== undefined)
-      parts.push(`Vega: ${greeks.vega.toFixed(4)}`);
+    if (greeks.delta !== undefined) parts.push(`Delta: ${greeks.delta.toFixed(4)}`);
+    if (greeks.gamma !== undefined) parts.push(`Gamma: ${greeks.gamma.toFixed(4)}`);
+    if (greeks.theta !== undefined) parts.push(`Theta: ${greeks.theta.toFixed(4)}`);
+    if (greeks.vega !== undefined) parts.push(`Vega: ${greeks.vega.toFixed(4)}`);
     if (greeks.rho !== undefined) parts.push(`Rho: ${greeks.rho.toFixed(4)}`);
 
-    return parts.length > 0 ? parts.join(", ") : "No greeks data available";
+    return parts.length > 0 ? parts.join(', ') : 'No greeks data available';
   }
 
   /**
@@ -1293,21 +1159,16 @@ export class AlpacaMarketDataAPI extends EventEmitter {
    * @param conditionCodesMap Mapping of condition codes to descriptions
    * @returns Formatted string with condition descriptions
    */
-  static interpretConditionCodes(
-    conditionCodes: string[],
-    conditionCodesMap: OptionsConditionCodesResponse,
-  ): string {
+  static interpretConditionCodes(conditionCodes: string[], conditionCodesMap: OptionsConditionCodesResponse): string {
     if (!conditionCodes || conditionCodes.length === 0) {
-      return "No conditions";
+      return 'No conditions';
     }
 
     const descriptions = conditionCodes
       .map((code) => conditionCodesMap[code] || `Unknown (${code})`)
       .filter((desc) => desc !== undefined);
 
-    return descriptions.length > 0
-      ? descriptions.join(", ")
-      : "No condition descriptions available";
+    return descriptions.length > 0 ? descriptions.join(', ') : 'No condition descriptions available';
   }
 
   /**
@@ -1316,13 +1177,8 @@ export class AlpacaMarketDataAPI extends EventEmitter {
    * @param exchangeCodesMap Mapping of exchange codes to names
    * @returns Exchange name or formatted unknown exchange
    */
-  static getExchangeName(
-    exchangeCode: string,
-    exchangeCodesMap: OptionsExchangeCodesResponse,
-  ): string {
-    return (
-      exchangeCodesMap[exchangeCode] || `Unknown Exchange (${exchangeCode})`
-    );
+  static getExchangeName(exchangeCode: string, exchangeCodesMap: OptionsExchangeCodesResponse): string {
+    return exchangeCodesMap[exchangeCode] || `Unknown Exchange (${exchangeCode})`;
   }
 
   /**
@@ -1337,15 +1193,15 @@ export class AlpacaMarketDataAPI extends EventEmitter {
       start?: Date | string;
       end?: Date | string;
       limit?: number;
-      sort?: "asc" | "desc";
+      sort?: 'asc' | 'desc';
       include_content?: boolean;
-    },
+    }
   ): Promise<SimpleNews[]> {
     const defaultParams = {
       start: new Date(Date.now() - 24 * 60 * 60 * 1000),
       end: new Date(),
       limit: 10,
-      sort: "desc" as const,
+      sort: 'desc' as const,
       include_content: true,
     };
     const mergedParams = { ...defaultParams, ...params };
@@ -1359,76 +1215,52 @@ export class AlpacaMarketDataAPI extends EventEmitter {
     function cleanContent(content: string | undefined): string | undefined {
       if (!content) return undefined;
       // Remove excessive whitespace, newlines, and trim
-      return content.replace(/\s+/g, " ").trim();
+      return content.replace(/\s+/g, ' ').trim();
     }
 
     while (hasMorePages) {
       const queryParams: URLSearchParams = new URLSearchParams({
-        ...(mergedParams.start && {
-          start: new Date(mergedParams.start).toISOString(),
-        }),
-        ...(mergedParams.end && {
-          end: new Date(mergedParams.end).toISOString(),
-        }),
+        ...(mergedParams.start && { start: new Date(mergedParams.start).toISOString() }),
+        ...(mergedParams.end && { end: new Date(mergedParams.end).toISOString() }),
         ...(symbol && { symbols: symbol }),
-        ...(mergedParams.limit && {
-          limit: Math.min(50, maxLimit - fetchedCount).toString(),
-        }),
+        ...(mergedParams.limit && { limit: Math.min(50, maxLimit - fetchedCount).toString() }),
         ...(mergedParams.sort && { sort: mergedParams.sort }),
-        ...(mergedParams.include_content !== undefined
-          ? { include_content: mergedParams.include_content.toString() }
-          : {}),
+        ...(mergedParams.include_content !== undefined ? { include_content: mergedParams.include_content.toString() } : {}),
         ...(pageToken && { page_token: pageToken }),
       });
       const url: string = `${this.v1beta1url}/news?${queryParams}`;
-      log(`Fetching news from: ${url}`, { type: "debug", symbol });
+      log(`Fetching news from: ${url}`, { type: 'debug', symbol });
       const response: Response = await fetch(url, {
-        method: "GET",
+        method: 'GET',
         headers: this.headers,
       });
       if (!response.ok) {
         const errorText = await response.text();
-        log(`Alpaca news API error (${response.status}): ${errorText}`, {
-          type: "error",
-          symbol,
-        });
-        throw new Error(
-          `Alpaca news API error (${response.status}): ${errorText}`,
-        );
+        log(`Alpaca news API error (${response.status}): ${errorText}`, { type: 'error', symbol });
+        throw new Error(`Alpaca news API error (${response.status}): ${errorText}`);
       }
-      const data: {
-        news: AlpacaNewsArticle[];
-        next_page_token: string | null;
-      } = await response.json();
+      const data: { news: AlpacaNewsArticle[]; next_page_token: string | null } = await response.json();
       if (!data.news || !Array.isArray(data.news)) {
-        log(`No news data found in Alpaca response for ${symbol}`, {
-          type: "warn",
-          symbol,
-        });
+        log(`No news data found in Alpaca response for ${symbol}`, { type: 'warn', symbol });
         break;
       }
-      const transformedNews: SimpleNews[] = data.news.map(
-        (article: AlpacaNewsArticle) => ({
-          symbols: article.symbols,
-          title: article.headline,
-          summary: cleanContent(article.summary) ?? "",
-          content: article.content ? cleanContent(article.content) : undefined,
-          url: article.url,
-          source: article.source,
-          author: article.author,
-          date: article.updated_at || article.created_at,
-          updatedDate: article.updated_at || article.created_at,
-          sentiment: 0,
-        }),
-      );
+      const transformedNews: SimpleNews[] = data.news.map((article: AlpacaNewsArticle) => ({
+        symbols: article.symbols,
+        title: article.headline,
+        summary: cleanContent(article.summary) ?? '',
+        content: article.content ? cleanContent(article.content) : undefined,
+        url: article.url,
+        source: article.source,
+        author: article.author,
+        date: article.updated_at || article.created_at,
+        updatedDate: article.updated_at || article.created_at,
+        sentiment: 0,
+      }));
       newsArticles = newsArticles.concat(transformedNews);
       fetchedCount = newsArticles.length;
       pageToken = data.next_page_token || null;
       hasMorePages = !!pageToken && (!maxLimit || fetchedCount < maxLimit);
-      log(
-        `Fetched ${transformedNews.length} news articles (total: ${fetchedCount}) for ${symbol}. More pages: ${hasMorePages}`,
-        { type: "debug", symbol },
-      );
+      log(`Fetched ${transformedNews.length} news articles (total: ${fetchedCount}) for ${symbol}. More pages: ${hasMorePages}`, { type: 'debug', symbol });
       if (maxLimit && fetchedCount >= maxLimit) {
         newsArticles = newsArticles.slice(0, maxLimit);
         break;
