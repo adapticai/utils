@@ -1,12 +1,73 @@
 // Adaptic backend calls
 import { AssetOverviewResponse, AssetOverview } from './types';
-import { getApolloClient } from '@adaptic/backend-legacy';
+import {
+  getApolloClient,
+  setTokenProvider,
+  type TokenProvider,
+} from '@adaptic/backend-legacy';
+
+// Re-export TokenProvider type for consumers
+export type { TokenProvider };
 
 // Types for Apollo client without direct import
 type ApolloClientType = any; // This avoids direct import from @adaptic/backend-legacy
 
 // Keep track of a single instance of Apollo client
 let apolloClientInstance: ApolloClientType | null = null;
+
+// Track if auth has been configured
+let authConfigured = false;
+
+/**
+ * Configure the Apollo client authentication with a dynamic token provider.
+ * This should be called once during app initialization before making any
+ * @adaptic/backend-legacy API calls.
+ *
+ * The token provider function will be called for each GraphQL request,
+ * allowing for dynamic token retrieval (e.g., from session storage, SecretsManager, etc.)
+ *
+ * @param provider - Function that returns the auth token (sync or async)
+ *
+ * @example
+ * // Configure with an environment variable
+ * configureAuth(() => process.env.GRAPHQL_API_KEY || '');
+ *
+ * @example
+ * // Configure with NextAuth session token (async)
+ * configureAuth(async () => {
+ *   const session = await auth();
+ *   return session?.accessToken || '';
+ * });
+ *
+ * @example
+ * // Configure with SecretsManager
+ * configureAuth(() => {
+ *   const secrets = getSecretsManager();
+ *   return secrets.getGraphQLConfig().apiKey || '';
+ * });
+ */
+export const configureAuth = (provider: TokenProvider): void => {
+  if (authConfigured) {
+    console.warn(
+      '[adaptic] Auth provider already configured. Calling configureAuth again will reset the client.'
+    );
+  }
+  setTokenProvider(provider);
+  authConfigured = true;
+
+  // Reset the cached client so it picks up the new auth on next request
+  if (apolloClientInstance) {
+    apolloClientInstance = null;
+    console.log('[adaptic] Apollo client reset due to auth configuration change');
+  }
+};
+
+/**
+ * Check if Apollo auth has been configured.
+ */
+export const isAuthConfigured = (): boolean => {
+  return authConfigured;
+};
 
 /**
  * Returns a shared Apollo client instance with connection pooling.

@@ -52,11 +52,16 @@ export const createAlpacaMarketDataAPI = () => {
   return AlpacaMarketDataAPI.getInstance();
 };
 
+// Export TokenProvider type for Apollo client auth
+export type { TokenProvider } from './adaptic';
+
 export const adaptic = {
   types: Types,
   backend: {
     fetchAssetOverview: backend.fetchAssetOverview,
     getApolloClient: backend.getSharedApolloClient,
+    configureAuth: backend.configureAuth,
+    isAuthConfigured: backend.isAuthConfigured,
   },
   alpaca: {
     TradingAPI: AlpacaTradingAPI,
