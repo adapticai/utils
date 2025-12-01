@@ -1270,3 +1270,113 @@ export interface OptionStreamEventMap {
   'option-b': AlpacaOptionBarStream;
   'option-data': AlpacaOptionStreamMessage;
 }
+
+// ===== CRYPTO STREAM TYPES =====
+
+/**
+ * Crypto trade stream message from Alpaca WebSocket
+ * Format: wss://stream.data.alpaca.markets/v1beta3/crypto/us
+ */
+export interface AlpacaCryptoTradeStream {
+  T: 't';          // Message type: trade
+  S: string;       // Symbol (e.g., "BTC/USD")
+  p: number;       // Trade price
+  s: number;       // Trade size
+  t: string;       // Timestamp (RFC-3339)
+  i: number;       // Trade ID
+  tks: 'B' | 'S';  // Taker side: B=buy, S=sell
+}
+
+/**
+ * Crypto quote stream message from Alpaca WebSocket
+ */
+export interface AlpacaCryptoQuoteStream {
+  T: 'q';          // Message type: quote
+  S: string;       // Symbol (e.g., "BTC/USD")
+  bp: number;      // Bid price
+  bs: number;      // Bid size
+  ap: number;      // Ask price
+  as: number;      // Ask size
+  t: string;       // Timestamp (RFC-3339)
+}
+
+/**
+ * Crypto bar stream message from Alpaca WebSocket
+ */
+export interface AlpacaCryptoBarStream {
+  T: 'b';          // Message type: bar
+  S: string;       // Symbol (e.g., "BTC/USD")
+  o: number;       // Open price
+  h: number;       // High price
+  l: number;       // Low price
+  c: number;       // Close price
+  v: number;       // Volume
+  t: string;       // Timestamp (RFC-3339)
+  n: number;       // Number of trades
+  vw: number;      // Volume weighted average price
+}
+
+/**
+ * Crypto daily bar stream message from Alpaca WebSocket
+ */
+export interface AlpacaCryptoDailyBarStream {
+  T: 'd';          // Message type: daily bar
+  S: string;       // Symbol
+  o: number;       // Open price
+  h: number;       // High price
+  l: number;       // Low price
+  c: number;       // Close price
+  v: number;       // Volume
+  t: string;       // Timestamp (RFC-3339)
+  n: number;       // Number of trades
+  vw: number;      // Volume weighted average price
+}
+
+/**
+ * Crypto updated bar stream message from Alpaca WebSocket
+ */
+export interface AlpacaCryptoUpdatedBarStream {
+  T: 'u';          // Message type: updated bar
+  S: string;       // Symbol
+  o: number;       // Open price
+  h: number;       // High price
+  l: number;       // Low price
+  c: number;       // Close price
+  v: number;       // Volume
+  t: string;       // Timestamp (RFC-3339)
+  n: number;       // Number of trades
+  vw: number;      // Volume weighted average price
+}
+
+/**
+ * Union type for all crypto stream messages
+ */
+export type AlpacaCryptoStreamMessage =
+  | AlpacaCryptoTradeStream
+  | AlpacaCryptoQuoteStream
+  | AlpacaCryptoBarStream
+  | AlpacaCryptoDailyBarStream
+  | AlpacaCryptoUpdatedBarStream;
+
+/**
+ * Type-safe event names for crypto market data streams
+ */
+export type CryptoStreamEventName =
+  | 'crypto-t'    // Trade events
+  | 'crypto-q'    // Quote events
+  | 'crypto-b'    // Minute bar events
+  | 'crypto-d'    // Daily bar events
+  | 'crypto-u'    // Updated bar events
+  | 'crypto-data'; // Generic data event
+
+/**
+ * Event payload mapping for crypto streams
+ */
+export interface CryptoStreamEventMap {
+  'crypto-t': AlpacaCryptoTradeStream;
+  'crypto-q': AlpacaCryptoQuoteStream;
+  'crypto-b': AlpacaCryptoBarStream;
+  'crypto-d': AlpacaCryptoDailyBarStream;
+  'crypto-u': AlpacaCryptoUpdatedBarStream;
+  'crypto-data': AlpacaCryptoStreamMessage;
+}

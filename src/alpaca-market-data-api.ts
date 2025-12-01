@@ -30,10 +30,13 @@ import {
   DataFeed,
   AlpacaStockStreamMessage,
   AlpacaOptionStreamMessage,
+  AlpacaCryptoStreamMessage,
   StockStreamEventName,
   OptionStreamEventName,
+  CryptoStreamEventName,
   StockStreamEventMap,
   OptionStreamEventMap,
+  CryptoStreamEventMap,
 } from './types/alpaca-types';
 import { getLastFullTradingDate } from './market-time';
 import { EventEmitter } from 'events';
@@ -170,21 +173,27 @@ export class AlpacaMarketDataAPI extends EventEmitter {
   private v1beta1url: string;
   private stockStreamUrl: string = 'wss://stream.data.alpaca.markets/v2/sip'; // production values
   private optionStreamUrl: string = 'wss://stream.data.alpaca.markets/v1beta3/options'; // production values
+  private cryptoStreamUrl: string = 'wss://stream.data.alpaca.markets/v1beta3/crypto/us'; // production values
   private stockWs: WebSocket | null = null;
   private optionWs: WebSocket | null = null;
+  private cryptoWs: WebSocket | null = null;
   private stockSubscriptions: Record<string, string[]> = { trades: [], quotes: [], bars: [] };
   private optionSubscriptions: Record<string, string[]> = { trades: [], quotes: [], bars: [] };
+  private cryptoSubscriptions: Record<string, string[]> = { trades: [], quotes: [], bars: [] };
 
   public setMode(mode: 'sandbox' | 'test' | 'production' = 'production'): void {
     if (mode === 'sandbox') { // sandbox mode
       this.stockStreamUrl = 'wss://stream.data.sandbox.alpaca.markets/v2/sip';
       this.optionStreamUrl = 'wss://stream.data.sandbox.alpaca.markets/v1beta3/options';
+      this.cryptoStreamUrl = 'wss://stream.data.sandbox.alpaca.markets/v1beta3/crypto/us';
     } else if (mode === 'test') { // test mode, can only use ticker FAKEPACA
       this.stockStreamUrl = 'wss://stream.data.alpaca.markets/v2/test';
       this.optionStreamUrl = 'wss://stream.data.alpaca.markets/v1beta3/options'; // there's no test mode for options
+      this.cryptoStreamUrl = 'wss://stream.data.alpaca.markets/v1beta3/crypto/us'; // there's no test mode for crypto
     } else { // production
       this.stockStreamUrl = 'wss://stream.data.alpaca.markets/v2/sip';
       this.optionStreamUrl = 'wss://stream.data.alpaca.markets/v1beta3/options';
+      this.cryptoStreamUrl = 'wss://stream.data.alpaca.markets/v1beta3/crypto/us';
     }
   }
 
@@ -224,23 +233,35 @@ export class AlpacaMarketDataAPI extends EventEmitter {
   // Type-safe event emitter methods
   public on<K extends StockStreamEventName>(event: K, listener: (data: StockStreamEventMap[K]) => void): this;
   public on<K extends OptionStreamEventName>(event: K, listener: (data: OptionStreamEventMap[K]) => void): this;
-  public on(event: string | symbol, listener: (...args: any[]) => void): this {
+  public on<K extends CryptoStreamEventName>(event: K, listener: (data: CryptoStreamEventMap[K]) => void): this;
+  public on(event: string | symbol, listener: (...args: unknown[]) => void): this {
     return super.on(event, listener);
   }
 
   public emit<K extends StockStreamEventName>(event: K, data: StockStreamEventMap[K]): boolean;
   public emit<K extends OptionStreamEventName>(event: K, data: OptionStreamEventMap[K]): boolean;
-  public emit(event: string | symbol, ...args: any[]): boolean {
+  public emit<K extends CryptoStreamEventName>(event: K, data: CryptoStreamEventMap[K]): boolean;
+  public emit(event: string | symbol, ...args: unknown[]): boolean {
     return super.emit(event, ...args);
   }
 
-  private connect(streamType: 'stock' | 'option'): void {
-    const url = streamType === 'stock' ? this.stockStreamUrl : this.optionStreamUrl;
+  private connect(streamType: 'stock' | 'option' | 'crypto'): void {
+    let url: string;
+    if (streamType === 'stock') {
+      url = this.stockStreamUrl;
+    } else if (streamType === 'option') {
+      url = this.optionStreamUrl;
+    } else {
+      url = this.cryptoStreamUrl;
+    }
+
     const ws = new WebSocket(url);
     if (streamType === 'stock') {
       this.stockWs = ws;
-    } else {
+    } else if (streamType === 'option') {
       this.optionWs = ws;
+    } else {
+      this.cryptoWs = ws;
     }
 
     ws.on('open', () => {
@@ -254,17 +275,16 @@ export class AlpacaMarketDataAPI extends EventEmitter {
     });
 
     ws.on('message', (data: WebSocket.Data) => {
-      //log(`RAW MESSASGE: ${data.toString()}`);
       const messages = JSON.parse(data.toString());
       for (const message of messages) {
         if (message.T === 'success' && message.msg === 'authenticated') {
           log(`${streamType} stream authenticated`, { type: 'info' });
           this.sendSubscription(streamType);
         } else if (message.T === 'error') {
-          log(`${streamType} stream error: ${message.msg}`, { type: 'error' });
+          log(`${streamType} stream error: ${message.msg} (code: ${message.code})`, { type: 'error' });
         } else if (message.S) {
           super.emit(`${streamType}-${message.T}`, message);
-          super.emit(`${streamType}-data`, message as AlpacaStockStreamMessage | AlpacaOptionStreamMessage);
+          super.emit(`${streamType}-data`, message as AlpacaStockStreamMessage | AlpacaOptionStreamMessage | AlpacaCryptoStreamMessage);
         }
       }
     });
@@ -273,8 +293,10 @@ export class AlpacaMarketDataAPI extends EventEmitter {
       log(`${streamType} stream disconnected`, { type: 'warn' });
       if (streamType === 'stock') {
         this.stockWs = null;
-      } else {
+      } else if (streamType === 'option') {
         this.optionWs = null;
+      } else {
+        this.cryptoWs = null;
       }
       // Optional: implement reconnect logic
     });
@@ -284,9 +306,20 @@ export class AlpacaMarketDataAPI extends EventEmitter {
     });
   }
 
-  private sendSubscription(streamType: 'stock' | 'option'): void {
-    const ws = streamType === 'stock' ? this.stockWs : this.optionWs;
-    const subscriptions = streamType === 'stock' ? this.stockSubscriptions : this.optionSubscriptions;
+  private sendSubscription(streamType: 'stock' | 'option' | 'crypto'): void {
+    let ws: WebSocket | null;
+    let subscriptions: Record<string, string[]>;
+
+    if (streamType === 'stock') {
+      ws = this.stockWs;
+      subscriptions = this.stockSubscriptions;
+    } else if (streamType === 'option') {
+      ws = this.optionWs;
+      subscriptions = this.optionSubscriptions;
+    } else {
+      ws = this.cryptoWs;
+      subscriptions = this.cryptoSubscriptions;
+    }
     if (ws && ws.readyState === WebSocket.OPEN) {
       const subMessagePayload: { trades?: string[]; quotes?: string[]; bars?: string[] } = {};
 
@@ -322,6 +355,12 @@ export class AlpacaMarketDataAPI extends EventEmitter {
     }
   }
 
+  public connectCryptoStream(): void {
+    if (!this.cryptoWs) {
+      this.connect('crypto');
+    }
+  }
+
   public disconnectStockStream(): void {
     if (this.stockWs) {
       this.stockWs.close();
@@ -334,8 +373,37 @@ export class AlpacaMarketDataAPI extends EventEmitter {
     }
   }
 
-  public subscribe(streamType: 'stock' | 'option', subscriptions: { trades?: string[]; quotes?: string[]; bars?: string[] }): void {
-    const currentSubscriptions = streamType === 'stock' ? this.stockSubscriptions : this.optionSubscriptions;
+  public disconnectCryptoStream(): void {
+    if (this.cryptoWs) {
+      this.cryptoWs.close();
+    }
+  }
+
+  /**
+   * Check if a specific stream is connected
+   * @param streamType - The type of stream to check
+   * @returns True if the stream is connected
+   */
+  public isStreamConnected(streamType: 'stock' | 'option' | 'crypto'): boolean {
+    if (streamType === 'stock') {
+      return this.stockWs !== null && this.stockWs.readyState === WebSocket.OPEN;
+    } else if (streamType === 'option') {
+      return this.optionWs !== null && this.optionWs.readyState === WebSocket.OPEN;
+    } else {
+      return this.cryptoWs !== null && this.cryptoWs.readyState === WebSocket.OPEN;
+    }
+  }
+
+  public subscribe(streamType: 'stock' | 'option' | 'crypto', subscriptions: { trades?: string[]; quotes?: string[]; bars?: string[] }): void {
+    let currentSubscriptions: Record<string, string[]>;
+    if (streamType === 'stock') {
+      currentSubscriptions = this.stockSubscriptions;
+    } else if (streamType === 'option') {
+      currentSubscriptions = this.optionSubscriptions;
+    } else {
+      currentSubscriptions = this.cryptoSubscriptions;
+    }
+
     Object.entries(subscriptions).forEach(([key, value]) => {
       if (value) {
         currentSubscriptions[key] = [...new Set([...(currentSubscriptions[key] || []), ...value])];
@@ -345,8 +413,16 @@ export class AlpacaMarketDataAPI extends EventEmitter {
     this.sendSubscription(streamType);
   }
 
-  public unsubscribe(streamType: 'stock' | 'option', subscriptions: { trades?: string[]; quotes?: string[]; bars?: string[] }): void {
-    const currentSubscriptions = streamType === 'stock' ? this.stockSubscriptions : this.optionSubscriptions;
+  public unsubscribe(streamType: 'stock' | 'option' | 'crypto', subscriptions: { trades?: string[]; quotes?: string[]; bars?: string[] }): void {
+    let currentSubscriptions: Record<string, string[]>;
+    if (streamType === 'stock') {
+      currentSubscriptions = this.stockSubscriptions;
+    } else if (streamType === 'option') {
+      currentSubscriptions = this.optionSubscriptions;
+    } else {
+      currentSubscriptions = this.cryptoSubscriptions;
+    }
+
     Object.entries(subscriptions).forEach(([key, value]) => {
       if (value) {
         currentSubscriptions[key] = (currentSubscriptions[key] || []).filter(s => !value.includes(s));
@@ -357,7 +433,15 @@ export class AlpacaMarketDataAPI extends EventEmitter {
         ...subscriptions,
     };
 
-    const ws = streamType === 'stock' ? this.stockWs : this.optionWs;
+    let ws: WebSocket | null;
+    if (streamType === 'stock') {
+      ws = this.stockWs;
+    } else if (streamType === 'option') {
+      ws = this.optionWs;
+    } else {
+      ws = this.cryptoWs;
+    }
+
     if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify(unsubMessage));
     }
