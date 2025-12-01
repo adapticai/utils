@@ -196,3 +196,4 @@ export const adaptic = {
 };
 
 export const adptc = adaptic;
+

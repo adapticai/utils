@@ -13,7 +13,7 @@ on:
 
 jobs:
   publish-npm-package:
-    uses: adapticai/workflows/.github/workflows/publish-npm-package.yml@main
+    uses: adapticai/workflows/.github/workflows/publish-npm-package.yml@master
     with:
       git_user_name: ${{ github.actor }}
       git_user_email: ${{ github.actor }}@users.noreply.github.com
