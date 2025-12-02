@@ -275,16 +275,29 @@ export class AlpacaMarketDataAPI extends EventEmitter {
     });
 
     ws.on('message', (data: WebSocket.Data) => {
-      const messages = JSON.parse(data.toString());
+      const rawData = data.toString();
+      let messages;
+      try {
+        messages = JSON.parse(rawData);
+      } catch (e) {
+        log(`${streamType} stream received invalid JSON: ${rawData.substring(0, 200)}`, { type: 'error' });
+        return;
+      }
       for (const message of messages) {
         if (message.T === 'success' && message.msg === 'authenticated') {
           log(`${streamType} stream authenticated`, { type: 'info' });
           this.sendSubscription(streamType);
+        } else if (message.T === 'success' && message.msg === 'connected') {
+          log(`${streamType} stream connected message received`, { type: 'debug' });
+        } else if (message.T === 'subscription') {
+          log(`${streamType} subscription confirmed: trades=${message.trades?.length || 0}, quotes=${message.quotes?.length || 0}, bars=${message.bars?.length || 0}`, { type: 'info' });
         } else if (message.T === 'error') {
-          log(`${streamType} stream error: ${message.msg} (code: ${message.code})`, { type: 'error' });
+          log(`${streamType} stream error: ${message.msg} (code: ${message.code}, raw: ${JSON.stringify(message)})`, { type: 'error' });
         } else if (message.S) {
           super.emit(`${streamType}-${message.T}`, message);
           super.emit(`${streamType}-data`, message as AlpacaStockStreamMessage | AlpacaOptionStreamMessage | AlpacaCryptoStreamMessage);
+        } else {
+          log(`${streamType} received unknown message type: ${JSON.stringify(message)}`, { type: 'debug' });
         }
       }
     });
@@ -320,6 +333,11 @@ export class AlpacaMarketDataAPI extends EventEmitter {
       ws = this.cryptoWs;
       subscriptions = this.cryptoSubscriptions;
     }
+
+    log(`sendSubscription called for ${streamType} (wsReady=${ws?.readyState === WebSocket.OPEN}, trades=${subscriptions.trades?.length || 0}, quotes=${subscriptions.quotes?.length || 0}, bars=${subscriptions.bars?.length || 0})`, {
+      type: 'debug',
+    });
+
     if (ws && ws.readyState === WebSocket.OPEN) {
       const subMessagePayload: { trades?: string[]; quotes?: string[]; bars?: string[] } = {};
 
@@ -338,8 +356,14 @@ export class AlpacaMarketDataAPI extends EventEmitter {
           action: 'subscribe',
           ...subMessagePayload,
         };
-        ws.send(JSON.stringify(subMessage));
+        const messageJson = JSON.stringify(subMessage);
+        log(`Sending ${streamType} subscription: ${messageJson}`, { type: 'info' });
+        ws.send(messageJson);
+      } else {
+        log(`No ${streamType} subscriptions to send (all arrays empty)`, { type: 'debug' });
       }
+    } else {
+      log(`Cannot send ${streamType} subscription: WebSocket not ready`, { type: 'warn' });
     }
   }
 
