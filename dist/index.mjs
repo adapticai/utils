@@ -59918,12 +59918,33 @@ const adaptic = {
         // New SDK-based modules (RECOMMENDED)
         /** @description Smart orders: brackets, OCO, OTO, trailing stops */
         smartOrders: alpaca.smartOrders,
-        /** @description Standard order operations */
-        orders: alpaca.orders,
-        /** @description Position management */
-        positions: alpaca.positions,
-        /** @description Account information and configuration */
-        account: alpaca.account,
+        /** @description Standard order operations - SDK-based (requires AlpacaClient) */
+        sdkOrders: alpaca.orders,
+        /** @description Position management - SDK-based (requires AlpacaClient) */
+        sdkPositions: alpaca.positions,
+        /** @description Account information and configuration - SDK-based (requires AlpacaClient) */
+        sdkAccount: alpaca.account,
+        // Legacy API (with original signatures for backward compatibility)
+        /** @description Standard order operations - Legacy API (uses AlpacaAuth) */
+        orders: {
+            create: createOrder$1,
+            createLimitOrder: createLimitOrder,
+            get: getOrder$1,
+            getAll: getOrders$1,
+            replace: replaceOrder$1,
+            cancel: cancelOrder$1,
+            cancelAll: cancelAllOrders$1,
+        },
+        /** @description Position management - Legacy API (uses AlpacaAuth) */
+        positions: {
+            fetch: fetchPosition,
+            close: closePosition$1,
+            fetchAll: fetchAllPositions,
+            closeAll: closeAllPositions$1,
+            closeAllAfterHours: closeAllPositionsAfterHours$1,
+        },
+        /** @description Account information - Legacy API (uses AlpacaAuth) */
+        account: fetchAccountDetails,
         /** @description Real-time and historical quotes */
         quotes: alpaca.quotes,
         /** @description Historical price bars (OHLCV) */
@@ -59938,63 +59959,48 @@ const adaptic = {
         crypto: alpaca.crypto,
         /** @description Real-time WebSocket streams */
         streams: alpaca.streams,
-        // =========================================================================
-        // DEPRECATED: Legacy API (maintained for backward compatibility)
-        // Prefer using the new SDK-based modules above
-        // =========================================================================
-        /** @deprecated Use new createClient() instead */
+        // Additional Legacy API helpers
+        /** @deprecated Use sdkAccount module instead */
         TradingAPI: AlpacaTradingAPI,
         /** @deprecated Use new createClient() instead */
         MarketDataAPI: AlpacaMarketDataAPI,
         /** @deprecated Use new SDK modules instead */
         makeRequest: makeRequest,
-        /** @deprecated Use account.getAccountDetails() instead */
+        /** @deprecated Use account() instead */
         accountDetails: fetchAccountDetails,
-        /** @deprecated Use positions.getPositions() instead */
+        /** @deprecated Use positions.fetchAll() instead */
         legacyPositions: fetchAllPositions,
-        /** @deprecated Use the new positions module instead */
+        /** @deprecated Use positions module instead */
         position: {
-            /** @deprecated Use positions.getPosition() instead */
             fetch: fetchPosition,
-            /** @deprecated Use positions.closePosition() instead */
             close: closePosition$1,
-            /** @deprecated Use positions.getPositions() instead */
             fetchAll: fetchAllPositions,
-            /** @deprecated Use positions.closeAllPositions() instead */
             closeAll: closeAllPositions$1,
-            /** @deprecated Use positions.closeAllPositionsAfterHours() instead */
             closeAllAfterHours: closeAllPositionsAfterHours$1,
         },
-        /** @deprecated Use account.getPortfolioHistory() instead */
+        /** @deprecated Use sdkAccount.getPortfolioHistory() instead */
         portfolioHistory: fetchPortfolioHistory,
-        /** @deprecated Use account.getAccountConfiguration() instead */
+        /** @deprecated Use sdkAccount.getAccountConfiguration() instead */
         getConfig: getConfiguration,
-        /** @deprecated Use account.updateAccountConfiguration() instead */
+        /** @deprecated Use sdkAccount.updateAccountConfiguration() instead */
         updateConfig: updateConfiguration,
         /** @deprecated Use news.getNews() instead */
         legacyNews: fetchNews$1,
-        /** @deprecated Use the new orders module instead */
+        /** @deprecated Use orders module instead */
         legacyOrders: {
-            /** @deprecated Use orders.createOrder() instead */
             create: createOrder$1,
-            /** @deprecated Use orders.createOrder() with type='limit' instead */
             createLimitOrder: createLimitOrder,
-            /** @deprecated Use orders.getOrder() instead */
             get: getOrder$1,
-            /** @deprecated Use orders.getOrders() instead */
             getAll: getOrders$1,
-            /** @deprecated Use orders.replaceOrder() instead */
             replace: replaceOrder$1,
-            /** @deprecated Use orders.cancelOrder() instead */
             cancel: cancelOrder$1,
-            /** @deprecated Use orders.cancelAllOrders() instead */
             cancelAll: cancelAllOrders$1,
         },
         /** @deprecated Use SDK asset functions instead */
         asset: {
             get: getAsset,
         },
-        /** @deprecated Use quotes.getLatestQuotes() instead */
+        /** @deprecated Use quotes module instead */
         quote: {
             getLatest: getLatestQuotes$1,
         },

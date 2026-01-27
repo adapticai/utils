@@ -92,8 +92,8 @@ export declare const adaptic: {
             cancelTrailingStopsForSymbol(client: import("./alpaca").AlpacaClient, symbol: string): Promise<number>;
             TrailingStopValidationError: typeof import("./alpaca").TrailingStopValidationError;
         };
-        /** @description Standard order operations */
-        orders: {
+        /** @description Standard order operations - SDK-based (requires AlpacaClient) */
+        sdkOrders: {
             getOrdersBySymbol(client: import("./alpaca").AlpacaClient, symbol: string, params?: Omit<Types.GetOrdersParams, "symbols">): Promise<Types.AlpacaOrder[]>;
             getOpenOrders(client: import("./alpaca").AlpacaClient, params?: Omit<Types.GetOrdersParams, "status">): Promise<Types.AlpacaOrder[]>;
             getFilledOrders(client: import("./alpaca").AlpacaClient, params: import("./alpaca").GetFilledOrdersParams): Promise<Types.AlpacaOrder[]>;
@@ -145,10 +145,30 @@ export declare const adaptic: {
             isOrderCancelable(status: Types.OrderStatus): boolean;
             getOrderByClientId(client: import("./alpaca").AlpacaClient, clientOrderId: string): Promise<Types.AlpacaOrder>;
         };
-        /** @description Position management */
-        positions: typeof import("./alpaca/trading/positions");
-        /** @description Account information and configuration */
-        account: typeof import("./alpaca/trading/account");
+        /** @description Position management - SDK-based (requires AlpacaClient) */
+        sdkPositions: typeof import("./alpaca/trading/positions");
+        /** @description Account information and configuration - SDK-based (requires AlpacaClient) */
+        sdkAccount: typeof import("./alpaca/trading/account");
+        /** @description Standard order operations - Legacy API (uses AlpacaAuth) */
+        orders: {
+            create: typeof Alpaca.createOrder;
+            createLimitOrder: typeof Alpaca.createLimitOrder;
+            get: typeof Alpaca.getOrder;
+            getAll: typeof Alpaca.getOrders;
+            replace: typeof Alpaca.replaceOrder;
+            cancel: typeof Alpaca.cancelOrder;
+            cancelAll: typeof Alpaca.cancelAllOrders;
+        };
+        /** @description Position management - Legacy API (uses AlpacaAuth) */
+        positions: {
+            fetch: typeof Alpaca.fetchPosition;
+            close: typeof Alpaca.closePosition;
+            fetchAll: typeof Alpaca.fetchAllPositions;
+            closeAll: typeof Alpaca.closeAllPositions;
+            closeAllAfterHours: typeof Alpaca.closeAllPositionsAfterHours;
+        };
+        /** @description Account information - Legacy API (uses AlpacaAuth) */
+        account: typeof Alpaca.fetchAccountDetails;
         /** @description Real-time and historical quotes */
         quotes: typeof import("./alpaca/market-data/quotes");
         /** @description Historical price bars (OHLCV) */
@@ -171,59 +191,47 @@ export declare const adaptic: {
         };
         /** @description Real-time WebSocket streams */
         streams: typeof import("./alpaca/streams");
-        /** @deprecated Use new createClient() instead */
+        /** @deprecated Use sdkAccount module instead */
         TradingAPI: typeof Types.AlpacaTradingAPI;
         /** @deprecated Use new createClient() instead */
         MarketDataAPI: typeof Types.AlpacaMarketDataAPI;
         /** @deprecated Use new SDK modules instead */
         makeRequest: typeof Alpaca.makeRequest;
-        /** @deprecated Use account.getAccountDetails() instead */
+        /** @deprecated Use account() instead */
         accountDetails: typeof Alpaca.fetchAccountDetails;
-        /** @deprecated Use positions.getPositions() instead */
+        /** @deprecated Use positions.fetchAll() instead */
         legacyPositions: typeof Alpaca.fetchAllPositions;
-        /** @deprecated Use the new positions module instead */
+        /** @deprecated Use positions module instead */
         position: {
-            /** @deprecated Use positions.getPosition() instead */
             fetch: typeof Alpaca.fetchPosition;
-            /** @deprecated Use positions.closePosition() instead */
             close: typeof Alpaca.closePosition;
-            /** @deprecated Use positions.getPositions() instead */
             fetchAll: typeof Alpaca.fetchAllPositions;
-            /** @deprecated Use positions.closeAllPositions() instead */
             closeAll: typeof Alpaca.closeAllPositions;
-            /** @deprecated Use positions.closeAllPositionsAfterHours() instead */
             closeAllAfterHours: typeof Alpaca.closeAllPositionsAfterHours;
         };
-        /** @deprecated Use account.getPortfolioHistory() instead */
+        /** @deprecated Use sdkAccount.getPortfolioHistory() instead */
         portfolioHistory: typeof Alpaca.fetchPortfolioHistory;
-        /** @deprecated Use account.getAccountConfiguration() instead */
+        /** @deprecated Use sdkAccount.getAccountConfiguration() instead */
         getConfig: typeof Alpaca.getConfiguration;
-        /** @deprecated Use account.updateAccountConfiguration() instead */
+        /** @deprecated Use sdkAccount.updateAccountConfiguration() instead */
         updateConfig: typeof Alpaca.updateConfiguration;
         /** @deprecated Use news.getNews() instead */
         legacyNews: typeof Alpaca.fetchNews;
-        /** @deprecated Use the new orders module instead */
+        /** @deprecated Use orders module instead */
         legacyOrders: {
-            /** @deprecated Use orders.createOrder() instead */
             create: typeof Alpaca.createOrder;
-            /** @deprecated Use orders.createOrder() with type='limit' instead */
             createLimitOrder: typeof Alpaca.createLimitOrder;
-            /** @deprecated Use orders.getOrder() instead */
             get: typeof Alpaca.getOrder;
-            /** @deprecated Use orders.getOrders() instead */
             getAll: typeof Alpaca.getOrders;
-            /** @deprecated Use orders.replaceOrder() instead */
             replace: typeof Alpaca.replaceOrder;
-            /** @deprecated Use orders.cancelOrder() instead */
             cancel: typeof Alpaca.cancelOrder;
-            /** @deprecated Use orders.cancelAllOrders() instead */
             cancelAll: typeof Alpaca.cancelAllOrders;
         };
         /** @deprecated Use SDK asset functions instead */
         asset: {
             get: typeof Alpaca.getAsset;
         };
-        /** @deprecated Use quotes.getLatestQuotes() instead */
+        /** @deprecated Use quotes module instead */
         quote: {
             getLatest: typeof Alpaca.getLatestQuotes;
         };
@@ -459,8 +467,8 @@ export declare const adptc: {
             cancelTrailingStopsForSymbol(client: import("./alpaca").AlpacaClient, symbol: string): Promise<number>;
             TrailingStopValidationError: typeof import("./alpaca").TrailingStopValidationError;
         };
-        /** @description Standard order operations */
-        orders: {
+        /** @description Standard order operations - SDK-based (requires AlpacaClient) */
+        sdkOrders: {
             getOrdersBySymbol(client: import("./alpaca").AlpacaClient, symbol: string, params?: Omit<Types.GetOrdersParams, "symbols">): Promise<Types.AlpacaOrder[]>;
             getOpenOrders(client: import("./alpaca").AlpacaClient, params?: Omit<Types.GetOrdersParams, "status">): Promise<Types.AlpacaOrder[]>;
             getFilledOrders(client: import("./alpaca").AlpacaClient, params: import("./alpaca").GetFilledOrdersParams): Promise<Types.AlpacaOrder[]>;
@@ -512,10 +520,30 @@ export declare const adptc: {
             isOrderCancelable(status: Types.OrderStatus): boolean;
             getOrderByClientId(client: import("./alpaca").AlpacaClient, clientOrderId: string): Promise<Types.AlpacaOrder>;
         };
-        /** @description Position management */
-        positions: typeof import("./alpaca/trading/positions");
-        /** @description Account information and configuration */
-        account: typeof import("./alpaca/trading/account");
+        /** @description Position management - SDK-based (requires AlpacaClient) */
+        sdkPositions: typeof import("./alpaca/trading/positions");
+        /** @description Account information and configuration - SDK-based (requires AlpacaClient) */
+        sdkAccount: typeof import("./alpaca/trading/account");
+        /** @description Standard order operations - Legacy API (uses AlpacaAuth) */
+        orders: {
+            create: typeof Alpaca.createOrder;
+            createLimitOrder: typeof Alpaca.createLimitOrder;
+            get: typeof Alpaca.getOrder;
+            getAll: typeof Alpaca.getOrders;
+            replace: typeof Alpaca.replaceOrder;
+            cancel: typeof Alpaca.cancelOrder;
+            cancelAll: typeof Alpaca.cancelAllOrders;
+        };
+        /** @description Position management - Legacy API (uses AlpacaAuth) */
+        positions: {
+            fetch: typeof Alpaca.fetchPosition;
+            close: typeof Alpaca.closePosition;
+            fetchAll: typeof Alpaca.fetchAllPositions;
+            closeAll: typeof Alpaca.closeAllPositions;
+            closeAllAfterHours: typeof Alpaca.closeAllPositionsAfterHours;
+        };
+        /** @description Account information - Legacy API (uses AlpacaAuth) */
+        account: typeof Alpaca.fetchAccountDetails;
         /** @description Real-time and historical quotes */
         quotes: typeof import("./alpaca/market-data/quotes");
         /** @description Historical price bars (OHLCV) */
@@ -538,59 +566,47 @@ export declare const adptc: {
         };
         /** @description Real-time WebSocket streams */
         streams: typeof import("./alpaca/streams");
-        /** @deprecated Use new createClient() instead */
+        /** @deprecated Use sdkAccount module instead */
         TradingAPI: typeof Types.AlpacaTradingAPI;
         /** @deprecated Use new createClient() instead */
         MarketDataAPI: typeof Types.AlpacaMarketDataAPI;
         /** @deprecated Use new SDK modules instead */
         makeRequest: typeof Alpaca.makeRequest;
-        /** @deprecated Use account.getAccountDetails() instead */
+        /** @deprecated Use account() instead */
         accountDetails: typeof Alpaca.fetchAccountDetails;
-        /** @deprecated Use positions.getPositions() instead */
+        /** @deprecated Use positions.fetchAll() instead */
         legacyPositions: typeof Alpaca.fetchAllPositions;
-        /** @deprecated Use the new positions module instead */
+        /** @deprecated Use positions module instead */
         position: {
-            /** @deprecated Use positions.getPosition() instead */
             fetch: typeof Alpaca.fetchPosition;
-            /** @deprecated Use positions.closePosition() instead */
             close: typeof Alpaca.closePosition;
-            /** @deprecated Use positions.getPositions() instead */
             fetchAll: typeof Alpaca.fetchAllPositions;
-            /** @deprecated Use positions.closeAllPositions() instead */
             closeAll: typeof Alpaca.closeAllPositions;
-            /** @deprecated Use positions.closeAllPositionsAfterHours() instead */
             closeAllAfterHours: typeof Alpaca.closeAllPositionsAfterHours;
         };
-        /** @deprecated Use account.getPortfolioHistory() instead */
+        /** @deprecated Use sdkAccount.getPortfolioHistory() instead */
         portfolioHistory: typeof Alpaca.fetchPortfolioHistory;
-        /** @deprecated Use account.getAccountConfiguration() instead */
+        /** @deprecated Use sdkAccount.getAccountConfiguration() instead */
         getConfig: typeof Alpaca.getConfiguration;
-        /** @deprecated Use account.updateAccountConfiguration() instead */
+        /** @deprecated Use sdkAccount.updateAccountConfiguration() instead */
         updateConfig: typeof Alpaca.updateConfiguration;
         /** @deprecated Use news.getNews() instead */
         legacyNews: typeof Alpaca.fetchNews;
-        /** @deprecated Use the new orders module instead */
+        /** @deprecated Use orders module instead */
         legacyOrders: {
-            /** @deprecated Use orders.createOrder() instead */
             create: typeof Alpaca.createOrder;
-            /** @deprecated Use orders.createOrder() with type='limit' instead */
             createLimitOrder: typeof Alpaca.createLimitOrder;
-            /** @deprecated Use orders.getOrder() instead */
             get: typeof Alpaca.getOrder;
-            /** @deprecated Use orders.getOrders() instead */
             getAll: typeof Alpaca.getOrders;
-            /** @deprecated Use orders.replaceOrder() instead */
             replace: typeof Alpaca.replaceOrder;
-            /** @deprecated Use orders.cancelOrder() instead */
             cancel: typeof Alpaca.cancelOrder;
-            /** @deprecated Use orders.cancelAllOrders() instead */
             cancelAll: typeof Alpaca.cancelAllOrders;
         };
         /** @deprecated Use SDK asset functions instead */
         asset: {
             get: typeof Alpaca.getAsset;
         };
-        /** @deprecated Use quotes.getLatestQuotes() instead */
+        /** @deprecated Use quotes module instead */
         quote: {
             getLatest: typeof Alpaca.getLatestQuotes;
         };
