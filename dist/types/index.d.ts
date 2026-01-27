@@ -20,6 +20,7 @@ export { AlpacaTradingAPI } from './alpaca-trading-api';
 export { AlpacaMarketDataAPI } from './alpaca-market-data-api';
 export declare const createAlpacaTradingAPI: (credentials: Types.AlpacaCredentials) => Types.AlpacaTradingAPI;
 export declare const createAlpacaMarketDataAPI: () => Types.AlpacaMarketDataAPI;
+export * from './alpaca';
 export type { TokenProvider } from './adaptic';
 export declare const adaptic: {
     types: typeof Types;
@@ -30,34 +31,199 @@ export declare const adaptic: {
         isAuthConfigured: () => boolean;
     };
     alpaca: {
+        createClient: typeof import("./alpaca").createAlpacaClient;
+        createClientFromEnv: typeof import("./alpaca").createClientFromEnv;
+        clearClientCache: typeof import("./alpaca").clearClientCache;
+        /** @description Smart orders: brackets, OCO, OTO, trailing stops */
+        smartOrders: {
+            bracket: typeof import("./alpaca/trading/bracket-orders");
+            oco: typeof import("./alpaca/trading/oco-orders");
+            oto: typeof import("./alpaca/trading/oto-orders");
+            trailingStops: typeof import("./alpaca/trading/trailing-stops");
+            determineOrderType(params: import("./alpaca/trading/smart-orders").SmartOrderParams): import("./alpaca/trading/smart-orders").SmartOrderType;
+            createSmartOrder(client: import("./alpaca").AlpacaClient, params: import("./alpaca/trading/smart-orders").SmartOrderParams): Promise<import("./alpaca/trading/smart-orders").SmartOrderResult>;
+            createPercentageBracket(client: import("./alpaca").AlpacaClient, params: import("./alpaca/trading/smart-orders").PercentageBracketParams): Promise<import("./alpaca").BracketOrderResult>;
+            createRiskManagedPosition(client: import("./alpaca").AlpacaClient, params: import("./alpaca/trading/smart-orders").RiskManagedPositionParams): Promise<import("./alpaca").BracketOrderResult | import("./alpaca").OTOOrderResult>;
+            calculateRewardRiskRatio(entryPrice: number, takeProfitPrice: number, stopLossPrice: number, side: Types.OrderSide): number;
+            calculatePositionSize(accountValue: number, riskPercent: number, entryPrice: number, stopPrice: number): number;
+            default: {
+                createSmartOrder: typeof import("./alpaca/trading/smart-orders").createSmartOrder;
+                determineOrderType: typeof import("./alpaca/trading/smart-orders").determineOrderType;
+                createPercentageBracket: typeof import("./alpaca/trading/smart-orders").createPercentageBracket;
+                createRiskManagedPosition: typeof import("./alpaca/trading/smart-orders").createRiskManagedPosition;
+                calculateRewardRiskRatio: typeof import("./alpaca/trading/smart-orders").calculateRewardRiskRatio;
+                calculatePositionSize: typeof import("./alpaca/trading/smart-orders").calculatePositionSize;
+                createBracketOrder: typeof import("./alpaca").createBracketOrder;
+                createProtectiveBracket: typeof import("./alpaca").createProtectiveBracket;
+                createExecutorFromTradingAPI: typeof import("./alpaca").createExecutorFromTradingAPI;
+                createOCOOrder: typeof import("./alpaca").createOCOOrder;
+                createOTOOrder: typeof import("./alpaca").createOTOOrder;
+                createTrailingStop: typeof import("./alpaca").createTrailingStop;
+                updateTrailingStop: typeof import("./alpaca").updateTrailingStop;
+            };
+            createBracketOrder(executor: import("./alpaca").BracketOrderExecutor, params: import("./alpaca").BracketOrderParams): Promise<import("./alpaca").BracketOrderResult>;
+            createProtectiveBracket(executor: import("./alpaca").BracketOrderExecutor, params: import("./alpaca").ProtectiveBracketParams): Promise<import("./alpaca").BracketOrderResult>;
+            createExecutorFromTradingAPI(api: {
+                makeRequest: (endpoint: string, method: string, body?: unknown) => Promise<Types.AlpacaOrder>;
+            }): import("./alpaca").BracketOrderExecutor;
+            createOCOOrder(client: import("./alpaca").AlpacaClient, params: import("./alpaca").OCOOrderParams): Promise<import("./alpaca").OCOOrderResult>;
+            cancelOCOOrder(client: import("./alpaca").AlpacaClient, parentOrderId: string): Promise<void>;
+            getOCOOrderStatus(client: import("./alpaca").AlpacaClient, parentOrderId: string): Promise<Types.AlpacaOrder>;
+            protectLongPosition(client: import("./alpaca").AlpacaClient, symbol: string, qty: number, takeProfitPrice: number, stopLossPrice: number, stopLimitPrice?: number): Promise<import("./alpaca").OCOOrderResult>;
+            protectShortPosition(client: import("./alpaca").AlpacaClient, symbol: string, qty: number, takeProfitPrice: number, stopLossPrice: number, stopLimitPrice?: number): Promise<import("./alpaca").OCOOrderResult>;
+            createOTOOrder(client: import("./alpaca").AlpacaClient, params: import("./alpaca").OTOOrderParams): Promise<import("./alpaca").OTOOrderResult>;
+            cancelOTOOrder(client: import("./alpaca").AlpacaClient, parentOrderId: string): Promise<void>;
+            getOTOOrderStatus(client: import("./alpaca").AlpacaClient, parentOrderId: string): Promise<Types.AlpacaOrder>;
+            buyWithStopLoss(client: import("./alpaca").AlpacaClient, symbol: string, qty: number, stopLossPrice: number, stopLimitPrice?: number): Promise<import("./alpaca").OTOOrderResult>;
+            buyWithTrailingStop(client: import("./alpaca").AlpacaClient, symbol: string, qty: number, trailPercent: number): Promise<import("./alpaca").OTOOrderResult>;
+            limitBuyWithTakeProfit(client: import("./alpaca").AlpacaClient, symbol: string, qty: number, entryPrice: number, takeProfitPrice: number): Promise<import("./alpaca").OTOOrderResult>;
+            shortWithStopLoss(client: import("./alpaca").AlpacaClient, symbol: string, qty: number, entryPrice: number, stopLossPrice: number): Promise<import("./alpaca").OTOOrderResult>;
+            entryWithPercentStopLoss(client: import("./alpaca").AlpacaClient, symbol: string, qty: number, entryPrice: number | null, stopLossPercent: number, side?: Types.OrderSide): Promise<import("./alpaca").OTOOrderResult>;
+            createTrailingStop(client: import("./alpaca").AlpacaClient, params: import("./alpaca").TrailingStopParams): Promise<Types.AlpacaOrder>;
+            updateTrailingStop(client: import("./alpaca").AlpacaClient, orderId: string, updates: {
+                trailPercent?: number;
+                trailPrice?: number;
+            }): Promise<Types.AlpacaOrder>;
+            getTrailingStopHWM(client: import("./alpaca").AlpacaClient, orderId: string): Promise<import("./alpaca").TrailingStopHWMResult>;
+            cancelTrailingStop(client: import("./alpaca").AlpacaClient, orderId: string): Promise<void>;
+            createPortfolioTrailingStops(client: import("./alpaca").AlpacaClient, params: import("./alpaca").PortfolioTrailingStopParams): Promise<Map<string, Types.AlpacaOrder>>;
+            getOpenTrailingStops(client: import("./alpaca").AlpacaClient, symbol?: string): Promise<Types.AlpacaOrder[]>;
+            hasActiveTrailingStop(client: import("./alpaca").AlpacaClient, symbol: string): Promise<boolean>;
+            cancelTrailingStopsForSymbol(client: import("./alpaca").AlpacaClient, symbol: string): Promise<number>;
+            TrailingStopValidationError: typeof import("./alpaca").TrailingStopValidationError;
+        };
+        /** @description Standard order operations */
+        orders: {
+            getOrdersBySymbol(client: import("./alpaca").AlpacaClient, symbol: string, params?: Omit<Types.GetOrdersParams, "symbols">): Promise<Types.AlpacaOrder[]>;
+            getOpenOrders(client: import("./alpaca").AlpacaClient, params?: Omit<Types.GetOrdersParams, "status">): Promise<Types.AlpacaOrder[]>;
+            getFilledOrders(client: import("./alpaca").AlpacaClient, params: import("./alpaca").GetFilledOrdersParams): Promise<Types.AlpacaOrder[]>;
+            getOrderHistory(client: import("./alpaca").AlpacaClient, params?: import("./alpaca").GetOrderHistoryParams): Promise<import("./alpaca").OrderHistoryResult>;
+            getAllOrders(client: import("./alpaca").AlpacaClient, params?: import("./alpaca").GetAllOrdersParams): Promise<Types.AlpacaOrder[]>;
+            waitForOrderFill(client: import("./alpaca").AlpacaClient, params: import("./alpaca").WaitForOrderFillParams): Promise<import("./alpaca").WaitForOrderFillResult>;
+            isOrderFillable(order: Types.AlpacaOrder): boolean;
+            isOrderFilled(order: Types.AlpacaOrder): boolean;
+            isOrderTerminal(order: Types.AlpacaOrder): boolean;
+            isOrderOpen(order: Types.AlpacaOrder): boolean;
+            calculateOrderValue(order: Types.AlpacaOrder): number | null;
+            formatOrderSummary(order: Types.AlpacaOrder): import("./alpaca").OrderSummary;
+            formatOrderForLog(order: Types.AlpacaOrder): string;
+            roundPriceForAlpaca(price: number): string;
+            roundPriceForAlpacaNumber(price: number): number;
+            groupOrdersBySymbol(orders: Types.AlpacaOrder[]): Map<string, Types.AlpacaOrder[]>;
+            groupOrdersByStatus(orders: Types.AlpacaOrder[]): Map<string, Types.AlpacaOrder[]>;
+            calculateTotalFilledValue(orders: Types.AlpacaOrder[]): number;
+            filterOrdersByDateRange(orders: Types.AlpacaOrder[], startDate: Date, endDate: Date): Types.AlpacaOrder[];
+            sortOrdersByDate(orders: Types.AlpacaOrder[], direction?: "asc" | "desc"): Types.AlpacaOrder[];
+            default: {
+                getOrdersBySymbol: typeof import("./alpaca").getOrdersBySymbol;
+                getOpenOrders: typeof import("./alpaca").getOpenOrdersQuery;
+                getFilledOrders: typeof import("./alpaca").getFilledOrders;
+                getOrderHistory: typeof import("./alpaca").getOrderHistory;
+                getAllOrders: typeof import("./alpaca").getAllOrders;
+                waitForOrderFill: typeof import("./alpaca").waitForOrderFill;
+                isOrderFillable: typeof import("./alpaca").isOrderFillable;
+                isOrderFilled: typeof import("./alpaca").isOrderFilled;
+                isOrderTerminal: typeof import("./alpaca").isOrderTerminalStatus;
+                isOrderOpen: typeof import("./alpaca").isOrderOpen;
+                calculateOrderValue: typeof import("./alpaca").calculateOrderValue;
+                calculateTotalFilledValue: typeof import("./alpaca").calculateTotalFilledValue;
+                formatOrderSummary: typeof import("./alpaca").formatOrderSummary;
+                formatOrderForLog: typeof import("./alpaca").formatOrderForLog;
+                roundPriceForAlpaca: typeof import("./alpaca").roundPriceForAlpaca;
+                roundPriceForAlpacaNumber: typeof import("./alpaca").roundPriceForAlpacaNumber;
+                groupOrdersBySymbol: typeof import("./alpaca").groupOrdersBySymbol;
+                groupOrdersByStatus: typeof import("./alpaca").groupOrdersByStatus;
+                filterOrdersByDateRange: typeof import("./alpaca").filterOrdersByDateRange;
+                sortOrdersByDate: typeof import("./alpaca").sortOrdersByDate;
+            };
+            createOrder(client: import("./alpaca").AlpacaClient, params: Types.CreateOrderParams): Promise<Types.AlpacaOrder>;
+            getOrder(client: import("./alpaca").AlpacaClient, orderId: string): Promise<Types.AlpacaOrder>;
+            getOrders(client: import("./alpaca").AlpacaClient, params?: Types.GetOrdersParams): Promise<Types.AlpacaOrder[]>;
+            cancelOrder(client: import("./alpaca").AlpacaClient, orderId: string): Promise<void>;
+            cancelAllOrders(client: import("./alpaca").AlpacaClient): Promise<import("./alpaca/trading/orders").CancelAllOrdersResponse>;
+            replaceOrder(client: import("./alpaca").AlpacaClient, orderId: string, params: Types.ReplaceOrderParams): Promise<Types.AlpacaOrder>;
+            isOrderCancelable(status: Types.OrderStatus): boolean;
+            getOrderByClientId(client: import("./alpaca").AlpacaClient, clientOrderId: string): Promise<Types.AlpacaOrder>;
+        };
+        /** @description Position management */
+        positions: typeof import("./alpaca/trading/positions");
+        /** @description Account information and configuration */
+        account: typeof import("./alpaca/trading/account");
+        /** @description Real-time and historical quotes */
+        quotes: typeof import("./alpaca/market-data/quotes");
+        /** @description Historical price bars (OHLCV) */
+        bars: typeof import("./alpaca/market-data/bars");
+        /** @description Trade data */
+        trades: typeof import("./alpaca/market-data/trades");
+        /** @description Market news */
+        news: typeof import("./alpaca/market-data/news");
+        /** @description Options trading and data */
+        options: {
+            contracts: typeof import("./alpaca/options/contracts");
+            orders: typeof import("./alpaca/options/orders");
+            strategies: typeof import("./alpaca/options/strategies");
+            data: typeof import("./alpaca/options/data");
+        };
+        /** @description Cryptocurrency trading and data */
+        crypto: {
+            orders: typeof import("./alpaca/crypto/orders");
+            data: typeof import("./alpaca/crypto/data");
+        };
+        /** @description Real-time WebSocket streams */
+        streams: typeof import("./alpaca/streams");
+        /** @deprecated Use new createClient() instead */
         TradingAPI: typeof Types.AlpacaTradingAPI;
+        /** @deprecated Use new createClient() instead */
         MarketDataAPI: typeof Types.AlpacaMarketDataAPI;
+        /** @deprecated Use new SDK modules instead */
         makeRequest: typeof Alpaca.makeRequest;
+        /** @deprecated Use account.getAccountDetails() instead */
         accountDetails: typeof Alpaca.fetchAccountDetails;
-        positions: typeof Alpaca.fetchAllPositions;
+        /** @deprecated Use positions.getPositions() instead */
+        legacyPositions: typeof Alpaca.fetchAllPositions;
+        /** @deprecated Use the new positions module instead */
         position: {
+            /** @deprecated Use positions.getPosition() instead */
             fetch: typeof Alpaca.fetchPosition;
+            /** @deprecated Use positions.closePosition() instead */
             close: typeof Alpaca.closePosition;
+            /** @deprecated Use positions.getPositions() instead */
             fetchAll: typeof Alpaca.fetchAllPositions;
+            /** @deprecated Use positions.closeAllPositions() instead */
             closeAll: typeof Alpaca.closeAllPositions;
+            /** @deprecated Use positions.closeAllPositionsAfterHours() instead */
             closeAllAfterHours: typeof Alpaca.closeAllPositionsAfterHours;
         };
+        /** @deprecated Use account.getPortfolioHistory() instead */
         portfolioHistory: typeof Alpaca.fetchPortfolioHistory;
+        /** @deprecated Use account.getAccountConfiguration() instead */
         getConfig: typeof Alpaca.getConfiguration;
+        /** @deprecated Use account.updateAccountConfiguration() instead */
         updateConfig: typeof Alpaca.updateConfiguration;
-        news: typeof Alpaca.fetchNews;
-        orders: {
+        /** @deprecated Use news.getNews() instead */
+        legacyNews: typeof Alpaca.fetchNews;
+        /** @deprecated Use the new orders module instead */
+        legacyOrders: {
+            /** @deprecated Use orders.createOrder() instead */
             create: typeof Alpaca.createOrder;
+            /** @deprecated Use orders.createOrder() with type='limit' instead */
             createLimitOrder: typeof Alpaca.createLimitOrder;
+            /** @deprecated Use orders.getOrder() instead */
             get: typeof Alpaca.getOrder;
+            /** @deprecated Use orders.getOrders() instead */
             getAll: typeof Alpaca.getOrders;
+            /** @deprecated Use orders.replaceOrder() instead */
             replace: typeof Alpaca.replaceOrder;
+            /** @deprecated Use orders.cancelOrder() instead */
             cancel: typeof Alpaca.cancelOrder;
+            /** @deprecated Use orders.cancelAllOrders() instead */
             cancelAll: typeof Alpaca.cancelAllOrders;
         };
+        /** @deprecated Use SDK asset functions instead */
         asset: {
             get: typeof Alpaca.getAsset;
         };
+        /** @deprecated Use quotes.getLatestQuotes() instead */
         quote: {
             getLatest: typeof Alpaca.getLatestQuotes;
         };
@@ -232,34 +398,199 @@ export declare const adptc: {
         isAuthConfigured: () => boolean;
     };
     alpaca: {
+        createClient: typeof import("./alpaca").createAlpacaClient;
+        createClientFromEnv: typeof import("./alpaca").createClientFromEnv;
+        clearClientCache: typeof import("./alpaca").clearClientCache;
+        /** @description Smart orders: brackets, OCO, OTO, trailing stops */
+        smartOrders: {
+            bracket: typeof import("./alpaca/trading/bracket-orders");
+            oco: typeof import("./alpaca/trading/oco-orders");
+            oto: typeof import("./alpaca/trading/oto-orders");
+            trailingStops: typeof import("./alpaca/trading/trailing-stops");
+            determineOrderType(params: import("./alpaca/trading/smart-orders").SmartOrderParams): import("./alpaca/trading/smart-orders").SmartOrderType;
+            createSmartOrder(client: import("./alpaca").AlpacaClient, params: import("./alpaca/trading/smart-orders").SmartOrderParams): Promise<import("./alpaca/trading/smart-orders").SmartOrderResult>;
+            createPercentageBracket(client: import("./alpaca").AlpacaClient, params: import("./alpaca/trading/smart-orders").PercentageBracketParams): Promise<import("./alpaca").BracketOrderResult>;
+            createRiskManagedPosition(client: import("./alpaca").AlpacaClient, params: import("./alpaca/trading/smart-orders").RiskManagedPositionParams): Promise<import("./alpaca").BracketOrderResult | import("./alpaca").OTOOrderResult>;
+            calculateRewardRiskRatio(entryPrice: number, takeProfitPrice: number, stopLossPrice: number, side: Types.OrderSide): number;
+            calculatePositionSize(accountValue: number, riskPercent: number, entryPrice: number, stopPrice: number): number;
+            default: {
+                createSmartOrder: typeof import("./alpaca/trading/smart-orders").createSmartOrder;
+                determineOrderType: typeof import("./alpaca/trading/smart-orders").determineOrderType;
+                createPercentageBracket: typeof import("./alpaca/trading/smart-orders").createPercentageBracket;
+                createRiskManagedPosition: typeof import("./alpaca/trading/smart-orders").createRiskManagedPosition;
+                calculateRewardRiskRatio: typeof import("./alpaca/trading/smart-orders").calculateRewardRiskRatio;
+                calculatePositionSize: typeof import("./alpaca/trading/smart-orders").calculatePositionSize;
+                createBracketOrder: typeof import("./alpaca").createBracketOrder;
+                createProtectiveBracket: typeof import("./alpaca").createProtectiveBracket;
+                createExecutorFromTradingAPI: typeof import("./alpaca").createExecutorFromTradingAPI;
+                createOCOOrder: typeof import("./alpaca").createOCOOrder;
+                createOTOOrder: typeof import("./alpaca").createOTOOrder;
+                createTrailingStop: typeof import("./alpaca").createTrailingStop;
+                updateTrailingStop: typeof import("./alpaca").updateTrailingStop;
+            };
+            createBracketOrder(executor: import("./alpaca").BracketOrderExecutor, params: import("./alpaca").BracketOrderParams): Promise<import("./alpaca").BracketOrderResult>;
+            createProtectiveBracket(executor: import("./alpaca").BracketOrderExecutor, params: import("./alpaca").ProtectiveBracketParams): Promise<import("./alpaca").BracketOrderResult>;
+            createExecutorFromTradingAPI(api: {
+                makeRequest: (endpoint: string, method: string, body?: unknown) => Promise<Types.AlpacaOrder>;
+            }): import("./alpaca").BracketOrderExecutor;
+            createOCOOrder(client: import("./alpaca").AlpacaClient, params: import("./alpaca").OCOOrderParams): Promise<import("./alpaca").OCOOrderResult>;
+            cancelOCOOrder(client: import("./alpaca").AlpacaClient, parentOrderId: string): Promise<void>;
+            getOCOOrderStatus(client: import("./alpaca").AlpacaClient, parentOrderId: string): Promise<Types.AlpacaOrder>;
+            protectLongPosition(client: import("./alpaca").AlpacaClient, symbol: string, qty: number, takeProfitPrice: number, stopLossPrice: number, stopLimitPrice?: number): Promise<import("./alpaca").OCOOrderResult>;
+            protectShortPosition(client: import("./alpaca").AlpacaClient, symbol: string, qty: number, takeProfitPrice: number, stopLossPrice: number, stopLimitPrice?: number): Promise<import("./alpaca").OCOOrderResult>;
+            createOTOOrder(client: import("./alpaca").AlpacaClient, params: import("./alpaca").OTOOrderParams): Promise<import("./alpaca").OTOOrderResult>;
+            cancelOTOOrder(client: import("./alpaca").AlpacaClient, parentOrderId: string): Promise<void>;
+            getOTOOrderStatus(client: import("./alpaca").AlpacaClient, parentOrderId: string): Promise<Types.AlpacaOrder>;
+            buyWithStopLoss(client: import("./alpaca").AlpacaClient, symbol: string, qty: number, stopLossPrice: number, stopLimitPrice?: number): Promise<import("./alpaca").OTOOrderResult>;
+            buyWithTrailingStop(client: import("./alpaca").AlpacaClient, symbol: string, qty: number, trailPercent: number): Promise<import("./alpaca").OTOOrderResult>;
+            limitBuyWithTakeProfit(client: import("./alpaca").AlpacaClient, symbol: string, qty: number, entryPrice: number, takeProfitPrice: number): Promise<import("./alpaca").OTOOrderResult>;
+            shortWithStopLoss(client: import("./alpaca").AlpacaClient, symbol: string, qty: number, entryPrice: number, stopLossPrice: number): Promise<import("./alpaca").OTOOrderResult>;
+            entryWithPercentStopLoss(client: import("./alpaca").AlpacaClient, symbol: string, qty: number, entryPrice: number | null, stopLossPercent: number, side?: Types.OrderSide): Promise<import("./alpaca").OTOOrderResult>;
+            createTrailingStop(client: import("./alpaca").AlpacaClient, params: import("./alpaca").TrailingStopParams): Promise<Types.AlpacaOrder>;
+            updateTrailingStop(client: import("./alpaca").AlpacaClient, orderId: string, updates: {
+                trailPercent?: number;
+                trailPrice?: number;
+            }): Promise<Types.AlpacaOrder>;
+            getTrailingStopHWM(client: import("./alpaca").AlpacaClient, orderId: string): Promise<import("./alpaca").TrailingStopHWMResult>;
+            cancelTrailingStop(client: import("./alpaca").AlpacaClient, orderId: string): Promise<void>;
+            createPortfolioTrailingStops(client: import("./alpaca").AlpacaClient, params: import("./alpaca").PortfolioTrailingStopParams): Promise<Map<string, Types.AlpacaOrder>>;
+            getOpenTrailingStops(client: import("./alpaca").AlpacaClient, symbol?: string): Promise<Types.AlpacaOrder[]>;
+            hasActiveTrailingStop(client: import("./alpaca").AlpacaClient, symbol: string): Promise<boolean>;
+            cancelTrailingStopsForSymbol(client: import("./alpaca").AlpacaClient, symbol: string): Promise<number>;
+            TrailingStopValidationError: typeof import("./alpaca").TrailingStopValidationError;
+        };
+        /** @description Standard order operations */
+        orders: {
+            getOrdersBySymbol(client: import("./alpaca").AlpacaClient, symbol: string, params?: Omit<Types.GetOrdersParams, "symbols">): Promise<Types.AlpacaOrder[]>;
+            getOpenOrders(client: import("./alpaca").AlpacaClient, params?: Omit<Types.GetOrdersParams, "status">): Promise<Types.AlpacaOrder[]>;
+            getFilledOrders(client: import("./alpaca").AlpacaClient, params: import("./alpaca").GetFilledOrdersParams): Promise<Types.AlpacaOrder[]>;
+            getOrderHistory(client: import("./alpaca").AlpacaClient, params?: import("./alpaca").GetOrderHistoryParams): Promise<import("./alpaca").OrderHistoryResult>;
+            getAllOrders(client: import("./alpaca").AlpacaClient, params?: import("./alpaca").GetAllOrdersParams): Promise<Types.AlpacaOrder[]>;
+            waitForOrderFill(client: import("./alpaca").AlpacaClient, params: import("./alpaca").WaitForOrderFillParams): Promise<import("./alpaca").WaitForOrderFillResult>;
+            isOrderFillable(order: Types.AlpacaOrder): boolean;
+            isOrderFilled(order: Types.AlpacaOrder): boolean;
+            isOrderTerminal(order: Types.AlpacaOrder): boolean;
+            isOrderOpen(order: Types.AlpacaOrder): boolean;
+            calculateOrderValue(order: Types.AlpacaOrder): number | null;
+            formatOrderSummary(order: Types.AlpacaOrder): import("./alpaca").OrderSummary;
+            formatOrderForLog(order: Types.AlpacaOrder): string;
+            roundPriceForAlpaca(price: number): string;
+            roundPriceForAlpacaNumber(price: number): number;
+            groupOrdersBySymbol(orders: Types.AlpacaOrder[]): Map<string, Types.AlpacaOrder[]>;
+            groupOrdersByStatus(orders: Types.AlpacaOrder[]): Map<string, Types.AlpacaOrder[]>;
+            calculateTotalFilledValue(orders: Types.AlpacaOrder[]): number;
+            filterOrdersByDateRange(orders: Types.AlpacaOrder[], startDate: Date, endDate: Date): Types.AlpacaOrder[];
+            sortOrdersByDate(orders: Types.AlpacaOrder[], direction?: "asc" | "desc"): Types.AlpacaOrder[];
+            default: {
+                getOrdersBySymbol: typeof import("./alpaca").getOrdersBySymbol;
+                getOpenOrders: typeof import("./alpaca").getOpenOrdersQuery;
+                getFilledOrders: typeof import("./alpaca").getFilledOrders;
+                getOrderHistory: typeof import("./alpaca").getOrderHistory;
+                getAllOrders: typeof import("./alpaca").getAllOrders;
+                waitForOrderFill: typeof import("./alpaca").waitForOrderFill;
+                isOrderFillable: typeof import("./alpaca").isOrderFillable;
+                isOrderFilled: typeof import("./alpaca").isOrderFilled;
+                isOrderTerminal: typeof import("./alpaca").isOrderTerminalStatus;
+                isOrderOpen: typeof import("./alpaca").isOrderOpen;
+                calculateOrderValue: typeof import("./alpaca").calculateOrderValue;
+                calculateTotalFilledValue: typeof import("./alpaca").calculateTotalFilledValue;
+                formatOrderSummary: typeof import("./alpaca").formatOrderSummary;
+                formatOrderForLog: typeof import("./alpaca").formatOrderForLog;
+                roundPriceForAlpaca: typeof import("./alpaca").roundPriceForAlpaca;
+                roundPriceForAlpacaNumber: typeof import("./alpaca").roundPriceForAlpacaNumber;
+                groupOrdersBySymbol: typeof import("./alpaca").groupOrdersBySymbol;
+                groupOrdersByStatus: typeof import("./alpaca").groupOrdersByStatus;
+                filterOrdersByDateRange: typeof import("./alpaca").filterOrdersByDateRange;
+                sortOrdersByDate: typeof import("./alpaca").sortOrdersByDate;
+            };
+            createOrder(client: import("./alpaca").AlpacaClient, params: Types.CreateOrderParams): Promise<Types.AlpacaOrder>;
+            getOrder(client: import("./alpaca").AlpacaClient, orderId: string): Promise<Types.AlpacaOrder>;
+            getOrders(client: import("./alpaca").AlpacaClient, params?: Types.GetOrdersParams): Promise<Types.AlpacaOrder[]>;
+            cancelOrder(client: import("./alpaca").AlpacaClient, orderId: string): Promise<void>;
+            cancelAllOrders(client: import("./alpaca").AlpacaClient): Promise<import("./alpaca/trading/orders").CancelAllOrdersResponse>;
+            replaceOrder(client: import("./alpaca").AlpacaClient, orderId: string, params: Types.ReplaceOrderParams): Promise<Types.AlpacaOrder>;
+            isOrderCancelable(status: Types.OrderStatus): boolean;
+            getOrderByClientId(client: import("./alpaca").AlpacaClient, clientOrderId: string): Promise<Types.AlpacaOrder>;
+        };
+        /** @description Position management */
+        positions: typeof import("./alpaca/trading/positions");
+        /** @description Account information and configuration */
+        account: typeof import("./alpaca/trading/account");
+        /** @description Real-time and historical quotes */
+        quotes: typeof import("./alpaca/market-data/quotes");
+        /** @description Historical price bars (OHLCV) */
+        bars: typeof import("./alpaca/market-data/bars");
+        /** @description Trade data */
+        trades: typeof import("./alpaca/market-data/trades");
+        /** @description Market news */
+        news: typeof import("./alpaca/market-data/news");
+        /** @description Options trading and data */
+        options: {
+            contracts: typeof import("./alpaca/options/contracts");
+            orders: typeof import("./alpaca/options/orders");
+            strategies: typeof import("./alpaca/options/strategies");
+            data: typeof import("./alpaca/options/data");
+        };
+        /** @description Cryptocurrency trading and data */
+        crypto: {
+            orders: typeof import("./alpaca/crypto/orders");
+            data: typeof import("./alpaca/crypto/data");
+        };
+        /** @description Real-time WebSocket streams */
+        streams: typeof import("./alpaca/streams");
+        /** @deprecated Use new createClient() instead */
         TradingAPI: typeof Types.AlpacaTradingAPI;
+        /** @deprecated Use new createClient() instead */
         MarketDataAPI: typeof Types.AlpacaMarketDataAPI;
+        /** @deprecated Use new SDK modules instead */
         makeRequest: typeof Alpaca.makeRequest;
+        /** @deprecated Use account.getAccountDetails() instead */
         accountDetails: typeof Alpaca.fetchAccountDetails;
-        positions: typeof Alpaca.fetchAllPositions;
+        /** @deprecated Use positions.getPositions() instead */
+        legacyPositions: typeof Alpaca.fetchAllPositions;
+        /** @deprecated Use the new positions module instead */
         position: {
+            /** @deprecated Use positions.getPosition() instead */
             fetch: typeof Alpaca.fetchPosition;
+            /** @deprecated Use positions.closePosition() instead */
             close: typeof Alpaca.closePosition;
+            /** @deprecated Use positions.getPositions() instead */
             fetchAll: typeof Alpaca.fetchAllPositions;
+            /** @deprecated Use positions.closeAllPositions() instead */
             closeAll: typeof Alpaca.closeAllPositions;
+            /** @deprecated Use positions.closeAllPositionsAfterHours() instead */
             closeAllAfterHours: typeof Alpaca.closeAllPositionsAfterHours;
         };
+        /** @deprecated Use account.getPortfolioHistory() instead */
         portfolioHistory: typeof Alpaca.fetchPortfolioHistory;
+        /** @deprecated Use account.getAccountConfiguration() instead */
         getConfig: typeof Alpaca.getConfiguration;
+        /** @deprecated Use account.updateAccountConfiguration() instead */
         updateConfig: typeof Alpaca.updateConfiguration;
-        news: typeof Alpaca.fetchNews;
-        orders: {
+        /** @deprecated Use news.getNews() instead */
+        legacyNews: typeof Alpaca.fetchNews;
+        /** @deprecated Use the new orders module instead */
+        legacyOrders: {
+            /** @deprecated Use orders.createOrder() instead */
             create: typeof Alpaca.createOrder;
+            /** @deprecated Use orders.createOrder() with type='limit' instead */
             createLimitOrder: typeof Alpaca.createLimitOrder;
+            /** @deprecated Use orders.getOrder() instead */
             get: typeof Alpaca.getOrder;
+            /** @deprecated Use orders.getOrders() instead */
             getAll: typeof Alpaca.getOrders;
+            /** @deprecated Use orders.replaceOrder() instead */
             replace: typeof Alpaca.replaceOrder;
+            /** @deprecated Use orders.cancelOrder() instead */
             cancel: typeof Alpaca.cancelOrder;
+            /** @deprecated Use orders.cancelAllOrders() instead */
             cancelAll: typeof Alpaca.cancelAllOrders;
         };
+        /** @deprecated Use SDK asset functions instead */
         asset: {
             get: typeof Alpaca.getAsset;
         };
+        /** @deprecated Use quotes.getLatestQuotes() instead */
         quote: {
             getLatest: typeof Alpaca.getLatestQuotes;
         };

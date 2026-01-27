@@ -16,6 +16,9 @@ import * as ta from './technical-analysis';
 import { AlpacaTradingAPI } from './alpaca-trading-api';
 import { AlpacaMarketDataAPI } from './alpaca-market-data-api';
 
+// New modular Alpaca SDK imports
+import { alpaca as alpacaSDK } from './alpaca';
+
 // Cache utilities
 export {
   StampedeProtectedCache,
@@ -52,6 +55,9 @@ export const createAlpacaMarketDataAPI = () => {
   return AlpacaMarketDataAPI.getInstance();
 };
 
+// Export new modular Alpaca SDK wrappers
+export * from './alpaca';
+
 // Export TokenProvider type for Apollo client auth
 export type { TokenProvider } from './adaptic';
 
@@ -64,34 +70,93 @@ export const adaptic = {
     isAuthConfigured: backend.isAuthConfigured,
   },
   alpaca: {
+    // New SDK-based client factory (RECOMMENDED)
+    createClient: alpacaSDK.createClient,
+    createClientFromEnv: alpacaSDK.createClientFromEnv,
+    clearClientCache: alpacaSDK.clearClientCache,
+
+    // New SDK-based modules (RECOMMENDED)
+    /** @description Smart orders: brackets, OCO, OTO, trailing stops */
+    smartOrders: alpacaSDK.smartOrders,
+    /** @description Standard order operations */
+    orders: alpacaSDK.orders,
+    /** @description Position management */
+    positions: alpacaSDK.positions,
+    /** @description Account information and configuration */
+    account: alpacaSDK.account,
+    /** @description Real-time and historical quotes */
+    quotes: alpacaSDK.quotes,
+    /** @description Historical price bars (OHLCV) */
+    bars: alpacaSDK.bars,
+    /** @description Trade data */
+    trades: alpacaSDK.trades,
+    /** @description Market news */
+    news: alpacaSDK.news,
+    /** @description Options trading and data */
+    options: alpacaSDK.options,
+    /** @description Cryptocurrency trading and data */
+    crypto: alpacaSDK.crypto,
+    /** @description Real-time WebSocket streams */
+    streams: alpacaSDK.streams,
+
+    // =========================================================================
+    // DEPRECATED: Legacy API (maintained for backward compatibility)
+    // Prefer using the new SDK-based modules above
+    // =========================================================================
+
+    /** @deprecated Use new createClient() instead */
     TradingAPI: AlpacaTradingAPI,
+    /** @deprecated Use new createClient() instead */
     MarketDataAPI: AlpacaMarketDataAPI,
+    /** @deprecated Use new SDK modules instead */
     makeRequest: Alpaca.makeRequest,
+    /** @deprecated Use account.getAccountDetails() instead */
     accountDetails: Alpaca.fetchAccountDetails,
-    positions: Alpaca.fetchAllPositions, // to be deprecated
+    /** @deprecated Use positions.getPositions() instead */
+    legacyPositions: Alpaca.fetchAllPositions,
+    /** @deprecated Use the new positions module instead */
     position: {
+      /** @deprecated Use positions.getPosition() instead */
       fetch: Alpaca.fetchPosition,
+      /** @deprecated Use positions.closePosition() instead */
       close: Alpaca.closePosition,
+      /** @deprecated Use positions.getPositions() instead */
       fetchAll: Alpaca.fetchAllPositions,
+      /** @deprecated Use positions.closeAllPositions() instead */
       closeAll: Alpaca.closeAllPositions,
+      /** @deprecated Use positions.closeAllPositionsAfterHours() instead */
       closeAllAfterHours: Alpaca.closeAllPositionsAfterHours,
     },
+    /** @deprecated Use account.getPortfolioHistory() instead */
     portfolioHistory: Alpaca.fetchPortfolioHistory,
+    /** @deprecated Use account.getAccountConfiguration() instead */
     getConfig: Alpaca.getConfiguration,
+    /** @deprecated Use account.updateAccountConfiguration() instead */
     updateConfig: Alpaca.updateConfiguration,
-    news: Alpaca.fetchNews,
-    orders: {
+    /** @deprecated Use news.getNews() instead */
+    legacyNews: Alpaca.fetchNews,
+    /** @deprecated Use the new orders module instead */
+    legacyOrders: {
+      /** @deprecated Use orders.createOrder() instead */
       create: Alpaca.createOrder,
+      /** @deprecated Use orders.createOrder() with type='limit' instead */
       createLimitOrder: Alpaca.createLimitOrder,
+      /** @deprecated Use orders.getOrder() instead */
       get: Alpaca.getOrder,
+      /** @deprecated Use orders.getOrders() instead */
       getAll: Alpaca.getOrders,
+      /** @deprecated Use orders.replaceOrder() instead */
       replace: Alpaca.replaceOrder,
+      /** @deprecated Use orders.cancelOrder() instead */
       cancel: Alpaca.cancelOrder,
+      /** @deprecated Use orders.cancelAllOrders() instead */
       cancelAll: Alpaca.cancelAllOrders,
     },
+    /** @deprecated Use SDK asset functions instead */
     asset: {
       get: Alpaca.getAsset,
     },
+    /** @deprecated Use quotes.getLatestQuotes() instead */
     quote: {
       getLatest: Alpaca.getLatestQuotes,
     },
