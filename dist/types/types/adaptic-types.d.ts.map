@@ -1,1 +1,0 @@
-{"version":3,"file":"adaptic-types.d.ts","sourceRoot":"","sources":["../../../src/types/adaptic-types.ts"],"names":[],"mappings":"AACA,MAAM,WAAW,aAAa;IAC5B,EAAE,EAAE,MAAM,CAAC;IACX,MAAM,EAAE,MAAM,CAAC;IACf,CAAC,GAAG,EAAE,MAAM,GAAG,GAAG,CAAC;CACpB;AAGD,MAAM,WAAW,qBAAqB;IACpC,KAAK,EAAE,aAAa,GAAG,IAAI,CAAC;IAC5B,KAAK,EAAE,MAAM,GAAG,IAAI,CAAC;IACrB,OAAO,EAAE,OAAO,CAAC;CAClB"}
