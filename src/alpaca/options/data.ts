@@ -48,7 +48,7 @@ export type OptionsFeed = 'opra' | 'indicative';
 /**
  * Base URL for Alpaca options market data API
  */
-const OPTIONS_DATA_BASE_URL = 'https://data.alpaca.markets/v1beta1/options';
+const OPTIONS_DATA_BASE_URL = `${MARKET_DATA_API.OPTIONS}/options`;
 
 /**
  * Make an authenticated request to the Alpaca options data API
@@ -75,6 +75,7 @@ async function makeOptionsDataRequest<T>(
       'APCA-API-SECRET-KEY': config.apiSecret,
       'Content-Type': 'application/json',
     },
+    signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
   });
 
   if (!response.ok) {

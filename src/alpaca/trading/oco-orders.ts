@@ -212,7 +212,7 @@ export async function createOCOOrder(
 
   try {
     // Build the OCO order request
-    const orderRequest: Record<string, any> = {
+    const orderRequest: Record<string, unknown> = {
       symbol,
       qty: qty.toString(),
       side,

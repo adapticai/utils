@@ -4,7 +4,7 @@ export interface LogOptions {
   source?: string;
   type?: LogType;
   account?: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   symbol?: string;
   logToFile?: boolean; // Whether to force logging to a file regardless of symbol
 }

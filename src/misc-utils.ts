@@ -1,4 +1,6 @@
 // Utility function for debug logging
+import { getLogger } from './logger';
+import { withRetry } from './utils/retry';
 
 // Define the possible log types as a const array for better type inference
 const LOG_TYPES = ['info', 'warn', 'error', 'debug', 'trace'] as const;
@@ -28,24 +30,28 @@ export const logIfDebug = (
   if (!debugMode) return;
 
   const prefix = `[DEBUG][${type.toUpperCase()}]`;
-  const formattedData = data !== undefined ? JSON.stringify(data, null, 2) : '';
+  const logger = getLogger();
+  const context = data !== undefined ? (typeof data === 'object' && data !== null ? data as Record<string, unknown> : { data }) : undefined;
+
+  const fullMessage = prefix + ' ' + message;
 
   switch (type) {
     case 'error':
-      console.error(prefix, message, formattedData);
+      logger.error(fullMessage, context);
       break;
     case 'warn':
-      console.warn(prefix, message, formattedData);
+      logger.warn(fullMessage, context);
       break;
     case 'debug':
-      console.debug(prefix, message, formattedData);
+      logger.debug(fullMessage, context);
       break;
     case 'trace':
-      console.trace(prefix, message, formattedData);
+      // trace maps to debug in our logger interface
+      logger.debug(fullMessage, context);
       break;
     case 'info':
     default:
-      console.info(prefix, message, formattedData);
+      logger.info(fullMessage, context);
   }
 };
 
@@ -98,48 +104,12 @@ export function hideApiKeyFromurl(url: string): string {
   }
 }
 
-interface ErrorDetails {
-  type: string;
-  reason: string;
-  status: number | null;
-  retryAfter?: number;
-}
-
-/**
- * Extracts meaningful error information from various error types.
- * @param error - The error to analyze.
- * @param response - Optional response object for HTTP errors.
- * @returns Structured error details.
- */
-function extractErrorDetails(error: any, response?: Response): ErrorDetails {
-  if (error.name === 'TypeError' && error.message.includes('fetch')) {
-    return { type: 'NETWORK_ERROR', reason: 'Network connectivity issue', status: null };
-  }
-  if (error.message.includes('HTTP error: 429')) {
-    const match = error.message.match(/RATE_LIMIT: 429:(\d+)/);
-    const retryAfter = match ? parseInt(match[1]) : undefined;
-    return { type: 'RATE_LIMIT', reason: 'Rate limit exceeded', status: 429, retryAfter };
-  }
-  if (error.message.includes('HTTP error: 401') || error.message.includes('AUTH_ERROR: 401')) {
-    return { type: 'AUTH_ERROR', reason: 'Authentication failed - invalid API key', status: 401 };
-  }
-  if (error.message.includes('HTTP error: 403') || error.message.includes('AUTH_ERROR: 403')) {
-    return { type: 'AUTH_ERROR', reason: 'Access forbidden - insufficient permissions', status: 403 };
-  }
-  if (error.message.includes('SERVER_ERROR:')) {
-    const status = parseInt(error.message.split('SERVER_ERROR: ')[1]) || 500;
-    return { type: 'SERVER_ERROR', reason: `Server error (${status})`, status };
-  }
-  if (error.message.includes('CLIENT_ERROR:')) {
-    const status = parseInt(error.message.split('CLIENT_ERROR: ')[1]) || 400;
-    return { type: 'CLIENT_ERROR', reason: `Client error (${status})`, status };
-  }
-  return { type: 'UNKNOWN', reason: error.message || 'Unknown error', status: null };
-}
-
 /**
  * Fetches a resource with intelligent retry logic for handling transient errors.
  * Features enhanced error logging, rate limit detection, and adaptive backoff.
+ *
+ * This is a wrapper around the new retry utility for backward compatibility.
+ * It wraps fetch calls with retry logic using exponential backoff.
  *
  * @param url - The URL to fetch.
  * @param options - Optional fetch options.
@@ -155,91 +125,53 @@ export async function fetchWithRetry(
   retries: number = 3,
   initialBackoff: number = 1000
 ): Promise<Response> {
-  let backoff = initialBackoff;
-  
-  for (let attempt = 1; attempt <= retries; attempt++) {
-    try {
+  return withRetry(
+    async () => {
       const response = await fetch(url, options);
+
       if (!response.ok) {
         // Enhanced HTTP error handling with specific error types
         if (response.status === 429) {
           // Check for Retry-After header
           const retryAfter = response.headers.get('Retry-After');
-          const retryDelay = retryAfter ? parseInt(retryAfter) * 1000 : null;
-          
-          throw new Error(`RATE_LIMIT: ${response.status}${retryDelay ? `:${retryDelay}` : ''}`);
+          const retryDelay = retryAfter ? parseInt(retryAfter, 10) * 1000 : null;
+
+          const error = new Error(`RATE_LIMIT: ${response.status}${retryDelay ? `:${retryDelay}` : ''}`);
+          (error as Error & { response?: Response }).response = response;
+          throw error;
         }
         if ([500, 502, 503, 504].includes(response.status)) {
-          throw new Error(`SERVER_ERROR: ${response.status}`);
+          const error = new Error(`SERVER_ERROR: ${response.status}`);
+          (error as Error & { response?: Response }).response = response;
+          throw error;
         }
         if ([401, 403].includes(response.status)) {
-          throw new Error(`AUTH_ERROR: ${response.status}`);
+          const error = new Error(`AUTH_ERROR: ${response.status}`);
+          (error as Error & { response?: Response }).response = response;
+          throw error;
         }
         if (response.status >= 400 && response.status < 500) {
           // Don't retry most 4xx client errors
-          throw new Error(`CLIENT_ERROR: ${response.status}`);
+          const error = new Error(`CLIENT_ERROR: ${response.status}`);
+          (error as Error & { response?: Response }).response = response;
+          throw error;
         }
-        throw new Error(`HTTP_ERROR: ${response.status}`);
+        const error = new Error(`HTTP_ERROR: ${response.status}`);
+        (error as Error & { response?: Response }).response = response;
+        throw error;
       }
+
       return response;
-    } catch (error: any) {
-      if (attempt === retries) {
-        throw error;
-      }
-      
-      // Extract meaningful error information
-      const errorDetails = extractErrorDetails(error);
-      let adaptiveBackoff = backoff;
-      
-      // Adaptive backoff based on error type
-      if (errorDetails.type === 'RATE_LIMIT') {
-        // Use Retry-After header if available, otherwise use minimum 5s for rate limits
-        if (errorDetails.retryAfter) {
-          adaptiveBackoff = errorDetails.retryAfter;
-        } else {
-          adaptiveBackoff = Math.max(backoff, 5000);
-        }
-      } else if (errorDetails.type === 'AUTH_ERROR') {
-        // Don't retry auth errors - fail fast
-        console.error(`Authentication error for ${hideApiKeyFromurl(url)}: ${errorDetails.reason}`, {
-          attemptNumber: attempt,
-          errorType: errorDetails.type,
-          httpStatus: errorDetails.status,
-          url: hideApiKeyFromurl(url),
-          source: 'fetchWithRetry',
-          timestamp: new Date().toISOString()
-        });
-        throw error;
-      } else if (errorDetails.type === 'CLIENT_ERROR') {
-        // Don't retry client errors (except 429 which is handled above)
-        console.error(`Client error for ${hideApiKeyFromurl(url)}: ${errorDetails.reason}`, {
-          attemptNumber: attempt,
-          errorType: errorDetails.type,
-          httpStatus: errorDetails.status,
-          url: hideApiKeyFromurl(url),
-          source: 'fetchWithRetry',
-          timestamp: new Date().toISOString()
-        });
-        throw error;
-      }
-      
-      // Enhanced error logging with structured data
-      console.warn(`Fetch attempt ${attempt} of ${retries} for ${hideApiKeyFromurl(url)} failed: ${errorDetails.reason}. Retrying in ${adaptiveBackoff}ms...`, {
-        attemptNumber: attempt,
-        totalRetries: retries,
-        errorType: errorDetails.type,
-        httpStatus: errorDetails.status,
-        retryDelay: adaptiveBackoff,
-        url: hideApiKeyFromurl(url),
-        source: 'fetchWithRetry',
-        timestamp: new Date().toISOString()
-      });
-      
-      await new Promise((resolve) => setTimeout(resolve, adaptiveBackoff));
-      backoff = Math.min(backoff * 2, 30000); // Cap at 30 seconds
-    }
-  }
-  throw new Error('Failed to fetch after multiple attempts');
+    },
+    {
+      maxRetries: retries,
+      baseDelayMs: initialBackoff,
+      maxDelayMs: 30000,
+      retryableStatusCodes: [429, 500, 502, 503, 504],
+      retryOnNetworkError: true,
+    },
+    `fetchWithRetry: ${hideApiKeyFromurl(url)}`
+  );
 }
 
 /**
@@ -259,7 +191,7 @@ export async function validatePolygonApiKey(apiKey: string): Promise<boolean> {
     return response.ok;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-    console.error('Polygon.io API key validation failed:', errorMessage);
+    getLogger().error('Polygon.io API key validation failed:', { errorMessage });
     return false;
   }
 }

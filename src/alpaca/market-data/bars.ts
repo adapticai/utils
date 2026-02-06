@@ -3,7 +3,7 @@
  * Historical and real-time OHLCV data using Alpaca SDK
  */
 import { AlpacaClient } from '../client';
-import { Bar, TimeFrame } from '../../types/alpaca-types';
+import { Bar, TimeFrame, SDKMarketDataOptions } from '../../types/alpaca-types';
 import { log as baseLog } from '../../logging';
 import { LogOptions } from '../../types/logging-types';
 
@@ -210,7 +210,7 @@ export async function getLatestBars(
     const dataFeed = config.dataFeed || 'iex';
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const response = await sdk.getLatestBars(normalizedSymbols, { feed: dataFeed } as any);
+    const response = await sdk.getLatestBars(normalizedSymbols, { feed: dataFeed } as SDKMarketDataOptions);
 
     const result = new Map<string, Bar>();
 

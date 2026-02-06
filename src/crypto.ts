@@ -7,8 +7,11 @@ import type {
   LatestQuotesResponse
 } from './types/alpaca-types.js';
 import { logIfDebug } from './misc-utils.js';
+import { createTimeoutSignal, DEFAULT_TIMEOUTS } from './http-timeout.js';
+import { MARKET_DATA_API } from './config/api-endpoints';
+import { withRetry, API_RETRY_CONFIGS } from './utils/retry';
 
-const ALPACA_API_BASE = 'https://data.alpaca.markets/v1beta3';
+const ALPACA_API_BASE = MARKET_DATA_API.CRYPTO;
 
 /**
  * Fetches cryptocurrency bars for the specified parameters.
@@ -54,33 +57,41 @@ export async function fetchBars(params: CryptoBarsParams): Promise<{ [symbol: st
     logIfDebug(`Fetching crypto bars from: ${url}`);
 
     try {
-      const response = await fetch(url);
+      await withRetry(
+        async () => {
+          const response = await fetch(url, {
+            signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
+          });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Alpaca API error (${response.status}): ${errorText}`);
-      }
+          if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Alpaca API error (${response.status}): ${errorText}`);
+          }
 
-      const data: Omit<CryptoBarsResponse, 'bars'> & {
-        bars: { [symbol: string]: Array<Omit<CryptoBar, 't'> & { t: string }> };
-      } = await response.json();
+          const data: Omit<CryptoBarsResponse, 'bars'> & {
+            bars: { [symbol: string]: Array<Omit<CryptoBar, 't'> & { t: string }> };
+          } = await response.json();
 
-      // Convert timestamp strings to Date objects and merge bars
-      Object.entries(data.bars).forEach(([symbol, bars]) => {
-        if (allBars[symbol]) {
-          const barsWithDateObjects = bars.map((bar) => ({
-            ...bar,
-            t: new Date(bar.t),
-          }));
-          allBars[symbol].push(...barsWithDateObjects);
-        }
-      });
+          // Convert timestamp strings to Date objects and merge bars
+          Object.entries(data.bars).forEach(([symbol, bars]) => {
+            if (allBars[symbol]) {
+              const barsWithDateObjects = bars.map((bar) => ({
+                ...bar,
+                t: new Date(bar.t),
+              }));
+              allBars[symbol].push(...barsWithDateObjects);
+            }
+          });
 
-      // Check if there are more pages
-      pageToken = data.next_page_token;
-      hasMorePages = !!pageToken;
+          // Check if there are more pages
+          pageToken = data.next_page_token;
+          hasMorePages = !!pageToken;
 
-      logIfDebug(`Received ${Object.values(data.bars).flat().length} bars. More pages: ${hasMorePages}`);
+          logIfDebug(`Received ${Object.values(data.bars).flat().length} bars. More pages: ${hasMorePages}`);
+        },
+        API_RETRY_CONFIGS.CRYPTO,
+        `Crypto.fetchBars(${symbolsParam})`
+      );
     } catch (error) {
       logIfDebug(`Error fetching crypto bars: ${error}`);
       throw error;
@@ -146,7 +157,21 @@ export async function fetchNews(
 
   logIfDebug(`Fetching news from: ${url}`);
 
-  let newsArticles: Array<any> = [];
+  interface RawNewsArticle {
+    id: number;
+    headline: string;
+    author: string;
+    created_at: string;
+    updated_at: string;
+    source: string;
+    summary: string;
+    url: string;
+    content: string;
+    symbols: string[];
+    images: Array<{ size: 'large' | 'small' | 'thumb'; url: string }>;
+  }
+
+  let newsArticles: AlpacaNewsArticle[] = [];
   let pageToken: string | null = null;
   let hasMorePages = true;
 
@@ -155,31 +180,42 @@ export async function fetchNews(
       queryParams.append('page_token', pageToken);
     }
 
-    const response = await fetch(url);
+    await withRetry(
+      async () => {
+        const response = await fetch(url, {
+          signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
+        });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Alpaca API error (${response.status}): ${errorText}`);
-    }
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Alpaca API error (${response.status}): ${errorText}`);
+        }
 
-    const data = await response.json();
-    newsArticles = newsArticles.concat(
-      data.news.map((article: any) => ({
-        title: article.headline,
-        author: article.author,
-        createdAt: article.created_at,
-        headline: article.headline,
-        source: article.source,
-        summary: article.summary,
-        url: article.url,
-        content: article.content,
-      })) as AlpacaNewsArticle[]
+        const data: { news: RawNewsArticle[]; next_page_token?: string } = await response.json();
+        newsArticles = newsArticles.concat(
+          data.news.map((article): AlpacaNewsArticle => ({
+            id: article.id,
+            author: article.author,
+            content: article.content,
+            created_at: article.created_at,
+            updated_at: article.updated_at,
+            headline: article.headline,
+            source: article.source,
+            summary: article.summary,
+            url: article.url,
+            symbols: article.symbols,
+            images: article.images,
+          }))
+        );
+
+        pageToken = data.next_page_token;
+        hasMorePages = !!pageToken;
+
+        logIfDebug(`Received ${data.news.length} news articles. More pages: ${hasMorePages}`);
+      },
+      API_RETRY_CONFIGS.CRYPTO,
+      `Crypto.fetchNews(${symbol})`
     );
-
-    pageToken = data.next_page_token;
-    hasMorePages = !!pageToken;
-
-    logIfDebug(`Received ${data.news.length} news articles. More pages: ${hasMorePages}`);
   }
 
   // If sort is "asc" and limit is 10, return only the 10 most recent articles
@@ -228,28 +264,30 @@ export async function fetchLatestTrades(
 
   logIfDebug(`Fetching crypto latest trades from: ${url}`);
 
-  try {
-    const response = await fetch(url, {
-      headers: {
-        'APCA-API-KEY-ID': auth.APIKey,
-        'APCA-API-SECRET-KEY': auth.APISecret,
-      },
-    });
+  return withRetry(
+    async () => {
+      const response = await fetch(url, {
+        headers: {
+          'APCA-API-KEY-ID': auth.APIKey,
+          'APCA-API-SECRET-KEY': auth.APISecret,
+        },
+        signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
+      });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Alpaca API error (${response.status}): ${errorText}`);
-    }
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Alpaca API error (${response.status}): ${errorText}`);
+      }
 
-    const data: LatestTradesResponse = await response.json();
+      const data: LatestTradesResponse = await response.json();
 
-    logIfDebug(`Received latest trades for ${Object.keys(data.trades).length} symbols`);
+      logIfDebug(`Received latest trades for ${Object.keys(data.trades).length} symbols`);
 
-    return data;
-  } catch (error) {
-    logIfDebug(`Error fetching crypto latest trades: ${error}`);
-    throw error;
-  }
+      return data;
+    },
+    API_RETRY_CONFIGS.CRYPTO,
+    `Crypto.fetchLatestTrades(${symbolsParam})`
+  );
 }
 
 /**
@@ -290,26 +328,28 @@ export async function fetchLatestQuotes(
 
   logIfDebug(`Fetching crypto latest quotes from: ${url}`);
 
-  try {
-    const response = await fetch(url, {
-      headers: {
-        'APCA-API-KEY-ID': auth.APIKey,
-        'APCA-API-SECRET-KEY': auth.APISecret,
-      },
-    });
+  return withRetry(
+    async () => {
+      const response = await fetch(url, {
+        headers: {
+          'APCA-API-KEY-ID': auth.APIKey,
+          'APCA-API-SECRET-KEY': auth.APISecret,
+        },
+        signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
+      });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Alpaca API error (${response.status}): ${errorText}`);
-    }
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Alpaca API error (${response.status}): ${errorText}`);
+      }
 
-    const data: LatestQuotesResponse = await response.json();
+      const data: LatestQuotesResponse = await response.json();
 
-    logIfDebug(`Received latest quotes for ${Object.keys(data.quotes).length} symbols`);
+      logIfDebug(`Received latest quotes for ${Object.keys(data.quotes).length} symbols`);
 
-    return data;
-  } catch (error) {
-    logIfDebug(`Error fetching crypto latest quotes: ${error}`);
-    throw error;
-  }
+      return data;
+    },
+    API_RETRY_CONFIGS.CRYPTO,
+    `Crypto.fetchLatestQuotes(${symbolsParam})`
+  );
 }

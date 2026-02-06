@@ -1,8 +1,9 @@
 // performance-metrics.ts
+import { getLogger } from './logger';
 
 import { fetchAccountDetails, fetchPortfolioHistory } from './alpaca-functions';
 import { getStartAndEndTimestamps } from './market-time';
-import { PortfolioHistoryParams, PortfolioHistory, BenchmarkBar, CalculateBetaResult, Bar, AlpacaAccountDetails, FetchAccountDetailsProps, AlpacaAccountGetOptions } from './types/alpaca-types';
+import { PortfolioHistoryParams, PortfolioHistory, PortfolioHistoryResponse, BenchmarkBar, CalculateBetaResult, Bar, AlpacaAccountDetails, FetchAccountDetailsProps, AlpacaAccountGetOptions } from './types/alpaca-types';
 import { Period, IntradayReporting } from './types/market-time-types';
 import { types } from '@adaptic/backend-legacy';
 import adaptic from '@adaptic/backend-legacy';
@@ -14,11 +15,11 @@ import { PerformanceMetrics, FetchPerformanceMetricsProps } from './types/metric
  * @param portfolioHistory - The portfolio history data containing equity values.
  * @returns A promise that resolves to a string representing the total return YTD in percentage format.
  */
-async function calculateTotalReturnYTD(portfolioHistory: any): Promise<string> {
+async function calculateTotalReturnYTD(portfolioHistory: PortfolioHistoryResponse): Promise<string> {
   const equity = portfolioHistory.equity; // array of equity values
 
   if (!equity || !Array.isArray(equity) || equity.length < 2) {
-    console.warn('Not enough data to calculate total return.');
+    getLogger().warn('Not enough data to calculate total return.');
     return 'N/A';
   }
 
@@ -27,7 +28,7 @@ async function calculateTotalReturnYTD(portfolioHistory: any): Promise<string> {
 
   // Validate startEquity and endEquity
   if (typeof startEquity !== 'number' || isNaN(startEquity)) {
-    console.warn('Invalid start equity value.');
+    getLogger().warn('Invalid start equity value.');
     return 'N/A';
   }
 
@@ -42,7 +43,7 @@ async function calculateTotalReturnYTD(portfolioHistory: any): Promise<string> {
   }
 
   if (typeof endEquity !== 'number' || isNaN(endEquity)) {
-    console.warn('Invalid end equity value.');
+    getLogger().warn('Invalid end equity value.');
   }
 
   // Calculate total return
@@ -60,7 +61,7 @@ async function calculateTotalReturnYTD(portfolioHistory: any): Promise<string> {
  */
 async function calculateExpenseRatio({ accountId, client, alpacaAccount }: AlpacaAccountGetOptions): Promise<string> {
   if (!accountId && !alpacaAccount && !client) {
-    console.warn('Missing account ID or client to calculate expense ratio.');
+    getLogger().warn('Missing account ID or client to calculate expense ratio.');
     return 'N/A';
   }
 
@@ -68,7 +69,7 @@ async function calculateExpenseRatio({ accountId, client, alpacaAccount }: Alpac
   let accountDetails: AlpacaAccountDetails | null;
 
   if (!alpacaAccountId) {
-    console.warn('Invalid account ID.');
+    getLogger().warn('Invalid account ID.');
     return 'N/A';
   }
 
@@ -77,7 +78,7 @@ async function calculateExpenseRatio({ accountId, client, alpacaAccount }: Alpac
     accountDetails = await fetchAccountDetails({ alpacaAccount: alpacaAccount as types.AlpacaAccount }) as AlpacaAccountDetails;
 
     if (!accountDetails) {
-      console.warn('Failed to fetch account details inside calculateExpenseRatio.');
+      getLogger().warn('Failed to fetch account details inside calculateExpenseRatio.');
       return 'N/A';
     }
   } else {
@@ -85,14 +86,14 @@ async function calculateExpenseRatio({ accountId, client, alpacaAccount }: Alpac
     accountDetails = await fetchAccountDetails({ accountId, client }) as AlpacaAccountDetails;
 
     if (!accountDetails) {
-      console.warn('Failed to fetch account details inside calculateExpenseRatio.');
+      getLogger().warn('Failed to fetch account details inside calculateExpenseRatio.');
       return 'N/A';
     }
   }
 
   // Validate equity
   if (!accountDetails.equity || isNaN(parseFloat(accountDetails.equity))) {
-    console.warn('Invalid equity value.');
+    getLogger().warn('Invalid equity value.');
     return 'N/A';
   }
   const equity = parseFloat(accountDetails.equity);
@@ -122,7 +123,7 @@ async function getPortfolioExpensesFromYourSystem(accountId: string): Promise<nu
  */
 async function calculateLiquidityRatio({ accountId, client, alpacaAccount }: AlpacaAccountGetOptions): Promise<string> {
   if (!accountId && !alpacaAccount && !client) {
-    console.warn('Missing account ID or client to calculateLiquidityRatio.');
+    getLogger().warn('Missing account ID or client to calculateLiquidityRatio.');
     return 'N/A';
   }
 
@@ -130,7 +131,7 @@ async function calculateLiquidityRatio({ accountId, client, alpacaAccount }: Alp
   let accountDetails: AlpacaAccountDetails | null;
 
   if (!alpacaAccountId) {
-    console.warn('Invalid account ID.');
+    getLogger().warn('Invalid account ID.');
     return 'N/A';
   }
 
@@ -139,7 +140,7 @@ async function calculateLiquidityRatio({ accountId, client, alpacaAccount }: Alp
     accountDetails = await fetchAccountDetails({ alpacaAccount: alpacaAccount as types.AlpacaAccount }) as AlpacaAccountDetails;
 
     if (!accountDetails) {
-      console.warn('Failed to fetch account details inside calculateLiquidityRatio.');
+      getLogger().warn('Failed to fetch account details inside calculateLiquidityRatio.');
       return 'N/A';
     }
   } else {
@@ -147,7 +148,7 @@ async function calculateLiquidityRatio({ accountId, client, alpacaAccount }: Alp
     accountDetails = await fetchAccountDetails({ accountId, client }) as AlpacaAccountDetails;
 
     if (!accountDetails) {
-      console.warn('Failed to fetch account details.');
+      getLogger().warn('Failed to fetch account details.');
       return 'N/A';
     }
   }
@@ -157,12 +158,12 @@ async function calculateLiquidityRatio({ accountId, client, alpacaAccount }: Alp
   const totalPositionsValue = equity - cashBalance;
 
   if (isNaN(cashBalance)) {
-    console.warn('Invalid cash balance.');
+    getLogger().warn('Invalid cash balance.');
     return 'N/A';
   }
 
   if (isNaN(equity)) {
-    console.warn('Invalid equity value.');
+    getLogger().warn('Invalid equity value.');
     return 'N/A';
   }
 
@@ -170,7 +171,7 @@ async function calculateLiquidityRatio({ accountId, client, alpacaAccount }: Alp
   const totalPortfolioValue = cashBalance + totalPositionsValue;
 
   if (totalPortfolioValue <= 0) {
-    console.warn('Total portfolio value is zero or negative.');
+    getLogger().warn('Total portfolio value is zero or negative.');
     return 'N/A';
   }
 
@@ -179,7 +180,7 @@ async function calculateLiquidityRatio({ accountId, client, alpacaAccount }: Alp
 
   // Ensure the ratio is a finite number
   if (!isFinite(ratio)) {
-    console.warn('Liquidity ratio calculation resulted in a non-finite number.');
+    getLogger().warn('Liquidity ratio calculation resulted in a non-finite number.');
     return 'N/A';
   }
 
@@ -191,20 +192,20 @@ async function calculateLiquidityRatio({ accountId, client, alpacaAccount }: Alp
  * @param portfolioHistory - The portfolio history data containing profit/loss percentages.
  * @returns A promise that resolves to a string representing the risk-adjusted return.
  */
-async function calculateRiskAdjustedReturn(portfolioHistory: any): Promise<string> {
+async function calculateRiskAdjustedReturn(portfolioHistory: PortfolioHistoryResponse): Promise<string> {
   const returns = portfolioHistory.profit_loss_pct; // Array of percentage returns in decimal form
 
   // Validate the returns array
   if (!returns || !Array.isArray(returns) || returns.length < 2) {
-    console.warn('No returns data available.');
+    getLogger().warn('No returns data available.');
     return 'N/A';
   }
 
   // Filter out invalid returns
-  const validReturns = returns.filter((ret: any) => typeof ret === 'number' && !isNaN(ret));
+  const validReturns = returns.filter((ret: number) => typeof ret === 'number' && !isNaN(ret));
 
   if (validReturns.length < 2) {
-    console.warn('Not enough valid returns data to calculate risk-adjusted return.');
+    getLogger().warn('Not enough valid returns data to calculate risk-adjusted return.');
     return 'N/A';
   }
 
@@ -224,7 +225,7 @@ async function calculateRiskAdjustedReturn(portfolioHistory: any): Promise<strin
 
   // Check for zero or non-finite standard deviation
   if (!isFinite(stdDevAnnual) || stdDevAnnual === 0) {
-    console.warn('Standard deviation is zero or non-finite, cannot calculate Sharpe ratio.');
+    getLogger().warn('Standard deviation is zero or non-finite, cannot calculate Sharpe ratio.');
     return 'N/A';
   }
 
@@ -235,7 +236,7 @@ async function calculateRiskAdjustedReturn(portfolioHistory: any): Promise<strin
   const sharpeRatio = (avgAnnualReturn - riskFreeRate) / stdDevAnnual;
 
   if (!isFinite(sharpeRatio)) {
-    console.warn('Sharpe ratio calculation resulted in a non-finite number.');
+    getLogger().warn('Sharpe ratio calculation resulted in a non-finite number.');
     return 'N/A';
   }
 
@@ -265,7 +266,7 @@ function interpolatePortfolioEquity(equity: number[]): number[] {
       cleanedEquity.push(equity[i]);
       lastValid = equity[i];
     } else {
-      console.warn(`Invalid equity value at index ${i}: ${equity[i]}. Replacing with last valid value: ${lastValid}`);
+      getLogger().warn(`Invalid equity value at index ${i}: ${equity[i]}. Replacing with last valid value: ${lastValid}`);
       cleanedEquity.push(lastValid);
     }
   }
@@ -280,15 +281,15 @@ function interpolatePortfolioEquity(equity: number[]): number[] {
  * @returns An object containing alpha, beta, and annualized alpha.
  */
 export async function calculateAlphaAndBeta(
-  portfolioHistory: any,
-  benchmarkBars: any[]
+  portfolioHistory: PortfolioHistoryResponse,
+  benchmarkBars: BenchmarkBar[]
 ): Promise<{
   alpha: string;
   alphaAnnualized: string;
   beta: string;
 }> {
   if (!portfolioHistory || !benchmarkBars || benchmarkBars.length < 2) {
-    console.warn('Insufficient portfolio or benchmark data.', {
+    getLogger().warn('Insufficient portfolio or benchmark data.', {
       portfolioHistory,
       benchmarkBars,
     });
@@ -310,7 +311,7 @@ export async function calculateAlphaAndBeta(
     !Array.isArray(portfolioTimestamps) ||
     portfolioTimestamps.length !== portfolioEquity.length
   ) {
-    console.warn('Invalid or insufficient portfolio equity data.', {
+    getLogger().warn('Invalid or insufficient portfolio equity data.', {
       portfolioEquity,
       portfolioTimestamps,
     });
@@ -324,7 +325,7 @@ export async function calculateAlphaAndBeta(
   // **Trim initial zero equity values**
   const firstNonZeroIndex = portfolioEquity.findIndex((equity) => equity !== 0);
   if (firstNonZeroIndex === -1) {
-    console.warn('Portfolio equity contains only zeros.');
+    getLogger().warn('Portfolio equity contains only zeros.');
     return {
       alpha: 'N/A',
       alphaAnnualized: 'N/A',
@@ -358,7 +359,7 @@ export async function calculateAlphaAndBeta(
     !Array.isArray(benchmarkTimestamps) ||
     benchmarkTimestamps.length !== benchmarkPrices.length
   ) {
-    console.warn('Invalid or insufficient benchmark data.', {
+    getLogger().warn('Invalid or insufficient benchmark data.', {
       benchmarkPrices,
       benchmarkTimestamps,
     });
@@ -384,7 +385,7 @@ export async function calculateAlphaAndBeta(
     if (isFinite(ret)) {
       portfolioReturnsMap.set(timestamp, ret);
     } else {
-      console.warn(`Non-finite portfolio return on ${new Date(timestamp).toISOString()}: ${ret}. Skipping.`);
+      getLogger().warn(`Non-finite portfolio return on ${new Date(timestamp).toISOString()}: ${ret}. Skipping.`);
     }
   });
 
@@ -393,7 +394,7 @@ export async function calculateAlphaAndBeta(
     if (isFinite(ret)) {
       benchmarkReturnsMap.set(timestamp, ret);
     } else {
-      console.warn(`Non-finite benchmark return on ${new Date(timestamp).toISOString()}: ${ret}. Skipping.`);
+      getLogger().warn(`Non-finite benchmark return on ${new Date(timestamp).toISOString()}: ${ret}. Skipping.`);
     }
   });
 
@@ -401,7 +402,7 @@ export async function calculateAlphaAndBeta(
   const commonTimestamps = [...portfolioReturnsMap.keys()].filter((timestamp) => benchmarkReturnsMap.has(timestamp));
 
   if (commonTimestamps.length < 2) {
-    console.warn('Not enough overlapping data to calculate alpha.');
+    getLogger().warn('Not enough overlapping data to calculate alpha.');
     return {
       alpha: 'N/A',
       alphaAnnualized: 'N/A',
@@ -421,14 +422,14 @@ export async function calculateAlphaAndBeta(
       alignedPortfolioReturns.push(portfolioRet);
       alignedBenchmarkReturns.push(benchmarkRet);
     } else {
-      console.warn(`Non-finite returns on ${new Date(timestamp).toISOString()}. Skipping.`);
+      getLogger().warn(`Non-finite returns on ${new Date(timestamp).toISOString()}. Skipping.`);
     }
   }
 
   const n = alignedPortfolioReturns.length;
 
   if (n === 0) {
-    console.warn('No valid aligned returns to calculate alpha.');
+    getLogger().warn('No valid aligned returns to calculate alpha.');
     return {
       alpha: 'N/A',
       alphaAnnualized: 'N/A',
@@ -444,7 +445,7 @@ export async function calculateAlphaAndBeta(
   const beta = calculateBetaFromReturns(alignedPortfolioReturns, alignedBenchmarkReturns);
 
   if (!isFinite(beta.beta)) {
-    console.warn('Beta calculation resulted in a non-finite value.');
+    getLogger().warn('Beta calculation resulted in a non-finite value.');
     return {
       alpha: 'N/A',
       alphaAnnualized: 'N/A',
@@ -462,7 +463,7 @@ export async function calculateAlphaAndBeta(
   const alphaAnnualized = alpha * tradingDaysPerYear;
 
   if (!isFinite(alphaAnnualized)) {
-    console.warn('Alpha calculation resulted in a non-finite value.');
+    getLogger().warn('Alpha calculation resulted in a non-finite value.');
     return {
       alpha: 'N/A',
       alphaAnnualized: 'N/A',
@@ -549,7 +550,7 @@ export function calculateDrawdownMetrics(
   // Pre-validate all equity values at once
   const validEquity = equity.map((value, index) => {
     if (typeof value !== 'number' || isNaN(value)) {
-      console.warn(`Invalid equity value at index ${index}: ${value}. Using 0 instead.`);
+      getLogger().warn(`Invalid equity value at index ${index}: ${value}. Using 0 instead.`);
       return 0;
     }
     return value;
@@ -731,7 +732,7 @@ export function alignReturnsByDate(
   const commonTimestamps = [...portfolioReturnsMap.keys()].filter((timestamp) => benchmarkReturnsMap.has(timestamp));
 
   if (commonTimestamps.length === 0) {
-    console.warn('No common dates found between portfolio and benchmark.');
+    getLogger().warn('No common dates found between portfolio and benchmark.');
     return {
       alignedPortfolioReturns: [],
       alignedBenchmarkReturns: [],
@@ -820,7 +821,7 @@ function isValidUnixTimestamp(timestamp: number): boolean {
 export function calculateBetaFromReturns(portfolioReturns: number[], benchmarkReturns: number[]): CalculateBetaResult {
   const n = portfolioReturns.length;
   if (n === 0) {
-    console.warn('No returns to calculate beta.');
+    getLogger().warn('No returns to calculate beta.');
     return {
       beta: 0,
       covariance: 0,
@@ -850,7 +851,7 @@ export function calculateBetaFromReturns(portfolioReturns: number[], benchmarkRe
 
   // Handle zero variance
   if (variance === 0) {
-    console.warn('Benchmark variance is zero. Setting beta to 0.');
+    getLogger().warn('Benchmark variance is zero. Setting beta to 0.');
     return {
       beta: 0,
       covariance,
@@ -877,7 +878,7 @@ export function calculateBetaFromReturns(portfolioReturns: number[], benchmarkRe
  * @param benchmarkBars - The historical price data of the benchmark.
  * @returns Information ratio as a formatted string.
  */
-export async function calculateInformationRatio(portfolioHistory: any, benchmarkBars: any[]): Promise<string> {
+export async function calculateInformationRatio(portfolioHistory: PortfolioHistoryResponse, benchmarkBars: BenchmarkBar[]): Promise<string> {
   const portfolioEquity = portfolioHistory.equity;
   let portfolioTimestamps = portfolioHistory.timestamp;
 
@@ -885,12 +886,12 @@ export async function calculateInformationRatio(portfolioHistory: any, benchmark
   let benchmarkTimestamps = benchmarkBars.map((bar) => bar.t);
 
   if (!portfolioEquity || portfolioEquity.length < 2) {
-    console.warn('No portfolio equity data available.');
+    getLogger().warn('No portfolio equity data available.');
     return 'N/A';
   }
 
-  // **Convert portfolio timestamps from ISO strings to Unix milliseconds**
-  portfolioTimestamps = portfolioTimestamps.map((timestamp: string) => new Date(timestamp).getTime());
+  // **Convert portfolio timestamps from Unix seconds to Unix milliseconds**
+  portfolioTimestamps = portfolioTimestamps.map((timestamp: number) => timestamp * 1000);
 
   // **Normalize portfolio timestamps to midnight UTC**
   portfolioTimestamps = portfolioTimestamps.map((timestamp: number) => getMidnightTimestamp(timestamp));
@@ -924,7 +925,7 @@ export async function calculateInformationRatio(portfolioHistory: any, benchmark
   const commonTimestamps = [...portfolioReturnsMap.keys()].filter((timestamp) => benchmarkReturnsMap.has(timestamp));
 
   if (commonTimestamps.length < 2) {
-    console.warn('Not enough overlapping data to calculate information ratio.');
+    getLogger().warn('Not enough overlapping data to calculate information ratio.');
     return 'N/A';
   }
 
@@ -950,7 +951,7 @@ export async function calculateInformationRatio(portfolioHistory: any, benchmark
 
   // Check for zero tracking error
   if (!isFinite(trackingError) || trackingError === 0) {
-    console.warn('Tracking error is zero or non-finite, cannot calculate information ratio.');
+    getLogger().warn('Tracking error is zero or non-finite, cannot calculate information ratio.');
     return 'N/A';
   }
 
@@ -958,7 +959,7 @@ export async function calculateInformationRatio(portfolioHistory: any, benchmark
   const informationRatio = avgActiveReturn / trackingError;
 
   if (!isFinite(informationRatio)) {
-    console.warn('Information ratio calculation resulted in a non-finite number.');
+    getLogger().warn('Information ratio calculation resulted in a non-finite number.');
     return 'N/A';
   }
 
@@ -1016,7 +1017,7 @@ export async function fetchPerformanceMetrics({
           id: accountId,
         } as types.AlpacaAccount, apolloClient)) as types.AlpacaAccount;
       } catch (error) {
-        console.error('[fetchPerformanceMetrics] Error fetching Alpaca account:', error);
+        getLogger().error('[fetchPerformanceMetrics] Error fetching Alpaca account:', error);
         throw new Error('Failed to retrieve Alpaca account details');
       }
     }
@@ -1034,7 +1035,7 @@ export async function fetchPerformanceMetrics({
         alpacaAccount: alpacaAccountObj as types.AlpacaAccount
       });
     } catch (error) {
-      console.error('[fetchPerformanceMetrics] Error fetching portfolio history:', error);
+      getLogger().error('[fetchPerformanceMetrics] Error fetching portfolio history:', error);
       throw new Error('Failed to retrieve portfolio history data');
     }
 
@@ -1057,6 +1058,7 @@ export async function fetchPerformanceMetrics({
           headers: {
             'Content-Type': 'application/json',
           },
+          signal: createTimeoutSignal(DEFAULT_TIMEOUTS.GENERAL),
         }
       );
 
@@ -1071,7 +1073,7 @@ export async function fetchPerformanceMetrics({
         throw new Error('Received empty or invalid benchmark data');
       }
     } catch (error) {
-      console.error('[fetchPerformanceMetrics] Error fetching benchmark data:', error);
+      getLogger().error('[fetchPerformanceMetrics] Error fetching benchmark data:', error);
       // Continue with partial metrics calculation if possible
     }
 
@@ -1105,7 +1107,7 @@ export async function fetchPerformanceMetrics({
 
     return result;
   } catch (error) {
-    console.error('[fetchPerformanceMetrics] Error:', error);
+    getLogger().error('[fetchPerformanceMetrics] Error:', error);
     return defaultMetrics;
   }
 }

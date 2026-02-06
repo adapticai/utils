@@ -58,9 +58,7 @@ export class AlpacaClient {
     });
 
     // Set up for direct API calls
-    this.apiBaseUrl = config.accountType === 'PAPER'
-      ? 'https://paper-api.alpaca.markets/v2'
-      : 'https://api.alpaca.markets/v2';
+    this.apiBaseUrl = getTradingApiUrl(config.accountType);
 
     this.headers = {
       'APCA-API-KEY-ID': config.apiKey,
@@ -159,7 +157,10 @@ export class AlpacaClient {
     }
 
     try {
-      const response = await fetch(url, options);
+      const response = await fetch(url, {
+      ...options,
+      signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
+    });
 
       if (!response.ok) {
         const errorText = await response.text();

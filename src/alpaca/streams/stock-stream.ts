@@ -156,7 +156,7 @@ export interface StockStreamEventMap {
  */
 export class StockDataStream extends EventEmitter {
   private client: AlpacaClient;
-  private socket: any = null;
+  private socket: EventEmitter | null = null;
   private state: StreamState = 'disconnected';
   private feed: StockDataFeed;
   private config: StockStreamConfig;

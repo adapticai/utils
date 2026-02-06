@@ -1,4 +1,5 @@
 // market-time.ts
+import { getLogger } from './logger';
 
 import { set, isBefore, sub, add, startOfDay, endOfDay, format, differenceInMilliseconds } from 'date-fns';
 import { toZonedTime, fromZonedTime, formatInTimeZone } from 'date-fns-tz';
@@ -687,14 +688,14 @@ export const getNYTimeZone = (date?: Date): '-04:00' | '-05:00' => {
   const shortOffset = tz.replace('GMT', '');
   // return the correct offset
   if (shortOffset === '-4') {
-    console.log(
+    getLogger().info(
       `New York is on EDT; using -04:00. Full date: ${date.toLocaleString('en-US', {
         timeZone: 'America/New_York',
       })}, time zone part: ${tz}`
     );
     return '-04:00';
   } else if (shortOffset === '-5') {
-    console.log(
+    getLogger().info(
       `New York is on EST; using -05:00. Full date: ${date.toLocaleString('en-US', {
         timeZone: 'America/New_York',
       })}, time zone part: ${tz}`

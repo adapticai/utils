@@ -3,7 +3,7 @@
  * Real-time and historical trade data using Alpaca SDK
  */
 import { AlpacaClient } from '../client';
-import { AlpacaTrade, LatestTradesResponse, DataFeed } from '../../types/alpaca-types';
+import { AlpacaTrade, LatestTradesResponse, DataFeed, SDKMarketDataOptions } from '../../types/alpaca-types';
 import { log as baseLog } from '../../logging';
 import { LogOptions } from '../../types/logging-types';
 
@@ -80,7 +80,7 @@ export async function getLatestTrade(
 
     // Use SDK's getLatestTrade method
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const response = await sdk.getLatestTrade(normalizedSymbol, { feed: dataFeed } as any);
+    const response = await sdk.getLatestTrade(normalizedSymbol, { feed: dataFeed } as SDKMarketDataOptions);
 
     if (!response) {
       throw new TradeError(
@@ -151,7 +151,7 @@ export async function getLatestTrades(
 
     // Use SDK's getLatestTrades method
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const response = await sdk.getLatestTrades(normalizedSymbols, { feed: dataFeed } as any);
+    const response = await sdk.getLatestTrades(normalizedSymbols, { feed: dataFeed } as SDKMarketDataOptions);
 
     if (!response) {
       throw new TradeError(
@@ -322,7 +322,7 @@ export async function getCurrentPrice(
     // Try to get quote first for mid-point price
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const quote = await sdk.getLatestQuote(normalizedSymbol, { feed: dataFeed } as any);
+      const quote = await sdk.getLatestQuote(normalizedSymbol, { feed: dataFeed } as SDKMarketDataOptions);
 
       if (quote && quote.BidPrice > 0 && quote.AskPrice > 0) {
         const midPrice = (quote.BidPrice + quote.AskPrice) / 2;
@@ -399,12 +399,10 @@ export async function getCurrentPrices(
     const symbolsNeedingTrades: string[] = [];
 
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const quotes = await sdk.getLatestQuotes(normalizedSymbols, { feed: dataFeed } as any);
+      const quotes = await sdk.getLatestQuotes(normalizedSymbols, { feed: dataFeed } as SDKMarketDataOptions) as Map<string, { BidPrice: number; AskPrice: number }> | Record<string, { BidPrice: number; AskPrice: number }>;
 
       for (const symbol of normalizedSymbols) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const rawQuote = (quotes as any).get ? (quotes as any).get(symbol) : (quotes as any)[symbol];
+        const rawQuote = quotes instanceof Map ? quotes.get(symbol) : quotes[symbol];
         const quote = rawQuote as {
           BidPrice: number;
           AskPrice: number;

@@ -299,7 +299,7 @@ export async function createOTOOrder(
 
   try {
     // Build the OTO order request
-    const orderRequest: Record<string, any> = {
+    const orderRequest: Record<string, unknown> = {
       symbol,
       qty: qty.toString(),
       side,

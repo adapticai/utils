@@ -570,7 +570,7 @@ export async function getOpenCryptoOrders(
     };
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const orders = (await sdk.getOrders(queryParams as any)) as AlpacaOrder[];
+    const orders = (await sdk.getOrders(queryParams)) as AlpacaOrder[];
 
     // Filter to only crypto orders (asset_class === 'crypto')
     const cryptoOrders = orders.filter((order) => order.asset_class === 'crypto');

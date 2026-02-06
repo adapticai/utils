@@ -8,6 +8,7 @@ import {
   AlpacaAsset,
   OptionBar,
   OptionTrade,
+  OptionGreeks,
   OptionsChainParams,
   OptionsChainResponse,
   LatestOptionsTradesParams,
@@ -38,9 +39,18 @@ import {
   OptionStreamEventMap,
   CryptoStreamEventMap,
 } from './types/alpaca-types';
+import {
+  MARKET_DATA_API,
+  WEBSOCKET_STREAMS,
+  getStockStreamUrl,
+  getOptionsStreamUrl,
+  getCryptoStreamUrl,
+  getTradingApiUrl
+} from './config/api-endpoints';
 import { getLastFullTradingDate } from './market-time';
 import { EventEmitter } from 'events';
 import WebSocket from 'ws';
+import { validateAlpacaCredentials } from './utils/auth-validator';
 
 const log = (message: string, options: LogOptions = { type: 'info' }) => {
   baseLog(message, { ...options, source: 'AlpacaMarketDataAPI' });
@@ -171,9 +181,9 @@ export class AlpacaMarketDataAPI extends EventEmitter {
   private dataURL: string;
   private apiURL: string;
   private v1beta1url: string;
-  private stockStreamUrl: string = 'wss://stream.data.alpaca.markets/v2/sip'; // production values
-  private optionStreamUrl: string = 'wss://stream.data.alpaca.markets/v1beta3/options'; // production values
-  private cryptoStreamUrl: string = 'wss://stream.data.alpaca.markets/v1beta3/crypto/us'; // production values
+  private stockStreamUrl: string = getStockStreamUrl('PRODUCTION'); // production values
+  private optionStreamUrl: string = getOptionsStreamUrl('PRODUCTION'); // production values
+  private cryptoStreamUrl: string = getCryptoStreamUrl('PRODUCTION'); // production values
   private stockWs: WebSocket | null = null;
   private optionWs: WebSocket | null = null;
   private cryptoWs: WebSocket | null = null;
@@ -183,17 +193,17 @@ export class AlpacaMarketDataAPI extends EventEmitter {
 
   public setMode(mode: 'sandbox' | 'test' | 'production' = 'production'): void {
     if (mode === 'sandbox') { // sandbox mode
-      this.stockStreamUrl = 'wss://stream.data.sandbox.alpaca.markets/v2/sip';
-      this.optionStreamUrl = 'wss://stream.data.sandbox.alpaca.markets/v1beta3/options';
-      this.cryptoStreamUrl = 'wss://stream.data.sandbox.alpaca.markets/v1beta3/crypto/us';
+      this.stockStreamUrl = WEBSOCKET_STREAMS.STOCKS.PRODUCTION; // sandbox uses production for stocks
+      this.optionStreamUrl = getOptionsStreamUrl('SANDBOX');
+      this.cryptoStreamUrl = getCryptoStreamUrl('SANDBOX');
     } else if (mode === 'test') { // test mode, can only use ticker FAKEPACA
-      this.stockStreamUrl = 'wss://stream.data.alpaca.markets/v2/test';
-      this.optionStreamUrl = 'wss://stream.data.alpaca.markets/v1beta3/options'; // there's no test mode for options
-      this.cryptoStreamUrl = 'wss://stream.data.alpaca.markets/v1beta3/crypto/us'; // there's no test mode for crypto
+      this.stockStreamUrl = getStockStreamUrl('TEST');
+      this.optionStreamUrl = getOptionsStreamUrl('PRODUCTION'); // there's no test mode for options
+      this.cryptoStreamUrl = getCryptoStreamUrl('PRODUCTION'); // there's no test mode for crypto
     } else { // production
-      this.stockStreamUrl = 'wss://stream.data.alpaca.markets/v2/sip';
-      this.optionStreamUrl = 'wss://stream.data.alpaca.markets/v1beta3/options';
-      this.cryptoStreamUrl = 'wss://stream.data.alpaca.markets/v1beta3/crypto/us';
+      this.stockStreamUrl = getStockStreamUrl('PRODUCTION');
+      this.optionStreamUrl = getOptionsStreamUrl('PRODUCTION');
+      this.cryptoStreamUrl = getCryptoStreamUrl('PRODUCTION');
     }
   }
 
@@ -209,16 +219,26 @@ export class AlpacaMarketDataAPI extends EventEmitter {
 
   private constructor() {
     super();
-    this.dataURL = 'https://data.alpaca.markets/v2';
+
+    // Validate credentials from environment variables before initializing
+    const apiKey = process.env.ALPACA_API_KEY!;
+    const apiSecret = process.env.ALPACA_SECRET_KEY!;
+    validateAlpacaCredentials({
+      apiKey,
+      apiSecret,
+      isPaper: process.env.ALPACA_ACCOUNT_TYPE === 'PAPER',
+    });
+
+    this.dataURL = MARKET_DATA_API.STOCKS;
     this.apiURL =
       process.env.ALPACA_ACCOUNT_TYPE === 'PAPER'
-        ? 'https://paper-api.alpaca.markets/v2'
-        : 'https://api.alpaca.markets/v2'; // used by some, e.g. getAssets
-    this.v1beta1url = 'https://data.alpaca.markets/v1beta1'; // used for options endpoints
+        ? getTradingApiUrl('PAPER')
+        : getTradingApiUrl('LIVE'); // used by some, e.g. getAssets
+    this.v1beta1url = MARKET_DATA_API.OPTIONS; // used for options endpoints
     this.setMode('production'); // sets stockStreamUrl and optionStreamUrl
     this.headers = {
-      'APCA-API-KEY-ID': process.env.ALPACA_API_KEY!,
-      'APCA-API-SECRET-KEY': process.env.ALPACA_SECRET_KEY!,
+      'APCA-API-KEY-ID': apiKey,
+      'APCA-API-SECRET-KEY': apiSecret,
       'Content-Type': 'application/json',
     };
   }
@@ -471,12 +491,12 @@ export class AlpacaMarketDataAPI extends EventEmitter {
     }
   }
 
-  private async makeRequest(
+  private async makeRequest<T = unknown>(
     endpoint: string,
     method: string = 'GET',
-    params?: Record<string, any>,
+    params?: Record<string, unknown>,
     baseUrlName: 'data' | 'api' | 'v1beta1' = 'data',
-  ): Promise<any> {
+  ): Promise<T> {
     const baseUrl = baseUrlName === 'data' ? this.dataURL : baseUrlName === 'api' ? this.apiURL : this.v1beta1url;
     const url = new URL(`${baseUrl}${endpoint}`);
     
@@ -494,6 +514,7 @@ export class AlpacaMarketDataAPI extends EventEmitter {
       const response = await fetch(url.toString(), {
         method,
         headers: this.headers,
+        signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
       });
 
       if (!response.ok) {
@@ -1162,7 +1183,7 @@ export class AlpacaMarketDataAPI extends EventEmitter {
    * @param greeks Option greeks object
    * @returns Formatted string with greek values
    */
-  static formatOptionGreeks(greeks: any): string {
+  static formatOptionGreeks(greeks: OptionGreeks | null | undefined): string {
     if (!greeks) {
       return 'No greeks data available';
     }

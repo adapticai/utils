@@ -202,7 +202,7 @@ export async function getCryptoBars(
     // Use SDK's getCryptoBars method
     // The SDK returns an async iterator, but TypeScript may not recognize it properly
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const barsResponse = sdk.getCryptoBars(normalizedSymbols, options) as any;
+    const barsResponse = sdk.getCryptoBars(normalizedSymbols, options);
 
     // Handle both async iterator and direct response formats
     if (barsResponse && typeof barsResponse[Symbol.asyncIterator] === 'function') {
@@ -697,7 +697,7 @@ export async function getCryptoTrades(
 
     const trades: CryptoTrade[] = [];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const tradesResponse = sdk.getCryptoTrades(normalizedSymbol, options) as any;
+    const tradesResponse = sdk.getCryptoTrades(normalizedSymbol, options);
 
     // Handle both async iterator and direct response formats
     if (tradesResponse && typeof tradesResponse[Symbol.asyncIterator] === 'function') {

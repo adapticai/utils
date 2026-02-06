@@ -82,7 +82,7 @@ export interface OptionStreamEventMap {
  */
 export class OptionDataStream extends EventEmitter {
   private client: AlpacaClient;
-  private socket: any = null;
+  private socket: EventEmitter | null = null;
   private state: StreamState = 'disconnected';
   private feed: OptionDataFeed;
   private config: OptionStreamConfig;

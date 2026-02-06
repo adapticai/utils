@@ -263,6 +263,27 @@ export interface GetOrdersParams {
 }
 
 /**
+ * SDK-compatible parameters for getting orders (with symbols as string)
+ */
+export interface SDKGetOrdersParams {
+  status?: 'open' | 'closed' | 'all';
+  limit?: number;
+  after?: string;
+  until?: string;
+  direction?: 'asc' | 'desc';
+  nested?: boolean;
+  symbols?: string; // SDK expects comma-separated string
+  side?: OrderSide;
+}
+
+/**
+ * SDK options for market data requests with feed parameter
+ */
+export interface SDKMarketDataOptions {
+  feed?: DataFeed;
+}
+
+/**
  * Parameters for replacing an order.
  */
 export interface ReplaceOrderParams {
@@ -1379,4 +1400,65 @@ export interface CryptoStreamEventMap {
   'crypto-d': AlpacaCryptoDailyBarStream;
   'crypto-u': AlpacaCryptoUpdatedBarStream;
   'crypto-data': AlpacaCryptoStreamMessage;
+}
+
+// ===== WEBSOCKET MESSAGE TYPES =====
+
+/**
+ * WebSocket authorization response message
+ */
+export interface AlpacaAuthMessage {
+  stream: 'authorization';
+  data: {
+    status: 'authorized' | 'unauthorized';
+    action: 'authenticate';
+    message?: string;
+  };
+}
+
+/**
+ * WebSocket listening response message
+ */
+export interface AlpacaListenMessage {
+  stream: 'listening';
+  data: {
+    streams: string[];
+  };
+}
+
+/**
+ * Generic WebSocket message structure
+ */
+export interface AlpacaWebSocketMessage {
+  stream: string;
+  data: AlpacaAuthMessage['data'] | AlpacaListenMessage['data'] | TradeUpdate;
+}
+
+/**
+ * Response from exercising an option
+ */
+export interface ExerciseOptionResponse {
+  id: string;
+  symbol: string;
+  side: 'long' | 'short';
+  qty: string;
+  asset_class: 'us_option';
+  status: 'pending' | 'complete' | 'failed';
+}
+
+/**
+ * Account with allocation configuration
+ * Extends the base AlpacaAccount from backend-legacy with optional allocation fields
+ */
+export interface AlpacaAccountWithAllocation {
+  allocation?: AllocationConfig;
+  autoAllocation?: boolean;
+  marketOpen?: boolean;
+  realTime?: boolean;
+  tradeAllocationPct?: number;
+  minPercentageChange?: number;
+  volumeThreshold?: number;
+  cryptoTradingEnabled?: boolean;
+  cryptoTradingPairs?: string[];
+  cryptoTradeAllocationPct?: number;
 }

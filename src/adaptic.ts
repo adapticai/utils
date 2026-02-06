@@ -1,16 +1,21 @@
 // Adaptic backend calls
+import { getLogger } from './logger';
 import { AssetOverviewResponse, AssetOverview } from './types';
 import {
   getApolloClient,
   setTokenProvider,
   type TokenProvider,
 } from '@adaptic/backend-legacy';
+import { createTimeoutSignal, DEFAULT_TIMEOUTS } from './http-timeout';
 
 // Re-export TokenProvider type for consumers
 export type { TokenProvider };
 
 // Types for Apollo client without direct import
-type ApolloClientType = any; // This avoids direct import from @adaptic/backend-legacy
+// NOTE: Using `any` here is intentional to avoid circular dependencies with @adaptic/backend-legacy
+// The actual type is ApolloClient<NormalizedCacheObject> but we don't import it directly
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ApolloClientType = any;
 
 // Keep track of a single instance of Apollo client
 let apolloClientInstance: ApolloClientType | null = null;
@@ -48,7 +53,7 @@ let authConfigured = false;
  */
 export const configureAuth = (provider: TokenProvider): void => {
   if (authConfigured) {
-    console.warn(
+    getLogger().warn(
       '[adaptic] Auth provider already configured. Calling configureAuth again will reset the client.'
     );
   }
@@ -58,7 +63,7 @@ export const configureAuth = (provider: TokenProvider): void => {
   // Reset the cached client so it picks up the new auth on next request
   if (apolloClientInstance) {
     apolloClientInstance = null;
-    console.log('[adaptic] Apollo client reset due to auth configuration change');
+    getLogger().info('[adaptic] Apollo client reset due to auth configuration change');
   }
 };
 
@@ -81,7 +86,7 @@ export const getSharedApolloClient = async (): Promise<ApolloClientType> => {
       // Initialize the client once and reuse it across requests
       apolloClientInstance = await getApolloClient();
     } catch (error) {
-      console.error('Error initializing shared Apollo client:', error);
+      getLogger().error('Error initializing shared Apollo client:', error);
       throw error;
     }
   }
@@ -105,11 +110,13 @@ export const fetchAssetOverview = async (symbol: string): Promise<AssetOverviewR
 
   try {
     const encodedSymbol = encodeURIComponent(symbol.trim().toUpperCase());
-    const res = await fetch(`https://adaptic.ai/api/asset/overview?symbol=${encodedSymbol}`);
+    const res = await fetch(`https://adaptic.ai/api/asset/overview?symbol=${encodedSymbol}`, {
+      signal: createTimeoutSignal(DEFAULT_TIMEOUTS.GENERAL),
+    });
 
     if (!res.ok) {
       const errorData = (await res.json()) as { error?: string };
-      console.error(`Failed to fetch asset data for ${symbol}:`, errorData);
+      getLogger().error(`Failed to fetch asset data for ${symbol}:`, errorData);
       return {
         asset: null,
         error: errorData.error || `Failed to fetch asset data for ${symbol}`,
@@ -120,7 +127,7 @@ export const fetchAssetOverview = async (symbol: string): Promise<AssetOverviewR
     const data = (await res.json()) as AssetOverviewResponse;
 
     if (!data.asset || !data.asset.id) {
-      console.error(`Invalid asset data received for ${symbol}:`, data);
+      getLogger().error(`Invalid asset data received for ${symbol}:`, data);
       return {
         asset: null,
         error: `Invalid asset data received for ${symbol}`,
@@ -145,7 +152,7 @@ export const fetchAssetOverview = async (symbol: string): Promise<AssetOverviewR
     };
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-    console.error(`Error fetching asset data for ${symbol}:`, errorMessage);
+    getLogger().error(`Error fetching asset data for ${symbol}:`, errorMessage);
     return {
       asset: null,
       error: errorMessage,

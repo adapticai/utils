@@ -16,8 +16,14 @@ import {
   TradeUpdate,
   CreateOrderParams,
   CreateMultiLegOrderParams,
+  AlpacaWebSocketMessage,
+  AlpacaAuthMessage,
+  AlpacaListenMessage,
+  ExerciseOptionResponse,
 } from './types/alpaca-types';
 import { LogOptions } from './types/logging-types';
+import { getTradingApiUrl, getTradingWebSocketUrl } from './config/api-endpoints';
+import { validateAlpacaCredentials } from './utils/auth-validator';
 
 const limitPriceSlippagePercent100 = 0.1; // 0.1%
 
@@ -49,7 +55,7 @@ export class AlpacaTradingAPI {
   private connecting = false;
   private reconnectDelay = 10000; // 10 seconds between reconnection attempts
   private reconnectTimeout: NodeJS.Timeout | null = null;
-  private messageHandlers: Map<string, (data: any) => void> = new Map();
+  private messageHandlers: Map<string, (data: AlpacaWebSocketMessage['data']) => void> = new Map();
   private debugLogging = false;
 
   /**
@@ -64,14 +70,19 @@ export class AlpacaTradingAPI {
    *   debugLogging: boolean; // Whether to log messages of type 'debug'
    */
   constructor(credentials: AlpacaCredentials, options?: { debugLogging?: boolean }) {
+    // Validate credentials before doing anything else
+    validateAlpacaCredentials({
+      apiKey: credentials.apiKey,
+      apiSecret: credentials.apiSecret,
+      isPaper: credentials.type === 'PAPER',
+    });
+
     this.credentials = credentials;
 
     // Set URLs based on account type
-    this.apiBaseUrl =
-      credentials.type === 'PAPER' ? 'https://paper-api.alpaca.markets/v2' : 'https://api.alpaca.markets/v2';
+    this.apiBaseUrl = getTradingApiUrl(credentials.type);
 
-    this.wsUrl =
-      credentials.type === 'PAPER' ? 'wss://paper-api.alpaca.markets/stream' : 'wss://api.alpaca.markets/stream';
+    this.wsUrl = getTradingWebSocketUrl(credentials.type);
 
     this.headers = {
       'APCA-API-KEY-ID': credentials.apiKey,
@@ -103,7 +114,7 @@ export class AlpacaTradingAPI {
     return price >= 1 ? Math.round(price * 100) / 100 : Math.round(price * 10000) / 10000;
   };
 
-  private handleAuthMessage(data: any): void {
+  private handleAuthMessage(data: AlpacaAuthMessage['data']): void {
     if (data.status === 'authorized') {
       this.authenticated = true;
       this.log('WebSocket authenticated');
@@ -114,7 +125,7 @@ export class AlpacaTradingAPI {
     }
   }
 
-  private handleListenMessage(data: any): void {
+  private handleListenMessage(data: AlpacaListenMessage['data']): void {
     if (data.streams?.includes('trade_updates')) {
       this.log('Successfully subscribed to trade updates');
     }
@@ -312,19 +323,20 @@ export class AlpacaTradingAPI {
     });
   }
 
-  private async makeRequest(
+  private async makeRequest<T = unknown>(
     endpoint: string,
     method: string = 'GET',
-    body?: any,
+    body?: Record<string, unknown> | CreateOrderParams,
     queryString: string = ''
-  ): Promise<any> {
+  ): Promise<T> {
     const url = `${this.apiBaseUrl}${endpoint}${queryString}`;
     try {
       const response = await fetch(url, {
-        method,
-        headers: this.headers,
-        body: body ? JSON.stringify(body) : undefined,
-      });
+      method,
+      headers: this.headers,
+      body: body ? JSON.stringify(body) : undefined,
+      signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
+    });
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -1029,11 +1041,11 @@ export class AlpacaTradingAPI {
    * @param symbolOrContractId The symbol or ID of the option contract to exercise
    * @returns Response from the exercise request
    */
-  async exerciseOption(symbolOrContractId: string): Promise<any> {
+  async exerciseOption(symbolOrContractId: string): Promise<ExerciseOptionResponse> {
     this.log(`Exercising option contract ${symbolOrContractId}`, {
       symbol: symbolOrContractId,
     });
-    return this.makeRequest(`/positions/${symbolOrContractId}/exercise`, 'POST');
+    return this.makeRequest<ExerciseOptionResponse>(`/positions/${symbolOrContractId}/exercise`, 'POST');
   }
 
   /**

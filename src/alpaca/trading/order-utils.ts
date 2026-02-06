@@ -239,7 +239,7 @@ export async function getOrdersBySymbol(
     if (params.nested !== undefined) queryParams.nested = params.nested;
     if (params.side) queryParams.side = params.side;
 
-    const orders = await sdk.getOrders(queryParams as any);
+    const orders = await sdk.getOrders(queryParams);
 
     log(`Found ${orders.length} orders for ${symbol}`, {
       type: 'debug',
@@ -292,7 +292,7 @@ export async function getOpenOrders(
     }
     if (params.side) queryParams.side = params.side;
 
-    const orders = await sdk.getOrders(queryParams as any);
+    const orders = await sdk.getOrders(queryParams);
 
     log(`Found ${orders.length} open orders`, {
       type: 'debug',
@@ -461,7 +461,7 @@ export async function getOrderHistory(
         }
 
         const sdkParams = buildOrderQueryParams(batchParams);
-        currentBatch = (await sdk.getOrders(sdkParams as any)) as AlpacaOrder[];
+        currentBatch = (await sdk.getOrders(sdkParams)) as AlpacaOrder[];
         allPreviousOrders.push(...currentBatch);
         iterations++;
 
@@ -486,7 +486,7 @@ export async function getOrderHistory(
 
     // First page - simple fetch
     const sdkParams = buildOrderQueryParams(baseParams);
-    const orders = (await sdk.getOrders(sdkParams as any)) as AlpacaOrder[];
+    const orders = (await sdk.getOrders(sdkParams)) as AlpacaOrder[];
 
     return {
       orders,
@@ -543,7 +543,7 @@ export async function getAllOrders(
         limit: queryParams.limit || MAX_ORDERS_PER_REQUEST,
       };
       const sdkParams = buildOrderQueryParams(singleParams);
-      const orders = await sdk.getOrders(sdkParams as any);
+      const orders = await sdk.getOrders(sdkParams);
       return orders as AlpacaOrder[];
     }
 
@@ -568,7 +568,7 @@ export async function getAllOrders(
       }
 
       const sdkParams = buildOrderQueryParams(batchParams);
-      const batch = (await sdk.getOrders(sdkParams as any)) as AlpacaOrder[];
+      const batch = (await sdk.getOrders(sdkParams)) as AlpacaOrder[];
       pageCount++;
 
       log(`Fetched page ${pageCount}: ${batch.length} orders`, {

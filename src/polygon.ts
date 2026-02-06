@@ -1,4 +1,5 @@
 /**********************************************************************************
+import { getLogger } from './logger';
  * Polygon.io calls
  **********************************************************************************/
 
@@ -14,6 +15,7 @@ import {
   PolygonErrorResponse,
 } from './types';
 import pLimit from 'p-limit';
+import { validatePolygonApiKey } from './utils/auth-validator';
 
 // Constants from environment variables
 const POLYGON_API_KEY = process.env.POLYGON_API_KEY;
@@ -39,9 +41,13 @@ export const fetchTickerInfo = async (
   if (!options?.apiKey && !POLYGON_API_KEY) {
     throw new Error('Polygon API key is missing');
   }
+
+  const apiKey = options?.apiKey || POLYGON_API_KEY!;
+  validatePolygonApiKey(apiKey);
+
   const baseUrl = `https://api.polygon.io/v3/reference/tickers/${encodeURIComponent(symbol)}`;
   const params = new URLSearchParams({
-    apiKey: options?.apiKey || POLYGON_API_KEY!,
+    apiKey,
   });
 
   return polygonLimit(async () => {
@@ -51,7 +57,7 @@ export const fetchTickerInfo = async (
 
       // Check for "NOT_FOUND" status and return null
       if (data.status === 'NOT_FOUND') {
-        console.warn(`Ticker not found: ${symbol}`);
+        getLogger().warn(`Ticker not found: ${symbol}`);
         return null;
       }
 
@@ -101,7 +107,7 @@ export const fetchTickerInfo = async (
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       const contextualMessage = `Error fetching ticker info for ${symbol}`;
       
-      console.error(`${contextualMessage}: ${errorMessage}`, {
+      getLogger().error(`${contextualMessage}: ${errorMessage}`, {
         symbol,
         errorType: error instanceof Error && error.message.includes('AUTH_ERROR') ? 'AUTH_ERROR' : 
                    error instanceof Error && error.message.includes('RATE_LIMIT') ? 'RATE_LIMIT' : 
@@ -129,9 +135,13 @@ export const fetchLastTrade = async (symbol: string, options?: { apiKey?: string
   if (!options?.apiKey && !POLYGON_API_KEY) {
     throw new Error('Polygon API key is missing');
   }
+
+  const apiKey = options?.apiKey || POLYGON_API_KEY!;
+  validatePolygonApiKey(apiKey);
+
   const baseUrl = `https://api.polygon.io/v2/last/trade/${encodeURIComponent(symbol)}`;
   const params = new URLSearchParams({
-    apiKey: options?.apiKey || POLYGON_API_KEY!,
+    apiKey,
   });
 
   return polygonLimit(async () => {
@@ -157,7 +167,7 @@ export const fetchLastTrade = async (symbol: string, options?: { apiKey?: string
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       const contextualMessage = `Error fetching last trade for ${symbol}`;
       
-      console.error(`${contextualMessage}: ${errorMessage}`, {
+      getLogger().error(`${contextualMessage}: ${errorMessage}`, {
         symbol,
         errorType: error instanceof Error && error.message.includes('AUTH_ERROR') ? 'AUTH_ERROR' : 
                    error instanceof Error && error.message.includes('RATE_LIMIT') ? 'RATE_LIMIT' : 
@@ -201,6 +211,10 @@ export const fetchPrices = async (
   if (!options?.apiKey && !POLYGON_API_KEY) {
     throw new Error('Polygon API key is missing');
   }
+
+  const apiKey = options?.apiKey || POLYGON_API_KEY!;
+  validatePolygonApiKey(apiKey);
+
   const { ticker, start, end = Date.now().valueOf(), multiplier, timespan, limit = 1000 } = params;
 
   const baseUrl = `https://api.polygon.io/v2/aggs/ticker/${encodeURIComponent(
@@ -208,7 +222,7 @@ export const fetchPrices = async (
   )}/range/${multiplier}/${timespan}/${start}/${end}`;
 
   const urlParams = new URLSearchParams({
-    apiKey: options?.apiKey || POLYGON_API_KEY!,
+    apiKey,
     adjusted: 'true',
     sort: 'asc',
     limit: limit.toString(),
@@ -220,7 +234,7 @@ export const fetchPrices = async (
       let nextUrl = `${baseUrl}?${urlParams.toString()}`;
 
       while (nextUrl) {
-        //console.log(`Debug: Fetching ${nextUrl}`);
+        //getLogger().info(`Debug: Fetching ${nextUrl}`);
         const response = await fetchWithRetry(nextUrl, {}, 3, 1000);
         const data = await response.json();
 
@@ -233,7 +247,7 @@ export const fetchPrices = async (
         }
 
         // Check if there's a next page and append API key
-        nextUrl = data.next_url ? `${data.next_url}&apiKey=${options?.apiKey || POLYGON_API_KEY}` : '';
+        nextUrl = data.next_url ? `${data.next_url}&apiKey=${apiKey}` : '';
       }
 
       return allResults.map((entry: RawPolygonPriceData) => ({
@@ -261,7 +275,7 @@ export const fetchPrices = async (
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       const contextualMessage = `Error fetching price data for ${ticker}`;
       
-      console.error(`${contextualMessage}: ${errorMessage}`, {
+      getLogger().error(`${contextualMessage}: ${errorMessage}`, {
         ticker,
         errorType: error instanceof Error && error.message.includes('AUTH_ERROR') ? 'AUTH_ERROR' : 
                    error instanceof Error && error.message.includes('RATE_LIMIT') ? 'RATE_LIMIT' : 
@@ -383,7 +397,7 @@ export const fetchGroupedDaily = async (
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       const contextualMessage = `Error fetching grouped daily data for ${date}`;
       
-      console.error(`${contextualMessage}: ${errorMessage}`, {
+      getLogger().error(`${contextualMessage}: ${errorMessage}`, {
         date,
         errorType: error instanceof Error && error.message.includes('AUTH_ERROR') ? 'AUTH_ERROR' : 
                    error instanceof Error && error.message.includes('RATE_LIMIT') ? 'RATE_LIMIT' : 
@@ -538,7 +552,7 @@ export const fetchTrades = async (
   return polygonLimit(async () => {
     const url = `${baseUrl}?${params.toString()}`;
     try {
-      console.log(`[DEBUG] Fetching trades for ${symbol} from ${url}`);
+      getLogger().info(`[DEBUG] Fetching trades for ${symbol} from ${url}`);
       const response = await fetchWithRetry(url, {}, 3, 1000);
       const data = await response.json() as PolygonTradesResponse | PolygonErrorResponse;
 
@@ -552,7 +566,7 @@ export const fetchTrades = async (
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       const contextualMessage = `Error fetching trades for ${symbol}`;
       
-      console.error(`${contextualMessage}: ${errorMessage}`, {
+      getLogger().error(`${contextualMessage}: ${errorMessage}`, {
         symbol,
         errorType: error instanceof Error && error.message.includes('AUTH_ERROR') ? 'AUTH_ERROR' : 
                    error instanceof Error && error.message.includes('RATE_LIMIT') ? 'RATE_LIMIT' : 

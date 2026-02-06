@@ -27,6 +27,7 @@
 import { AlpacaClient } from '../client';
 import { BaseStream, StreamConfig } from './base-stream';
 import { TradeUpdate } from '../../types/alpaca-types';
+import { getTradingWebSocketUrl } from '../../config/api-endpoints';
 
 /**
  * Trading stream event names representing all possible order status changes.
@@ -112,10 +113,7 @@ export class TradingStream extends BaseStream {
    * Get the WebSocket URL for trading stream
    */
   protected getStreamUrl(): string {
-    const isPaper = this.client.isPaper();
-    return isPaper
-      ? 'wss://paper-api.alpaca.markets/stream'
-      : 'wss://api.alpaca.markets/stream';
+    return getTradingWebSocketUrl(this.client.isPaper() ? 'PAPER' : 'LIVE');
   }
 
   /**

@@ -15,9 +15,55 @@ import * as crypto from './crypto';
 import * as ta from './technical-analysis';
 import { AlpacaTradingAPI } from './alpaca-trading-api';
 import { AlpacaMarketDataAPI } from './alpaca-market-data-api';
+import { TokenBucketRateLimiter, rateLimiters } from './rate-limiter';
 
 // New modular Alpaca SDK imports
 import { alpaca as alpacaSDK } from './alpaca';
+
+// Logger utilities
+export {
+  type Logger,
+  setLogger,
+  getLogger,
+  resetLogger,
+} from './logger';
+
+// Error utilities
+export {
+  AdapticUtilsError,
+  AlpacaApiError,
+  PolygonApiError,
+  AlphaVantageError,
+  TimeoutError,
+  ValidationError,
+  AuthenticationError,
+  HttpClientError,
+  HttpServerError,
+  RateLimitError,
+  WebSocketError,
+  NetworkError,
+  DataFormatError,
+} from './errors';
+
+// Auth validation utilities
+export {
+  validateAlpacaCredentials,
+  validatePolygonApiKey,
+  validateAlphaVantageApiKey,
+} from './utils/auth-validator';
+
+// API Endpoints Configuration
+export {
+  TRADING_API,
+  MARKET_DATA_API,
+  WEBSOCKET_STREAMS,
+  getTradingApiUrl,
+  getTradingWebSocketUrl,
+  getStockStreamUrl,
+  getOptionsStreamUrl,
+  getCryptoStreamUrl,
+  type AccountType,
+} from './config/api-endpoints';
 
 // Cache utilities
 export {
@@ -29,6 +75,28 @@ export {
   type CacheStats,
   type CacheLoader,
 } from './cache/stampede-protected-cache';
+
+// Rate limiting utilities
+export {
+  TokenBucketRateLimiter,
+  rateLimiters,
+  type RateLimiterConfig,
+} from './rate-limiter';
+
+// Retry utilities with exponential backoff
+export {
+  withRetry,
+  API_RETRY_CONFIGS,
+  type RetryConfig,
+} from './utils/retry';
+
+// HTTP timeout utilities
+export {
+  DEFAULT_TIMEOUTS,
+  withTimeout,
+  createTimeoutSignal,
+  getTimeout,
+} from './http-timeout';
 
 // Asset Allocation utilities
 export {
@@ -263,6 +331,10 @@ export const adaptic = {
     logIfDebug: misc.logIfDebug,
     fetchWithRetry: misc.fetchWithRetry,
     validatePolygonApiKey: misc.validatePolygonApiKey,
+  },
+  rateLimiter: {
+    TokenBucketRateLimiter,
+    limiters: rateLimiters,
   },
 };
 

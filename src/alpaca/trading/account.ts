@@ -165,7 +165,7 @@ export async function getPortfolioHistory(
   try {
     const sdk = client.getSDK();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const history = await sdk.getPortfolioHistory(params as any);
+    const history = await sdk.getPortfolioHistory(params);
     log(`Portfolio history fetched successfully with ${history.equity?.length || 0} data points`);
     return history as PortfolioHistoryResponse;
   } catch (error) {

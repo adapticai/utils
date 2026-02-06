@@ -23,7 +23,10 @@
     "build": "npm run clean && rollup -c",
     "prepare": "npm run build",
     "prepublishOnly": "npm run build",
-    "test": "npm run build && node dist/test.js"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:legacy": "npm run build && node dist/test.js"
   },
   "dependencies": {
     "@adaptic/backend-legacy": "^0.0.43",

@@ -11,6 +11,7 @@ import {
   GetOrdersParams,
   ReplaceOrderParams,
   OrderStatus,
+  SDKGetOrdersParams,
 } from '../../types/alpaca-types';
 
 const LOG_SOURCE = 'AlpacaOrders';
@@ -171,7 +172,7 @@ export async function getOrders(
     const sdk = client.getSDK();
 
     // Build query parameters for the SDK
-    const queryParams: Record<string, unknown> = {};
+    const queryParams: SDKGetOrdersParams = {};
     if (params.status) queryParams.status = params.status;
     if (params.limit) queryParams.limit = params.limit;
     if (params.after) queryParams.after = params.after;
@@ -183,8 +184,7 @@ export async function getOrders(
     }
     if (params.side) queryParams.side = params.side;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const orders = await sdk.getOrders(queryParams as any);
+    const orders = await sdk.getOrders(queryParams);
 
     log(`Retrieved ${orders.length} orders`, {
       type: 'debug',

@@ -94,7 +94,7 @@ export interface CryptoStreamEventMap {
  */
 export class CryptoDataStream extends EventEmitter {
   private client: AlpacaClient;
-  private socket: any = null;
+  private socket: EventEmitter | null = null;
   private state: StreamState = 'disconnected';
   private location: CryptoStreamLocation;
   private config: CryptoStreamConfig;

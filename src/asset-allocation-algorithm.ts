@@ -159,6 +159,15 @@ export class AssetAllocationEngine {
   }
 
   /**
+   * Get default risk profile characteristics
+   * @param profile - The risk profile to retrieve
+   * @returns The default risk profile characteristics or undefined if not found
+   */
+  public getDefaultRiskProfile(profile: RiskProfile): DefaultRiskProfile | undefined {
+    return this.defaultRiskProfiles.get(profile);
+  }
+
+  /**
    * Generate optimal asset allocation recommendation
    */
   public async generateAllocation(input: AllocationInput): Promise<AllocationRecommendation> {
@@ -1330,5 +1339,5 @@ export async function generateOptimalAllocation(
  */
 export function getDefaultRiskProfile(profile: RiskProfile): DefaultRiskProfile | undefined {
   const engine = new AssetAllocationEngine();
-  return (engine as any).defaultRiskProfiles.get(profile);
+  return engine.getDefaultRiskProfile(profile);
 }

@@ -1,4 +1,5 @@
 /**
+import { getLogger } from './logger';
  * Polygon Indices API Implementation
  * 
  * This module provides functions to interact with the Polygon.io Indices API.
@@ -81,7 +82,7 @@ export const fetchIndicesAggregates = async (
       
       return data as PolygonIndicesAggregatesResponse;
     } catch (error) {
-      console.error('Error fetching indices aggregates:', error);
+      getLogger().error('Error fetching indices aggregates:', error);
       throw error;
     }
   });
@@ -119,7 +120,7 @@ export const fetchIndicesPreviousClose = async (
       
       return data as PolygonIndicesPrevCloseResponse;
     } catch (error) {
-      console.error('Error fetching indices previous close:', error);
+      getLogger().error('Error fetching indices previous close:', error);
       throw error;
     }
   });
@@ -159,7 +160,7 @@ export const fetchIndicesDailyOpenClose = async (
       
       return data as PolygonIndicesDailyOpenCloseResponse;
     } catch (error) {
-      console.error('Error fetching indices daily open/close:', error);
+      getLogger().error('Error fetching indices daily open/close:', error);
       throw error;
     }
   });
@@ -213,7 +214,7 @@ export const fetchIndicesSnapshot = async (
       
       return data as PolygonIndicesSnapshotResponse;
     } catch (error) {
-      console.error('Error fetching indices snapshot:', error);
+      getLogger().error('Error fetching indices snapshot:', error);
       throw error;
     }
   });
@@ -229,7 +230,7 @@ export const fetchIndicesSnapshot = async (
  * @param {string} [options.order] - Order results
  * @param {number} [options.limit] - Limit the number of results
  * @param {string} [options.sort] - Sort field
- * @returns {Promise<any>} The universal snapshot response
+ * @returns {Promise<PolygonIndicesSnapshotResponse>} The universal snapshot response
  */
 export const fetchUniversalSnapshot = async (
   tickers: string[],
@@ -240,7 +241,7 @@ export const fetchUniversalSnapshot = async (
     limit?: number;
     sort?: string;
   }
-): Promise<any> => {
+): Promise<PolygonIndicesSnapshotResponse> => {
   const apiKey = validateApiKey(options?.apiKey);
   
   const url = new URL(`${POLYGON_API_BASE_URL}/v3/snapshot`);
@@ -281,7 +282,7 @@ export const fetchUniversalSnapshot = async (
       
       return data;
     } catch (error) {
-      console.error('Error fetching universal snapshot:', error);
+      getLogger().error('Error fetching universal snapshot:', error);
       throw error;
     }
   });

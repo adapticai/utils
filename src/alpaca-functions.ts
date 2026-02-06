@@ -20,10 +20,14 @@ import {
   AlpacaAsset,
   DataFeed,
   LatestQuotesResponse,
-
+  AlpacaAccountWithAllocation,
 } from './types/alpaca-types';
 import { logIfDebug } from './misc-utils.js';
 import { ApolloClientType, NormalizedCacheObject } from '@adaptic/backend-legacy';
+import { validateAlpacaCredentials } from './utils/auth-validator';
+import { getTradingApiUrl, MARKET_DATA_API } from './config/api-endpoints';
+import { getLogger } from './logger';
+import { createTimeoutSignal, DEFAULT_TIMEOUTS } from './http-timeout';
 
 /**
  * Round a price to the nearest 2 decimal places for Alpaca, or 4 decimal places for prices less than $1
@@ -36,7 +40,7 @@ const roundPriceForAlpaca = (price: number): number => {
     : Math.round(price * 10000) / 10000;
 };
 
-const ALPACA_API_BASE = 'https://data.alpaca.markets/v1beta1';
+const ALPACA_API_BASE = MARKET_DATA_API.NEWS;
 
 interface ValidatedAuth {
   APIKey: string;
@@ -57,6 +61,12 @@ async function validateAuth(auth: AlpacaAuth): Promise<ValidatedAuth> {
       throw new Error('Alpaca account not found or incomplete');
     }
 
+    // Validate retrieved credentials
+    validateAlpacaCredentials({
+      apiKey: alpacaAccount.APIKey,
+      apiSecret: alpacaAccount.APISecret,
+      isPaper: alpacaAccount.type === 'PAPER',
+    });
 
     return {
       APIKey: alpacaAccount.APIKey,
@@ -65,6 +75,14 @@ async function validateAuth(auth: AlpacaAuth): Promise<ValidatedAuth> {
     };
   } else if (auth.alpacaApiKey && auth.alpacaApiSecret) {
     const accountType = auth.type || 'PAPER'; // Default to live if type is not provided
+
+    // Validate provided credentials
+    validateAlpacaCredentials({
+      apiKey: auth.alpacaApiKey,
+      apiSecret: auth.alpacaApiSecret,
+      isPaper: accountType === 'PAPER',
+    });
+
     return {
       APIKey: auth.alpacaApiKey,
       APISecret: auth.alpacaApiSecret,
@@ -87,7 +105,7 @@ export async function createOrder(auth: AlpacaAuth, params: CreateOrderParams): 
   try {
     const { APIKey, APISecret, type } = await validateAuth(auth);
 
-    const apiBaseUrl = type === 'PAPER' ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets';
+    const apiBaseUrl = getTradingApiUrl(type as 'PAPER' | 'LIVE');
 
     const response = await fetch(`${apiBaseUrl}/v2/orders`, {
       method: 'POST',
@@ -97,6 +115,7 @@ export async function createOrder(auth: AlpacaAuth, params: CreateOrderParams): 
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(params),
+      signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
     });
 
     if (!response.ok) {
@@ -106,7 +125,7 @@ export async function createOrder(auth: AlpacaAuth, params: CreateOrderParams): 
 
     return (await response.json()) as AlpacaOrder;
   } catch (error) {
-    console.error('Error in createOrder:', error);
+    getLogger().error('Error in createOrder:', error);
     throw error;
   }
 }
@@ -121,7 +140,7 @@ export async function getOrders(auth: AlpacaAuth, params: GetOrdersParams = {}):
   try {
     const { APIKey, APISecret, type } = await validateAuth(auth);
 
-    const apiBaseUrl = type === 'PAPER' ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets';
+    const apiBaseUrl = getTradingApiUrl(type as 'PAPER' | 'LIVE');
 
     const allOrders: AlpacaOrder[] = [];
     let currentUntil = params.until ? params.until : new Date().toISOString();
@@ -144,6 +163,7 @@ export async function getOrders(auth: AlpacaAuth, params: GetOrdersParams = {}):
           'APCA-API-KEY-ID': APIKey,
           'APCA-API-SECRET-KEY': APISecret,
         },
+        signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
       });
 
       if (!response.ok) {
@@ -164,7 +184,7 @@ export async function getOrders(auth: AlpacaAuth, params: GetOrdersParams = {}):
 
     return allOrders;
   } catch (error) {
-    console.error('Error in getOrders:', error);
+    getLogger().error('Error in getOrders:', error);
     throw error;
   }
 }
@@ -179,7 +199,7 @@ export async function cancelAllOrders(auth: AlpacaAuth): Promise<{ id: string; s
   try {
     const { APIKey, APISecret, type } = await validateAuth(auth);
 
-    const apiBaseUrl = type === 'PAPER' ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets';
+    const apiBaseUrl = getTradingApiUrl(type as 'PAPER' | 'LIVE');
 
     const response = await fetch(`${apiBaseUrl}/v2/orders`, {
       method: 'DELETE',
@@ -187,6 +207,7 @@ export async function cancelAllOrders(auth: AlpacaAuth): Promise<{ id: string; s
         'APCA-API-KEY-ID': APIKey,
         'APCA-API-SECRET-KEY': APISecret,
       },
+      signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
     });
 
     if (!response.ok) {
@@ -196,7 +217,7 @@ export async function cancelAllOrders(auth: AlpacaAuth): Promise<{ id: string; s
 
     return (await response.json()) as { id: string; status: number }[];
   } catch (error) {
-    console.error('Error in cancelAllOrders:', error);
+    getLogger().error('Error in cancelAllOrders:', error);
     throw error;
   }
 }
@@ -213,7 +234,7 @@ export async function getOrder(auth: AlpacaAuth, orderId: string, nested?: boole
   try {
     const { APIKey, APISecret, type } = await validateAuth(auth);
 
-    const apiBaseUrl = type === 'PAPER' ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets';
+    const apiBaseUrl = getTradingApiUrl(type as 'PAPER' | 'LIVE');
 
     const queryParams = new URLSearchParams();
     if (nested) queryParams.append('nested', 'true');
@@ -224,6 +245,7 @@ export async function getOrder(auth: AlpacaAuth, orderId: string, nested?: boole
         'APCA-API-KEY-ID': APIKey,
         'APCA-API-SECRET-KEY': APISecret,
       },
+      signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
     });
 
     if (!response.ok) {
@@ -233,7 +255,7 @@ export async function getOrder(auth: AlpacaAuth, orderId: string, nested?: boole
 
     return (await response.json()) as AlpacaOrder;
   } catch (error) {
-    console.error('Error in getOrder:', error);
+    getLogger().error('Error in getOrder:', error);
     throw error;
   }
 }
@@ -250,7 +272,7 @@ export async function replaceOrder(auth: AlpacaAuth, orderId: string, params: Re
   try {
     const { APIKey, APISecret, type } = await validateAuth(auth);
 
-    const apiBaseUrl = type === 'PAPER' ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets';
+    const apiBaseUrl = getTradingApiUrl(type as 'PAPER' | 'LIVE');
 
     const response = await fetch(`${apiBaseUrl}/v2/orders/${orderId}`, {
       method: 'PATCH',
@@ -261,6 +283,7 @@ export async function replaceOrder(auth: AlpacaAuth, orderId: string, params: Re
         accept: 'application/json',
       },
       body: JSON.stringify(params),
+      signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
     });
 
     if (!response.ok) {
@@ -270,7 +293,7 @@ export async function replaceOrder(auth: AlpacaAuth, orderId: string, params: Re
 
     return (await response.json()) as AlpacaOrder;
   } catch (error) {
-    console.error('Error in replaceOrder:', error);
+    getLogger().error('Error in replaceOrder:', error);
     throw error;
   }
 }
@@ -286,7 +309,7 @@ export async function cancelOrder(auth: AlpacaAuth, orderId: string): Promise<{ 
   try {
     const { APIKey, APISecret, type } = await validateAuth(auth);
 
-    const apiBaseUrl = type === 'PAPER' ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets';
+    const apiBaseUrl = getTradingApiUrl(type as 'PAPER' | 'LIVE');
 
     const response = await fetch(`${apiBaseUrl}/v2/orders/${orderId}`, {
       method: 'DELETE',
@@ -294,6 +317,7 @@ export async function cancelOrder(auth: AlpacaAuth, orderId: string): Promise<{ 
         'APCA-API-KEY-ID': APIKey,
         'APCA-API-SECRET-KEY': APISecret,
       },
+      signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
     });
 
     if (!response.ok) {
@@ -308,7 +332,7 @@ export async function cancelOrder(auth: AlpacaAuth, orderId: string): Promise<{ 
 
     return { success: true };
   } catch (error) {
-    console.error('Error in cancelOrder:', error);
+    getLogger().error('Error in cancelOrder:', error);
     throw error;
   }
 }
@@ -402,7 +426,7 @@ export async function fetchNews(
         ...(pageToken && { page_token: pageToken }),
       });
 
-      const url = `https://data.alpaca.markets/v1beta1/news?${queryParams}`;
+      const url = `${MARKET_DATA_API.NEWS}/news?${queryParams}`;
       logIfDebug(`Fetching news from: ${url}`);
 
       const response = await fetch(url, {
@@ -412,6 +436,7 @@ export async function fetchNews(
           'APCA-API-SECRET-KEY': APISecret,
           'accept': 'application/json',
         },
+        signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
       });
 
       if (!response.ok) {
@@ -466,7 +491,7 @@ export async function fetchNews(
       nextPageToken: pageToken || undefined,
     };
   } catch (error) {
-    console.error('Error in fetchNews:', error);
+    getLogger().error('Error in fetchNews:', error);
     throw error;
   }
 }
@@ -505,7 +530,7 @@ export async function fetchAccountDetails({ accountId, client, alpacaAccount, au
         id: accountId,
       } as types.AlpacaAccount, apolloClient)) as types.AlpacaAccount;
     } catch (error) {
-      console.error('[fetchAccountDetails] Error fetching Alpaca account:', error);
+      getLogger().error('[fetchAccountDetails] Error fetching Alpaca account:', error);
       throw error;
     }
   }
@@ -517,8 +542,7 @@ export async function fetchAccountDetails({ accountId, client, alpacaAccount, au
   const { APIKey, APISecret, type } = alpacaAccountObj;
 
   // Set the API URL based on the user's current mode ('PAPER' or 'LIVE')
-  const apiUrl =
-    type === 'PAPER' ? 'https://paper-api.alpaca.markets/v2/account' : 'https://api.alpaca.markets/v2/account';
+  const apiUrl = `${getTradingApiUrl(type as 'PAPER' | 'LIVE')}/account`;
 
   // Make GET request to Alpaca Markets API to fetch account details
   try {
@@ -529,6 +553,7 @@ export async function fetchAccountDetails({ accountId, client, alpacaAccount, au
         'APCA-API-SECRET-KEY': APISecret,
         'Content-Type': 'application/json',
       },
+      signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
     });
 
     if (!response.ok) {
@@ -539,7 +564,7 @@ export async function fetchAccountDetails({ accountId, client, alpacaAccount, au
 
     return data;
   } catch (error) {
-    console.error('Error in fetchAccountDetails:', error);
+    getLogger().error('Error in fetchAccountDetails:', error);
     throw error;
   }
 }
@@ -572,7 +597,7 @@ export async function fetchPortfolioHistory(
         id: accountId,
       } as types.AlpacaAccount, apolloClient)) as types.AlpacaAccount;
     } catch (error) {
-      console.error('[fetchPortfolioHistory] Error fetching Alpaca account:', error);
+      getLogger().error('[fetchPortfolioHistory] Error fetching Alpaca account:', error);
       throw error;
     }
   }
@@ -584,7 +609,7 @@ export async function fetchPortfolioHistory(
   const { APIKey, APISecret, type } = alpacaAccountObj;
 
   // Set the API base URL
-  const apiBaseUrl = type === 'PAPER' ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets';
+  const apiBaseUrl = getTradingApiUrl(type as 'PAPER' | 'LIVE');
 
   const apiUrl = `${apiBaseUrl}/v2/account/portfolio/history`;
 
@@ -625,6 +650,7 @@ export async function fetchPortfolioHistory(
         'APCA-API-SECRET-KEY': APISecret,
         'Content-Type': 'application/json',
       },
+      signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
     });
 
     if (!response.ok) {
@@ -636,7 +662,7 @@ export async function fetchPortfolioHistory(
 
     return data;
   } catch (error) {
-    console.error('[fetchPortfolioHistory] Error fetching portfolio history call to Alpaca:', error);
+    getLogger().error('[fetchPortfolioHistory] Error fetching portfolio history call to Alpaca:', error);
     throw error;
   }
 }
@@ -651,7 +677,7 @@ export async function fetchAllPositions(auth: AlpacaAuth): Promise<AlpacaPositio
     const { APIKey, APISecret, type } = await validateAuth(auth);
 
     // Set the API base URL
-    const apiBaseUrl = type === 'PAPER' ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets';
+    const apiBaseUrl = getTradingApiUrl(type as 'PAPER' | 'LIVE');
 
     const apiUrl = `${apiBaseUrl}/v2/positions`;
 
@@ -663,6 +689,7 @@ export async function fetchAllPositions(auth: AlpacaAuth): Promise<AlpacaPositio
         'APCA-API-SECRET-KEY': APISecret,
         'Content-Type': 'application/json',
       },
+      signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
     });
 
     if (!response.ok) {
@@ -672,7 +699,7 @@ export async function fetchAllPositions(auth: AlpacaAuth): Promise<AlpacaPositio
 
     return (await response.json()) as AlpacaPosition[];
   } catch (error) {
-    console.error('Error in fetchAllPositions:', error);
+    getLogger().error('Error in fetchAllPositions:', error);
     throw error;
   }
 }
@@ -687,7 +714,7 @@ export async function fetchPosition(auth: AlpacaAuth, symbolOrAssetId: string): 
   try {
     const { APIKey, APISecret, type } = await validateAuth(auth);
 
-    const apiBaseUrl = type === 'PAPER' ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets';
+    const apiBaseUrl = getTradingApiUrl(type as 'PAPER' | 'LIVE');
 
     const response = await fetch(`${apiBaseUrl}/v2/positions/${symbolOrAssetId}`, {
       method: 'GET',
@@ -696,6 +723,7 @@ export async function fetchPosition(auth: AlpacaAuth, symbolOrAssetId: string): 
         'APCA-API-SECRET-KEY': APISecret,
         'Content-Type': 'application/json',
       },
+      signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
     });
 
     if (!response.ok) {
@@ -711,7 +739,7 @@ export async function fetchPosition(auth: AlpacaAuth, symbolOrAssetId: string): 
     const position = (await response.json()) as AlpacaPosition;
     return { position };
   } catch (error) {
-    console.error('Error in fetchPosition:', error);
+    getLogger().error('Error in fetchPosition:', error);
     throw error;
   }
 }
@@ -743,7 +771,7 @@ export async function closePosition(
 ): Promise<AlpacaOrder> {
   try {
     const { APIKey, APISecret, type } = await validateAuth(auth);
-    const apiBaseUrl = type === 'PAPER' ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets';
+    const apiBaseUrl = getTradingApiUrl(type as 'PAPER' | 'LIVE');
 
     // Default parameters
     const useLimitOrder = params?.useLimitOrder ?? false;
@@ -753,7 +781,7 @@ export async function closePosition(
 
     // Cancel open orders for this symbol if requested
     if (cancelOrders) {
-      console.log(`Canceling open orders for ${symbolOrAssetId} before closing position`, {
+      getLogger().info(`Canceling open orders for ${symbolOrAssetId} before closing position`, {
         account: auth.adapticAccountId || 'direct',
         symbol: symbolOrAssetId
       });
@@ -816,7 +844,7 @@ export async function closePosition(
         ? roundPriceForAlpaca(currentPrice * (1 - limitSlippage)) // Sell slightly lower
         : roundPriceForAlpaca(currentPrice * (1 + limitSlippage)); // Buy slightly higher
 
-      console.log(`Creating limit order to close ${symbolOrAssetId} position: ${side} ${qty} shares at ${limitPrice.toFixed(2)}`, {
+      getLogger().info(`Creating limit order to close ${symbolOrAssetId} position: ${side} ${qty} shares at ${limitPrice.toFixed(2)}`, {
         account: auth.adapticAccountId || 'direct',
         symbol: symbolOrAssetId
       });
@@ -863,22 +891,22 @@ export async function closePosition(
       return (await response.json()) as AlpacaOrder;
     }
   } catch (error) {
-    console.error('Error in closePosition:', error);
+    getLogger().error('Error in closePosition:', error);
     throw error;
   }
 }
 
-export async function makeRequest(
+export async function makeRequest<T = unknown>(
   auth: AlpacaAuth,
   params: {
-    endpoint: string, method: string, body?: any, queryString?: string, apiBaseUrl?: string
-  }): Promise<any> {
+    endpoint: string, method: string, body?: Record<string, unknown> | CreateOrderParams, queryString?: string, apiBaseUrl?: string
+  }): Promise<T> {
 
   const { endpoint, method, body, queryString, apiBaseUrl } = params;
 
   try {
-    const apiBaseUrlInner = apiBaseUrl ? apiBaseUrl : auth.type === 'PAPER' ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets';
-    const { APIKey, APISecret } = await validateAuth(auth);
+    const { APIKey, APISecret, type } = await validateAuth(auth);
+    const apiBaseUrlInner = apiBaseUrl ? apiBaseUrl : getTradingApiUrl(type as 'PAPER' | 'LIVE');
     if (!APIKey || !APISecret) {
       throw new Error('No valid Alpaca authentication found. Please provide either auth object or set ALPACA_API_KEY and ALPACA_API_SECRET environment variables.');
     }
@@ -886,7 +914,7 @@ export async function makeRequest(
     // Construct the full URL
     const url = `${apiBaseUrlInner}${endpoint}${queryString || ''}`;
 
-    console.log(`Making ${method} request to ${endpoint}${queryString || ''}`, {
+    getLogger().info(`Making ${method} request to ${endpoint}${queryString || ''}`, {
       account: auth.adapticAccountId || 'direct',
       source: 'AlpacaAPI'
     });
@@ -909,7 +937,7 @@ export async function makeRequest(
       fetchOptions.body = JSON.stringify(body);
     }
 
-    const response = await fetch(url, fetchOptions);
+    const response = await fetch(url, { ...fetchOptions, signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API) });
 
     // Handle 207 Multi-Status responses (used by closeAll positions)
     if (response.status === 207 || response.ok) {
@@ -918,7 +946,7 @@ export async function makeRequest(
 
     // Handle errors
     const errorText = await response.text();
-    console.error(`Alpaca API error (${response.status}): ${errorText}`, {
+    getLogger().error(`Alpaca API error (${response.status}): ${errorText}`, {
       account: auth.adapticAccountId || 'direct',
       source: 'AlpacaAPI',
       type: 'error'
@@ -926,7 +954,7 @@ export async function makeRequest(
     throw new Error(`Alpaca API error (${response.status}): ${errorText}`);
   } catch (err) {
     const error = err as Error;
-    console.error(`Error in makeRequest: ${error.message}`, {
+    getLogger().error(`Error in makeRequest: ${error.message}`, {
       source: 'AlpacaAPI',
       type: 'error'
     });
@@ -967,12 +995,12 @@ export async function createLimitOrder(
 
   const { symbol, qty, side, limitPrice, position_intent, extended_hours, client_order_id } = params;
 
-  console.log(`Creating limit order for ${symbol}: ${side} ${qty} shares at ${limitPrice.toFixed(2)} (${position_intent})`, {
+  getLogger().info(`Creating limit order for ${symbol}: ${side} ${qty} shares at ${limitPrice.toFixed(2)} (${position_intent})`, {
     account: auth.adapticAccountId || 'direct',
     symbol
   });
 
-  const body: Record<string, any> = {
+  const body: Record<string, unknown> = {
     symbol,
     qty: Math.abs(qty),
     side,
@@ -1010,7 +1038,7 @@ export async function closeAllPositions(
   } = { cancel_orders: true, useLimitOrders: false, slippagePercent1: 0.1 }): Promise<Array<{ symbol: string; status: number; body?: AlpacaOrder }> | void> {
 
   const { cancel_orders, useLimitOrders, slippagePercent1 = 0.1 } = params;
-  console.log(`Closing all positions${useLimitOrders ? ' using limit orders' : ''}${cancel_orders ? ' and canceling open orders' : ''}`, {
+  getLogger().info(`Closing all positions${useLimitOrders ? ' using limit orders' : ''}${cancel_orders ? ' and canceling open orders' : ''}`, {
     account: auth.adapticAccountId || 'direct'
   });
 
@@ -1019,13 +1047,13 @@ export async function closeAllPositions(
     const positions = await fetchAllPositions(auth);
 
     if (positions.length === 0) {
-      console.log('No positions to close', {
+      getLogger().info('No positions to close', {
         account: auth.adapticAccountId || 'direct'
       });
       return [];
     }
 
-    console.log(`Found ${positions.length} positions to close`, {
+    getLogger().info(`Found ${positions.length} positions to close`, {
       account: auth.adapticAccountId || 'direct'
     });
 
@@ -1042,7 +1070,7 @@ export async function closeAllPositions(
 
     const lengthOfQuotes = Object.keys(quotesResponse.quotes).length;
     if (lengthOfQuotes === 0) {
-      console.error('No quotes available for positions, received 0 quotes', {
+      getLogger().error('No quotes available for positions, received 0 quotes', {
         account: auth.adapticAccountId || 'direct',
         type: 'error'
       });
@@ -1050,7 +1078,7 @@ export async function closeAllPositions(
     }
 
     if (lengthOfQuotes !== positions.length) {
-      console.warn(`Received ${lengthOfQuotes} quotes for ${positions.length} positions, expected ${positions.length} quotes`, {
+      getLogger().warn(`Received ${lengthOfQuotes} quotes for ${positions.length} positions, expected ${positions.length} quotes`, {
         account: auth.adapticAccountId || 'direct',
         type: 'warn'
       });
@@ -1061,7 +1089,7 @@ export async function closeAllPositions(
     for (const position of positions) {
       const quote = quotesResponse.quotes[position.symbol];
       if (!quote) {
-        console.warn(`No quote available for ${position.symbol}, skipping limit order`, {
+        getLogger().warn(`No quote available for ${position.symbol}, skipping limit order`, {
           account: auth.adapticAccountId || 'direct',
           symbol: position.symbol,
           type: 'warn'
@@ -1077,7 +1105,7 @@ export async function closeAllPositions(
       const currentPrice = side === 'sell' ? quote.bp : quote.ap; // Use bid for sells, ask for buys
 
       if (!currentPrice) {
-        console.warn(`No valid price available for ${position.symbol}, skipping limit order`, {
+        getLogger().warn(`No valid price available for ${position.symbol}, skipping limit order`, {
           account: auth.adapticAccountId || 'direct',
           symbol: position.symbol,
           type: 'warn'
@@ -1091,7 +1119,7 @@ export async function closeAllPositions(
         ? roundPriceForAlpaca(currentPrice * (1 - limitSlippage)) // Sell slightly lower
         : roundPriceForAlpaca(currentPrice * (1 + limitSlippage)); // Buy slightly higher
 
-      console.log(`Creating limit order to close ${position.symbol} position: ${side} ${qty} shares at ${limitPrice.toFixed(2)}`, {
+      getLogger().info(`Creating limit order to close ${position.symbol} position: ${side} ${qty} shares at ${limitPrice.toFixed(2)}`, {
         account: auth.adapticAccountId || 'direct',
         symbol: position.symbol
       });
@@ -1109,7 +1137,7 @@ export async function closeAllPositions(
       );
     }
   } else {
-    const response = await makeRequest(auth, {
+    const response = await makeRequest<{ symbol: string; status: number; body?: AlpacaOrder }[]>(auth, {
       endpoint: '/v2/positions', method: 'DELETE', queryString: cancel_orders ? '?cancel_orders=true' : ''
     });
     return response;
@@ -1136,7 +1164,7 @@ export async function closeAllPositionsAfterHours(
     cancel_orders?: boolean, slippagePercent1?: number
   } = { cancel_orders: true, slippagePercent1: 0.1 }): Promise<Array<{ symbol: string; status: number; body?: AlpacaOrder }> | void> {
 
-  console.log('Closing all positions using limit orders during extended hours trading', {
+  getLogger().info('Closing all positions using limit orders during extended hours trading', {
     account: auth.adapticAccountId || 'direct'
   });
 
@@ -1146,19 +1174,19 @@ export async function closeAllPositionsAfterHours(
   const positions = await fetchAllPositions(auth);
 
   if (positions.length === 0) {
-    console.log('No positions to close', {
+    getLogger().info('No positions to close', {
       account: auth.adapticAccountId || 'direct'
     });
     return;
   }
 
-  console.log(`Found ${positions.length} positions to close`, {
+  getLogger().info(`Found ${positions.length} positions to close`, {
     account: auth.adapticAccountId || 'direct'
   });
 
   if (cancel_orders) {
     await cancelAllOrders(auth);
-    console.log('Cancelled all open orders', {
+    getLogger().info('Cancelled all open orders', {
       account: auth.adapticAccountId || 'direct'
     });
   }
@@ -1177,7 +1205,7 @@ export async function closeAllPositionsAfterHours(
   for (const position of positions) {
     const quote = quotesResponse.quotes[position.symbol];
     if (!quote) {
-      console.warn(`No quote available for ${position.symbol}, skipping limit order`, {
+      getLogger().warn(`No quote available for ${position.symbol}, skipping limit order`, {
         account: auth.adapticAccountId || 'direct',
         symbol: position.symbol,
         type: 'warn'
@@ -1193,7 +1221,7 @@ export async function closeAllPositionsAfterHours(
     const currentPrice = side === 'sell' ? quote.bp : quote.ap; // Use bid for sells, ask for buys
 
     if (!currentPrice) {
-      console.warn(`No valid price available for ${position.symbol}, skipping limit order`, {
+      getLogger().warn(`No valid price available for ${position.symbol}, skipping limit order`, {
         account: auth.adapticAccountId || 'direct',
         symbol: position.symbol,
         type: 'warn'
@@ -1208,7 +1236,7 @@ export async function closeAllPositionsAfterHours(
       ? roundPriceForAlpaca(currentPrice * (1 - limitSlippage)) // Sell slightly lower
       : roundPriceForAlpaca(currentPrice * (1 + limitSlippage)); // Buy slightly higher
 
-    console.log(`Creating extended hours limit order to close ${position.symbol} position: ${side} ${qty} shares at ${limitPrice.toFixed(2)}`, {
+    getLogger().info(`Creating extended hours limit order to close ${position.symbol} position: ${side} ${qty} shares at ${limitPrice.toFixed(2)}`, {
       account: auth.adapticAccountId || 'direct',
       symbol: position.symbol
     });
@@ -1226,7 +1254,7 @@ export async function closeAllPositionsAfterHours(
     );
   }
 
-  console.log(`All positions closed: ${positions.map(p => p.symbol).join(', ')}`, {
+  getLogger().info(`All positions closed: ${positions.map(p => p.symbol).join(', ')}`, {
     account: auth.adapticAccountId || 'direct'
   });
 }
@@ -1247,7 +1275,7 @@ export async function getLatestQuotes(auth: AlpacaAuth, params: { symbols: strin
 
   // Return empty response if symbols array is empty to avoid API error
   if (!symbols || symbols.length === 0) {
-    console.warn('No symbols provided to getLatestQuotes, returning empty response', {
+    getLogger().warn('No symbols provided to getLatestQuotes, returning empty response', {
       type: 'warn'
     });
     return {
@@ -1266,7 +1294,7 @@ export async function getLatestQuotes(auth: AlpacaAuth, params: { symbols: strin
     endpoint: '/v2/stocks/quotes/latest',
     method: 'GET',
     queryString: `?${queryParams.toString()}`,
-    apiBaseUrl: 'https://data.alpaca.markets'
+    apiBaseUrl: MARKET_DATA_API.STOCKS.replace('/v2', '')
   });
 }
 
@@ -1287,7 +1315,7 @@ export async function getConfiguration(account: types.AlpacaAccount): Promise<Ac
       throw new Error('User APIKey or APISecret is missing.');
     }
 
-    const apiUrl = account.type === 'PAPER' ? 'https://paper-api.alpaca.markets/v2' : 'https://api.alpaca.markets/v2';
+    const apiUrl = getTradingApiUrl(account.type as 'PAPER' | 'LIVE');
 
     // Get shared Apollo client for connection pooling
     const client = await getSharedApolloClient();
@@ -1317,7 +1345,7 @@ export async function getConfiguration(account: types.AlpacaAccount): Promise<Ac
 
     // Fetch allocation data with expanded asset types and defaults
     // Type assertion to handle fields that may not exist in backend-legacy yet
-    const accountWithAllocation = freshAlpacaAccount as any;
+    const accountWithAllocation = freshAlpacaAccount as types.AlpacaAccount & AlpacaAccountWithAllocation;
     const allocationData = accountWithAllocation.allocation || {
       stocks: 70,
       options: 0,
@@ -1360,7 +1388,7 @@ export async function getConfiguration(account: types.AlpacaAccount): Promise<Ac
 
     return combinedConfig;
   } catch (error) {
-    console.error('Error in getConfiguration:', error);
+    getLogger().error('Error in getConfiguration:', error);
     throw error;
   }
 }
@@ -1388,7 +1416,7 @@ export async function updateConfiguration(
       throw new Error('User APIKey or APISecret is missing.');
     }
 
-    const apiUrl = account.type === 'PAPER' ? 'https://paper-api.alpaca.markets/v2' : 'https://api.alpaca.markets/v2';
+    const apiUrl = getTradingApiUrl(account.type as 'PAPER' | 'LIVE');
 
     // Prepare the config object for Alpaca by removing DB-only fields
     const configForAlpaca = { ...updatedConfig };
@@ -1436,7 +1464,7 @@ export async function updateConfiguration(
     const client = await getSharedApolloClient();
 
     // Check if we need to update allocation
-    let allocUpdatePromise: Promise<any> = Promise.resolve(null);
+    let allocUpdatePromise: Promise<types.Allocation | null> = Promise.resolve(null);
     if (updatedConfig.allocation) {
       // Validate allocation percentages sum to 100%
       const totalAllocation =
@@ -1465,7 +1493,7 @@ export async function updateConfiguration(
           etfs: updatedConfig.allocation.etfs ?? 0,
           forex: updatedConfig.allocation.forex ?? 0,
           crypto: updatedConfig.allocation.crypto ?? 0,
-        } as any, client);
+        }, client);
       } else {
         allocUpdatePromise = adaptic.allocation.create({
           stocks: updatedConfig.allocation.stocks ?? 0,
@@ -1478,7 +1506,7 @@ export async function updateConfiguration(
             id: account.id,
           },
           alpacaAccountId: account.id
-        } as any, client);
+        }, client);
       }
     }
 
@@ -1515,7 +1543,7 @@ export async function updateConfiguration(
       firstReducedTrailPercentage100: updatedConfig.firstReducedTrailPercentage100,
       secondReducedTrailPercentage100: updatedConfig.secondReducedTrailPercentage100,
       minimumPriceChangePercent100: updatedConfig.minimumPriceChangePercent100,
-    } as any, client);
+    }, client);
 
     const [alpacaResponse, updatedAlpacaAccount, updatedAllocation] = await Promise.all([
       alpacaUpdatePromise,
@@ -1523,9 +1551,9 @@ export async function updateConfiguration(
       allocUpdatePromise
     ]);
 
-    console.log('=== PROMISE.ALL RESULTS ===');
-    console.log('updatedAllocation from Promise.all:', updatedAllocation);
-    console.log('updatedAllocation fields:', {
+    getLogger().info('=== PROMISE.ALL RESULTS ===');
+    getLogger().info('updatedAllocation from Promise.all:', updatedAllocation);
+    getLogger().info('updatedAllocation fields:', {
       stocks: updatedAllocation?.stocks,
       options: updatedAllocation?.options,
       futures: updatedAllocation?.futures,
@@ -1535,7 +1563,7 @@ export async function updateConfiguration(
     });
 
     if (!alpacaResponse.ok) {
-      console.error('Failed to update account configuration at Alpaca:', alpacaResponse.statusText);
+      getLogger().error('Failed to update account configuration at Alpaca:', alpacaResponse.statusText);
       throw new Error(`Failed to update account config at Alpaca: ${alpacaResponse.statusText}`);
     }
 
@@ -1546,17 +1574,17 @@ export async function updateConfiguration(
 
     // Merge final data from Alpaca + local DB fields
     // Type assertion for fields that may not exist in backend-legacy yet
-    const updatedAccountWithAllocation = updatedAlpacaAccount as any;
+    const updatedAccountWithAllocation = updatedAlpacaAccount as types.AlpacaAccount & AlpacaAccountWithAllocation;
 
     // FIX: Use the validated input allocation instead of mutation response
     // The mutation response may return stale/cached data, but we already validated
     // and sent the correct values to the database, so use updatedConfig.allocation
     const selectedAllocation = updatedConfig.allocation || updatedAllocation || updatedAccountWithAllocation.allocation;
 
-    console.log('=== ALLOCATION DEBUG (will be removed after fix verified) ===');
-    console.log('Using updatedConfig.allocation (validated input):', updatedConfig.allocation);
-    console.log('Ignoring potentially stale updatedAllocation:', updatedAllocation);
-    console.log('Final allocation:', selectedAllocation);
+    getLogger().info('=== ALLOCATION DEBUG (will be removed after fix verified) ===');
+    getLogger().info('Using updatedConfig.allocation (validated input):', updatedConfig.allocation);
+    getLogger().info('Ignoring potentially stale updatedAllocation:', updatedAllocation);
+    getLogger().info('Final allocation:', selectedAllocation);
 
     const finalConfig: AccountConfiguration = {
       ...alpacaData,
@@ -1589,7 +1617,7 @@ export async function updateConfiguration(
 
     return finalConfig;
   } catch (error) {
-    console.error('Error in updateConfiguration:', error);
+    getLogger().error('Error in updateConfiguration:', error);
     throw error;
   }
 }
@@ -1632,7 +1660,7 @@ export async function getAsset(auth: AlpacaAuth, symbolOrAssetId: string): Promi
   try {
     const { APIKey, APISecret, type } = await validateAuth(auth);
 
-    const apiBaseUrl = type === 'PAPER' ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets';
+    const apiBaseUrl = getTradingApiUrl(type as 'PAPER' | 'LIVE');
 
     // Use encodeURIComponent to handle special characters in symbols (e.g., BTC/USDT)
     const encodedSymbolOrAssetId = encodeURIComponent(symbolOrAssetId);
@@ -1644,6 +1672,7 @@ export async function getAsset(auth: AlpacaAuth, symbolOrAssetId: string): Promi
         'APCA-API-SECRET-KEY': APISecret,
         'Content-Type': 'application/json',
       },
+      signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
     });
 
     if (!response.ok) {
@@ -1653,7 +1682,7 @@ export async function getAsset(auth: AlpacaAuth, symbolOrAssetId: string): Promi
 
     return (await response.json()) as AlpacaAsset;
   } catch (error) {
-    console.error('Error in getAsset:', error);
+    getLogger().error('Error in getAsset:', error);
     throw error;
   }
 }

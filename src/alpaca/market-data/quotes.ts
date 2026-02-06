@@ -3,7 +3,7 @@
  * Real-time and snapshot quote data using Alpaca SDK
  */
 import { AlpacaClient } from '../client';
-import { AlpacaQuote, LatestQuotesResponse, DataFeed } from '../../types/alpaca-types';
+import { AlpacaQuote, LatestQuotesResponse, DataFeed, SDKMarketDataOptions } from '../../types/alpaca-types';
 import { log as baseLog } from '../../logging';
 import { LogOptions } from '../../types/logging-types';
 
@@ -74,7 +74,7 @@ export async function getLatestQuote(
 
     // Use SDK's getLatestQuote method
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const response = await sdk.getLatestQuote(normalizedSymbol, { feed: dataFeed } as any);
+    const response = await sdk.getLatestQuote(normalizedSymbol, { feed: dataFeed } as SDKMarketDataOptions);
 
     if (!response) {
       throw new QuoteError(
@@ -147,7 +147,7 @@ export async function getLatestQuotes(
 
     // Use SDK's getLatestQuotes method
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const response = await sdk.getLatestQuotes(normalizedSymbols, { feed: dataFeed } as any);
+    const response = await sdk.getLatestQuotes(normalizedSymbols, { feed: dataFeed } as SDKMarketDataOptions);
 
     if (!response) {
       throw new QuoteError(

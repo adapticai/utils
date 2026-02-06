@@ -517,7 +517,7 @@ export async function getOpenTrailingStops(
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const orders = (await sdk.getOrders(queryParams as any)) as AlpacaOrder[];
+    const orders = (await sdk.getOrders(queryParams)) as AlpacaOrder[];
 
     // Filter to only trailing stop orders
     const trailingStops = orders.filter((order) => order.type === 'trailing_stop');
