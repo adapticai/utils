@@ -39,7 +39,7 @@
 | 17 | Changelog automation for NPM releases | RESOLVED | `conventional-changelog-cli` configured with Angular preset. Run `npm run changelog` to generate/update `CHANGELOG.md` from conventional commit messages. Tag prefix set to `utils-v` for monorepo compatibility. Configuration in `.changelogrc.json` with custom type sections (Features, Bug Fixes, Performance, Refactoring, Documentation, Tests, Build System, CI/CD). |
 | 18 | Connection pooling verification for HTTP clients | RESOLVED | Verified in `src/utils/http-keep-alive.ts`. All API clients use native `fetch()` (Node.js >= 20 undici with built-in connection pooling and keep-alive). Pre-configured `httpAgent`/`httpsAgent` for `node:http`/`node:https` use cases. `getAgentPoolStatus()` for monitoring, `verifyFetchKeepAlive()` for runtime verification. Comprehensive API client transport table documenting connection reuse behavior. 24 tests in `src/__tests__/http-keep-alive.test.ts`. |
 | 19 | Pagination helper | RESOLVED | Generic async-iterator pagination utility in `src/utils/paginator.ts`. Supports three strategies: `CursorPaginationConfig` (Alpaca `next_page_token`/`page_token`), `UrlPaginationConfig` (Polygon `next_url`), and `OffsetPaginationConfig` (page-number based). `paginate()` yields items one at a time via AsyncGenerator; `paginateAll()` collects all into an array. Safety limits via `maxPages` (default 1000) and `maxItems`. 23 tests in `src/__tests__/paginator.test.ts`. |
-| 20 | Market calendar integration | NOT STARTED | MarketTimeTracker should use actual exchange calendar data, not just time-of-day checks. |
+| 20 | Market calendar integration | RESOLVED | `src/market-hours.ts` contains NYSE holiday and early close data for 2024-2027. `src/market-time.ts` uses this calendar data for `isHolidayZoned()`, `isEarlyCloseDayZoned()`, `getMarketStatus()`, `getNextMarketDay()`, `getLastTradingDateYYYYMMDD()`, and `getLastFullTradingDate()`. 2027 data sourced from official NYSE Group announcement. |
 
 ### P3 - Enhancement
 
@@ -53,7 +53,7 @@
 |----------|-------|----------|-------------|-------------|
 | P0 | 6 | 6 | 0 | 0 |
 | P1 | 7 | 7 | 0 | 0 |
-| P2 | 7 | 6 | 0 | 1 (item 20 - market calendar) |
+| P2 | 7 | 7 | 0 | 0 |
 | P3 | 1 | 0 | 0 | 1 |
 
 ## Cross-Package Alignment

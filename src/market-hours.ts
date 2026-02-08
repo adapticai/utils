@@ -64,6 +64,18 @@ export const marketHolidays: MarketHolidays = {
     'Labor Day': { date: '2026-09-07' },
     'Thanksgiving Day': { date: '2026-11-26' },
     'Christmas Day': { date: '2026-12-25' }
+  },
+  2027: {
+    'New Year\'s Day': { date: '2027-01-01' },
+    'Martin Luther King, Jr. Day': { date: '2027-01-18' },
+    'Washington\'s Birthday': { date: '2027-02-15' },
+    'Good Friday': { date: '2027-03-26' },
+    'Memorial Day': { date: '2027-05-31' },
+    'Juneteenth National Independence Day': { date: '2027-06-18' },
+    'Independence Day': { date: '2027-07-05' },
+    'Labor Day': { date: '2027-09-06' },
+    'Thanksgiving Day': { date: '2027-11-25' },
+    'Christmas Day': { date: '2027-12-24' }
   }
 };
 
@@ -126,6 +138,14 @@ export const marketEarlyCloses: MarketEarlyCloses = {
       time: '13:00',
       optionsTime: '13:15',
       notes: 'Market closes early on Thursday, December 24, 2026 at 1:00 p.m. (1:15 p.m. for eligible options). NYSE American Equities, NYSE Arca Equities, NYSE Chicago, and NYSE National late trading sessions will close at 5:00 p.m. Eastern Time.'
+    }
+  },
+  2027: {
+    '2027-11-26': {
+      date: '2027-11-26',
+      time: '13:00',
+      optionsTime: '13:15',
+      notes: 'Market closes early on Friday, November 26, 2027 at 1:00 p.m. (1:15 p.m. for eligible options). NYSE American Equities, NYSE Arca Equities, NYSE National, and NYSE Texas late trading sessions will close at 5:00 p.m. Eastern Time.'
     }
   }
 };
