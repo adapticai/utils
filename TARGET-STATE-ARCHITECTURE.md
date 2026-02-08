@@ -26,19 +26,19 @@
 | 9 | Configurable caching | RESOLVED | StampedeProtectedCache with stale-while-revalidate implemented in `src/cache/stampede-protected-cache.ts`. |
 | 10 | Replace console.error | RESOLVED | Configurable Pino-compatible logger implemented in `src/logger.ts`. |
 | 11 | Auth validation | RESOLVED | API credential validation implemented in `src/utils/auth-validator.ts`. |
-| 12 | Expand Vitest test suite | MOSTLY RESOLVED | 516 tests passing, significantly expanded from 4 test files. Coverage includes auth-validator, cache, market-time, technical-analysis, alpaca, crypto, format, metrics, polygon, property-based, and regression modules. Some modules may still lack complete coverage. |
+| 12 | Expand Vitest test suite | MOSTLY RESOLVED | 617 tests passing (up from 516), significantly expanded from 4 test files. Coverage includes auth-validator, cache, market-time, technical-analysis, alpaca, crypto, format, metrics, polygon, property-based, regression, schema-validation, paginator, and http-keep-alive modules. Some modules may still lack complete coverage. |
 | 13 | Property-based tests for financial calculations | RESOLVED | 55 property-based and regression tests using fast-check in `src/__tests__/property-based-financial.test.ts` and `src/__tests__/financial-regression.test.ts`. Covers beta (identity, linearity, inverse correlation, zero-variance), drawdown (bounds, monotonicity, peak/trough invariants), returns (log return additivity, round-trip symmetry), EMA (constant series, bounds, output length), RSI (0-100 bounds, trend direction), and Bollinger Bands (band ordering, SMA accuracy, known std dev). |
 
 ### P2 - Medium Priority
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 14 | API response validation with Zod schemas | NOT STARTED | Validate API responses from Alpaca, Polygon, and Alpha Vantage against expected schemas to catch breaking API changes early. |
+| 14 | API response validation with Zod schemas | RESOLVED | Zod schemas implemented in `src/schemas/` for all critical API responses: Alpaca (Account, Position, Order with recursive legs, Bar, Quote, Trade, News, Portfolio History, Crypto Bars), Polygon (RawPriceData, TickerInfo, GroupedDaily, DailyOpenClose, Trade, Aggregates, Error), and Alpha Vantage (Quote, NewsArticle, NewsResponse). `validateResponse()` and `safeValidateResponse()` helpers in `src/schemas/validate-response.ts`. Non-strict mode (default) logs warnings without breaking; strict mode throws `ValidationResponseError`. 55 tests in `src/__tests__/schema-validation.test.ts`. |
 | 15 | Bundle size analysis and tree-shaking optimization | NOT STARTED | Analyze Rollup bundle output. Verify tree-shaking works correctly for consumers that import only subsets. |
 | 16 | TypeDoc generation from JSDoc | NOT STARTED | Auto-generate API documentation from existing JSDoc comments. Publish alongside NPM package. |
 | 17 | Changelog automation for NPM releases | NOT STARTED | Automated changelog generation from commit messages (conventional commits). |
-| 18 | Connection pooling verification for HTTP clients | NOT STARTED | Verify HTTP connection reuse across Alpaca/Polygon/Alpha Vantage clients. Ensure keep-alive is configured correctly. |
-| 19 | Pagination helper | NOT STARTED | Generic pagination utility for all APIs that support it (Alpaca orders, news, bars). |
+| 18 | Connection pooling verification for HTTP clients | RESOLVED | Verified in `src/utils/http-keep-alive.ts`. All API clients use native `fetch()` (Node.js >= 20 undici with built-in connection pooling and keep-alive). Pre-configured `httpAgent`/`httpsAgent` for `node:http`/`node:https` use cases. `getAgentPoolStatus()` for monitoring, `verifyFetchKeepAlive()` for runtime verification. Comprehensive API client transport table documenting connection reuse behavior. 24 tests in `src/__tests__/http-keep-alive.test.ts`. |
+| 19 | Pagination helper | RESOLVED | Generic async-iterator pagination utility in `src/utils/paginator.ts`. Supports three strategies: `CursorPaginationConfig` (Alpaca `next_page_token`/`page_token`), `UrlPaginationConfig` (Polygon `next_url`), and `OffsetPaginationConfig` (page-number based). `paginate()` yields items one at a time via AsyncGenerator; `paginateAll()` collects all into an array. Safety limits via `maxPages` (default 1000) and `maxItems`. 23 tests in `src/__tests__/paginator.test.ts`. |
 | 20 | Market calendar integration | NOT STARTED | MarketTimeTracker should use actual exchange calendar data, not just time-of-day checks. |
 
 ### P3 - Enhancement
@@ -53,7 +53,7 @@
 |----------|-------|----------|-------------|-------------|
 | P0 | 6 | 6 | 0 | 0 |
 | P1 | 7 | 7 | 0 | 0 |
-| P2 | 7 | 0 | 0 | 7 |
+| P2 | 7 | 3 | 0 | 4 |
 | P3 | 1 | 0 | 0 | 1 |
 
 ## Cross-Package Alignment

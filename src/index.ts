@@ -107,6 +107,67 @@ export {
 
 export * from './types/asset-allocation-types';
 
+// API Response Validation Schemas
+export {
+  validateResponse,
+  safeValidateResponse,
+  ValidationResponseError,
+  type ValidationResult,
+  type ValidateResponseOptions,
+  // Alpaca schemas
+  AlpacaAccountDetailsSchema,
+  AlpacaPositionSchema,
+  AlpacaPositionsArraySchema,
+  AlpacaOrderSchema,
+  AlpacaOrdersArraySchema,
+  AlpacaBarSchema,
+  AlpacaHistoricalBarsResponseSchema,
+  AlpacaLatestBarsResponseSchema,
+  AlpacaQuoteSchema,
+  AlpacaLatestQuotesResponseSchema,
+  AlpacaTradeSchema,
+  AlpacaLatestTradesResponseSchema,
+  AlpacaNewsArticleSchema,
+  AlpacaNewsResponseSchema,
+  AlpacaPortfolioHistoryResponseSchema,
+  AlpacaCryptoBarsResponseSchema,
+  // Polygon schemas
+  RawPolygonPriceDataSchema,
+  PolygonTickerInfoSchema,
+  PolygonTickerDetailsResponseSchema,
+  PolygonGroupedDailyResponseSchema,
+  PolygonDailyOpenCloseSchema,
+  PolygonTradeSchema as PolygonTradeZodSchema,
+  PolygonTradesResponseSchema,
+  PolygonLastTradeResponseSchema,
+  PolygonAggregatesResponseSchema,
+  PolygonErrorResponseSchema,
+  // Alpha Vantage schemas
+  AlphaVantageQuoteResponseSchema,
+  AVNewsArticleSchema,
+  AVNewsResponseSchema,
+} from './schemas';
+
+// Pagination utilities
+export {
+  paginate,
+  paginateAll,
+  type CursorPaginationConfig,
+  type UrlPaginationConfig,
+  type OffsetPaginationConfig,
+  type PaginationConfig,
+} from './utils/paginator';
+
+// HTTP connection pooling utilities
+export {
+  KEEP_ALIVE_DEFAULTS,
+  httpAgent,
+  httpsAgent,
+  getAgentPoolStatus,
+  verifyFetchKeepAlive,
+  type ConnectionPoolStatus,
+} from './utils/http-keep-alive';
+
 // Re-export all types
 export * from './types';
 
