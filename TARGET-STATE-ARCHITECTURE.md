@@ -2,42 +2,65 @@
 
 **Vision:** Zero-`any`, fully-typed financial utilities library with comprehensive error handling, retry logic, and institutional-grade API integrations. The canonical library for all financial data operations across the Adaptic platform.
 
+**Last Updated:** 2026-02-08
+
 ## Gap Analysis & Tasks
 
 ### P0 - Critical
 
-1. **Eliminate all `any` types** - Replace all 47 instances of `any`/`as any` with proper types. This is the #1 type safety issue.
-2. **Add request timeouts** - All HTTP calls (Alpaca, Polygon, Alpha Vantage) must have configurable timeouts (default 30s).
-3. **Add retry logic with exponential backoff** - All external API calls must retry on transient failures (429, 500, 503, network errors).
-4. **Remove deprecated functions** - Clean up legacy order functions or move to a separate legacy namespace with deprecation timeline.
-5. **Standardize API base URLs** - Resolve v1beta1 vs v1beta3 inconsistency. Use latest Alpaca API versions consistently.
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 1 | Eliminate all `any` types | RESOLVED | All 47 instances removed as of 2026-02-07. |
+| 2 | Add request timeouts | RESOLVED | Implemented in `src/http-timeout.ts` with configurable defaults. |
+| 3 | Add retry logic with exponential backoff | RESOLVED | Implemented in `src/utils/retry.ts` with token bucket rate limiting in `src/rate-limiter.ts`. |
+| 4 | Remove deprecated functions | RESOLVED | Deprecated aliases cleaned up in Wave 3C. Legacy functions removed or properly migrated. |
+| 5 | Standardize API base URLs | RESOLVED | `src/config/api-endpoints.ts` consolidates all URLs; v1beta1/v1beta3 are the correct latest Alpaca API versions. |
+| 6 | Add Node engine requirement to package.json | RESOLVED | `package.json` has `"engines": { "node": ">=20.0.0" }`. |
 
 ### P1 - High Priority
 
-6. **Add proper test framework** - Migrate from manual test.ts to Vitest with proper unit tests for every exported function.
-7. **Rate limiting client-side** - Implement per-API rate limiting to stay within Alpaca/Polygon quotas.
-8. **Structured error types** - Create error class hierarchy (AlpacaApiError, PolygonApiError, etc.) instead of generic Error throws.
-9. **Configurable caching** - Allow consumers to configure LRU cache sizes and TTLs.
-10. **Replace console.error** - Use a configurable logger (or callback) instead of console.error. Engine uses Pino - make it compatible.
-11. **Auth validation** - Validate API keys/secrets format before making requests.
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 7 | Rate limiting client-side | RESOLVED | Token bucket rate limiter implemented in `src/rate-limiter.ts` with per-API limiters. |
+| 8 | Structured error types | RESOLVED | 13 error classes implemented in `src/errors/index.ts` (AlpacaApiError, PolygonApiError, TimeoutError, RateLimitError, etc.). |
+| 9 | Configurable caching | RESOLVED | StampedeProtectedCache with stale-while-revalidate implemented in `src/cache/stampede-protected-cache.ts`. |
+| 10 | Replace console.error | RESOLVED | Configurable Pino-compatible logger implemented in `src/logger.ts`. |
+| 11 | Auth validation | RESOLVED | API credential validation implemented in `src/utils/auth-validator.ts`. |
+| 12 | Expand Vitest test suite | MOSTLY RESOLVED | 461 tests passing (Wave 3C), significantly expanded from 4 test files. Coverage includes auth-validator, cache, market-time, technical-analysis, alpaca, crypto, format, metrics, polygon, and other modules. Some modules may still lack complete coverage. |
+| 13 | Property-based tests for financial calculations | NOT STARTED | Performance metrics (beta, drawdown, returns) need property-based tests against known datasets to verify numerical accuracy. |
 
 ### P2 - Medium Priority
 
-12. **Financial calculation accuracy** - Add property-based tests for performance metrics (beta, drawdown, returns) against known datasets.
-13. **Connection pooling** - Reuse HTTP connections for Alpaca API calls instead of creating new fetch per request.
-14. **API response validation** - Validate API responses against expected schemas (use zod or similar).
-15. **Pagination helper** - Generic pagination utility for all APIs that support it (Alpaca orders, news, bars).
-16. **Market calendar integration** - MarketTimeTracker should use actual exchange calendar data, not just time-of-day checks.
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 14 | API response validation with Zod schemas | NOT STARTED | Validate API responses from Alpaca, Polygon, and Alpha Vantage against expected schemas to catch breaking API changes early. |
+| 15 | Bundle size analysis and tree-shaking optimization | NOT STARTED | Analyze Rollup bundle output. Verify tree-shaking works correctly for consumers that import only subsets. |
+| 16 | TypeDoc generation from JSDoc | NOT STARTED | Auto-generate API documentation from existing JSDoc comments. Publish alongside NPM package. |
+| 17 | Changelog automation for NPM releases | NOT STARTED | Automated changelog generation from commit messages (conventional commits). |
+| 18 | Connection pooling verification for HTTP clients | NOT STARTED | Verify HTTP connection reuse across Alpaca/Polygon/Alpha Vantage clients. Ensure keep-alive is configured correctly. |
+| 19 | Pagination helper | NOT STARTED | Generic pagination utility for all APIs that support it (Alpaca orders, news, bars). |
+| 20 | Market calendar integration | NOT STARTED | MarketTimeTracker should use actual exchange calendar data, not just time-of-day checks. |
 
 ### P3 - Enhancement
 
-17. **Bundle size optimization** - Analyze and optimize the Rollup bundle. Consider tree-shaking of unused Alpaca SDK functions.
-18. **TypeDoc generation** - Auto-generate API documentation from JSDoc comments.
-19. **Changelog automation** - Automated changelog from commit messages for NPM releases.
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 21 | Complete legacy migration | NOT STARTED | Fully migrate `alpaca-functions.ts` (1,688 lines) into modular `src/alpaca/` structure and remove the legacy file. |
+
+## Progress Summary
+
+| Priority | Total | Resolved | In Progress | Not Started |
+|----------|-------|----------|-------------|-------------|
+| P0 | 6 | 6 | 0 | 0 |
+| P1 | 7 | 6 | 0 | 1 |
+| P2 | 7 | 0 | 0 | 7 |
+| P3 | 1 | 0 | 0 | 1 |
 
 ## Cross-Package Alignment
 
 - Types MUST come from @adaptic/backend-legacy (Prisma-generated). Do not redefine Trade, Position, Order, etc.
 - src/types/ should contain ONLY types specific to external APIs (Alpaca, Polygon, Alpha Vantage response types)
 - Shared Apollo Client setup must be consistent with backend-legacy's client.ts patterns
-- Logger interface should be compatible with engine's Pino-based logging
+- Logger interface should be compatible with engine's Pino-based logging (RESOLVED - src/logger.ts)
+- Node engine requirement must align: >=20 (matching backend-legacy and lumic-utils)
+- TypeScript version: currently 5.8.3 (backend-legacy on 5.9.x - minor drift, non-blocking)

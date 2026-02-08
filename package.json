@@ -44,6 +44,9 @@
     "react": "^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0"
   },
   "license": "ISC",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "devDependencies": {
     "@rollup/plugin-commonjs": "^28.0.6",
     "@rollup/plugin-json": "^6.1.0",
@@ -52,10 +55,12 @@
     "@types/date-fns": "^2.6.3",
     "@types/ms": "^2.1.0",
     "@types/ws": "^8.18.1",
+    "@vitest/coverage-v8": "^4.0.18",
     "lightweight-charts": "^5.0.8",
     "react": "^19.1.0",
     "rollup": "^4.46.2",
     "rollup-cli": "^1.0.9",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vitest": "^4.0.18"
   }
 }

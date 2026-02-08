@@ -189,17 +189,7 @@ export const adaptic = {
     /** @description Real-time WebSocket streams */
     streams: alpacaSDK.streams,
 
-    // Additional Legacy API helpers
-    /** @deprecated Use sdkAccount module instead */
-    TradingAPI: AlpacaTradingAPI,
-    /** @deprecated Use new createClient() instead */
-    MarketDataAPI: AlpacaMarketDataAPI,
-    /** @deprecated Use new SDK modules instead */
-    makeRequest: Alpaca.makeRequest,
-    /** @deprecated Use account() instead */
-    accountDetails: Alpaca.fetchAccountDetails,
-    /** @deprecated Use positions.fetchAll() instead */
-    legacyPositions: Alpaca.fetchAllPositions,
+    // Backward-compatible aliases (engine still references these directly)
     /** @deprecated Use positions module instead */
     position: {
       fetch: Alpaca.fetchPosition,
@@ -208,24 +198,14 @@ export const adaptic = {
       closeAll: Alpaca.closeAllPositions,
       closeAllAfterHours: Alpaca.closeAllPositionsAfterHours,
     },
+    /** @deprecated Use account() instead */
+    accountDetails: Alpaca.fetchAccountDetails,
     /** @deprecated Use sdkAccount.getPortfolioHistory() instead */
     portfolioHistory: Alpaca.fetchPortfolioHistory,
     /** @deprecated Use sdkAccount.getAccountConfiguration() instead */
     getConfig: Alpaca.getConfiguration,
     /** @deprecated Use sdkAccount.updateAccountConfiguration() instead */
     updateConfig: Alpaca.updateConfiguration,
-    /** @deprecated Use news.getNews() instead */
-    legacyNews: Alpaca.fetchNews,
-    /** @deprecated Use orders module instead */
-    legacyOrders: {
-      create: Alpaca.createOrder,
-      createLimitOrder: Alpaca.createLimitOrder,
-      get: Alpaca.getOrder,
-      getAll: Alpaca.getOrders,
-      replace: Alpaca.replaceOrder,
-      cancel: Alpaca.cancelOrder,
-      cancelAll: Alpaca.cancelAllOrders,
-    },
     /** @deprecated Use SDK asset functions instead */
     asset: {
       get: Alpaca.getAsset,

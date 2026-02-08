@@ -78,14 +78,26 @@ export class MarketTimeUtil {
     }
   }
 
-  private isWeekend(date: Date): boolean {
-    const day = date.getDay();
+  /**
+   * Checks if a NY-zoned date falls on a weekend.
+   * Expects a date already converted to market timezone via toZonedTime.
+   * @param nyDate - Date in market timezone representation
+   * @returns true if the date is Saturday or Sunday
+   */
+  private isWeekendZoned(nyDate: Date): boolean {
+    const day = nyDate.getDay();
     return day === 0 || day === 6;
   }
 
-  private isHoliday(date: Date): boolean {
-    const formattedDate = format(date, 'yyyy-MM-dd');
-    const yearHolidays = marketHolidays[date.getFullYear()];
+  /**
+   * Checks if a NY-zoned date falls on a market holiday.
+   * Expects a date already converted to market timezone via toZonedTime.
+   * @param nyDate - Date in market timezone representation
+   * @returns true if the date is a holiday
+   */
+  private isHolidayZoned(nyDate: Date): boolean {
+    const formattedDate = format(nyDate, 'yyyy-MM-dd');
+    const yearHolidays = marketHolidays[nyDate.getFullYear()];
 
     for (const holiday in yearHolidays) {
       if (yearHolidays[holiday].date === formattedDate) {
@@ -95,20 +107,27 @@ export class MarketTimeUtil {
     return false;
   }
 
-  public isEarlyCloseDay(date: Date): boolean {
-    const formattedDate = format(date, 'yyyy-MM-dd');
-    const yearEarlyCloses = marketEarlyCloses[date.getFullYear()];
+  /**
+   * Checks if a NY-zoned date is an early close day.
+   * Expects a date already converted to market timezone via toZonedTime.
+   * @param nyDate - Date in market timezone representation
+   * @returns true if the date is an early close day
+   */
+  private isEarlyCloseDayZoned(nyDate: Date): boolean {
+    const formattedDate = format(nyDate, 'yyyy-MM-dd');
+    const yearEarlyCloses = marketEarlyCloses[nyDate.getFullYear()];
     return yearEarlyCloses && yearEarlyCloses[formattedDate] !== undefined;
   }
 
   /**
-   * Get the early close time for a given date
-   * @param date - The date to get the early close time for
-   * @returns The early close time in minutes from midnight, or null if there is no early close
+   * Gets the early close time for a NY-zoned date.
+   * Expects a date already converted to market timezone via toZonedTime.
+   * @param nyDate - Date in market timezone representation
+   * @returns The early close time in minutes from midnight, or null if not an early close day
    */
-  public getEarlyCloseTime(date: Date): number | null {
-    const formattedDate = format(date, 'yyyy-MM-dd');
-    const yearEarlyCloses = marketEarlyCloses[date.getFullYear()];
+  private getEarlyCloseTimeZoned(nyDate: Date): number | null {
+    const formattedDate = format(nyDate, 'yyyy-MM-dd');
+    const yearEarlyCloses = marketEarlyCloses[nyDate.getFullYear()];
 
     if (yearEarlyCloses && yearEarlyCloses[formattedDate]) {
       const [hours, minutes] = yearEarlyCloses[formattedDate].time.split(':').map(Number);
@@ -118,33 +137,76 @@ export class MarketTimeUtil {
   }
 
   /**
-   * Check if a given date is a market day
-   * @param date - The date to check
-   * @returns true if the date is a market day, false otherwise
+   * Checks if a NY-zoned date is a market day (not weekend, not holiday).
+   * Expects a date already converted to market timezone via toZonedTime.
+   * @param nyDate - Date in market timezone representation
+   * @returns true if the date is a market day
    */
-  public isMarketDay(date: Date): boolean {
-    const isWeekendDay = this.isWeekend(date);
-    const isHolidayDay = this.isHoliday(date);
-    const returner = !isWeekendDay && !isHolidayDay;
-    return returner;
+  private isMarketDayZoned(nyDate: Date): boolean {
+    return !this.isWeekendZoned(nyDate) && !this.isHolidayZoned(nyDate);
   }
 
   /**
-   * Check if a given date is within market hours
-   * @param date - The date to check
+   * Check if a given date is an early close day.
+   * Handles timezone conversion from any input date.
+   * @param date - The date to check (any timezone)
+   * @returns true if the date is an early close day
+   */
+  public isEarlyCloseDay(date: Date): boolean {
+    const nyDate = toZonedTime(date, this.timezone);
+    return this.isEarlyCloseDayZoned(nyDate);
+  }
+
+  /**
+   * Get the early close time for a given date.
+   * Handles timezone conversion from any input date.
+   * @param date - The date to check (any timezone)
+   * @returns The early close time in minutes from midnight, or null if there is no early close
+   */
+  public getEarlyCloseTime(date: Date): number | null {
+    const nyDate = toZonedTime(date, this.timezone);
+    return this.getEarlyCloseTimeZoned(nyDate);
+  }
+
+  /**
+   * Check if a given date is a market day.
+   * Handles timezone conversion from any input date.
+   * @param date - The date to check (any timezone)
+   * @returns true if the date is a market day, false otherwise
+   */
+  public isMarketDay(date: Date): boolean {
+    const nyDate = toZonedTime(date, this.timezone);
+    return this.isMarketDayZoned(nyDate);
+  }
+
+  /**
+   * Check if a given date is within market hours.
+   * Handles timezone conversion from any input date.
+   * @param date - The date to check (any timezone)
    * @returns true if the date is within market hours, false otherwise
    */
   public isWithinMarketHours(date: Date): boolean {
-    // Check for holidays first
-    if (this.isHoliday(date)) {
+    const nyDate = toZonedTime(date, this.timezone);
+    return this.isWithinMarketHoursZoned(nyDate);
+  }
+
+  /**
+   * Check if a NY-zoned date is within market hours.
+   * Expects a date already converted to market timezone via toZonedTime.
+   * @param nyDate - Date in market timezone representation
+   * @returns true if the date is within market hours, false otherwise
+   */
+  private isWithinMarketHoursZoned(nyDate: Date): boolean {
+    // Check for weekends and holidays first
+    if (this.isWeekendZoned(nyDate) || this.isHolidayZoned(nyDate)) {
       return false;
     }
 
-    const timeInMinutes = date.getHours() * 60 + date.getMinutes();
+    const timeInMinutes = nyDate.getHours() * 60 + nyDate.getMinutes();
 
     // Check for early closure
-    if (this.isEarlyCloseDay(date)) {
-      const earlyCloseMinutes = this.getEarlyCloseTime(date);
+    if (this.isEarlyCloseDayZoned(nyDate)) {
+      const earlyCloseMinutes = this.getEarlyCloseTimeZoned(nyDate);
       if (earlyCloseMinutes !== null && timeInMinutes > earlyCloseMinutes) {
         return false;
       }
@@ -158,9 +220,9 @@ export class MarketTimeUtil {
         const extendedEndMinutes = MARKET_TIMES.EXTENDED.END.HOUR * 60 + MARKET_TIMES.EXTENDED.END.MINUTE;
 
         // Comprehensive handling of times crossing midnight
-        const adjustedDate = timeInMinutes < extendedStartMinutes ? sub(date, { days: 1 }) : date;
+        const adjustedNyDate = timeInMinutes < extendedStartMinutes ? sub(nyDate, { days: 1 }) : nyDate;
 
-        const adjustedTimeInMinutes = adjustedDate.getHours() * 60 + adjustedDate.getMinutes();
+        const adjustedTimeInMinutes = adjustedNyDate.getHours() * 60 + adjustedNyDate.getMinutes();
 
         returner = adjustedTimeInMinutes >= extendedStartMinutes && adjustedTimeInMinutes <= extendedEndMinutes;
         break;
@@ -180,12 +242,13 @@ export class MarketTimeUtil {
   }
 
   /**
-   * Check if a given date is before market hours
-   * @param date - The date to check
+   * Check if a NY-zoned date is before market hours.
+   * Expects a date already converted to market timezone via toZonedTime.
+   * @param nyDate - Date in market timezone representation
    * @returns true if the date is before market hours, false otherwise
    */
-  private isBeforeMarketHours(date: Date): boolean {
-    const timeInMinutes = date.getHours() * 60 + date.getMinutes();
+  private isBeforeMarketHoursZoned(nyDate: Date): boolean {
+    const timeInMinutes = nyDate.getHours() * 60 + nyDate.getMinutes();
     const startMinutes =
       this.intradayReporting === 'extended_hours'
         ? MARKET_TIMES.EXTENDED.START.HOUR * 60 + MARKET_TIMES.EXTENDED.START.MINUTE
@@ -202,7 +265,7 @@ export class MarketTimeUtil {
   public getLastTradingDate(currentDate: Date = new Date()): Date {
     const nowET = toZonedTime(currentDate, this.timezone);
 
-    const isMarketDayToday = this.isMarketDay(nowET);
+    const isMarketDayToday = this.isMarketDayZoned(nowET);
 
     const currentMinutes = nowET.getHours() * 60 + nowET.getMinutes();
     const marketOpenMinutes = MARKET_TIMES.REGULAR.START.HOUR * 60 + MARKET_TIMES.REGULAR.START.MINUTE;
@@ -213,7 +276,7 @@ export class MarketTimeUtil {
     } else {
       // Before market open, or not a market day, return previous trading day
       let lastTradingDate = sub(nowET, { days: 1 });
-      while (!this.isMarketDay(lastTradingDate)) {
+      while (!this.isMarketDayZoned(lastTradingDate)) {
         lastTradingDate = sub(lastTradingDate, { days: 1 });
       }
       return lastTradingDate;
@@ -222,7 +285,7 @@ export class MarketTimeUtil {
 
   private getLastMarketDay(date: Date): Date {
     let currentDate = sub(date, { days: 1 });
-    while (!this.isMarketDay(currentDate)) {
+    while (!this.isMarketDayZoned(currentDate)) {
       currentDate = sub(currentDate, { days: 1 });
     }
     return currentDate;
@@ -233,7 +296,7 @@ export class MarketTimeUtil {
 
     // If today is a market day and we're after extended hours close
     // then return today since it's a completed trading day
-    if (this.isMarketDay(nowET)) {
+    if (this.isMarketDayZoned(nowET)) {
       const timeInMinutes = nowET.getHours() * 60 + nowET.getMinutes();
       const extendedEndMinutes = MARKET_TIMES.EXTENDED.END.HOUR * 60 + MARKET_TIMES.EXTENDED.END.MINUTE;
 
@@ -261,12 +324,28 @@ export class MarketTimeUtil {
    * @property {string} yyyymmdd - The date in YYYY-MM-DD format
    * @property {string} dateISOString - Full ISO date string
    */
-  public getNextMarketDay(date: Date): Date {
-    let currentDate = add(date, { days: 1 });
-    while (!this.isMarketDay(currentDate)) {
+  /**
+   * Gets the next market day from a date already in market timezone.
+   * @param nyDate - Date in market timezone representation
+   * @returns The next market day in market timezone representation
+   */
+  private getNextMarketDayZoned(nyDate: Date): Date {
+    let currentDate = add(nyDate, { days: 1 });
+    while (!this.isMarketDayZoned(currentDate)) {
       currentDate = add(currentDate, { days: 1 });
     }
     return currentDate;
+  }
+
+  /**
+   * Gets the next market day from a reference date.
+   * Handles timezone conversion from any input date.
+   * @param date - The reference date (any timezone)
+   * @returns The next market day as a Date (note: internally represented in market timezone)
+   */
+  public getNextMarketDay(date: Date): Date {
+    const nyDate = toZonedTime(date, this.timezone);
+    return this.getNextMarketDayZoned(nyDate);
   }
 
   private getDayBoundaries(date: Date): { start: Date; end: Date } {
@@ -303,9 +382,9 @@ export class MarketTimeUtil {
           milliseconds: 0,
         });
 
-        // Check for early close
-        if (this.isEarlyCloseDay(date)) {
-          const earlyCloseMinutes = this.getEarlyCloseTime(date);
+        // Check for early close (date is already zoned)
+        if (this.isEarlyCloseDayZoned(date)) {
+          const earlyCloseMinutes = this.getEarlyCloseTimeZoned(date);
           if (earlyCloseMinutes !== null) {
             const earlyCloseHours = Math.floor(earlyCloseMinutes / 60);
             const earlyCloseMinutesRemainder = earlyCloseMinutes % 60;
@@ -366,8 +445,8 @@ export class MarketTimeUtil {
         throw new Error(`Invalid period: ${period}`);
     }
 
-    while (!this.isMarketDay(startDate)) {
-      startDate = this.getNextMarketDay(startDate);
+    while (!this.isMarketDayZoned(startDate)) {
+      startDate = this.getNextMarketDayZoned(startDate);
     }
 
     return startDate;
@@ -392,9 +471,9 @@ export class MarketTimeUtil {
     let startDate: Date;
     let endDate: Date;
 
-    const isCurrentMarketDay = this.isMarketDay(zonedEndDate);
-    const isWithinHours = this.isWithinMarketHours(zonedEndDate);
-    const isBeforeHours = this.isBeforeMarketHours(zonedEndDate);
+    const isCurrentMarketDay = this.isMarketDayZoned(zonedEndDate);
+    const isWithinHours = this.isWithinMarketHoursZoned(zonedEndDate);
+    const isBeforeHours = this.isBeforeMarketHoursZoned(zonedEndDate);
 
     // First determine the end date based on current market conditions
     if (isCurrentMarketDay) {
@@ -443,7 +522,7 @@ export class MarketTimeUtil {
     const zonedDate = toZonedTime(date, this.timezone);
 
     // Check if market is closed for the day
-    if (this.isWeekend(zonedDate) || this.isHoliday(zonedDate)) {
+    if (this.isWeekendZoned(zonedDate) || this.isHolidayZoned(zonedDate)) {
       return {
         marketOpen: false,
         open: null,
@@ -459,10 +538,10 @@ export class MarketTimeUtil {
     const extendedOpenTime = MARKET_TIMES.EXTENDED.START;
     let extendedCloseTime = MARKET_TIMES.EXTENDED.END;
 
-    // Check for early close
-    const isEarlyClose = this.isEarlyCloseDay(zonedDate);
+    // Check for early close (zonedDate is already in market timezone)
+    const isEarlyClose = this.isEarlyCloseDayZoned(zonedDate);
     if (isEarlyClose) {
-      const earlyCloseMinutes = this.getEarlyCloseTime(zonedDate);
+      const earlyCloseMinutes = this.getEarlyCloseTimeZoned(zonedDate);
       if (earlyCloseMinutes !== null) {
         // For regular hours, use the early close time
         regularCloseTime = {
@@ -606,10 +685,11 @@ export function getNextMarketDay({ referenceDate }: { referenceDate?: Date } = {
 } {
   const util = new MarketTimeUtil();
   const startDate = referenceDate || new Date();
-  const nextDate = util.getNextMarketDay(startDate);
+  // getNextMarketDay returns a date in NY-zoned representation
+  const nextDateZoned = util.getNextMarketDay(startDate);
 
-  // Convert to start of day in NY time
-  const startOfDayNY = startOfDay(toZonedTime(nextDate, MARKET_TIMES.TIMEZONE));
+  // Convert zoned representation to start of day, then back to real UTC
+  const startOfDayNY = startOfDay(nextDateZoned);
   const dateInET = fromZonedTime(startOfDayNY, MARKET_TIMES.TIMEZONE);
 
   return {
@@ -716,7 +796,7 @@ export function getMarketStatus(options: { date?: Date } = {}): MarketStatus {
   const util = new MarketTimeUtil();
   const now = options.date || new Date();
   const nyTime = toZonedTime(now, MARKET_TIMES.TIMEZONE);
-  const isEarlyCloseDay = util.isEarlyCloseDay(nyTime);
+  const isEarlyCloseDay = util.isEarlyCloseDay(now);
 
   const timeInMinutes = nyTime.getHours() * 60 + nyTime.getMinutes();
   const extendedStartMinutes = MARKET_TIMES.EXTENDED.START.MINUTES;
@@ -734,10 +814,10 @@ export function getMarketStatus(options: { date?: Date } = {}): MarketStatus {
   let nextStatusTime: Date;
   let marketPeriod: MarketStatus['marketPeriod'];
 
-  const nextMarketDay = util.getNextMarketDay(nyTime);
+  const nextMarketDay = util.getNextMarketDay(now);
 
   // Determine current status and market period
-  if (!util.isMarketDay(nyTime)) {
+  if (!util.isMarketDay(now)) {
     // Not a market day! market is closed
     marketPeriod = 'closed';
     status = 'closed';

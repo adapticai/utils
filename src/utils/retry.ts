@@ -1,5 +1,6 @@
-/**
 import { getLogger } from '../logger';
+
+/**
  * Retry utility with exponential backoff for handling transient errors in external API calls.
  *
  * Features:

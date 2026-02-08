@@ -1,17 +1,20 @@
 # @adaptic/utils - Current Architecture
 
-**Package:** @adaptic/utils v0.1.1 (NPM published, Rollup ESM+CJS dual build, TypeScript)
+**Package:** @adaptic/utils v0.1.1 (NPM published, ES Module)
+**Build:** Rollup 4.46.2, TypeScript 5.8.3, dual ESM+CJS output (dist/index.mjs + dist/index.cjs)
+**Source Scale:** 82 TypeScript source files
+**Last Audit:** 2026-02-08
 
 ## Core Architecture
 
 - Financial utility library consumed by engine and external services
 - Dual ESM/CJS build via Rollup (dist/index.mjs + dist/index.cjs)
 - Exports a single unified namespace object from src/index.ts
-- Dependencies: @adaptic/backend-legacy, @adaptic/lumic-utils, @alpacahq/alpaca-trade-api, @apollo/client, date-fns, lru-cache
+- Dependencies: @adaptic/backend-legacy ^0.0.43, @adaptic/lumic-utils ^1.0.6, @alpacahq/alpaca-trade-api ^3.1.3, @apollo/client ^3.13.8, date-fns ^4.1.0, lru-cache ^11.2.2, p-limit ^6.2.0
 
 ## Public API Surface (via namespace object)
 
-The package exports everything through a single `adapticUtils` namespace with sub-namespaces:
+The package exports everything through a single `adaptic.*` namespace with sub-namespaces:
 
 - **alpaca** - Alpaca brokerage integration
   - account: getDetails, getConfig, updateConfig, getPositions, getPosition, getPortfolioHistory
@@ -28,39 +31,93 @@ The package exports everything through a single `adapticUtils` namespace with su
 - **ta** - Technical analysis (calculateEMA with dual-period support)
 - **allocation** - Asset allocation algorithm
 - **polygon** - Polygon.io market data API integration
+- **indices** - Polygon index data
 
-## Key Source Files (~70 .ts files)
+## Module Structure (82 source files)
 
-- src/index.ts - Main export namespace (~200 lines)
-- src/alpaca-functions.ts - Core Alpaca API integration (~60KB, largest file)
-- src/alpaca-trading-api.ts - TradingAPI class wrapping Alpaca REST
-- src/alpaca-market-data-api.ts - MarketDataAPI class for market data
-- src/alpaca/ - Subdirectory with modular Alpaca functions (accounts, orders, crypto)
-- src/crypto.ts - Crypto bars/news/trades/quotes via Alpaca v1beta3 API
-- src/market-time.ts - MarketTimeTracker class with timezone-aware market hours
-- src/performance-metrics.ts - Financial performance calculations
-- src/technical-analysis.ts - EMA calculation
-- src/asset-allocation-algorithm.ts - Portfolio allocation logic
-- src/types/ - Type definitions (13+ subdirectories)
-- src/cache/ - LRU caching utilities
-- src/misc-utils.ts - Debug logging helpers
-- src/adaptic.ts - Shared Apollo Client management
+### src/alpaca/ (11 files, 6 subdirectories)
 
-## Testing Approach
+Modular SDK-based Alpaca client, organized by domain:
 
-- No test framework (no vitest/jest). Tests run via src/test.ts -> build -> node dist/test.js
-- Must modify src/test.ts, add function, call it at bottom, then `npm run test`
-- Rollup-bundled package cannot run arbitrary TS files
+- **trading/** (12 files): account, orders, positions, bracket-orders, oco-orders, oto-orders, trailing-stops, smart-orders
+- **market-data/** (5 files): quotes, bars, trades, news
+- **crypto/** (3 files): data, orders
+- **options/** (5 files): contracts, data, orders, strategies
+- **streams/** (7 files): stream-manager, base-stream, trading-stream, stock-stream, crypto-stream, option-stream
 
-## Current Issues from Audit
+### Core Modules
 
-- 47 instances of `: any` or `as any` across source files (type safety violation)
-- @deprecated markers on legacy order functions but still exported
-- Inconsistent API base URLs (v1beta1 in alpaca-functions.ts vs v1beta3 in crypto.ts)
-- Console.error used in some functions instead of structured logging
-- No retry logic or rate limiting on Alpaca API calls
-- No request timeouts on API calls
-- Missing authentication header validation
-- LRU cache configuration not tunable by consumers
-- AlpacaAuth type has multiple patterns (adapticAccountId OR apiKey+apiSecret)
-- No automated tests - only manual src/test.ts
+| File | Lines | Description |
+|------|-------|-------------|
+| `src/alpaca-functions.ts` | 1,688 | Legacy Alpaca REST API wrapper (being superseded by src/alpaca/) |
+| `src/performance-metrics.ts` | 1,113 | Trade PnL, alpha, beta, drawdown, info ratio |
+| `src/technical-analysis.ts` | 535 | EMA, MACD, RSI, Stochastic, Bollinger, S&R, Fibonacci |
+| `src/market-time.ts` | - | MarketTimeTracker class with timezone-aware market hours |
+| `src/market-hours.ts` | - | US holiday calendar, market schedule data |
+| `src/polygon.ts` | - | Polygon.io REST API |
+| `src/polygon-indices.ts` | - | Polygon.io index data |
+| `src/alphavantage.ts` | - | Alpha Vantage integration |
+| `src/crypto.ts` | - | Cryptocurrency data via Alpaca v1beta3 |
+| `src/asset-allocation-algorithm.ts` | - | Portfolio allocation engine |
+
+### Infrastructure
+
+| File | Description |
+|------|-------------|
+| `src/cache/stampede-protected-cache.ts` | LRU cache with stale-while-revalidate |
+| `src/rate-limiter.ts` | Token bucket rate limiter |
+| `src/http-timeout.ts` | Timeout utilities and configuration |
+| `src/errors/index.ts` | 13 error classes (AlpacaApiError, PolygonApiError, TimeoutError, RateLimitError, etc.) |
+| `src/utils/retry.ts` | Exponential backoff retry wrapper |
+| `src/utils/auth-validator.ts` | API credential validation |
+| `src/logger.ts` | Configurable Pino-compatible logger |
+| `src/logging.ts` | Logger configuration and setup |
+| `src/adaptic.ts` | Shared Apollo Client management |
+| `src/misc-utils.ts` | Debug logging helpers |
+
+## Type System
+
+| File | Lines | Description |
+|------|-------|-------------|
+| `src/types/alpaca-types.ts` | 1,465 | Comprehensive Alpaca API types |
+| `src/types/market-time-types.ts` | - | Market time and hours types |
+| `src/types/polygon-types.ts` | - | Polygon.io response types |
+| `src/types/alphavantage-types.ts` | - | Alpha Vantage response types |
+| `src/types/ta-types.ts` | - | Technical analysis parameter/result types |
+| `src/types/metrics-types.ts` | - | Performance metrics types |
+| `src/types/asset-allocation-types.ts` | - | Allocation algorithm types |
+| `src/types/adaptic-types.ts` | - | Shared Adaptic platform types |
+| `src/types/logging-types.ts` | - | Logger interface types |
+
+**Type ownership:** `@adaptic/backend-legacy` owns all Prisma-generated canonical types (Trade, Position, Order, etc.). `@adaptic/utils` owns broker/API types (AlpacaPosition, AlpacaOrder, etc.). Types in `src/types/` are limited to external API response/request shapes.
+
+## Code Quality (as of 2026-02-07)
+
+- Zero `any` types in production code (47 instances from prior audit fully resolved)
+- Structured error handling via 13 typed error classes in `src/errors/index.ts`
+- Token bucket rate limiting implemented in `src/rate-limiter.ts`
+- HTTP timeout utilities implemented in `src/http-timeout.ts`
+- Exponential backoff retry implemented in `src/utils/retry.ts`
+- StampedeProtectedCache with stale-while-revalidate in `src/cache/`
+- Configurable logger compatible with Pino in `src/logger.ts`
+- API credential validation in `src/utils/auth-validator.ts`
+
+## Testing
+
+- Vitest infrastructure fully operational with scripts: `test`, `test:watch`, `test:coverage`
+- Comprehensive test suite with 461 tests passing (significantly expanded in Wave 3C)
+- Test coverage across major modules:
+  - `auth-validator.test.ts` - API credential validation
+  - `cache.test.ts` - StampedeProtectedCache with stale-while-revalidate
+  - `market-time.test.ts` - MarketTimeTracker and market hours
+  - `technical-analysis.test.ts` - EMA, MACD, RSI, Bollinger, Fibonacci
+  - Expanded coverage for alpaca, crypto, format, metrics, polygon, and other modules
+- Legacy `src/test.ts` for manual testing still present (build -> `node dist/test.js`)
+
+## Known Issues
+
+1. **Node engine NOT SPECIFIED** in package.json (should be `>=20` to align with lumic-utils and backend-legacy)
+2. **Deprecated functions cleaned up** - Deprecated aliases removed or properly migrated in Wave 3C
+3. **API version inconsistency** - Mixed v1/v1beta1/v1beta3 Alpaca endpoint versions across modules
+4. **Test coverage significantly improved** - 461 tests now passing (up from 4 test files), though some modules may still lack complete coverage
+5. **Legacy alpaca-functions.ts** (1,688 lines) coexists with modular `src/alpaca/` directory; migration incomplete

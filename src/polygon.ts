@@ -1,8 +1,8 @@
 /**********************************************************************************
-import { getLogger } from './logger';
  * Polygon.io calls
  **********************************************************************************/
 
+import { getLogger } from './logger';
 import { fetchWithRetry, hideApiKeyFromurl } from './misc-utils';
 import {
   PolygonQuote,

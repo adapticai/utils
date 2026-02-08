@@ -368,6 +368,7 @@ export function calculateStochasticOscillator(
   }
 
   const kValues: number[] = [];
+  const smoothedKValues: number[] = [];
   const result: StochData[] = [];
   let kSum = 0;
   let dSum = 0;
@@ -387,11 +388,12 @@ export function calculateStochasticOscillator(
 
     if (kValues.length > smoothingFactor) kSum -= kValues[kValues.length - smoothingFactor - 1];
     const smoothedK = kSum / Math.min(kValues.length, smoothingFactor);
+    smoothedKValues.push(smoothedK);
 
     dSum += smoothedK;
-    if (kValues.length > smoothingFactor + signalPeriod - 1)
-      dSum -= kValues[kValues.length - smoothingFactor - signalPeriod];
-    const smoothedD = dSum / Math.min(kValues.length - smoothingFactor + 1, signalPeriod);
+    if (smoothedKValues.length > signalPeriod)
+      dSum -= smoothedKValues[smoothedKValues.length - signalPeriod - 1];
+    const smoothedD = dSum / Math.min(smoothedKValues.length, signalPeriod);
 
     if (kValues.length >= smoothingFactor + signalPeriod - 1) {
       result.push({
