@@ -34,9 +34,9 @@
 | # | Task | Status | Notes |
 |---|------|--------|-------|
 | 14 | API response validation with Zod schemas | RESOLVED | Zod schemas implemented in `src/schemas/` for all critical API responses: Alpaca (Account, Position, Order with recursive legs, Bar, Quote, Trade, News, Portfolio History, Crypto Bars), Polygon (RawPriceData, TickerInfo, GroupedDaily, DailyOpenClose, Trade, Aggregates, Error), and Alpha Vantage (Quote, NewsArticle, NewsResponse). `validateResponse()` and `safeValidateResponse()` helpers in `src/schemas/validate-response.ts`. Non-strict mode (default) logs warnings without breaking; strict mode throws `ValidationResponseError`. 55 tests in `src/__tests__/schema-validation.test.ts`. |
-| 15 | Bundle size analysis and tree-shaking optimization | NOT STARTED | Analyze Rollup bundle output. Verify tree-shaking works correctly for consumers that import only subsets. |
-| 16 | TypeDoc generation from JSDoc | NOT STARTED | Auto-generate API documentation from existing JSDoc comments. Publish alongside NPM package. |
-| 17 | Changelog automation for NPM releases | NOT STARTED | Automated changelog generation from commit messages (conventional commits). |
+| 15 | Bundle size analysis and tree-shaking optimization | RESOLVED | `rollup-plugin-visualizer` configured in `rollup.config.mjs`. Run `npm run build:analyze` (sets `ANALYZE_BUNDLE=true`) to generate `dist/bundle-stats.html` (interactive treemap with gzip/brotli sizes) and `dist/bundle-stats.json` (raw data). |
+| 16 | TypeDoc generation from JSDoc | RESOLVED | TypeDoc configured via `typedoc.json`. Run `npm run docs` to generate API documentation in `docs/` directory. Configured with category ordering (Alpaca, Polygon, Performance Metrics, etc.), private/internal exclusions, and search support. Run `npm run docs:watch` for live regeneration during development. |
+| 17 | Changelog automation for NPM releases | RESOLVED | `conventional-changelog-cli` configured with Angular preset. Run `npm run changelog` to generate/update `CHANGELOG.md` from conventional commit messages. Tag prefix set to `utils-v` for monorepo compatibility. Configuration in `.changelogrc.json` with custom type sections (Features, Bug Fixes, Performance, Refactoring, Documentation, Tests, Build System, CI/CD). |
 | 18 | Connection pooling verification for HTTP clients | RESOLVED | Verified in `src/utils/http-keep-alive.ts`. All API clients use native `fetch()` (Node.js >= 20 undici with built-in connection pooling and keep-alive). Pre-configured `httpAgent`/`httpsAgent` for `node:http`/`node:https` use cases. `getAgentPoolStatus()` for monitoring, `verifyFetchKeepAlive()` for runtime verification. Comprehensive API client transport table documenting connection reuse behavior. 24 tests in `src/__tests__/http-keep-alive.test.ts`. |
 | 19 | Pagination helper | RESOLVED | Generic async-iterator pagination utility in `src/utils/paginator.ts`. Supports three strategies: `CursorPaginationConfig` (Alpaca `next_page_token`/`page_token`), `UrlPaginationConfig` (Polygon `next_url`), and `OffsetPaginationConfig` (page-number based). `paginate()` yields items one at a time via AsyncGenerator; `paginateAll()` collects all into an array. Safety limits via `maxPages` (default 1000) and `maxItems`. 23 tests in `src/__tests__/paginator.test.ts`. |
 | 20 | Market calendar integration | NOT STARTED | MarketTimeTracker should use actual exchange calendar data, not just time-of-day checks. |
@@ -53,7 +53,7 @@
 |----------|-------|----------|-------------|-------------|
 | P0 | 6 | 6 | 0 | 0 |
 | P1 | 7 | 7 | 0 | 0 |
-| P2 | 7 | 3 | 0 | 4 |
+| P2 | 7 | 6 | 0 | 1 (item 20 - market calendar) |
 | P3 | 1 | 0 | 0 | 1 |
 
 ## Cross-Package Alignment

@@ -1,0 +1,44 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": ["src/index.ts"],
+  "out": "docs",
+  "name": "@adaptic/utils - API Documentation",
+  "readme": "README.md",
+  "includeVersion": true,
+  "excludePrivate": true,
+  "excludeProtected": true,
+  "excludeInternal": true,
+  "excludeExternals": true,
+  "exclude": [
+    "src/**/*.test.ts",
+    "src/**/*.spec.ts",
+    "src/test.ts",
+    "node_modules/**"
+  ],
+  "tsconfig": "tsconfig.json",
+  "sort": ["source-order"],
+  "categorizeByGroup": true,
+  "categoryOrder": [
+    "Alpaca",
+    "Polygon",
+    "Performance Metrics",
+    "Technical Analysis",
+    "Market Time",
+    "Cache",
+    "Errors",
+    "Rate Limiting",
+    "HTTP",
+    "Logging",
+    "Validation",
+    "Types",
+    "*"
+  ],
+  "navigation": {
+    "includeCategories": true,
+    "includeGroups": true
+  },
+  "plugin": [],
+  "cleanOutputDir": true,
+  "searchInComments": true,
+  "searchInDocuments": true
+}

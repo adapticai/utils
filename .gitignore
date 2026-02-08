@@ -7,3 +7,14 @@ node_modules
 *.zip
 .DS_Store
 .aider*
+
+# Build artifacts
+dist/
+coverage/
+
+# Generated documentation
+docs/
+
+# Bundle analysis reports
+dist/bundle-stats.html
+dist/bundle-stats.json
