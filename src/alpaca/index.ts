@@ -206,6 +206,10 @@ export {
 // Streams
 export * from './streams';
 
+// Legacy AlpacaAuth-based API functions (backward compatibility)
+import * as legacyApi from './legacy';
+export { legacyApi };
+
 // Convenience namespace export
 import { createAlpacaClient, AlpacaClient, AlpacaClientConfig, createClientFromEnv, clearClientCache } from './client';
 

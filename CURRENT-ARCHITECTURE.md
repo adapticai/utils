@@ -49,7 +49,7 @@ Modular SDK-based Alpaca client, organized by domain:
 
 | File | Lines | Description |
 |------|-------|-------------|
-| `src/alpaca-functions.ts` | 1,688 | Legacy Alpaca REST API wrapper (being superseded by src/alpaca/) |
+| `src/alpaca/legacy/` | ~600 | Legacy Alpaca REST API wrapper (AlpacaAuth pattern), migrated from alpaca-functions.ts into 6 modular files |
 | `src/performance-metrics.ts` | 1,113 | Trade PnL, alpha, beta, drawdown, info ratio |
 | `src/technical-analysis.ts` | 535 | EMA, MACD, RSI, Stochastic, Bollinger, S&R, Fibonacci |
 | `src/market-time.ts` | - | MarketTimeTracker class with timezone-aware market hours |
@@ -120,4 +120,4 @@ Modular SDK-based Alpaca client, organized by domain:
 2. **Deprecated functions cleaned up** - Deprecated aliases removed or properly migrated in Wave 3C
 3. **API version inconsistency** - Mixed v1/v1beta1/v1beta3 Alpaca endpoint versions across modules
 4. **Test coverage significantly improved** - 461 tests now passing (up from 4 test files), though some modules may still lack complete coverage
-5. **Legacy alpaca-functions.ts** (1,688 lines) coexists with modular `src/alpaca/` directory; migration incomplete
+5. **Legacy alpaca-functions.ts migration COMPLETE** - 1,688 lines migrated to `src/alpaca/legacy/` (6 modular files: auth, orders, positions, account, market-data, assets, utils); original file deleted

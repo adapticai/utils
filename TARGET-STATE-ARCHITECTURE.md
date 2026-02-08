@@ -45,7 +45,7 @@
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 21 | Complete legacy migration | NOT STARTED | Fully migrate `alpaca-functions.ts` (1,688 lines) into modular `src/alpaca/` structure and remove the legacy file. |
+| 21 | Complete legacy migration | RESOLVED | Migrated `alpaca-functions.ts` (1,688 lines) into `src/alpaca/legacy/` with 6 modular files: `auth.ts`, `orders.ts`, `positions.ts`, `account.ts`, `market-data.ts`, `assets.ts`, plus `utils.ts` for shared helpers. Legacy file deleted. All 618 tests pass, build succeeds. |
 
 ## Progress Summary
 
@@ -54,7 +54,7 @@
 | P0 | 6 | 6 | 0 | 0 |
 | P1 | 7 | 7 | 0 | 0 |
 | P2 | 7 | 7 | 0 | 0 |
-| P3 | 1 | 0 | 0 | 1 |
+| P3 | 1 | 1 | 0 | 0 |
 
 ## Cross-Package Alignment
 

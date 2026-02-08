@@ -3,7 +3,7 @@
 import adaptic, { enums, types } from "@adaptic/backend-legacy";
 import { EquityPoint, AlpacaPortfolioHistory } from "./types/index";
 import { getDateInNY, MarketTimeUtil } from "./market-time";
-import { getOrder } from "./alpaca-functions";
+import { getOrder } from "./alpaca/legacy";
 
 
 

@@ -534,6 +534,7 @@ export interface PortfolioHistoryResponse {
  * Parameters for fetching account details.
  */
 export interface FetchAccountDetailsProps {
+  auth?: AlpacaAuth; // Optional Alpaca authentication details
   accountId?: string; // Optional account ID
   client?: ApolloClientType<NormalizedCacheObject>; // Apollo client instance
   alpacaAccount?: types.AlpacaAccount; // Optional Alpaca account object

@@ -47,7 +47,7 @@ import {
   getLatestQuotes,
   getAsset,
   cleanContent,
-} from '../alpaca-functions';
+} from '../alpaca/legacy';
 import { AlpacaAuth } from '../types/alpaca-types';
 
 const testAuth: AlpacaAuth = {

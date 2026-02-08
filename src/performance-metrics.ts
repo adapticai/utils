@@ -1,7 +1,7 @@
 // performance-metrics.ts
 import { getLogger } from './logger';
 
-import { fetchAccountDetails, fetchPortfolioHistory } from './alpaca-functions';
+import { fetchAccountDetails, fetchPortfolioHistory } from './alpaca/legacy';
 import { getStartAndEndTimestamps } from './market-time';
 import { PortfolioHistoryParams, PortfolioHistory, PortfolioHistoryResponse, BenchmarkBar, CalculateBetaResult, Bar, AlpacaAccountDetails, FetchAccountDetailsProps, AlpacaAccountGetOptions } from './types/alpaca-types';
 import { Period, IntradayReporting } from './types/market-time-types';

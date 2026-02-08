@@ -12,7 +12,7 @@ vi.mock('@adaptic/backend-legacy', () => ({
   types: {},
 }));
 
-vi.mock('../alpaca-functions', () => ({
+vi.mock('../alpaca/legacy', () => ({
   getOrder: vi.fn(),
 }));
 

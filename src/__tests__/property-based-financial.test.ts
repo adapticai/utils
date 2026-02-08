@@ -9,7 +9,7 @@ vi.mock('@adaptic/backend-legacy', () => ({
   types: {},
 }));
 
-vi.mock('../alpaca-functions', () => ({
+vi.mock('../alpaca/legacy', () => ({
   fetchAccountDetails: vi.fn(),
   fetchPortfolioHistory: vi.fn(),
 }));

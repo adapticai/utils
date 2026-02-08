@@ -1,4 +1,4 @@
-import * as Alpaca from './alpaca-functions';
+import * as Alpaca from './alpaca/legacy';
 import * as pm from './performance-metrics';
 import * as tu from './time-utils';
 import * as mt from './market-time';
