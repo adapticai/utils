@@ -26,8 +26,8 @@
 | 9 | Configurable caching | RESOLVED | StampedeProtectedCache with stale-while-revalidate implemented in `src/cache/stampede-protected-cache.ts`. |
 | 10 | Replace console.error | RESOLVED | Configurable Pino-compatible logger implemented in `src/logger.ts`. |
 | 11 | Auth validation | RESOLVED | API credential validation implemented in `src/utils/auth-validator.ts`. |
-| 12 | Expand Vitest test suite | MOSTLY RESOLVED | 461 tests passing (Wave 3C), significantly expanded from 4 test files. Coverage includes auth-validator, cache, market-time, technical-analysis, alpaca, crypto, format, metrics, polygon, and other modules. Some modules may still lack complete coverage. |
-| 13 | Property-based tests for financial calculations | NOT STARTED | Performance metrics (beta, drawdown, returns) need property-based tests against known datasets to verify numerical accuracy. |
+| 12 | Expand Vitest test suite | MOSTLY RESOLVED | 516 tests passing, significantly expanded from 4 test files. Coverage includes auth-validator, cache, market-time, technical-analysis, alpaca, crypto, format, metrics, polygon, property-based, and regression modules. Some modules may still lack complete coverage. |
+| 13 | Property-based tests for financial calculations | RESOLVED | 55 property-based and regression tests using fast-check in `src/__tests__/property-based-financial.test.ts` and `src/__tests__/financial-regression.test.ts`. Covers beta (identity, linearity, inverse correlation, zero-variance), drawdown (bounds, monotonicity, peak/trough invariants), returns (log return additivity, round-trip symmetry), EMA (constant series, bounds, output length), RSI (0-100 bounds, trend direction), and Bollinger Bands (band ordering, SMA accuracy, known std dev). |
 
 ### P2 - Medium Priority
 
@@ -52,7 +52,7 @@
 | Priority | Total | Resolved | In Progress | Not Started |
 |----------|-------|----------|-------------|-------------|
 | P0 | 6 | 6 | 0 | 0 |
-| P1 | 7 | 6 | 0 | 1 |
+| P1 | 7 | 7 | 0 | 0 |
 | P2 | 7 | 0 | 0 | 7 |
 | P3 | 1 | 0 | 0 | 1 |
 

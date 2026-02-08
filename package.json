@@ -56,6 +56,7 @@
     "@types/ms": "^2.1.0",
     "@types/ws": "^8.18.1",
     "@vitest/coverage-v8": "^4.0.18",
+    "fast-check": "^4.5.3",
     "lightweight-charts": "^5.0.8",
     "react": "^19.1.0",
     "rollup": "^4.46.2",
