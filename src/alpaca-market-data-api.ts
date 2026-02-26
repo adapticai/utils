@@ -181,6 +181,8 @@ export class AlpacaMarketDataAPI extends EventEmitter {
   private dataURL: string;
   private apiURL: string;
   private v1beta1url: string;
+  /** Whether API credentials are valid and available. False during build time when env vars are missing. */
+  private credentialsValid: boolean = false;
   private stockStreamUrl: string = getStockStreamUrl("PRODUCTION"); // production values
   private optionStreamUrl: string = getOptionsStreamUrl("PRODUCTION"); // production values
   private cryptoStreamUrl: string = getCryptoStreamUrl("PRODUCTION"); // production values
@@ -236,13 +238,19 @@ export class AlpacaMarketDataAPI extends EventEmitter {
     super();
 
     // Validate credentials from environment variables before initializing
-    const apiKey = process.env.ALPACA_API_KEY!;
-    const apiSecret = process.env.ALPACA_SECRET_KEY!;
-    validateAlpacaCredentials({
-      apiKey,
-      apiSecret,
-      isPaper: process.env.ALPACA_ACCOUNT_TYPE === "PAPER",
-    });
+    // Use throwOnMissing: false to allow initialization during build time
+    // when env vars are not available. Features will be unavailable until
+    // credentials are provided at runtime.
+    const apiKey = process.env.ALPACA_API_KEY || "";
+    const apiSecret = process.env.ALPACA_SECRET_KEY || "";
+    this.credentialsValid = validateAlpacaCredentials(
+      {
+        apiKey,
+        apiSecret,
+        isPaper: process.env.ALPACA_ACCOUNT_TYPE === "PAPER",
+      },
+      { throwOnMissing: false },
+    );
 
     this.dataURL = MARKET_DATA_API.STOCKS;
     this.apiURL =
