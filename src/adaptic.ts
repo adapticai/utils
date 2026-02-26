@@ -1,12 +1,12 @@
 // Adaptic backend calls
-import { getLogger } from './logger';
-import { AssetOverviewResponse, AssetOverview } from './types';
+import { getLogger } from "./logger";
+import { AssetOverviewResponse, AssetOverview } from "./types";
 import {
   getApolloClient,
   setTokenProvider,
   type TokenProvider,
-} from '@adaptic/backend-legacy';
-import { createTimeoutSignal, DEFAULT_TIMEOUTS } from './http-timeout';
+} from "@adaptic/backend-legacy";
+import { createTimeoutSignal, DEFAULT_TIMEOUTS } from "./http-timeout";
 
 // Re-export TokenProvider type for consumers
 export type { TokenProvider };
@@ -54,7 +54,7 @@ let authConfigured = false;
 export const configureAuth = (provider: TokenProvider): void => {
   if (authConfigured) {
     getLogger().warn(
-      '[adaptic] Auth provider already configured. Calling configureAuth again will reset the client.'
+      "[adaptic] Auth provider already configured. Calling configureAuth again will reset the client.",
     );
   }
   setTokenProvider(provider);
@@ -63,7 +63,9 @@ export const configureAuth = (provider: TokenProvider): void => {
   // Reset the cached client so it picks up the new auth on next request
   if (apolloClientInstance) {
     apolloClientInstance = null;
-    getLogger().info('[adaptic] Apollo client reset due to auth configuration change');
+    getLogger().info(
+      "[adaptic] Apollo client reset due to auth configuration change",
+    );
   }
 };
 
@@ -86,7 +88,7 @@ export const getSharedApolloClient = async (): Promise<ApolloClientType> => {
       // Initialize the client once and reuse it across requests
       apolloClientInstance = await getApolloClient();
     } catch (error) {
-      getLogger().error('Error initializing shared Apollo client:', error);
+      getLogger().error("Error initializing shared Apollo client:", error);
       throw error;
     }
   }
@@ -99,20 +101,25 @@ export const getSharedApolloClient = async (): Promise<ApolloClientType> => {
  * @param {string} symbol - The symbol of the asset to fetch.
  * @returns {Promise<AssetOverviewResponse>} - A promise that resolves to the asset overview response.
  */
-export const fetchAssetOverview = async (symbol: string): Promise<AssetOverviewResponse> => {
+export const fetchAssetOverview = async (
+  symbol: string,
+): Promise<AssetOverviewResponse> => {
   if (!symbol) {
     return {
       asset: null,
-      error: 'Symbol is required',
+      error: "Symbol is required",
       success: false,
     };
   }
 
   try {
     const encodedSymbol = encodeURIComponent(symbol.trim().toUpperCase());
-    const res = await fetch(`https://adaptic.ai/api/asset/overview?symbol=${encodedSymbol}`, {
-      signal: createTimeoutSignal(DEFAULT_TIMEOUTS.GENERAL),
-    });
+    const res = await fetch(
+      `https://adaptic.ai/api/asset/overview?symbol=${encodedSymbol}`,
+      {
+        signal: createTimeoutSignal(DEFAULT_TIMEOUTS.GENERAL),
+      },
+    );
 
     if (!res.ok) {
       const errorData = (await res.json()) as { error?: string };
@@ -135,12 +142,15 @@ export const fetchAssetOverview = async (symbol: string): Promise<AssetOverviewR
       };
     }
 
-    const cleanedAsset = Object.entries(data.asset).reduce((acc, [key, value]) => {
-      if (value !== null && value !== '' && value !== undefined) {
-        acc[key] = value;
-      }
-      return acc;
-    }, {} as AssetOverview);
+    const cleanedAsset = Object.entries(data.asset).reduce(
+      (acc, [key, value]) => {
+        if (value !== null && value !== "" && value !== undefined) {
+          acc[key] = value;
+        }
+        return acc;
+      },
+      {} as AssetOverview,
+    );
 
     return {
       asset: {
@@ -151,7 +161,8 @@ export const fetchAssetOverview = async (symbol: string): Promise<AssetOverviewR
       success: true,
     };
   } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error occurred";
     getLogger().error(`Error fetching asset data for ${symbol}:`, errorMessage);
     return {
       asset: null,

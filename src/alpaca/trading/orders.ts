@@ -2,9 +2,9 @@
  * Alpaca Order Management Module
  * Provides functions for creating, managing, and canceling orders using the official SDK
  */
-import { AlpacaClient } from '../client';
-import { log as baseLog } from '../../logging';
-import { LogOptions } from '../../types/logging-types';
+import { AlpacaClient } from "../client";
+import { log as baseLog } from "../../logging";
+import { LogOptions } from "../../types/logging-types";
 import {
   AlpacaOrder,
   CreateOrderParams,
@@ -12,14 +12,14 @@ import {
   ReplaceOrderParams,
   OrderStatus,
   SDKGetOrdersParams,
-} from '../../types/alpaca-types';
+} from "../../types/alpaca-types";
 
-const LOG_SOURCE = 'AlpacaOrders';
+const LOG_SOURCE = "AlpacaOrders";
 
 /**
  * Internal logging helper with consistent source
  */
-const log = (message: string, options: LogOptions = { type: 'info' }) => {
+const log = (message: string, options: LogOptions = { type: "info" }) => {
   baseLog(message, { ...options, source: LOG_SOURCE });
 };
 
@@ -65,11 +65,11 @@ export interface CancelAllOrdersResponse {
  */
 export async function createOrder(
   client: AlpacaClient,
-  params: CreateOrderParams
+  params: CreateOrderParams,
 ): Promise<AlpacaOrder> {
   const { symbol, qty, side, type } = params;
   log(`Creating ${type} order: ${side} ${qty || params.notional} ${symbol}`, {
-    type: 'info',
+    type: "info",
     symbol,
   });
 
@@ -78,7 +78,7 @@ export async function createOrder(
     const order = await sdk.createOrder(params);
 
     log(`Order created successfully: ${order.id}`, {
-      type: 'info',
+      type: "info",
       symbol,
       metadata: {
         orderId: order.id,
@@ -90,13 +90,16 @@ export async function createOrder(
 
     return order as AlpacaOrder;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
     log(`Failed to create order for ${symbol}: ${errorMessage}`, {
-      type: 'error',
+      type: "error",
       symbol,
       metadata: { params },
     });
-    throw new Error(`Failed to create ${type} order for ${symbol}: ${errorMessage}`);
+    throw new Error(
+      `Failed to create ${type} order for ${symbol}: ${errorMessage}`,
+    );
   }
 }
 
@@ -114,23 +117,24 @@ export async function createOrder(
  */
 export async function getOrder(
   client: AlpacaClient,
-  orderId: string
+  orderId: string,
 ): Promise<AlpacaOrder> {
-  log(`Fetching order: ${orderId}`, { type: 'debug' });
+  log(`Fetching order: ${orderId}`, { type: "debug" });
 
   try {
     const sdk = client.getSDK();
     const order = await sdk.getOrder(orderId);
 
     log(`Order retrieved: ${orderId} (${order.status})`, {
-      type: 'debug',
+      type: "debug",
       symbol: order.symbol,
     });
 
     return order as AlpacaOrder;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    log(`Failed to fetch order ${orderId}: ${errorMessage}`, { type: 'error' });
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    log(`Failed to fetch order ${orderId}: ${errorMessage}`, { type: "error" });
     throw new Error(`Failed to fetch order ${orderId}: ${errorMessage}`);
   }
 }
@@ -163,10 +167,10 @@ export async function getOrder(
  */
 export async function getOrders(
   client: AlpacaClient,
-  params: GetOrdersParams = {}
+  params: GetOrdersParams = {},
 ): Promise<AlpacaOrder[]> {
-  const filterDescription = params.status || 'all';
-  log(`Fetching orders (status: ${filterDescription})`, { type: 'debug' });
+  const filterDescription = params.status || "all";
+  log(`Fetching orders (status: ${filterDescription})`, { type: "debug" });
 
   try {
     const sdk = client.getSDK();
@@ -180,21 +184,22 @@ export async function getOrders(
     if (params.direction) queryParams.direction = params.direction;
     if (params.nested !== undefined) queryParams.nested = params.nested;
     if (params.symbols && params.symbols.length > 0) {
-      queryParams.symbols = params.symbols.join(',');
+      queryParams.symbols = params.symbols.join(",");
     }
     if (params.side) queryParams.side = params.side;
 
-    const orders = await sdk.getOrders(queryParams);
+    const orders = await sdk.getOrders(queryParams as any);
 
     log(`Retrieved ${orders.length} orders`, {
-      type: 'debug',
+      type: "debug",
       metadata: { count: orders.length, status: filterDescription },
     });
 
     return orders as AlpacaOrder[];
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    log(`Failed to fetch orders: ${errorMessage}`, { type: 'error' });
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    log(`Failed to fetch orders: ${errorMessage}`, { type: "error" });
     throw new Error(`Failed to fetch orders: ${errorMessage}`);
   }
 }
@@ -213,32 +218,41 @@ export async function getOrders(
  */
 export async function cancelOrder(
   client: AlpacaClient,
-  orderId: string
+  orderId: string,
 ): Promise<void> {
-  log(`Canceling order: ${orderId}`, { type: 'info' });
+  log(`Canceling order: ${orderId}`, { type: "info" });
 
   try {
     const sdk = client.getSDK();
     await sdk.cancelOrder(orderId);
 
-    log(`Order canceled successfully: ${orderId}`, { type: 'info' });
+    log(`Order canceled successfully: ${orderId}`, { type: "info" });
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
 
     // Check for specific error conditions
-    if (errorMessage.includes('422') || errorMessage.includes('not cancelable')) {
-      log(`Order ${orderId} is not cancelable (may already be filled or canceled)`, {
-        type: 'warn',
-      });
+    if (
+      errorMessage.includes("422") ||
+      errorMessage.includes("not cancelable")
+    ) {
+      log(
+        `Order ${orderId} is not cancelable (may already be filled or canceled)`,
+        {
+          type: "warn",
+        },
+      );
       throw new Error(`Order ${orderId} is not cancelable`);
     }
 
-    if (errorMessage.includes('404') || errorMessage.includes('not found')) {
-      log(`Order ${orderId} not found`, { type: 'error' });
+    if (errorMessage.includes("404") || errorMessage.includes("not found")) {
+      log(`Order ${orderId} not found`, { type: "error" });
       throw new Error(`Order ${orderId} not found`);
     }
 
-    log(`Failed to cancel order ${orderId}: ${errorMessage}`, { type: 'error' });
+    log(`Failed to cancel order ${orderId}: ${errorMessage}`, {
+      type: "error",
+    });
     throw new Error(`Failed to cancel order ${orderId}: ${errorMessage}`);
   }
 }
@@ -259,9 +273,9 @@ export async function cancelOrder(
  * }
  */
 export async function cancelAllOrders(
-  client: AlpacaClient
+  client: AlpacaClient,
 ): Promise<CancelAllOrdersResponse> {
-  log('Canceling all open orders', { type: 'info' });
+  log("Canceling all open orders", { type: "info" });
 
   try {
     const sdk = client.getSDK();
@@ -280,15 +294,19 @@ export async function cancelAllOrders(
       });
     }
 
-    log(`Canceled ${canceled} orders${failed.length > 0 ? `, ${failed.length} failed` : ''}`, {
-      type: 'info',
-      metadata: { canceled, failed: failed.length },
-    });
+    log(
+      `Canceled ${canceled} orders${failed.length > 0 ? `, ${failed.length} failed` : ""}`,
+      {
+        type: "info",
+        metadata: { canceled, failed: failed.length },
+      },
+    );
 
     return { canceled, failed };
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    log(`Failed to cancel all orders: ${errorMessage}`, { type: 'error' });
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    log(`Failed to cancel all orders: ${errorMessage}`, { type: "error" });
     throw new Error(`Failed to cancel all orders: ${errorMessage}`);
   }
 }
@@ -325,17 +343,19 @@ export async function cancelAllOrders(
 export async function replaceOrder(
   client: AlpacaClient,
   orderId: string,
-  params: ReplaceOrderParams
+  params: ReplaceOrderParams,
 ): Promise<AlpacaOrder> {
-  const updateDescription = Object.keys(params).join(', ');
-  log(`Replacing order ${orderId} (updating: ${updateDescription})`, { type: 'info' });
+  const updateDescription = Object.keys(params).join(", ");
+  log(`Replacing order ${orderId} (updating: ${updateDescription})`, {
+    type: "info",
+  });
 
   try {
     const sdk = client.getSDK();
     const newOrder = await sdk.replaceOrder(orderId, params);
 
     log(`Order replaced successfully: ${orderId} -> ${newOrder.id}`, {
-      type: 'info',
+      type: "info",
       symbol: newOrder.symbol,
       metadata: {
         oldOrderId: orderId,
@@ -346,22 +366,27 @@ export async function replaceOrder(
 
     return newOrder as AlpacaOrder;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
 
     // Check for specific error conditions
-    if (errorMessage.includes('422')) {
+    if (errorMessage.includes("422")) {
       log(`Order ${orderId} cannot be replaced (may already be filled)`, {
-        type: 'error',
+        type: "error",
       });
-      throw new Error(`Order ${orderId} cannot be replaced: order may already be filled or canceled`);
+      throw new Error(
+        `Order ${orderId} cannot be replaced: order may already be filled or canceled`,
+      );
     }
 
-    if (errorMessage.includes('404')) {
-      log(`Order ${orderId} not found`, { type: 'error' });
+    if (errorMessage.includes("404")) {
+      log(`Order ${orderId} not found`, { type: "error" });
       throw new Error(`Order ${orderId} not found`);
     }
 
-    log(`Failed to replace order ${orderId}: ${errorMessage}`, { type: 'error' });
+    log(`Failed to replace order ${orderId}: ${errorMessage}`, {
+      type: "error",
+    });
     throw new Error(`Failed to replace order ${orderId}: ${errorMessage}`);
   }
 }
@@ -379,9 +404,9 @@ export async function replaceOrder(
  */
 export async function getOpenOrders(
   client: AlpacaClient,
-  symbols?: string[]
+  symbols?: string[],
 ): Promise<AlpacaOrder[]> {
-  return getOrders(client, { status: 'open', symbols });
+  return getOrders(client, { status: "open", symbols });
 }
 
 /**
@@ -398,7 +423,12 @@ export async function getOpenOrders(
  * }
  */
 export function isOrderTerminal(status: OrderStatus): boolean {
-  const terminalStates: OrderStatus[] = ['filled', 'canceled', 'expired', 'rejected'];
+  const terminalStates: OrderStatus[] = [
+    "filled",
+    "canceled",
+    "expired",
+    "rejected",
+  ];
   return terminalStates.includes(status);
 }
 
@@ -416,7 +446,12 @@ export function isOrderTerminal(status: OrderStatus): boolean {
  * }
  */
 export function isOrderCancelable(status: OrderStatus): boolean {
-  const cancelableStates: OrderStatus[] = ['new', 'partially_filled', 'accepted', 'pending_new'];
+  const cancelableStates: OrderStatus[] = [
+    "new",
+    "partially_filled",
+    "accepted",
+    "pending_new",
+  ];
   return cancelableStates.includes(status);
 }
 
@@ -434,25 +469,31 @@ export function isOrderCancelable(status: OrderStatus): boolean {
  */
 export async function getOrderByClientId(
   client: AlpacaClient,
-  clientOrderId: string
+  clientOrderId: string,
 ): Promise<AlpacaOrder> {
-  log(`Fetching order by client_order_id: ${clientOrderId}`, { type: 'debug' });
+  log(`Fetching order by client_order_id: ${clientOrderId}`, { type: "debug" });
 
   try {
     const sdk = client.getSDK();
     const order = await sdk.getOrderByClientId(clientOrderId);
 
     log(`Order retrieved by client_order_id: ${clientOrderId} -> ${order.id}`, {
-      type: 'debug',
+      type: "debug",
       symbol: order.symbol,
     });
 
     return order as AlpacaOrder;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    log(`Failed to fetch order by client_order_id ${clientOrderId}: ${errorMessage}`, {
-      type: 'error',
-    });
-    throw new Error(`Failed to fetch order by client_order_id ${clientOrderId}: ${errorMessage}`);
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    log(
+      `Failed to fetch order by client_order_id ${clientOrderId}: ${errorMessage}`,
+      {
+        type: "error",
+      },
+    );
+    throw new Error(
+      `Failed to fetch order by client_order_id ${clientOrderId}: ${errorMessage}`,
+    );
   }
 }

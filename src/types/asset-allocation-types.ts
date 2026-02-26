@@ -10,33 +10,33 @@
  * Asset classes supported for allocation
  */
 export type AllocationAssetClass =
-  | 'EQUITIES'
-  | 'OPTIONS'
-  | 'FUTURES'
-  | 'ETF'
-  | 'FOREX'
-  | 'CRYPTO';
+  | "EQUITIES"
+  | "OPTIONS"
+  | "FUTURES"
+  | "ETF"
+  | "FOREX"
+  | "CRYPTO";
 
 /**
  * Risk profile levels
  */
 export type RiskProfile =
-  | 'CONSERVATIVE'
-  | 'MODERATE_CONSERVATIVE'
-  | 'MODERATE'
-  | 'MODERATE_AGGRESSIVE'
-  | 'AGGRESSIVE';
+  | "CONSERVATIVE"
+  | "MODERATE_CONSERVATIVE"
+  | "MODERATE"
+  | "MODERATE_AGGRESSIVE"
+  | "AGGRESSIVE";
 
 /**
  * Market condition states
  */
 export type MarketCondition =
-  | 'BULL'
-  | 'BEAR'
-  | 'SIDEWAYS'
-  | 'HIGH_VOLATILITY'
-  | 'LOW_VOLATILITY'
-  | 'CRISIS';
+  | "BULL"
+  | "BEAR"
+  | "SIDEWAYS"
+  | "HIGH_VOLATILITY"
+  | "LOW_VOLATILITY"
+  | "CRISIS";
 
 /**
  * User preferences for allocation
@@ -78,7 +78,7 @@ export interface MarketMetrics {
   volatilityIndex: number;
 
   /** Market trend direction */
-  trendDirection: 'UP' | 'DOWN' | 'NEUTRAL';
+  trendDirection: "UP" | "DOWN" | "NEUTRAL";
 
   /** Market strength (0-100) */
   marketStrength: number;
@@ -87,7 +87,7 @@ export interface MarketMetrics {
   sentimentScore: number;
 
   /** Interest rate environment */
-  interestRateLevel: 'LOW' | 'MEDIUM' | 'HIGH';
+  interestRateLevel: "LOW" | "MEDIUM" | "HIGH";
 
   /** Inflation rate (%) */
   inflationRate: number;
@@ -96,7 +96,7 @@ export interface MarketMetrics {
   creditSpread: number;
 
   /** Economic cycle phase */
-  economicPhase: 'EXPANSION' | 'PEAK' | 'CONTRACTION' | 'TROUGH';
+  economicPhase: "EXPANSION" | "PEAK" | "CONTRACTION" | "TROUGH";
 }
 
 /**
@@ -140,12 +140,12 @@ export interface AssetClassCharacteristics {
 export interface AllocationConstraint {
   /** Constraint type */
   type:
-    | 'MIN_ALLOCATION'
-    | 'MAX_ALLOCATION'
-    | 'SECTOR_LIMIT'
-    | 'LIQUIDITY_REQ'
-    | 'CORRELATION_LIMIT'
-    | 'CONCENTRATION_LIMIT';
+    | "MIN_ALLOCATION"
+    | "MAX_ALLOCATION"
+    | "SECTOR_LIMIT"
+    | "LIQUIDITY_REQ"
+    | "CORRELATION_LIMIT"
+    | "CONCENTRATION_LIMIT";
 
   /** Asset class affected */
   assetClass?: AllocationAssetClass;
@@ -264,7 +264,7 @@ export interface RiskAnalysis {
   riskScore: number;
 
   /** Risk level classification */
-  riskLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'EXTREME';
+  riskLevel: "LOW" | "MEDIUM" | "HIGH" | "EXTREME";
 
   /** Systematic risk (market risk) */
   systematicRisk: number;
@@ -328,7 +328,7 @@ export interface RebalancingAction {
   targetAllocation: number;
 
   /** Action to take */
-  action: 'BUY' | 'SELL' | 'HOLD';
+  action: "BUY" | "SELL" | "HOLD";
 
   /** Amount to trade */
   tradeAmount: number;
@@ -399,13 +399,13 @@ export interface HistoricalData {
  * Optimization objective
  */
 export type OptimizationObjective =
-  | 'MAX_RETURN'
-  | 'MIN_RISK'
-  | 'MAX_SHARPE'
-  | 'RISK_PARITY'
-  | 'MAX_DIVERSIFICATION'
-  | 'TARGET_RETURN'
-  | 'TARGET_RISK';
+  | "MAX_RETURN"
+  | "MIN_RISK"
+  | "MAX_SHARPE"
+  | "RISK_PARITY"
+  | "MAX_DIVERSIFICATION"
+  | "TARGET_RETURN"
+  | "TARGET_RISK";
 
 /**
  * Allocation strategy configuration
@@ -421,7 +421,7 @@ export interface AllocationStrategyConfig {
   rebalancingThreshold: number;
 
   /** Transaction cost model */
-  transactionCostModel: 'FIXED' | 'PERCENTAGE' | 'TIERED';
+  transactionCostModel: "FIXED" | "PERCENTAGE" | "TIERED";
 
   /** Tax consideration */
   taxRate?: number;

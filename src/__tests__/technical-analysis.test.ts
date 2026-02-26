@@ -1,17 +1,20 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from "vitest";
 import {
   calculateEMA,
   calculateRSI,
   calculateMACD,
   calculateBollingerBands,
   calculateStochasticOscillator,
-} from '../technical-analysis';
-import { PolygonPriceData } from '../types/polygon-types';
+} from "../technical-analysis";
+import { PolygonPriceData } from "../types/polygon-types";
 
 /**
  * Creates test price data for technical analysis calculations
  */
-function createTestPriceData(length: number, startPrice: number = 100): PolygonPriceData[] {
+function createTestPriceData(
+  length: number,
+  startPrice: number = 100,
+): PolygonPriceData[] {
   const data: PolygonPriceData[] = [];
   let price = startPrice;
 
@@ -20,8 +23,8 @@ function createTestPriceData(length: number, startPrice: number = 100): PolygonP
     price = Math.max(price + variation, 1); // Ensure price stays positive
 
     data.push({
-      symbol: 'TEST',
-      date: `2025-01-${String(i + 1).padStart(2, '0')}`,
+      symbol: "TEST",
+      date: `2025-01-${String(i + 1).padStart(2, "0")}`,
       timeStamp: Date.now() + i * 86400000,
       open: price,
       high: price + Math.abs(variation),
@@ -41,13 +44,13 @@ function createTestPriceData(length: number, startPrice: number = 100): PolygonP
  */
 function createDeterministicPriceData(): PolygonPriceData[] {
   const prices = [
-    100, 102, 101, 103, 105, 104, 106, 108, 107, 109, 111, 110, 112, 114, 113, 115, 117, 116, 118,
-    120,
+    100, 102, 101, 103, 105, 104, 106, 108, 107, 109, 111, 110, 112, 114, 113,
+    115, 117, 116, 118, 120,
   ];
 
   return prices.map((price, i) => ({
-    symbol: 'TEST',
-    date: `2025-01-${String(i + 1).padStart(2, '0')}`,
+    symbol: "TEST",
+    date: `2025-01-${String(i + 1).padStart(2, "0")}`,
     timeStamp: Date.now() + i * 86400000,
     open: price,
     high: price + 1,
@@ -59,19 +62,19 @@ function createDeterministicPriceData(): PolygonPriceData[] {
   }));
 }
 
-describe('calculateEMA', () => {
-  it('should calculate EMA with default period (20)', () => {
+describe("calculateEMA", () => {
+  it("should calculate EMA with default period (20)", () => {
     const priceData = createTestPriceData(30);
     const result = calculateEMA(priceData);
 
     expect(result.length).toBeGreaterThan(0);
     expect(result.length).toBeLessThanOrEqual(priceData.length - 20 + 1);
-    expect(result[0]).toHaveProperty('ema');
-    expect(result[0]).toHaveProperty('date');
-    expect(result[0]).toHaveProperty('close');
+    expect(result[0]).toHaveProperty("ema");
+    expect(result[0]).toHaveProperty("date");
+    expect(result[0]).toHaveProperty("close");
   });
 
-  it('should calculate EMA with custom period', () => {
+  it("should calculate EMA with custom period", () => {
     const priceData = createTestPriceData(30);
     const result = calculateEMA(priceData, { period: 10 });
 
@@ -79,36 +82,39 @@ describe('calculateEMA', () => {
     expect(result.length).toBeLessThanOrEqual(priceData.length - 10 + 1);
   });
 
-  it('should calculate dual EMAs when period2 is provided', () => {
+  it("should calculate dual EMAs when period2 is provided", () => {
     const priceData = createTestPriceData(30);
     const result = calculateEMA(priceData, { period: 12, period2: 9 });
 
     expect(result.length).toBeGreaterThan(0);
-    expect(result[0]).toHaveProperty('ema');
-    expect(result[0]).toHaveProperty('ema2');
+    expect(result[0]).toHaveProperty("ema");
+    expect(result[0]).toHaveProperty("ema2");
   });
 
-  it('should return empty array when insufficient data', () => {
+  it("should return empty array when insufficient data", () => {
     const priceData = createTestPriceData(5);
     const result = calculateEMA(priceData, { period: 20 });
 
     expect(result).toEqual([]);
   });
 
-  it('should calculate correct EMA values for known data', () => {
+  it("should calculate correct EMA values for known data", () => {
     // Simple data: [10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
-    const priceData: PolygonPriceData[] = Array.from({ length: 10 }, (_, i) => ({
-      symbol: 'TEST',
-      date: `2025-01-${String(i + 1).padStart(2, '0')}`,
-      timeStamp: Date.now() + i * 86400000,
-      open: 10 + i,
-      high: 10 + i,
-      low: 10 + i,
-      close: 10 + i,
-      vol: 1000000,
-      vwap: 10 + i,
-      trades: 1000,
-    }));
+    const priceData: PolygonPriceData[] = Array.from(
+      { length: 10 },
+      (_, i) => ({
+        symbol: "TEST",
+        date: `2025-01-${String(i + 1).padStart(2, "0")}`,
+        timeStamp: Date.now() + i * 86400000,
+        open: 10 + i,
+        high: 10 + i,
+        low: 10 + i,
+        close: 10 + i,
+        vol: 1000000,
+        vwap: 10 + i,
+        trades: 1000,
+      }),
+    );
 
     const result = calculateEMA(priceData, { period: 5 });
 
@@ -117,7 +123,7 @@ describe('calculateEMA', () => {
     expect(result[0].ema).toBe(12.0);
   });
 
-  it('should have EMA values close to price', () => {
+  it("should have EMA values close to price", () => {
     const priceData = createTestPriceData(50, 100);
     const result = calculateEMA(priceData, { period: 10 });
 
@@ -129,18 +135,18 @@ describe('calculateEMA', () => {
   });
 });
 
-describe('calculateRSI', () => {
-  it('should calculate RSI with default period (14)', () => {
+describe("calculateRSI", () => {
+  it("should calculate RSI with default period (14)", () => {
     const priceData = createTestPriceData(30);
     const result = calculateRSI(priceData);
 
     expect(result.length).toBeGreaterThan(0);
-    expect(result[0]).toHaveProperty('rsi');
-    expect(result[0]).toHaveProperty('date');
-    expect(result[0]).toHaveProperty('close');
+    expect(result[0]).toHaveProperty("rsi");
+    expect(result[0]).toHaveProperty("date");
+    expect(result[0]).toHaveProperty("close");
   });
 
-  it('should calculate RSI with custom period', () => {
+  it("should calculate RSI with custom period", () => {
     const priceData = createTestPriceData(30);
     const result = calculateRSI(priceData, { period: 10 });
 
@@ -148,14 +154,14 @@ describe('calculateRSI', () => {
     expect(result.length).toBeLessThanOrEqual(priceData.length - 10);
   });
 
-  it('should return empty array when insufficient data', () => {
+  it("should return empty array when insufficient data", () => {
     const priceData = createTestPriceData(5);
     const result = calculateRSI(priceData, { period: 14 });
 
     expect(result).toEqual([]);
   });
 
-  it('should return RSI values between 0 and 100', () => {
+  it("should return RSI values between 0 and 100", () => {
     const priceData = createTestPriceData(30);
     const result = calculateRSI(priceData, { period: 14 });
 
@@ -165,13 +171,13 @@ describe('calculateRSI', () => {
     });
   });
 
-  it('should calculate RSI near 50 for sideways market', () => {
+  it("should calculate RSI near 50 for sideways market", () => {
     // Create sideways price data oscillating around 100
     const priceData: PolygonPriceData[] = Array.from({ length: 30 }, (_, i) => {
       const price = 100 + (i % 2 === 0 ? 1 : -1);
       return {
-        symbol: 'TEST',
-        date: `2025-01-${String(i + 1).padStart(2, '0')}`,
+        symbol: "TEST",
+        date: `2025-01-${String(i + 1).padStart(2, "0")}`,
         timeStamp: Date.now() + i * 86400000,
         open: price,
         high: price + 0.5,
@@ -187,25 +193,29 @@ describe('calculateRSI', () => {
 
     expect(result.length).toBeGreaterThan(0);
     // In a neutral market, RSI should be around 50
-    const avgRSI = result.reduce((sum, entry) => sum + entry.rsi, 0) / result.length;
+    const avgRSI =
+      result.reduce((sum, entry) => sum + entry.rsi, 0) / result.length;
     expect(avgRSI).toBeGreaterThan(40);
     expect(avgRSI).toBeLessThan(60);
   });
 
-  it('should calculate high RSI for uptrend', () => {
+  it("should calculate high RSI for uptrend", () => {
     // Create strong uptrend
-    const priceData: PolygonPriceData[] = Array.from({ length: 30 }, (_, i) => ({
-      symbol: 'TEST',
-      date: `2025-01-${String(i + 1).padStart(2, '0')}`,
-      timeStamp: Date.now() + i * 86400000,
-      open: 100 + i * 2,
-      high: 100 + i * 2 + 1,
-      low: 100 + i * 2 - 0.5,
-      close: 100 + i * 2,
-      vol: 1000000,
-      vwap: 100 + i * 2,
-      trades: 1000,
-    }));
+    const priceData: PolygonPriceData[] = Array.from(
+      { length: 30 },
+      (_, i) => ({
+        symbol: "TEST",
+        date: `2025-01-${String(i + 1).padStart(2, "0")}`,
+        timeStamp: Date.now() + i * 86400000,
+        open: 100 + i * 2,
+        high: 100 + i * 2 + 1,
+        low: 100 + i * 2 - 0.5,
+        close: 100 + i * 2,
+        vol: 1000000,
+        vwap: 100 + i * 2,
+        trades: 1000,
+      }),
+    );
 
     const result = calculateRSI(priceData, { period: 14 });
 
@@ -216,20 +226,20 @@ describe('calculateRSI', () => {
   });
 });
 
-describe('calculateMACD', () => {
-  it('should calculate MACD with default parameters', () => {
+describe("calculateMACD", () => {
+  it("should calculate MACD with default parameters", () => {
     const priceData = createTestPriceData(50);
     const result = calculateMACD(priceData);
 
     expect(result.length).toBeGreaterThan(0);
-    expect(result[0]).toHaveProperty('macd');
-    expect(result[0]).toHaveProperty('signal');
-    expect(result[0]).toHaveProperty('histogram');
-    expect(result[0]).toHaveProperty('date');
-    expect(result[0]).toHaveProperty('close');
+    expect(result[0]).toHaveProperty("macd");
+    expect(result[0]).toHaveProperty("signal");
+    expect(result[0]).toHaveProperty("histogram");
+    expect(result[0]).toHaveProperty("date");
+    expect(result[0]).toHaveProperty("close");
   });
 
-  it('should calculate MACD with custom parameters', () => {
+  it("should calculate MACD with custom parameters", () => {
     const priceData = createTestPriceData(50);
     const result = calculateMACD(priceData, {
       shortPeriod: 8,
@@ -240,14 +250,14 @@ describe('calculateMACD', () => {
     expect(result.length).toBeGreaterThan(0);
   });
 
-  it('should return empty array when insufficient data', () => {
+  it("should return empty array when insufficient data", () => {
     const priceData = createTestPriceData(20);
     const result = calculateMACD(priceData); // Needs 26 + 9 = 35
 
     expect(result).toEqual([]);
   });
 
-  it('should calculate histogram as difference between MACD and signal', () => {
+  it("should calculate histogram as difference between MACD and signal", () => {
     const priceData = createTestPriceData(50);
     const result = calculateMACD(priceData);
 
@@ -257,14 +267,14 @@ describe('calculateMACD', () => {
     });
   });
 
-  it('should have MACD cross signal line in trending market', () => {
+  it("should have MACD cross signal line in trending market", () => {
     const priceData = createDeterministicPriceData();
     // Need more data for MACD
     const extendedData = [
       ...priceData,
       ...Array.from({ length: 20 }, (_, i) => ({
-        symbol: 'TEST',
-        date: `2025-02-${String(i + 1).padStart(2, '0')}`,
+        symbol: "TEST",
+        date: `2025-02-${String(i + 1).padStart(2, "0")}`,
         timeStamp: Date.now() + (i + 20) * 86400000,
         open: 120 + i,
         high: 121 + i,
@@ -288,20 +298,20 @@ describe('calculateMACD', () => {
   });
 });
 
-describe('calculateBollingerBands', () => {
-  it('should calculate Bollinger Bands with default parameters', () => {
+describe("calculateBollingerBands", () => {
+  it("should calculate Bollinger Bands with default parameters", () => {
     const priceData = createTestPriceData(30);
     const result = calculateBollingerBands(priceData);
 
     expect(result.length).toBeGreaterThan(0);
-    expect(result[0]).toHaveProperty('middle');
-    expect(result[0]).toHaveProperty('upper');
-    expect(result[0]).toHaveProperty('lower');
-    expect(result[0]).toHaveProperty('date');
-    expect(result[0]).toHaveProperty('close');
+    expect(result[0]).toHaveProperty("middle");
+    expect(result[0]).toHaveProperty("upper");
+    expect(result[0]).toHaveProperty("lower");
+    expect(result[0]).toHaveProperty("date");
+    expect(result[0]).toHaveProperty("close");
   });
 
-  it('should calculate Bollinger Bands with custom parameters', () => {
+  it("should calculate Bollinger Bands with custom parameters", () => {
     const priceData = createTestPriceData(30);
     const result = calculateBollingerBands(priceData, {
       period: 10,
@@ -311,14 +321,14 @@ describe('calculateBollingerBands', () => {
     expect(result.length).toBeGreaterThan(0);
   });
 
-  it('should return empty array when insufficient data', () => {
+  it("should return empty array when insufficient data", () => {
     const priceData = createTestPriceData(10);
     const result = calculateBollingerBands(priceData, { period: 20 });
 
     expect(result).toEqual([]);
   });
 
-  it('should have upper band above middle and lower band below middle', () => {
+  it("should have upper band above middle and lower band below middle", () => {
     const priceData = createTestPriceData(30);
     const result = calculateBollingerBands(priceData);
 
@@ -328,20 +338,23 @@ describe('calculateBollingerBands', () => {
     });
   });
 
-  it('should have middle band equal to SMA', () => {
+  it("should have middle band equal to SMA", () => {
     // Create simple data for easy calculation
-    const priceData: PolygonPriceData[] = Array.from({ length: 25 }, (_, i) => ({
-      symbol: 'TEST',
-      date: `2025-01-${String(i + 1).padStart(2, '0')}`,
-      timeStamp: Date.now() + i * 86400000,
-      open: 100,
-      high: 100,
-      low: 100,
-      close: 100,
-      vol: 1000000,
-      vwap: 100,
-      trades: 1000,
-    }));
+    const priceData: PolygonPriceData[] = Array.from(
+      { length: 25 },
+      (_, i) => ({
+        symbol: "TEST",
+        date: `2025-01-${String(i + 1).padStart(2, "0")}`,
+        timeStamp: Date.now() + i * 86400000,
+        open: 100,
+        high: 100,
+        low: 100,
+        close: 100,
+        vol: 1000000,
+        vwap: 100,
+        trades: 1000,
+      }),
+    );
 
     const result = calculateBollingerBands(priceData, { period: 20 });
 
@@ -353,19 +366,22 @@ describe('calculateBollingerBands', () => {
     expect(result[0].lower).toBe(100);
   });
 
-  it('should widen bands for volatile price data', () => {
-    const volatilePriceData: PolygonPriceData[] = Array.from({ length: 30 }, (_, i) => ({
-      symbol: 'TEST',
-      date: `2025-01-${String(i + 1).padStart(2, '0')}`,
-      timeStamp: Date.now() + i * 86400000,
-      open: 100 + (i % 2 === 0 ? 10 : -10),
-      high: 110 + (i % 2 === 0 ? 10 : -10),
-      low: 90 + (i % 2 === 0 ? 10 : -10),
-      close: 100 + (i % 2 === 0 ? 10 : -10),
-      vol: 1000000,
-      vwap: 100 + (i % 2 === 0 ? 10 : -10),
-      trades: 1000,
-    }));
+  it("should widen bands for volatile price data", () => {
+    const volatilePriceData: PolygonPriceData[] = Array.from(
+      { length: 30 },
+      (_, i) => ({
+        symbol: "TEST",
+        date: `2025-01-${String(i + 1).padStart(2, "0")}`,
+        timeStamp: Date.now() + i * 86400000,
+        open: 100 + (i % 2 === 0 ? 10 : -10),
+        high: 110 + (i % 2 === 0 ? 10 : -10),
+        low: 90 + (i % 2 === 0 ? 10 : -10),
+        close: 100 + (i % 2 === 0 ? 10 : -10),
+        vol: 1000000,
+        vwap: 100 + (i % 2 === 0 ? 10 : -10),
+        trades: 1000,
+      }),
+    );
 
     const result = calculateBollingerBands(volatilePriceData, { period: 20 });
 
@@ -376,26 +392,28 @@ describe('calculateBollingerBands', () => {
   });
 });
 
-describe('calculateStochasticOscillator', () => {
-  it('should calculate Stochastic Oscillator with default parameters', () => {
+describe("calculateStochasticOscillator", () => {
+  it("should calculate Stochastic Oscillator with default parameters", () => {
     const priceData = createTestPriceData(30);
     const result = calculateStochasticOscillator(priceData);
 
     expect(result.length).toBeGreaterThan(0);
-    expect(result[0]).toHaveProperty('slowK');
-    expect(result[0]).toHaveProperty('slowD');
-    expect(result[0]).toHaveProperty('date');
-    expect(result[0]).toHaveProperty('close');
+    expect(result[0]).toHaveProperty("slowK");
+    expect(result[0]).toHaveProperty("slowD");
+    expect(result[0]).toHaveProperty("date");
+    expect(result[0]).toHaveProperty("close");
   });
 
-  it('should return empty array when insufficient data', () => {
+  it("should return empty array when insufficient data", () => {
     const priceData = createTestPriceData(3);
-    const result = calculateStochasticOscillator(priceData, { lookbackPeriod: 5 });
+    const result = calculateStochasticOscillator(priceData, {
+      lookbackPeriod: 5,
+    });
 
     expect(result).toEqual([]);
   });
 
-  it('should return values between 0 and 100', () => {
+  it("should return values between 0 and 100", () => {
     const priceData = createTestPriceData(30);
     const result = calculateStochasticOscillator(priceData);
 
@@ -407,21 +425,26 @@ describe('calculateStochasticOscillator', () => {
     });
   });
 
-  it('should calculate high values when price is at recent highs', () => {
-    const priceData: PolygonPriceData[] = Array.from({ length: 20 }, (_, i) => ({
-      symbol: 'TEST',
-      date: `2025-01-${String(i + 1).padStart(2, '0')}`,
-      timeStamp: Date.now() + i * 86400000,
-      open: 100 + i,
-      high: 102 + i,
-      low: 98 + i,
-      close: 101 + i,
-      vol: 1000000,
-      vwap: 100 + i,
-      trades: 1000,
-    }));
+  it("should calculate high values when price is at recent highs", () => {
+    const priceData: PolygonPriceData[] = Array.from(
+      { length: 20 },
+      (_, i) => ({
+        symbol: "TEST",
+        date: `2025-01-${String(i + 1).padStart(2, "0")}`,
+        timeStamp: Date.now() + i * 86400000,
+        open: 100 + i,
+        high: 102 + i,
+        low: 98 + i,
+        close: 101 + i,
+        vol: 1000000,
+        vwap: 100 + i,
+        trades: 1000,
+      }),
+    );
 
-    const result = calculateStochasticOscillator(priceData, { lookbackPeriod: 5 });
+    const result = calculateStochasticOscillator(priceData, {
+      lookbackPeriod: 5,
+    });
 
     expect(result.length).toBeGreaterThan(0);
     // In an uptrend, stochastic should be high
@@ -430,49 +453,57 @@ describe('calculateStochasticOscillator', () => {
   });
 });
 
-describe('edge cases and data validation', () => {
-  it('should handle minimal valid data for EMA', () => {
+describe("edge cases and data validation", () => {
+  it("should handle minimal valid data for EMA", () => {
     const priceData = createTestPriceData(20); // Exactly 20 for period 20
     const result = calculateEMA(priceData, { period: 20 });
 
     expect(result.length).toBe(1); // Should return exactly 1 result
   });
 
-  it('should handle price data with identical values', () => {
-    const constantPriceData: PolygonPriceData[] = Array.from({ length: 30 }, (_, i) => ({
-      symbol: 'TEST',
-      date: `2025-01-${String(i + 1).padStart(2, '0')}`,
-      timeStamp: Date.now() + i * 86400000,
-      open: 100,
-      high: 100,
-      low: 100,
-      close: 100,
-      vol: 1000000,
-      vwap: 100,
-      trades: 1000,
-    }));
+  it("should handle price data with identical values", () => {
+    const constantPriceData: PolygonPriceData[] = Array.from(
+      { length: 30 },
+      (_, i) => ({
+        symbol: "TEST",
+        date: `2025-01-${String(i + 1).padStart(2, "0")}`,
+        timeStamp: Date.now() + i * 86400000,
+        open: 100,
+        high: 100,
+        low: 100,
+        close: 100,
+        vol: 1000000,
+        vwap: 100,
+        trades: 1000,
+      }),
+    );
 
     const emaResult = calculateEMA(constantPriceData, { period: 10 });
     expect(emaResult.every((entry) => entry.ema === 100)).toBe(true);
 
     const rsiResult = calculateRSI(constantPriceData, { period: 14 });
     // RSI should be NaN or 0 for constant prices (no gains or losses)
-    expect(rsiResult.every((entry) => entry.rsi === 0 || isNaN(entry.rsi))).toBe(true);
+    expect(
+      rsiResult.every((entry) => entry.rsi === 0 || isNaN(entry.rsi)),
+    ).toBe(true);
   });
 
-  it('should handle very small price changes', () => {
-    const priceData: PolygonPriceData[] = Array.from({ length: 30 }, (_, i) => ({
-      symbol: 'TEST',
-      date: `2025-01-${String(i + 1).padStart(2, '0')}`,
-      timeStamp: Date.now() + i * 86400000,
-      open: 100 + i * 0.01,
-      high: 100 + i * 0.01 + 0.005,
-      low: 100 + i * 0.01 - 0.005,
-      close: 100 + i * 0.01,
-      vol: 1000000,
-      vwap: 100 + i * 0.01,
-      trades: 1000,
-    }));
+  it("should handle very small price changes", () => {
+    const priceData: PolygonPriceData[] = Array.from(
+      { length: 30 },
+      (_, i) => ({
+        symbol: "TEST",
+        date: `2025-01-${String(i + 1).padStart(2, "0")}`,
+        timeStamp: Date.now() + i * 86400000,
+        open: 100 + i * 0.01,
+        high: 100 + i * 0.01 + 0.005,
+        low: 100 + i * 0.01 - 0.005,
+        close: 100 + i * 0.01,
+        vol: 1000000,
+        vwap: 100 + i * 0.01,
+        trades: 1000,
+      }),
+    );
 
     const result = calculateEMA(priceData, { period: 10 });
     expect(result.length).toBeGreaterThan(0);

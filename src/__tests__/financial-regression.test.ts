@@ -1,19 +1,19 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi } from "vitest";
 
 // Mock @adaptic/backend-legacy before importing the modules under test.
-vi.mock('@adaptic/backend-legacy', () => ({
+vi.mock("@adaptic/backend-legacy", () => ({
   default: {
     alpacaAccount: { get: vi.fn() },
   },
   types: {},
 }));
 
-vi.mock('../alpaca/legacy', () => ({
+vi.mock("../alpaca/legacy", () => ({
   fetchAccountDetails: vi.fn(),
   fetchPortfolioHistory: vi.fn(),
 }));
 
-vi.mock('../adaptic', () => ({
+vi.mock("../adaptic", () => ({
   getSharedApolloClient: vi.fn(),
 }));
 
@@ -22,14 +22,14 @@ import {
   calculateDrawdownMetrics,
   calculateDailyReturns,
   calculateBetaFromReturns,
-} from '../performance-metrics';
+} from "../performance-metrics";
 import {
   calculateEMA,
   calculateRSI,
   calculateMACD,
   calculateBollingerBands,
-} from '../technical-analysis';
-import { PolygonPriceData } from '../types/polygon-types';
+} from "../technical-analysis";
+import { PolygonPriceData } from "../types/polygon-types";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -40,8 +40,8 @@ import { PolygonPriceData } from '../types/polygon-types';
  */
 function toPriceData(closePrices: number[]): PolygonPriceData[] {
   return closePrices.map((close, i) => ({
-    symbol: 'TEST',
-    date: `2025-01-${String(i + 1).padStart(2, '0')}`,
+    symbol: "TEST",
+    date: `2025-01-${String(i + 1).padStart(2, "0")}`,
     timeStamp: 1735689600000 + i * 86400000, // 2025-01-01 + i days
     open: close,
     high: close + 1,
@@ -57,48 +57,59 @@ function toPriceData(closePrices: number[]): PolygonPriceData[] {
 // Beta Regression Tests Against Known Data
 // ---------------------------------------------------------------------------
 
-describe('Regression: Beta calculation against known values', () => {
-  it('should compute beta = 1.0 for market vs itself (SPY vs SPY)', () => {
+describe("Regression: Beta calculation against known values", () => {
+  it("should compute beta = 1.0 for market vs itself (SPY vs SPY)", () => {
     // Simulated SPY daily returns over 10 days
-    const spyReturns = [0.0012, -0.0045, 0.0078, -0.0023, 0.0056, -0.0011, 0.0034, -0.0067, 0.0089, -0.0015];
+    const spyReturns = [
+      0.0012, -0.0045, 0.0078, -0.0023, 0.0056, -0.0011, 0.0034, -0.0067,
+      0.0089, -0.0015,
+    ];
     const result = calculateBetaFromReturns(spyReturns, spyReturns);
     expect(result.beta).toBeCloseTo(1.0, 10);
   });
 
-  it('should compute beta near 1.5 for a high-beta portfolio', () => {
+  it("should compute beta near 1.5 for a high-beta portfolio", () => {
     // Benchmark returns (simulating SPY)
-    const benchmarkReturns = [0.01, -0.005, 0.008, -0.003, 0.012, -0.007, 0.006, -0.004, 0.009, -0.002];
+    const benchmarkReturns = [
+      0.01, -0.005, 0.008, -0.003, 0.012, -0.007, 0.006, -0.004, 0.009, -0.002,
+    ];
     // Portfolio that moves 1.5x the benchmark
     const portfolioReturns = benchmarkReturns.map((r) => r * 1.5);
     const result = calculateBetaFromReturns(portfolioReturns, benchmarkReturns);
     expect(result.beta).toBeCloseTo(1.5, 4);
   });
 
-  it('should compute beta near 0.5 for a defensive portfolio', () => {
-    const benchmarkReturns = [0.01, -0.005, 0.008, -0.003, 0.012, -0.007, 0.006, -0.004, 0.009, -0.002];
+  it("should compute beta near 0.5 for a defensive portfolio", () => {
+    const benchmarkReturns = [
+      0.01, -0.005, 0.008, -0.003, 0.012, -0.007, 0.006, -0.004, 0.009, -0.002,
+    ];
     const portfolioReturns = benchmarkReturns.map((r) => r * 0.5);
     const result = calculateBetaFromReturns(portfolioReturns, benchmarkReturns);
     expect(result.beta).toBeCloseTo(0.5, 4);
   });
 
-  it('should compute beta near -0.8 for an inversely correlated portfolio', () => {
-    const benchmarkReturns = [0.01, -0.005, 0.008, -0.003, 0.012, -0.007, 0.006, -0.004, 0.009, -0.002];
+  it("should compute beta near -0.8 for an inversely correlated portfolio", () => {
+    const benchmarkReturns = [
+      0.01, -0.005, 0.008, -0.003, 0.012, -0.007, 0.006, -0.004, 0.009, -0.002,
+    ];
     const portfolioReturns = benchmarkReturns.map((r) => r * -0.8);
     const result = calculateBetaFromReturns(portfolioReturns, benchmarkReturns);
     expect(result.beta).toBeCloseTo(-0.8, 4);
   });
 
-  it('should handle beta with offset (alpha-generating) portfolio', () => {
+  it("should handle beta with offset (alpha-generating) portfolio", () => {
     // Portfolio = 1.2 * benchmark + 0.001 (daily alpha)
     // Beta should still be 1.2 because alpha is a constant offset
-    const benchmarkReturns = [0.01, -0.005, 0.008, -0.003, 0.012, -0.007, 0.006, -0.004, 0.009, -0.002];
+    const benchmarkReturns = [
+      0.01, -0.005, 0.008, -0.003, 0.012, -0.007, 0.006, -0.004, 0.009, -0.002,
+    ];
     const portfolioReturns = benchmarkReturns.map((r) => r * 1.2 + 0.001);
     const result = calculateBetaFromReturns(portfolioReturns, benchmarkReturns);
     // Adding constant alpha does not change beta
     expect(result.beta).toBeCloseTo(1.2, 4);
   });
 
-  it('should compute correct covariance and variance manually', () => {
+  it("should compute correct covariance and variance manually", () => {
     const portfolioReturns = [0.05, -0.02, 0.03];
     const benchmarkReturns = [0.03, -0.01, 0.02];
 
@@ -135,67 +146,68 @@ describe('Regression: Beta calculation against known values', () => {
 // Drawdown Regression Tests Against Known Scenarios
 // ---------------------------------------------------------------------------
 
-describe('Regression: Drawdown against known historical patterns', () => {
-  it('should detect 2008-style crash pattern (50% drawdown)', () => {
+describe("Regression: Drawdown against known historical patterns", () => {
+  it("should detect 2008-style crash pattern (50% drawdown)", () => {
     // Simulated equity curve resembling a 50% crash
     const equity = [
-      100, 102, 105, 108, 110, 107, 100, 90,
-      80, 70, 60, 55, 52, 55, 60, 65,
-      70, 75, 80, 90, 100, 110,
+      100, 102, 105, 108, 110, 107, 100, 90, 80, 70, 60, 55, 52, 55, 60, 65, 70,
+      75, 80, 90, 100, 110,
     ];
     const result = calculateDrawdownMetrics(equity);
     // Peak at 110 (index 4), trough at 52 (index 12)
     // Drawdown = (110 - 52) / 110 = 52.73%
     expect(result.peakValue).toBe(110);
     expect(result.troughValue).toBe(52);
-    const mdd = parseFloat(result.maxDrawdownPercentage.replace('%', ''));
+    const mdd = parseFloat(result.maxDrawdownPercentage.replace("%", ""));
     expect(mdd).toBeCloseTo(52.73, 1);
     expect(result.peakIndex).toBe(4);
     expect(result.troughIndex).toBe(12);
   });
 
-  it('should detect V-shaped recovery with exact metrics', () => {
+  it("should detect V-shaped recovery with exact metrics", () => {
     const equity = [100, 120, 140, 160, 120, 100, 80, 100, 120, 140, 160, 180];
     const result = calculateDrawdownMetrics(equity);
     // Peak at 160 (index 3), trough at 80 (index 6)
     // Drawdown = (160 - 80) / 160 = 50%
-    expect(result.maxDrawdownPercentage).toBe('50%');
+    expect(result.maxDrawdownPercentage).toBe("50%");
     expect(result.peakValue).toBe(160);
     expect(result.troughValue).toBe(80);
     expect(result.maxDrawdownValue).toBe(80);
     expect(result.drawdownPeriod).toBe(3);
   });
 
-  it('should detect multiple drawdowns and report the maximum', () => {
+  it("should detect multiple drawdowns and report the maximum", () => {
     // First drawdown: 100 -> 90 = 10%
     // Second drawdown: 110 -> 77 = 30%
     // Third drawdown: 120 -> 108 = 10%
     const equity = [100, 90, 100, 110, 77, 100, 120, 108, 130];
     const result = calculateDrawdownMetrics(equity);
-    expect(result.maxDrawdownPercentage).toBe('30%');
+    expect(result.maxDrawdownPercentage).toBe("30%");
     expect(result.peakValue).toBe(110);
     expect(result.troughValue).toBe(77);
   });
 
-  it('should compute 0% drawdown for bull market (no decline)', () => {
+  it("should compute 0% drawdown for bull market (no decline)", () => {
     const equity = [100, 105, 110, 115, 120, 125, 130, 140, 150];
     const result = calculateMaxDrawdown(equity);
-    expect(result).toBe('0%');
+    expect(result).toBe("0%");
   });
 
-  it('should compute current drawdown correctly when not yet recovered', () => {
+  it("should compute current drawdown correctly when not yet recovered", () => {
     const equity = [100, 120, 140, 130, 120]; // Still below peak
     const result = calculateDrawdownMetrics(equity);
     // Current drawdown: peak = 140, current = 120
     // (140 - 120) / 140 = 14.29%
-    const currentDD = parseFloat(result.currentDrawdownPercentage.replace('%', ''));
+    const currentDD = parseFloat(
+      result.currentDrawdownPercentage.replace("%", ""),
+    );
     expect(currentDD).toBeCloseTo(14.29, 1);
   });
 
-  it('should compute 0% current drawdown when at all-time high', () => {
+  it("should compute 0% current drawdown when at all-time high", () => {
     const equity = [100, 110, 105, 115, 120];
     const result = calculateDrawdownMetrics(equity);
-    expect(result.currentDrawdownPercentage).toBe('0%');
+    expect(result.currentDrawdownPercentage).toBe("0%");
   });
 });
 
@@ -203,8 +215,8 @@ describe('Regression: Drawdown against known historical patterns', () => {
 // SMA / EMA Regression Tests Against Manual Calculations
 // ---------------------------------------------------------------------------
 
-describe('Regression: SMA and EMA against manual calculations', () => {
-  it('EMA initial value equals SMA of first N periods', () => {
+describe("Regression: SMA and EMA against manual calculations", () => {
+  it("EMA initial value equals SMA of first N periods", () => {
     // Period 5, prices: 10, 11, 12, 13, 14, 15, 16, 17, 18, 19
     const prices = Array.from({ length: 10 }, (_, i) => 10 + i);
     const priceData = toPriceData(prices);
@@ -214,7 +226,7 @@ describe('Regression: SMA and EMA against manual calculations', () => {
     expect(result[0].ema).toBe(12.0);
   });
 
-  it('EMA with known multiplier matches hand calculation', () => {
+  it("EMA with known multiplier matches hand calculation", () => {
     // Period 5: multiplier = 2 / (5 + 1) = 1/3
     const prices = [10, 11, 12, 13, 14, 15]; // 6 data points
     const priceData = toPriceData(prices);
@@ -235,7 +247,7 @@ describe('Regression: SMA and EMA against manual calculations', () => {
     expect(result[1].ema).toBeCloseTo(expectedEMA, 2);
   });
 
-  it('Bollinger middle band equals SMA for known data', () => {
+  it("Bollinger middle band equals SMA for known data", () => {
     // 25 data points, period 5 for easier manual verification
     const prices = [10, 12, 11, 13, 14, 15, 13, 16, 17, 14];
     const priceData = toPriceData(prices);
@@ -251,11 +263,14 @@ describe('Regression: SMA and EMA against manual calculations', () => {
     expect(result[2].middle).toBeCloseTo(13.2, 2);
   });
 
-  it('Bollinger bandwidth matches manual std dev calculation', () => {
+  it("Bollinger bandwidth matches manual std dev calculation", () => {
     // Use constant prices to verify std dev = 0
     const prices = Array.from({ length: 10 }, () => 50);
     const priceData = toPriceData(prices);
-    const result = calculateBollingerBands(priceData, { period: 5, standardDeviations: 2 });
+    const result = calculateBollingerBands(priceData, {
+      period: 5,
+      standardDeviations: 2,
+    });
 
     result.forEach((entry) => {
       expect(entry.middle).toBe(50);
@@ -264,7 +279,7 @@ describe('Regression: SMA and EMA against manual calculations', () => {
     });
   });
 
-  it('Bollinger std dev matches hand calculation for known series', () => {
+  it("Bollinger std dev matches hand calculation for known series", () => {
     // Prices: [10, 12, 14, 16, 18], SMA = 14
     // Deviations: [-4, -2, 0, 2, 4]
     // Variance (population) = (16+4+0+4+16)/5 = 8
@@ -273,7 +288,10 @@ describe('Regression: SMA and EMA against manual calculations', () => {
     // Lower (2 std devs) = 14 - 2 * 2.828 = 8.34
     const prices = [10, 12, 14, 16, 18];
     const priceData = toPriceData(prices);
-    const result = calculateBollingerBands(priceData, { period: 5, standardDeviations: 2 });
+    const result = calculateBollingerBands(priceData, {
+      period: 5,
+      standardDeviations: 2,
+    });
 
     expect(result.length).toBe(1);
     expect(result[0].middle).toBeCloseTo(14.0, 2);
@@ -286,8 +304,8 @@ describe('Regression: SMA and EMA against manual calculations', () => {
 // RSI Regression Tests
 // ---------------------------------------------------------------------------
 
-describe('Regression: RSI against manual calculations', () => {
-  it('RSI of all-up series equals 100', () => {
+describe("Regression: RSI against manual calculations", () => {
+  it("RSI of all-up series equals 100", () => {
     // Strictly increasing: every day is a gain, no losses
     const prices = Array.from({ length: 20 }, (_, i) => 100 + i * 2);
     const priceData = toPriceData(prices);
@@ -298,7 +316,7 @@ describe('Regression: RSI against manual calculations', () => {
     });
   });
 
-  it('RSI of all-down series equals 0', () => {
+  it("RSI of all-down series equals 0", () => {
     // Strictly decreasing: every day is a loss, no gains
     const prices = Array.from({ length: 20 }, (_, i) => 200 - i * 2);
     const priceData = toPriceData(prices);
@@ -309,14 +327,14 @@ describe('Regression: RSI against manual calculations', () => {
     });
   });
 
-  it('RSI first value matches manual Wilder calculation', () => {
+  it("RSI first value matches manual Wilder calculation", () => {
     // Prices: [44, 44.34, 44.09, 43.61, 44.33, 44.83, 45.10, 45.42, 45.84,
     //          46.08, 45.89, 46.03, 45.61, 46.28, 46.28, 46.00, 46.03, 46.41,
     //          46.22, 45.64]
     // This is a well-known RSI example (Wilder's smoothing, period 14)
     const prices = [
-      44, 44.34, 44.09, 43.61, 44.33, 44.83, 45.10, 45.42,
-      45.84, 46.08, 45.89, 46.03, 45.61, 46.28, 46.28,
+      44, 44.34, 44.09, 43.61, 44.33, 44.83, 45.1, 45.42, 45.84, 46.08, 45.89,
+      46.03, 45.61, 46.28, 46.28,
     ];
     const priceData = toPriceData(prices);
     const result = calculateRSI(priceData, { period: 14 });
@@ -339,20 +357,20 @@ describe('Regression: RSI against manual calculations', () => {
 // Daily Returns Regression Tests
 // ---------------------------------------------------------------------------
 
-describe('Regression: Daily log returns', () => {
-  it('log return of doubling price equals ln(2)', () => {
+describe("Regression: Daily log returns", () => {
+  it("log return of doubling price equals ln(2)", () => {
     const prices = [100, 200];
     const returns = calculateDailyReturns(prices);
     expect(returns[0]).toBeCloseTo(Math.LN2, 10);
   });
 
-  it('log return of halving price equals -ln(2)', () => {
+  it("log return of halving price equals -ln(2)", () => {
     const prices = [200, 100];
     const returns = calculateDailyReturns(prices);
     expect(returns[0]).toBeCloseTo(-Math.LN2, 10);
   });
 
-  it('sum of log returns over round trip equals 0', () => {
+  it("sum of log returns over round trip equals 0", () => {
     // Go from 100 to 200 then back to 100: ln(2) + ln(0.5) = 0
     const prices = [100, 200, 100];
     const returns = calculateDailyReturns(prices);
@@ -360,7 +378,7 @@ describe('Regression: Daily log returns', () => {
     expect(total).toBeCloseTo(0, 10);
   });
 
-  it('log returns match manual calculation for known series', () => {
+  it("log returns match manual calculation for known series", () => {
     const prices = [100, 105, 102, 110, 108];
     const returns = calculateDailyReturns(prices);
 
@@ -371,7 +389,7 @@ describe('Regression: Daily log returns', () => {
     expect(returns[3]).toBeCloseTo(Math.log(108 / 110), 10);
   });
 
-  it('cumulative log return equals ln(final/initial) for clean series', () => {
+  it("cumulative log return equals ln(final/initial) for clean series", () => {
     const prices = [50, 55, 60, 58, 65, 70, 68, 75];
     const returns = calculateDailyReturns(prices);
     const cumulative = returns.reduce((s, r) => s + r, 0);
@@ -383,10 +401,13 @@ describe('Regression: Daily log returns', () => {
 // MACD Regression Tests
 // ---------------------------------------------------------------------------
 
-describe('Regression: MACD against known structure', () => {
-  it('MACD histogram equals MACD line minus signal line', () => {
+describe("Regression: MACD against known structure", () => {
+  it("MACD histogram equals MACD line minus signal line", () => {
     // Generate enough data for MACD (need 26 + 9 = 35 minimum)
-    const prices = Array.from({ length: 50 }, (_, i) => 100 + Math.sin(i / 3) * 10);
+    const prices = Array.from(
+      { length: 50 },
+      (_, i) => 100 + Math.sin(i / 3) * 10,
+    );
     const priceData = toPriceData(prices);
     const result = calculateMACD(priceData);
 
@@ -396,13 +417,15 @@ describe('Regression: MACD against known structure', () => {
     });
   });
 
-  it('MACD returns empty for insufficient data', () => {
-    const priceData = toPriceData(Array.from({ length: 30 }, (_, i) => 100 + i));
+  it("MACD returns empty for insufficient data", () => {
+    const priceData = toPriceData(
+      Array.from({ length: 30 }, (_, i) => 100 + i),
+    );
     const result = calculateMACD(priceData);
     expect(result).toEqual([]);
   });
 
-  it('MACD is positive when short EMA > long EMA (uptrend)', () => {
+  it("MACD is positive when short EMA > long EMA (uptrend)", () => {
     // Strong uptrend: short EMA should respond faster and be above long EMA
     const prices = Array.from({ length: 50 }, (_, i) => 100 + i * 3);
     const priceData = toPriceData(prices);

@@ -34,21 +34,40 @@
  * await manager.disconnectAll();
  * ```
  */
-import { AlpacaClient } from '../client';
-import { EventEmitter } from 'events';
-import { log as baseLog } from '../../logging';
-import { LogOptions } from '../../types/logging-types';
-import { TradingStream, createTradingStream, TradingStreamEventMap } from './trading-stream';
-import { StockDataStream, createStockDataStream, StockStreamConfig, StockStreamEventMap } from './stock-stream';
-import { OptionDataStream, createOptionDataStream, OptionStreamConfig, OptionStreamEventMap } from './option-stream';
-import { CryptoDataStream, createCryptoDataStream, CryptoStreamConfig, CryptoStreamEventMap } from './crypto-stream';
-import { StreamConfig, StreamState, SubscriptionRequest } from './base-stream';
+import { AlpacaClient } from "../client";
+import { EventEmitter } from "events";
+import { log as baseLog } from "../../logging";
+import { LogOptions } from "../../types/logging-types";
+import {
+  TradingStream,
+  createTradingStream,
+  TradingStreamEventMap,
+} from "./trading-stream";
+import {
+  StockDataStream,
+  createStockDataStream,
+  StockStreamConfig,
+  StockStreamEventMap,
+} from "./stock-stream";
+import {
+  OptionDataStream,
+  createOptionDataStream,
+  OptionStreamConfig,
+  OptionStreamEventMap,
+} from "./option-stream";
+import {
+  CryptoDataStream,
+  createCryptoDataStream,
+  CryptoStreamConfig,
+  CryptoStreamEventMap,
+} from "./crypto-stream";
+import { StreamConfig, StreamState, SubscriptionRequest } from "./base-stream";
 
 /**
  * Log helper for StreamManager
  */
-const log = (message: string, options: LogOptions = { type: 'info' }) => {
-  baseLog(message, { ...options, source: 'StreamManager' });
+const log = (message: string, options: LogOptions = { type: "info" }) => {
+  baseLog(message, { ...options, source: "StreamManager" });
 };
 
 /**
@@ -112,12 +131,19 @@ export const DEFAULT_STREAM_MANAGER_CONFIG: StreamManagerConfig = {
  * Stream manager event map
  */
 export interface StreamManagerEventMap {
-  'stream:connected': { stream: 'trading' | 'stock' | 'option' | 'crypto' };
-  'stream:disconnected': { stream: 'trading' | 'stock' | 'option' | 'crypto'; code: number; reason: string };
-  'stream:error': { stream: 'trading' | 'stock' | 'option' | 'crypto'; error: Error };
-  'all:connected': void;
-  'all:disconnected': void;
-  'health:check': StreamStatus;
+  "stream:connected": { stream: "trading" | "stock" | "option" | "crypto" };
+  "stream:disconnected": {
+    stream: "trading" | "stock" | "option" | "crypto";
+    code: number;
+    reason: string;
+  };
+  "stream:error": {
+    stream: "trading" | "stock" | "option" | "crypto";
+    error: Error;
+  };
+  "all:connected": void;
+  "all:disconnected": void;
+  "health:check": StreamStatus;
 }
 
 /**
@@ -150,16 +176,19 @@ export class StreamManager extends EventEmitter {
    */
   async connectTrading(): Promise<TradingStream> {
     if (this.isShuttingDown) {
-      throw new Error('Stream manager is shutting down');
+      throw new Error("Stream manager is shutting down");
     }
 
     if (!this.tradingStream) {
-      this.tradingStream = createTradingStream(this.client, this.config.baseConfig);
-      this.setupStreamEventHandlers(this.tradingStream, 'trading');
+      this.tradingStream = createTradingStream(
+        this.client,
+        this.config.baseConfig,
+      );
+      this.setupStreamEventHandlers(this.tradingStream, "trading");
     }
 
     if (!this.tradingStream.isStreamConnected()) {
-      log('Connecting to trading stream');
+      log("Connecting to trading stream");
       await this.tradingStream.connect();
     }
 
@@ -172,7 +201,7 @@ export class StreamManager extends EventEmitter {
    */
   async connectStockData(): Promise<StockDataStream> {
     if (this.isShuttingDown) {
-      throw new Error('Stream manager is shutting down');
+      throw new Error("Stream manager is shutting down");
     }
 
     if (!this.stockStream) {
@@ -180,11 +209,11 @@ export class StreamManager extends EventEmitter {
         ...this.config.baseConfig,
         ...this.config.stockConfig,
       });
-      this.setupStreamEventHandlers(this.stockStream, 'stock');
+      this.setupStreamEventHandlers(this.stockStream, "stock");
     }
 
     if (!this.stockStream.isStreamConnected()) {
-      log('Connecting to stock data stream');
+      log("Connecting to stock data stream");
       await this.stockStream.connect();
     }
 
@@ -197,7 +226,7 @@ export class StreamManager extends EventEmitter {
    */
   async connectOptionData(): Promise<OptionDataStream> {
     if (this.isShuttingDown) {
-      throw new Error('Stream manager is shutting down');
+      throw new Error("Stream manager is shutting down");
     }
 
     if (!this.optionStream) {
@@ -205,11 +234,11 @@ export class StreamManager extends EventEmitter {
         ...this.config.baseConfig,
         ...this.config.optionConfig,
       });
-      this.setupStreamEventHandlers(this.optionStream, 'option');
+      this.setupStreamEventHandlers(this.optionStream, "option");
     }
 
     if (!this.optionStream.isStreamConnected()) {
-      log('Connecting to option data stream');
+      log("Connecting to option data stream");
       await this.optionStream.connect();
     }
 
@@ -222,7 +251,7 @@ export class StreamManager extends EventEmitter {
    */
   async connectCryptoData(): Promise<CryptoDataStream> {
     if (this.isShuttingDown) {
-      throw new Error('Stream manager is shutting down');
+      throw new Error("Stream manager is shutting down");
     }
 
     if (!this.cryptoStream) {
@@ -230,11 +259,11 @@ export class StreamManager extends EventEmitter {
         ...this.config.baseConfig,
         ...this.config.cryptoConfig,
       });
-      this.setupStreamEventHandlers(this.cryptoStream, 'crypto');
+      this.setupStreamEventHandlers(this.cryptoStream, "crypto");
     }
 
     if (!this.cryptoStream.isStreamConnected()) {
-      log('Connecting to crypto data stream');
+      log("Connecting to crypto data stream");
       await this.cryptoStream.connect();
     }
 
@@ -246,10 +275,10 @@ export class StreamManager extends EventEmitter {
    */
   async connectAll(): Promise<void> {
     if (this.isShuttingDown) {
-      throw new Error('Stream manager is shutting down');
+      throw new Error("Stream manager is shutting down");
     }
 
-    log('Connecting all streams', { type: 'info' });
+    log("Connecting all streams", { type: "info" });
 
     const results = await Promise.allSettled([
       this.connectTrading(),
@@ -258,16 +287,20 @@ export class StreamManager extends EventEmitter {
       this.connectCryptoData(),
     ]);
 
-    const failed = results.filter((r) => r.status === 'rejected') as PromiseRejectedResult[];
+    const failed = results.filter(
+      (r) => r.status === "rejected",
+    ) as PromiseRejectedResult[];
     if (failed.length > 0) {
-      const errors = failed.map((f) => f.reason?.message || 'Unknown error').join(', ');
-      log(`Some streams failed to connect: ${errors}`, { type: 'warn' });
+      const errors = failed
+        .map((f) => f.reason?.message || "Unknown error")
+        .join(", ");
+      log(`Some streams failed to connect: ${errors}`, { type: "warn" });
     }
 
-    const allConnected = results.every((r) => r.status === 'fulfilled');
+    const allConnected = results.every((r) => r.status === "fulfilled");
     if (allConnected) {
-      log('All streams connected successfully', { type: 'info' });
-      this.emit('all:connected');
+      log("All streams connected successfully", { type: "info" });
+      this.emit("all:connected");
     }
   }
 
@@ -275,7 +308,7 @@ export class StreamManager extends EventEmitter {
    * Connect only market data streams (stock, option, crypto)
    */
   async connectMarketData(): Promise<void> {
-    log('Connecting market data streams', { type: 'info' });
+    log("Connecting market data streams", { type: "info" });
 
     await Promise.allSettled([
       this.connectStockData(),
@@ -289,7 +322,7 @@ export class StreamManager extends EventEmitter {
    */
   disconnectTrading(): void {
     if (this.tradingStream) {
-      log('Disconnecting trading stream');
+      log("Disconnecting trading stream");
       this.tradingStream.disconnect();
     }
   }
@@ -299,7 +332,7 @@ export class StreamManager extends EventEmitter {
    */
   disconnectStockData(): void {
     if (this.stockStream) {
-      log('Disconnecting stock data stream');
+      log("Disconnecting stock data stream");
       this.stockStream.disconnect();
     }
   }
@@ -309,7 +342,7 @@ export class StreamManager extends EventEmitter {
    */
   disconnectOptionData(): void {
     if (this.optionStream) {
-      log('Disconnecting option data stream');
+      log("Disconnecting option data stream");
       this.optionStream.disconnect();
     }
   }
@@ -319,7 +352,7 @@ export class StreamManager extends EventEmitter {
    */
   disconnectCryptoData(): void {
     if (this.cryptoStream) {
-      log('Disconnecting crypto data stream');
+      log("Disconnecting crypto data stream");
       this.cryptoStream.disconnect();
     }
   }
@@ -328,7 +361,7 @@ export class StreamManager extends EventEmitter {
    * Disconnect all streams
    */
   disconnectAll(): void {
-    log('Disconnecting all streams', { type: 'info' });
+    log("Disconnecting all streams", { type: "info" });
     this.isShuttingDown = true;
 
     this.disconnectTrading();
@@ -336,7 +369,7 @@ export class StreamManager extends EventEmitter {
     this.disconnectOptionData();
     this.disconnectCryptoData();
 
-    this.emit('all:disconnected');
+    this.emit("all:disconnected");
     this.isShuttingDown = false;
   }
 
@@ -344,7 +377,7 @@ export class StreamManager extends EventEmitter {
    * Graceful shutdown - disconnect all streams and cleanup
    */
   async shutdown(): Promise<void> {
-    log('Initiating graceful shutdown', { type: 'info' });
+    log("Initiating graceful shutdown", { type: "info" });
     this.isShuttingDown = true;
     this.stopHealthMonitoring();
     this.disconnectAll();
@@ -357,7 +390,7 @@ export class StreamManager extends EventEmitter {
     this.optionStream = null;
     this.cryptoStream = null;
 
-    log('Shutdown complete', { type: 'info' });
+    log("Shutdown complete", { type: "info" });
   }
 
   /**
@@ -379,19 +412,19 @@ export class StreamManager extends EventEmitter {
     return {
       trading: {
         connected: this.tradingStream?.isStreamConnected() ?? false,
-        state: this.tradingStream?.getState() ?? 'disconnected',
+        state: this.tradingStream?.getState() ?? "disconnected",
       },
       stock: {
         connected: this.stockStream?.isStreamConnected() ?? false,
-        state: this.stockStream?.getState() ?? 'disconnected',
+        state: this.stockStream?.getState() ?? "disconnected",
       },
       option: {
         connected: this.optionStream?.isStreamConnected() ?? false,
-        state: this.optionStream?.getState() ?? 'disconnected',
+        state: this.optionStream?.getState() ?? "disconnected",
       },
       crypto: {
         connected: this.cryptoStream?.isStreamConnected() ?? false,
-        state: this.cryptoStream?.getState() ?? 'disconnected',
+        state: this.cryptoStream?.getState() ?? "disconnected",
       },
     };
   }
@@ -447,7 +480,9 @@ export class StreamManager extends EventEmitter {
     if (this.stockStream) {
       this.stockStream.subscribe(request);
     } else {
-      log('Stock stream not initialized. Call connectStockData() first.', { type: 'warn' });
+      log("Stock stream not initialized. Call connectStockData() first.", {
+        type: "warn",
+      });
     }
   }
 
@@ -458,7 +493,9 @@ export class StreamManager extends EventEmitter {
     if (this.optionStream) {
       this.optionStream.subscribe(request);
     } else {
-      log('Option stream not initialized. Call connectOptionData() first.', { type: 'warn' });
+      log("Option stream not initialized. Call connectOptionData() first.", {
+        type: "warn",
+      });
     }
   }
 
@@ -469,7 +506,9 @@ export class StreamManager extends EventEmitter {
     if (this.cryptoStream) {
       this.cryptoStream.subscribe(request);
     } else {
-      log('Crypto stream not initialized. Call connectCryptoData() first.', { type: 'warn' });
+      log("Crypto stream not initialized. Call connectCryptoData() first.", {
+        type: "warn",
+      });
     }
   }
 
@@ -509,9 +548,21 @@ export class StreamManager extends EventEmitter {
     crypto: SubscriptionRequest;
   } {
     return {
-      stock: this.stockStream?.getSubscriptions() ?? { trades: [], quotes: [], bars: [] },
-      option: this.optionStream?.getSubscriptions() ?? { trades: [], quotes: [], bars: [] },
-      crypto: this.cryptoStream?.getSubscriptions() ?? { trades: [], quotes: [], bars: [] },
+      stock: this.stockStream?.getSubscriptions() ?? {
+        trades: [],
+        quotes: [],
+        bars: [],
+      },
+      option: this.optionStream?.getSubscriptions() ?? {
+        trades: [],
+        quotes: [],
+        bars: [],
+      },
+      crypto: this.cryptoStream?.getSubscriptions() ?? {
+        trades: [],
+        quotes: [],
+        bars: [],
+      },
     };
   }
 
@@ -519,20 +570,27 @@ export class StreamManager extends EventEmitter {
    * Setup event handlers for a stream
    */
   private setupStreamEventHandlers(
-    stream: TradingStream | StockDataStream | OptionDataStream | CryptoDataStream,
-    type: 'trading' | 'stock' | 'option' | 'crypto'
+    stream:
+      | TradingStream
+      | StockDataStream
+      | OptionDataStream
+      | CryptoDataStream,
+    type: "trading" | "stock" | "option" | "crypto",
   ): void {
     // Use EventEmitter's native 'on' method to avoid type conflicts between different stream event maps
-    (stream as EventEmitter).on('authenticated', () => {
-      this.emit('stream:connected', { stream: type });
+    (stream as EventEmitter).on("authenticated", () => {
+      this.emit("stream:connected", { stream: type });
     });
 
-    (stream as EventEmitter).on('disconnected', (data: { code: number; reason: string }) => {
-      this.emit('stream:disconnected', { stream: type, ...data });
-    });
+    (stream as EventEmitter).on(
+      "disconnected",
+      (data: { code: number; reason: string }) => {
+        this.emit("stream:disconnected", { stream: type, ...data });
+      },
+    );
 
-    (stream as EventEmitter).on('error', (error: Error) => {
-      this.emit('stream:error', { stream: type, error });
+    (stream as EventEmitter).on("error", (error: Error) => {
+      this.emit("stream:error", { stream: type, error });
     });
   }
 
@@ -546,17 +604,19 @@ export class StreamManager extends EventEmitter {
 
     this.healthCheckTimer = setInterval(() => {
       const status = this.getStatus();
-      this.emit('health:check', status);
+      this.emit("health:check", status);
 
       // Log if any stream is disconnected
       const disconnected: string[] = [];
-      if (this.tradingStream && !status.trading) disconnected.push('trading');
-      if (this.stockStream && !status.stock) disconnected.push('stock');
-      if (this.optionStream && !status.option) disconnected.push('option');
-      if (this.cryptoStream && !status.crypto) disconnected.push('crypto');
+      if (this.tradingStream && !status.trading) disconnected.push("trading");
+      if (this.stockStream && !status.stock) disconnected.push("stock");
+      if (this.optionStream && !status.option) disconnected.push("option");
+      if (this.cryptoStream && !status.crypto) disconnected.push("crypto");
 
       if (disconnected.length > 0) {
-        log(`Disconnected streams detected: ${disconnected.join(', ')}`, { type: 'warn' });
+        log(`Disconnected streams detected: ${disconnected.join(", ")}`, {
+          type: "warn",
+        });
       }
     }, this.config.healthCheckInterval);
   }
@@ -576,7 +636,7 @@ export class StreamManager extends EventEmitter {
    */
   on<K extends keyof StreamManagerEventMap>(
     event: K,
-    listener: (data: StreamManagerEventMap[K]) => void
+    listener: (data: StreamManagerEventMap[K]) => void,
   ): this {
     return super.on(event, listener as (...args: unknown[]) => void);
   }
@@ -586,7 +646,7 @@ export class StreamManager extends EventEmitter {
    */
   emit<K extends keyof StreamManagerEventMap>(
     event: K,
-    data?: StreamManagerEventMap[K]
+    data?: StreamManagerEventMap[K],
   ): boolean {
     return super.emit(event, data);
   }
@@ -597,7 +657,7 @@ export class StreamManager extends EventEmitter {
  */
 export function createStreamManager(
   client: AlpacaClient,
-  config: Partial<StreamManagerConfig> = {}
+  config: Partial<StreamManagerConfig> = {},
 ): StreamManager {
   return new StreamManager(client, config);
 }

@@ -63,8 +63,8 @@ export interface AVNewsResponse {
  * @property {{ '01. symbol': string, [key: string]: string }} Global Quote - The global quote information.
  */
 export interface AlphaVantageQuoteResponse {
-  'Global Quote': {
-    '01. symbol': string;
+  "Global Quote": {
+    "01. symbol": string;
     [key: string]: string;
   };
 }

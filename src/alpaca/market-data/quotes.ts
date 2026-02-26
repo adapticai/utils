@@ -2,13 +2,18 @@
  * Quotes Module
  * Real-time and snapshot quote data using Alpaca SDK
  */
-import { AlpacaClient } from '../client';
-import { AlpacaQuote, LatestQuotesResponse, DataFeed, SDKMarketDataOptions } from '../../types/alpaca-types';
-import { log as baseLog } from '../../logging';
-import { LogOptions } from '../../types/logging-types';
+import { AlpacaClient } from "../client";
+import {
+  AlpacaQuote,
+  LatestQuotesResponse,
+  DataFeed,
+  SDKMarketDataOptions,
+} from "../../types/alpaca-types";
+import { log as baseLog } from "../../logging";
+import { LogOptions } from "../../types/logging-types";
 
-const log = (message: string, options: LogOptions = { type: 'info' }) => {
-  baseLog(message, { ...options, source: 'AlpacaQuotes' });
+const log = (message: string, options: LogOptions = { type: "info" }) => {
+  baseLog(message, { ...options, source: "AlpacaQuotes" });
 };
 
 /**
@@ -19,10 +24,10 @@ export class QuoteError extends Error {
     message: string,
     public code: string,
     public symbol?: string,
-    public details?: unknown
+    public details?: unknown,
   ) {
     super(message);
-    this.name = 'QuoteError';
+    this.name = "QuoteError";
   }
 }
 
@@ -57,34 +62,39 @@ export interface SpreadInfo {
 export async function getLatestQuote(
   client: AlpacaClient,
   symbol: string,
-  feed?: DataFeed
+  feed?: DataFeed,
 ): Promise<AlpacaQuote> {
   const normalizedSymbol = symbol.toUpperCase().trim();
 
   if (!normalizedSymbol) {
-    throw new QuoteError('Symbol is required', 'INVALID_SYMBOL');
+    throw new QuoteError("Symbol is required", "INVALID_SYMBOL");
   }
 
-  log(`Fetching latest quote for ${normalizedSymbol}`, { type: 'debug' });
+  log(`Fetching latest quote for ${normalizedSymbol}`, { type: "debug" });
 
   try {
     const sdk = client.getSDK();
     const config = client.getConfig();
-    const dataFeed = feed || config.dataFeed || 'iex';
+    const dataFeed = feed || config.dataFeed || "iex";
 
     // Use SDK's getLatestQuote method
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const response = await sdk.getLatestQuote(normalizedSymbol, { feed: dataFeed } as SDKMarketDataOptions);
+    const response = await sdk.getLatestQuote(normalizedSymbol, {
+      feed: dataFeed,
+    } as any);
 
     if (!response) {
       throw new QuoteError(
         `No quote data returned for ${normalizedSymbol}`,
-        'NO_DATA',
-        normalizedSymbol
+        "NO_DATA",
+        normalizedSymbol,
       );
     }
 
-    log(`Successfully fetched quote for ${normalizedSymbol}: bid=${response.BidPrice}, ask=${response.AskPrice}`, { type: 'debug' });
+    log(
+      `Successfully fetched quote for ${normalizedSymbol}: bid=${response.BidPrice}, ask=${response.AskPrice}`,
+      { type: "debug" },
+    );
 
     // Map SDK response to our AlpacaQuote type
     return {
@@ -96,7 +106,7 @@ export async function getLatestQuote(
       bs: response.BidSize,
       bx: response.BidExchange,
       c: response.Conditions || [],
-      z: response.Tape || '',
+      z: response.Tape || "",
     };
   } catch (error) {
     if (error instanceof QuoteError) {
@@ -104,13 +114,15 @@ export async function getLatestQuote(
     }
 
     const errorMessage = error instanceof Error ? error.message : String(error);
-    log(`Failed to fetch quote for ${normalizedSymbol}: ${errorMessage}`, { type: 'error' });
+    log(`Failed to fetch quote for ${normalizedSymbol}: ${errorMessage}`, {
+      type: "error",
+    });
 
     throw new QuoteError(
       `Failed to fetch quote for ${normalizedSymbol}: ${errorMessage}`,
-      'FETCH_ERROR',
+      "FETCH_ERROR",
       normalizedSymbol,
-      error
+      error,
     );
   }
 }
@@ -126,34 +138,37 @@ export async function getLatestQuote(
 export async function getLatestQuotes(
   client: AlpacaClient,
   symbols: string[],
-  feed?: DataFeed
+  feed?: DataFeed,
 ): Promise<LatestQuotesResponse> {
   if (!symbols || symbols.length === 0) {
-    throw new QuoteError('At least one symbol is required', 'INVALID_SYMBOLS');
+    throw new QuoteError("At least one symbol is required", "INVALID_SYMBOLS");
   }
 
-  const normalizedSymbols = symbols.map((s) => s.toUpperCase().trim()).filter(Boolean);
+  const normalizedSymbols = symbols
+    .map((s) => s.toUpperCase().trim())
+    .filter(Boolean);
 
   if (normalizedSymbols.length === 0) {
-    throw new QuoteError('No valid symbols provided', 'INVALID_SYMBOLS');
+    throw new QuoteError("No valid symbols provided", "INVALID_SYMBOLS");
   }
 
-  log(`Fetching latest quotes for ${normalizedSymbols.length} symbols`, { type: 'debug' });
+  log(`Fetching latest quotes for ${normalizedSymbols.length} symbols`, {
+    type: "debug",
+  });
 
   try {
     const sdk = client.getSDK();
     const config = client.getConfig();
-    const dataFeed = feed || config.dataFeed || 'iex';
+    const dataFeed = feed || config.dataFeed || "iex";
 
     // Use SDK's getLatestQuotes method
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const response = await sdk.getLatestQuotes(normalizedSymbols, { feed: dataFeed } as SDKMarketDataOptions);
+    const response = await sdk.getLatestQuotes(normalizedSymbols, {
+      feed: dataFeed,
+    } as any);
 
     if (!response) {
-      throw new QuoteError(
-        'No quote data returned',
-        'NO_DATA'
-      );
+      throw new QuoteError("No quote data returned", "NO_DATA");
     }
 
     // Map SDK response to our LatestQuotesResponse type
@@ -181,15 +196,18 @@ export async function getLatestQuotes(
         bs: q.BidSize,
         bx: q.BidExchange,
         c: q.Conditions || [],
-        z: q.Tape || '',
+        z: q.Tape || "",
       };
     }
 
-    log(`Successfully fetched quotes for ${Object.keys(quotes).length} symbols`, { type: 'debug' });
+    log(
+      `Successfully fetched quotes for ${Object.keys(quotes).length} symbols`,
+      { type: "debug" },
+    );
 
     return {
       quotes,
-      currency: 'USD',
+      currency: "USD",
     };
   } catch (error) {
     if (error instanceof QuoteError) {
@@ -197,13 +215,13 @@ export async function getLatestQuotes(
     }
 
     const errorMessage = error instanceof Error ? error.message : String(error);
-    log(`Failed to fetch quotes: ${errorMessage}`, { type: 'error' });
+    log(`Failed to fetch quotes: ${errorMessage}`, { type: "error" });
 
     throw new QuoteError(
       `Failed to fetch quotes: ${errorMessage}`,
-      'FETCH_ERROR',
+      "FETCH_ERROR",
       undefined,
-      error
+      error,
     );
   }
 }
@@ -218,7 +236,7 @@ export async function getLatestQuotes(
  */
 export async function getSpread(
   client: AlpacaClient,
-  symbol: string
+  symbol: string,
 ): Promise<SpreadInfo> {
   const quote = await getLatestQuote(client, symbol);
 
@@ -228,20 +246,26 @@ export async function getSpread(
   if (bid <= 0 || ask <= 0) {
     throw new QuoteError(
       `Invalid quote prices for ${symbol}: bid=${bid}, ask=${ask}`,
-      'INVALID_PRICES',
-      symbol
+      "INVALID_PRICES",
+      symbol,
     );
   }
 
   if (ask < bid) {
-    log(`Warning: Ask price (${ask}) is less than bid price (${bid}) for ${symbol}`, { type: 'warn' });
+    log(
+      `Warning: Ask price (${ask}) is less than bid price (${bid}) for ${symbol}`,
+      { type: "warn" },
+    );
   }
 
   const spread = ask - bid;
   const midPrice = (bid + ask) / 2;
   const spreadPercent = midPrice > 0 ? (spread / midPrice) * 100 : 0;
 
-  log(`Spread for ${symbol}: ${spread.toFixed(4)} (${spreadPercent.toFixed(4)}%)`, { type: 'debug' });
+  log(
+    `Spread for ${symbol}: ${spread.toFixed(4)} (${spreadPercent.toFixed(4)}%)`,
+    { type: "debug" },
+  );
 
   return {
     bid,
@@ -262,7 +286,7 @@ export async function getSpread(
  */
 export async function getSpreads(
   client: AlpacaClient,
-  symbols: string[]
+  symbols: string[],
 ): Promise<Map<string, SpreadInfo>> {
   const quotesResponse = await getLatestQuotes(client, symbols);
   const spreads = new Map<string, SpreadInfo>();
@@ -301,13 +325,16 @@ export async function getSpreads(
 export async function hasGoodLiquidity(
   client: AlpacaClient,
   symbol: string,
-  maxSpreadPercent: number = 1.0
+  maxSpreadPercent: number = 1.0,
 ): Promise<boolean> {
   try {
     const spreadInfo = await getSpread(client, symbol);
     return spreadInfo.spreadPercent <= maxSpreadPercent;
   } catch (error) {
-    log(`Failed to check liquidity for ${symbol}: ${(error as Error).message}`, { type: 'warn' });
+    log(
+      `Failed to check liquidity for ${symbol}: ${(error as Error).message}`,
+      { type: "warn" },
+    );
     return false;
   }
 }

@@ -2,17 +2,20 @@
  * Account Management Module
  * Handles account details, configuration, and portfolio history
  */
-import { AlpacaClient } from '../client';
-import { log as baseLog } from '../../logging';
+import { AlpacaClient } from "../client";
+import { log as baseLog } from "../../logging";
 import {
   AlpacaAccountDetails,
   AccountConfiguration,
   PortfolioHistoryParams,
   PortfolioHistoryResponse,
-} from '../../types/alpaca-types';
+} from "../../types/alpaca-types";
 
-const log = (message: string, options: { type?: 'info' | 'warn' | 'error' | 'debug' } = { type: 'info' }) => {
-  baseLog(message, { ...options, source: 'Account' });
+const log = (
+  message: string,
+  options: { type?: "info" | "warn" | "error" | "debug" } = { type: "info" },
+) => {
+  baseLog(message, { ...options, source: "Account" });
 };
 
 /**
@@ -95,16 +98,21 @@ export interface EquityCurvePoint {
  * @param client - AlpacaClient instance
  * @returns Promise resolving to account details
  */
-export async function getAccountDetails(client: AlpacaClient): Promise<AlpacaAccountDetails> {
-  log('Fetching account details');
+export async function getAccountDetails(
+  client: AlpacaClient,
+): Promise<AlpacaAccountDetails> {
+  log("Fetching account details");
   try {
     const sdk = client.getSDK();
     const account = await sdk.getAccount();
-    log(`Account details fetched successfully for account ${account.account_number}`);
+    log(
+      `Account details fetched successfully for account ${account.account_number}`,
+    );
     return account as AlpacaAccountDetails;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    log(`Failed to fetch account details: ${errorMessage}`, { type: 'error' });
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    log(`Failed to fetch account details: ${errorMessage}`, { type: "error" });
     throw error;
   }
 }
@@ -114,16 +122,21 @@ export async function getAccountDetails(client: AlpacaClient): Promise<AlpacaAcc
  * @param client - AlpacaClient instance
  * @returns Promise resolving to account configuration
  */
-export async function getAccountConfiguration(client: AlpacaClient): Promise<AccountConfiguration> {
-  log('Fetching account configuration');
+export async function getAccountConfiguration(
+  client: AlpacaClient,
+): Promise<AccountConfiguration> {
+  log("Fetching account configuration");
   try {
     const sdk = client.getSDK();
     const config = await sdk.getAccountConfigurations();
-    log('Account configuration fetched successfully');
+    log("Account configuration fetched successfully");
     return config as AccountConfiguration;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    log(`Failed to fetch account configuration: ${errorMessage}`, { type: 'error' });
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    log(`Failed to fetch account configuration: ${errorMessage}`, {
+      type: "error",
+    });
     throw error;
   }
 }
@@ -136,17 +149,20 @@ export async function getAccountConfiguration(client: AlpacaClient): Promise<Acc
  */
 export async function updateAccountConfiguration(
   client: AlpacaClient,
-  config: Partial<AccountConfiguration>
+  config: Partial<AccountConfiguration>,
 ): Promise<AccountConfiguration> {
-  log('Updating account configuration');
+  log("Updating account configuration");
   try {
     const sdk = client.getSDK();
     const updatedConfig = await sdk.updateAccountConfigurations(config);
-    log('Account configuration updated successfully');
+    log("Account configuration updated successfully");
     return updatedConfig as AccountConfiguration;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    log(`Failed to update account configuration: ${errorMessage}`, { type: 'error' });
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    log(`Failed to update account configuration: ${errorMessage}`, {
+      type: "error",
+    });
     throw error;
   }
 }
@@ -159,18 +175,25 @@ export async function updateAccountConfiguration(
  */
 export async function getPortfolioHistory(
   client: AlpacaClient,
-  params: PortfolioHistoryParams
+  params: PortfolioHistoryParams,
 ): Promise<PortfolioHistoryResponse> {
-  log(`Fetching portfolio history with period: ${params.period || 'default'}, timeframe: ${params.timeframe || 'default'}`);
+  log(
+    `Fetching portfolio history with period: ${params.period || "default"}, timeframe: ${params.timeframe || "default"}`,
+  );
   try {
     const sdk = client.getSDK();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const history = await sdk.getPortfolioHistory(params);
-    log(`Portfolio history fetched successfully with ${history.equity?.length || 0} data points`);
+    const history = await sdk.getPortfolioHistory(params as any);
+    log(
+      `Portfolio history fetched successfully with ${history.equity?.length || 0} data points`,
+    );
     return history as PortfolioHistoryResponse;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    log(`Failed to fetch portfolio history: ${errorMessage}`, { type: 'error' });
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    log(`Failed to fetch portfolio history: ${errorMessage}`, {
+      type: "error",
+    });
     throw error;
   }
 }
@@ -180,8 +203,10 @@ export async function getPortfolioHistory(
  * @param client - AlpacaClient instance
  * @returns Promise resolving to trading eligibility status
  */
-export async function checkTradingEligibility(client: AlpacaClient): Promise<TradingEligibility> {
-  log('Checking trading eligibility');
+export async function checkTradingEligibility(
+  client: AlpacaClient,
+): Promise<TradingEligibility> {
+  log("Checking trading eligibility");
   try {
     const account = await getAccountDetails(client);
     const reasons: string[] = [];
@@ -190,20 +215,20 @@ export async function checkTradingEligibility(client: AlpacaClient): Promise<Tra
     // Check various blocking conditions
     if (account.trading_blocked) {
       canTrade = false;
-      reasons.push('Trading is blocked on this account');
+      reasons.push("Trading is blocked on this account");
     }
 
     if (account.account_blocked) {
       canTrade = false;
-      reasons.push('Account is blocked');
+      reasons.push("Account is blocked");
     }
 
     if (account.trade_suspended_by_user) {
       canTrade = false;
-      reasons.push('Trading is suspended by user');
+      reasons.push("Trading is suspended by user");
     }
 
-    if (account.status !== 'ACTIVE') {
+    if (account.status !== "ACTIVE") {
       canTrade = false;
       reasons.push(`Account status is ${account.status}, not ACTIVE`);
     }
@@ -211,13 +236,15 @@ export async function checkTradingEligibility(client: AlpacaClient): Promise<Tra
     const buyingPower = parseFloat(account.buying_power);
     if (buyingPower <= 0) {
       canTrade = false;
-      reasons.push('No buying power available');
+      reasons.push("No buying power available");
     }
 
     // Check PDT restrictions for accounts under $25k
     const equity = parseFloat(account.equity);
     if (account.pattern_day_trader && equity < 25000) {
-      reasons.push('Pattern day trader with equity below $25,000 - day trading restricted');
+      reasons.push(
+        "Pattern day trader with equity below $25,000 - day trading restricted",
+      );
     }
 
     const eligibility: TradingEligibility = {
@@ -228,11 +255,16 @@ export async function checkTradingEligibility(client: AlpacaClient): Promise<Tra
       isPatternDayTrader: account.pattern_day_trader,
     };
 
-    log(`Trading eligibility check complete: canTrade=${canTrade}${reasons.length > 0 ? `, reasons: ${reasons.join('; ')}` : ''}`);
+    log(
+      `Trading eligibility check complete: canTrade=${canTrade}${reasons.length > 0 ? `, reasons: ${reasons.join("; ")}` : ""}`,
+    );
     return eligibility;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    log(`Failed to check trading eligibility: ${errorMessage}`, { type: 'error' });
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    log(`Failed to check trading eligibility: ${errorMessage}`, {
+      type: "error",
+    });
     throw error;
   }
 }
@@ -242,8 +274,10 @@ export async function checkTradingEligibility(client: AlpacaClient): Promise<Tra
  * @param client - AlpacaClient instance
  * @returns Promise resolving to buying power breakdown
  */
-export async function getBuyingPower(client: AlpacaClient): Promise<BuyingPowerBreakdown> {
-  log('Fetching buying power breakdown');
+export async function getBuyingPower(
+  client: AlpacaClient,
+): Promise<BuyingPowerBreakdown> {
+  log("Fetching buying power breakdown");
   try {
     const account = await getAccountDetails(client);
 
@@ -257,11 +291,14 @@ export async function getBuyingPower(client: AlpacaClient): Promise<BuyingPowerB
       cryptoBuyingPower: parseFloat(account.cash),
     };
 
-    log(`Buying power breakdown: cash=$${breakdown.cash.toFixed(2)}, dayTrading=$${breakdown.dayTradingBuyingPower.toFixed(2)}, regT=$${breakdown.regtBuyingPower.toFixed(2)}`);
+    log(
+      `Buying power breakdown: cash=$${breakdown.cash.toFixed(2)}, dayTrading=$${breakdown.dayTradingBuyingPower.toFixed(2)}, regT=$${breakdown.regtBuyingPower.toFixed(2)}`,
+    );
     return breakdown;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    log(`Failed to fetch buying power: ${errorMessage}`, { type: 'error' });
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    log(`Failed to fetch buying power: ${errorMessage}`, { type: "error" });
     throw error;
   }
 }
@@ -271,16 +308,21 @@ export async function getBuyingPower(client: AlpacaClient): Promise<BuyingPowerB
  * @param client - AlpacaClient instance
  * @returns Promise resolving to options trading level (0-3)
  */
-export async function getOptionsTradingLevel(client: AlpacaClient): Promise<0 | 1 | 2 | 3> {
-  log('Fetching options trading level');
+export async function getOptionsTradingLevel(
+  client: AlpacaClient,
+): Promise<0 | 1 | 2 | 3> {
+  log("Fetching options trading level");
   try {
     const account = await getAccountDetails(client);
     const level = account.options_trading_level || 0;
     log(`Options trading level: ${level}`);
     return level as 0 | 1 | 2 | 3;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    log(`Failed to fetch options trading level: ${errorMessage}`, { type: 'error' });
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    log(`Failed to fetch options trading level: ${errorMessage}`, {
+      type: "error",
+    });
     throw error;
   }
 }
@@ -291,7 +333,7 @@ export async function getOptionsTradingLevel(client: AlpacaClient): Promise<0 | 
  * @returns Promise resolving to PDT status
  */
 export async function getPDTStatus(client: AlpacaClient): Promise<PDTStatus> {
-  log('Fetching PDT status');
+  log("Fetching PDT status");
   try {
     const account = await getAccountDetails(client);
     const equity = parseFloat(account.equity);
@@ -322,15 +364,19 @@ export async function getPDTStatus(client: AlpacaClient): Promise<PDTStatus> {
     const status: PDTStatus = {
       isPatternDayTrader: isPDT,
       dayTradeCount,
-      dayTradesRemaining: dayTradesRemaining === Infinity ? -1 : dayTradesRemaining, // Use -1 for unlimited
+      dayTradesRemaining:
+        dayTradesRemaining === Infinity ? -1 : dayTradesRemaining, // Use -1 for unlimited
       canDayTrade,
     };
 
-    log(`PDT status: isPDT=${isPDT}, dayTradeCount=${dayTradeCount}, remaining=${dayTradesRemaining === Infinity ? 'unlimited' : dayTradesRemaining}`);
+    log(
+      `PDT status: isPDT=${isPDT}, dayTradeCount=${dayTradeCount}, remaining=${dayTradesRemaining === Infinity ? "unlimited" : dayTradesRemaining}`,
+    );
     return status;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    log(`Failed to fetch PDT status: ${errorMessage}`, { type: 'error' });
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    log(`Failed to fetch PDT status: ${errorMessage}`, { type: "error" });
     throw error;
   }
 }
@@ -343,16 +389,23 @@ export async function getPDTStatus(client: AlpacaClient): Promise<PDTStatus> {
  * @param period - Period to fetch (e.g., '1W', '1M', '3M', '1A')
  * @returns Promise resolving to array of daily returns
  */
-export async function getDailyReturns(client: AlpacaClient, period: string = '1M'): Promise<DailyReturn[]> {
+export async function getDailyReturns(
+  client: AlpacaClient,
+  period: string = "1M",
+): Promise<DailyReturn[]> {
   log(`Calculating daily returns for period: ${period}`);
   try {
     const history = await getPortfolioHistory(client, {
       period,
-      timeframe: '1D',
+      timeframe: "1D",
     });
 
-    if (!history.timestamp || !history.equity || history.timestamp.length === 0) {
-      log('No portfolio history data available', { type: 'warn' });
+    if (
+      !history.timestamp ||
+      !history.equity ||
+      history.timestamp.length === 0
+    ) {
+      log("No portfolio history data available", { type: "warn" });
       return [];
     }
 
@@ -367,7 +420,8 @@ export async function getDailyReturns(client: AlpacaClient, period: string = '1M
       // Calculate daily return (percentage change from previous day)
       let dailyReturn = 0;
       if (i > 0 && history.equity[i - 1] !== 0) {
-        dailyReturn = ((equity - history.equity[i - 1]) / history.equity[i - 1]) * 100;
+        dailyReturn =
+          ((equity - history.equity[i - 1]) / history.equity[i - 1]) * 100;
       }
 
       dailyReturns.push({
@@ -382,8 +436,11 @@ export async function getDailyReturns(client: AlpacaClient, period: string = '1M
     log(`Calculated ${dailyReturns.length} daily returns`);
     return dailyReturns;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    log(`Failed to calculate daily returns: ${errorMessage}`, { type: 'error' });
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    log(`Failed to calculate daily returns: ${errorMessage}`, {
+      type: "error",
+    });
     throw error;
   }
 }
@@ -396,24 +453,30 @@ export async function getDailyReturns(client: AlpacaClient, period: string = '1M
  */
 export async function calculatePeriodPerformance(
   client: AlpacaClient,
-  period: string = '1M'
+  period: string = "1M",
 ): Promise<PeriodPerformance> {
   log(`Calculating period performance for: ${period}`);
   try {
     const dailyReturns = await getDailyReturns(client, period);
 
     if (dailyReturns.length < 2) {
-      throw new Error('Insufficient data points for performance calculation');
+      throw new Error("Insufficient data points for performance calculation");
     }
 
     const startingEquity = dailyReturns[0].equity;
     const endingEquity = dailyReturns[dailyReturns.length - 1].equity;
     const totalReturn = endingEquity - startingEquity;
-    const totalReturnPct = ((endingEquity - startingEquity) / startingEquity) * 100;
+    const totalReturnPct =
+      ((endingEquity - startingEquity) / startingEquity) * 100;
 
     // Calculate average daily return
-    const returns = dailyReturns.map((d) => d.dailyReturn).filter((r) => !isNaN(r));
-    const averageDailyReturn = returns.length > 0 ? returns.reduce((a, b) => a + b, 0) / returns.length : 0;
+    const returns = dailyReturns
+      .map((d) => d.dailyReturn)
+      .filter((r) => !isNaN(r));
+    const averageDailyReturn =
+      returns.length > 0
+        ? returns.reduce((a, b) => a + b, 0) / returns.length
+        : 0;
 
     // Calculate max drawdown
     let peak = dailyReturns[0].equity;
@@ -435,7 +498,11 @@ export async function calculatePeriodPerformance(
     // Calculate volatility (standard deviation of daily returns)
     const variance =
       returns.length > 1
-        ? returns.reduce((sum, r) => sum + Math.pow(r - averageDailyReturn, 2), 0) / (returns.length - 1)
+        ? returns.reduce(
+            (sum, r) => sum + Math.pow(r - averageDailyReturn, 2),
+            0,
+          ) /
+          (returns.length - 1)
         : 0;
     const volatility = Math.sqrt(variance);
 
@@ -451,7 +518,8 @@ export async function calculatePeriodPerformance(
     // Count winning and losing days
     const winningDays = returns.filter((r) => r > 0).length;
     const losingDays = returns.filter((r) => r < 0).length;
-    const winRate = returns.length > 0 ? (winningDays / returns.length) * 100 : 0;
+    const winRate =
+      returns.length > 0 ? (winningDays / returns.length) * 100 : 0;
 
     const performance: PeriodPerformance = {
       startDate: dailyReturns[0].date,
@@ -470,11 +538,16 @@ export async function calculatePeriodPerformance(
       winRate,
     };
 
-    log(`Period performance: totalReturn=${totalReturnPct.toFixed(2)}%, maxDrawdown=${maxDrawdownPct.toFixed(2)}%, sharpe=${sharpeRatio?.toFixed(2) || 'N/A'}`);
+    log(
+      `Period performance: totalReturn=${totalReturnPct.toFixed(2)}%, maxDrawdown=${maxDrawdownPct.toFixed(2)}%, sharpe=${sharpeRatio?.toFixed(2) || "N/A"}`,
+    );
     return performance;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    log(`Failed to calculate period performance: ${errorMessage}`, { type: 'error' });
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    log(`Failed to calculate period performance: ${errorMessage}`, {
+      type: "error",
+    });
     throw error;
   }
 }
@@ -487,14 +560,20 @@ export async function calculatePeriodPerformance(
  */
 export async function getEquityCurve(
   client: AlpacaClient,
-  params: PortfolioHistoryParams = { period: '1M', timeframe: '1D' }
+  params: PortfolioHistoryParams = { period: "1M", timeframe: "1D" },
 ): Promise<EquityCurvePoint[]> {
-  log(`Fetching equity curve with period: ${params.period || 'default'}`);
+  log(`Fetching equity curve with period: ${params.period || "default"}`);
   try {
     const history = await getPortfolioHistory(client, params);
 
-    if (!history.timestamp || !history.equity || history.timestamp.length === 0) {
-      log('No portfolio history data available for equity curve', { type: 'warn' });
+    if (
+      !history.timestamp ||
+      !history.equity ||
+      history.timestamp.length === 0
+    ) {
+      log("No portfolio history data available for equity curve", {
+        type: "warn",
+      });
       return [];
     }
 
@@ -508,7 +587,8 @@ export async function getEquityCurve(
       const profitLossPct = history.profit_loss_pct?.[i] || 0;
 
       // Calculate cumulative return from base value
-      const cumulativeReturn = baseValue > 0 ? ((equity - baseValue) / baseValue) * 100 : 0;
+      const cumulativeReturn =
+        baseValue > 0 ? ((equity - baseValue) / baseValue) * 100 : 0;
 
       curve.push({
         timestamp: new Date(timestamp * 1000),
@@ -522,8 +602,9 @@ export async function getEquityCurve(
     log(`Generated equity curve with ${curve.length} data points`);
     return curve;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    log(`Failed to get equity curve: ${errorMessage}`, { type: 'error' });
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    log(`Failed to get equity curve: ${errorMessage}`, { type: "error" });
     throw error;
   }
 }
@@ -543,14 +624,15 @@ export async function getAccountSummary(client: AlpacaClient): Promise<{
   todayProfitLoss: number;
   todayProfitLossPct: number;
 }> {
-  log('Fetching account summary');
+  log("Fetching account summary");
   try {
     const account = await getAccountDetails(client);
 
     const equity = parseFloat(account.equity);
     const lastEquity = parseFloat(account.last_equity);
     const todayProfitLoss = equity - lastEquity;
-    const todayProfitLossPct = lastEquity > 0 ? (todayProfitLoss / lastEquity) * 100 : 0;
+    const todayProfitLossPct =
+      lastEquity > 0 ? (todayProfitLoss / lastEquity) * 100 : 0;
 
     const summary = {
       equity,
@@ -563,11 +645,14 @@ export async function getAccountSummary(client: AlpacaClient): Promise<{
       todayProfitLossPct,
     };
 
-    log(`Account summary: equity=$${summary.equity.toFixed(2)}, cash=$${summary.cash.toFixed(2)}, todayP/L=${summary.todayProfitLossPct.toFixed(2)}%`);
+    log(
+      `Account summary: equity=$${summary.equity.toFixed(2)}, cash=$${summary.cash.toFixed(2)}, todayP/L=${summary.todayProfitLossPct.toFixed(2)}%`,
+    );
     return summary;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    log(`Failed to get account summary: ${errorMessage}`, { type: 'error' });
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    log(`Failed to get account summary: ${errorMessage}`, { type: "error" });
     throw error;
   }
 }
@@ -578,16 +663,19 @@ export async function getAccountSummary(client: AlpacaClient): Promise<{
  * @returns Promise resolving to boolean indicating margin status
  */
 export async function isMarginAccount(client: AlpacaClient): Promise<boolean> {
-  log('Checking margin account status');
+  log("Checking margin account status");
   try {
     const account = await getAccountDetails(client);
     // Multiplier > 1 indicates margin account
-    const isMargin = account.multiplier !== '1';
+    const isMargin = account.multiplier !== "1";
     log(`Margin account: ${isMargin} (multiplier: ${account.multiplier})`);
     return isMargin;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    log(`Failed to check margin account status: ${errorMessage}`, { type: 'error' });
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    log(`Failed to check margin account status: ${errorMessage}`, {
+      type: "error",
+    });
     throw error;
   }
 }
@@ -605,7 +693,7 @@ export async function getMarginInfo(client: AlpacaClient): Promise<{
   sma: number;
   marginCallAmount: number;
 }> {
-  log('Fetching margin information');
+  log("Fetching margin information");
   try {
     const account = await getAccountDetails(client);
 
@@ -625,11 +713,14 @@ export async function getMarginInfo(client: AlpacaClient): Promise<{
       marginCallAmount,
     };
 
-    log(`Margin info: multiplier=${marginInfo.multiplier}, initialMargin=$${marginInfo.initialMargin.toFixed(2)}, maintenanceMargin=$${marginInfo.maintenanceMargin.toFixed(2)}`);
+    log(
+      `Margin info: multiplier=${marginInfo.multiplier}, initialMargin=$${marginInfo.initialMargin.toFixed(2)}, maintenanceMargin=$${marginInfo.maintenanceMargin.toFixed(2)}`,
+    );
     return marginInfo;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    log(`Failed to get margin information: ${errorMessage}`, { type: 'error' });
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    log(`Failed to get margin information: ${errorMessage}`, { type: "error" });
     throw error;
   }
 }

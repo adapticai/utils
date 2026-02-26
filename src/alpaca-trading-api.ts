@@ -1,6 +1,6 @@
-import WebSocket from 'ws';
-import { log as baseLog } from './logging';
-import { marketDataAPI } from './alpaca-market-data-api';
+import WebSocket from "ws";
+import { log as baseLog } from "./logging";
+import { marketDataAPI } from "./alpaca-market-data-api";
 import {
   AlpacaAccountDetails,
   AlpacaCredentials,
@@ -20,10 +20,14 @@ import {
   AlpacaAuthMessage,
   AlpacaListenMessage,
   ExerciseOptionResponse,
-} from './types/alpaca-types';
-import { LogOptions } from './types/logging-types';
-import { getTradingApiUrl, getTradingWebSocketUrl } from './config/api-endpoints';
-import { validateAlpacaCredentials } from './utils/auth-validator';
+} from "./types/alpaca-types";
+import { LogOptions } from "./types/logging-types";
+import {
+  getTradingApiUrl,
+  getTradingWebSocketUrl,
+} from "./config/api-endpoints";
+import { validateAlpacaCredentials } from "./utils/auth-validator";
+import { createTimeoutSignal, DEFAULT_TIMEOUTS } from "./http-timeout";
 
 const limitPriceSlippagePercent100 = 0.1; // 0.1%
 
@@ -55,7 +59,10 @@ export class AlpacaTradingAPI {
   private connecting = false;
   private reconnectDelay = 10000; // 10 seconds between reconnection attempts
   private reconnectTimeout: NodeJS.Timeout | null = null;
-  private messageHandlers: Map<string, (data: AlpacaWebSocketMessage['data']) => void> = new Map();
+  private messageHandlers: Map<
+    string,
+    (data: AlpacaWebSocketMessage["data"]) => void
+  > = new Map();
   private debugLogging = false;
 
   /**
@@ -69,12 +76,15 @@ export class AlpacaTradingAPI {
    * @param options - Optional options
    *   debugLogging: boolean; // Whether to log messages of type 'debug'
    */
-  constructor(credentials: AlpacaCredentials, options?: { debugLogging?: boolean }) {
+  constructor(
+    credentials: AlpacaCredentials,
+    options?: { debugLogging?: boolean },
+  ) {
     // Validate credentials before doing anything else
     validateAlpacaCredentials({
       apiKey: credentials.apiKey,
       apiSecret: credentials.apiSecret,
-      isPaper: credentials.type === 'PAPER',
+      isPaper: credentials.type === "PAPER",
     });
 
     this.credentials = credentials;
@@ -85,24 +95,37 @@ export class AlpacaTradingAPI {
     this.wsUrl = getTradingWebSocketUrl(credentials.type);
 
     this.headers = {
-      'APCA-API-KEY-ID': credentials.apiKey,
-      'APCA-API-SECRET-KEY': credentials.apiSecret,
-      'Content-Type': 'application/json',
+      "APCA-API-KEY-ID": credentials.apiKey,
+      "APCA-API-SECRET-KEY": credentials.apiSecret,
+      "Content-Type": "application/json",
     };
 
     // Initialize message handlers
-    this.messageHandlers.set('authorization', this.handleAuthMessage.bind(this));
-    this.messageHandlers.set('listening', this.handleListenMessage.bind(this));
-    this.messageHandlers.set('trade_updates', this.handleTradeUpdate.bind(this));
+    this.messageHandlers.set(
+      "authorization",
+      this.handleAuthMessage.bind(this) as (data: any) => void,
+    );
+    this.messageHandlers.set(
+      "listening",
+      this.handleListenMessage.bind(this) as (data: any) => void,
+    );
+    this.messageHandlers.set(
+      "trade_updates",
+      this.handleTradeUpdate.bind(this) as (data: any) => void,
+    );
 
     this.debugLogging = options?.debugLogging || false;
   }
 
-  private log(message: string, options: LogOptions = { type: 'info' }): void {
-    if (this.debugLogging && options.type === 'debug') {
+  private log(message: string, options: LogOptions = { type: "info" }): void {
+    if (this.debugLogging && options.type === "debug") {
       return;
     }
-    baseLog(message, { ...options, source: 'AlpacaTradingAPI', account: this.credentials.accountName });
+    baseLog(message, {
+      ...options,
+      source: "AlpacaTradingAPI",
+      account: this.credentials.accountName,
+    });
   }
 
   /**
@@ -111,32 +134,37 @@ export class AlpacaTradingAPI {
    * @returns The rounded price
    */
   private roundPriceForAlpaca = (price: number): number => {
-    return price >= 1 ? Math.round(price * 100) / 100 : Math.round(price * 10000) / 10000;
+    return price >= 1
+      ? Math.round(price * 100) / 100
+      : Math.round(price * 10000) / 10000;
   };
 
-  private handleAuthMessage(data: AlpacaAuthMessage['data']): void {
-    if (data.status === 'authorized') {
+  private handleAuthMessage(data: AlpacaAuthMessage["data"]): void {
+    if (data.status === "authorized") {
       this.authenticated = true;
-      this.log('WebSocket authenticated');
+      this.log("WebSocket authenticated");
     } else {
-      this.log(`Authentication failed: ${data.message || 'Unknown error'}`, {
-        type: 'error',
+      this.log(`Authentication failed: ${data.message || "Unknown error"}`, {
+        type: "error",
       });
     }
   }
 
-  private handleListenMessage(data: AlpacaListenMessage['data']): void {
-    if (data.streams?.includes('trade_updates')) {
-      this.log('Successfully subscribed to trade updates');
+  private handleListenMessage(data: AlpacaListenMessage["data"]): void {
+    if (data.streams?.includes("trade_updates")) {
+      this.log("Successfully subscribed to trade updates");
     }
   }
 
   private handleTradeUpdate(data: TradeUpdate): void {
     if (this.tradeUpdateCallback) {
-      this.log(`Trade update: ${data.event} to ${data.order.side} ${data.order.qty} shares, type ${data.order.type}`, {
-        symbol: data.order.symbol,
-        type: 'debug',
-      });
+      this.log(
+        `Trade update: ${data.event} to ${data.order.side} ${data.order.qty} shares, type ${data.order.type}`,
+        {
+          symbol: data.order.symbol,
+          type: "debug",
+        },
+      );
       this.tradeUpdateCallback(data);
     }
   }
@@ -150,25 +178,27 @@ export class AlpacaTradingAPI {
         handler(data.data);
       } else {
         this.log(`Received message for unknown stream: ${data.stream}`, {
-          type: 'warn',
+          type: "warn",
         });
       }
     } catch (error) {
-      this.log('Failed to parse WebSocket message', {
-        type: 'error',
-        metadata: { error: error instanceof Error ? error.message : 'Unknown error' },
+      this.log("Failed to parse WebSocket message", {
+        type: "error",
+        metadata: {
+          error: error instanceof Error ? error.message : "Unknown error",
+        },
       });
     }
   }
 
   connectWebsocket(): void {
     if (this.connecting) {
-      this.log('Connection attempt skipped - already connecting');
+      this.log("Connection attempt skipped - already connecting");
       return;
     }
 
     if (this.ws?.readyState === WebSocket.OPEN) {
-      this.log('Connection attempt skipped - already connected');
+      this.log("Connection attempt skipped - already connected");
       return;
     }
 
@@ -184,35 +214,39 @@ export class AlpacaTradingAPI {
 
     this.ws = new WebSocket(this.wsUrl);
 
-    this.ws.on('open', async () => {
+    this.ws.on("open", async () => {
       try {
-        this.log('WebSocket connected');
+        this.log("WebSocket connected");
         await this.authenticate();
         await this.subscribeToTradeUpdates();
         this.connecting = false;
       } catch (error) {
-        this.log('Failed to setup WebSocket connection', {
-          type: 'error',
-          metadata: { error: error instanceof Error ? error.message : 'Unknown error' },
+        this.log("Failed to setup WebSocket connection", {
+          type: "error",
+          metadata: {
+            error: error instanceof Error ? error.message : "Unknown error",
+          },
         });
         this.ws?.close();
       }
     });
 
-    this.ws.on('message', (data: WebSocket.Data) => {
+    this.ws.on("message", (data: WebSocket.Data) => {
       this.handleMessage(data.toString());
     });
 
-    this.ws.on('error', (error) => {
-      this.log('WebSocket error', {
-        type: 'error',
-        metadata: { error: error instanceof Error ? error.message : 'Unknown error' },
+    this.ws.on("error", (error) => {
+      this.log("WebSocket error", {
+        type: "error",
+        metadata: {
+          error: error instanceof Error ? error.message : "Unknown error",
+        },
       });
       this.connecting = false;
     });
 
-    this.ws.on('close', () => {
-      this.log('WebSocket connection closed');
+    this.ws.on("close", () => {
+      this.log("WebSocket connection closed");
       this.authenticated = false;
       this.connecting = false;
 
@@ -224,7 +258,7 @@ export class AlpacaTradingAPI {
 
       // Schedule reconnection
       this.reconnectTimeout = setTimeout(() => {
-        this.log('Attempting to reconnect...');
+        this.log("Attempting to reconnect...");
         this.connectWebsocket();
       }, this.reconnectDelay);
     });
@@ -232,11 +266,11 @@ export class AlpacaTradingAPI {
 
   private async authenticate(): Promise<void> {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      throw new Error('WebSocket not ready for authentication');
+      throw new Error("WebSocket not ready for authentication");
     }
 
     const authMessage = {
-      action: 'auth',
+      action: "auth",
       key: this.credentials.apiKey,
       secret: this.credentials.apiSecret,
     };
@@ -245,48 +279,54 @@ export class AlpacaTradingAPI {
 
     return new Promise((resolve, reject) => {
       const authTimeout = setTimeout(() => {
-        this.log('Authentication timeout', { type: 'error' });
-        reject(new Error('Authentication timed out'));
+        this.log("Authentication timeout", { type: "error" });
+        reject(new Error("Authentication timed out"));
       }, 10000);
 
       const handleAuthResponse = (data: WebSocket.Data) => {
         try {
           const message = JSON.parse(data.toString());
-          if (message.stream === 'authorization') {
-            this.ws?.removeListener('message', handleAuthResponse);
+          if (message.stream === "authorization") {
+            this.ws?.removeListener("message", handleAuthResponse);
             clearTimeout(authTimeout);
 
-            if (message.data?.status === 'authorized') {
+            if (message.data?.status === "authorized") {
               this.authenticated = true;
-              this.log('WebSocket authenticated');
+              this.log("WebSocket authenticated");
               resolve();
             } else {
-              const error = `Authentication failed: ${message.data?.message || 'Unknown error'}`;
-              this.log(error, { type: 'error' });
+              const error = `Authentication failed: ${message.data?.message || "Unknown error"}`;
+              this.log(error, { type: "error" });
               reject(new Error(error));
             }
           }
         } catch (error) {
-          this.log('Failed to parse auth response', {
-            type: 'error',
-            metadata: { error: error instanceof Error ? error.message : 'Unknown error' },
+          this.log("Failed to parse auth response", {
+            type: "error",
+            metadata: {
+              error: error instanceof Error ? error.message : "Unknown error",
+            },
           });
         }
       };
 
-      this.ws?.on('message', handleAuthResponse);
+      this.ws?.on("message", handleAuthResponse);
     });
   }
 
   private async subscribeToTradeUpdates(): Promise<void> {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN || !this.authenticated) {
-      throw new Error('WebSocket not ready for subscription');
+    if (
+      !this.ws ||
+      this.ws.readyState !== WebSocket.OPEN ||
+      !this.authenticated
+    ) {
+      throw new Error("WebSocket not ready for subscription");
     }
 
     const listenMessage = {
-      action: 'listen',
+      action: "listen",
       data: {
-        streams: ['trade_updates'],
+        streams: ["trade_updates"],
       },
     };
 
@@ -294,83 +334,94 @@ export class AlpacaTradingAPI {
 
     return new Promise((resolve, reject) => {
       const listenTimeout = setTimeout(() => {
-        reject(new Error('Subscribe timeout'));
+        reject(new Error("Subscribe timeout"));
       }, 10000);
 
       const handleListenResponse = (data: WebSocket.Data) => {
         try {
           const message = JSON.parse(data.toString());
-          if (message.stream === 'listening') {
-            this.ws?.removeListener('message', handleListenResponse);
+          if (message.stream === "listening") {
+            this.ws?.removeListener("message", handleListenResponse);
             clearTimeout(listenTimeout);
 
-            if (message.data?.streams?.includes('trade_updates')) {
-              this.log('Subscribed to trade updates');
+            if (message.data?.streams?.includes("trade_updates")) {
+              this.log("Subscribed to trade updates");
               resolve();
             } else {
-              reject(new Error('Failed to subscribe to trade updates'));
+              reject(new Error("Failed to subscribe to trade updates"));
             }
           }
         } catch (error) {
-          this.log('Failed to parse listen response', {
-            type: 'error',
-            metadata: { error: error instanceof Error ? error.message : 'Unknown error' },
+          this.log("Failed to parse listen response", {
+            type: "error",
+            metadata: {
+              error: error instanceof Error ? error.message : "Unknown error",
+            },
           });
         }
       };
 
-      this.ws?.on('message', handleListenResponse);
+      this.ws?.on("message", handleListenResponse);
     });
   }
 
   private async makeRequest<T = unknown>(
     endpoint: string,
-    method: string = 'GET',
+    method: string = "GET",
     body?: Record<string, unknown> | CreateOrderParams,
-    queryString: string = ''
+    queryString: string = "",
   ): Promise<T> {
     const url = `${this.apiBaseUrl}${endpoint}${queryString}`;
     try {
       const response = await fetch(url, {
-      method,
-      headers: this.headers,
-      body: body ? JSON.stringify(body) : undefined,
-      signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
-    });
+        method,
+        headers: this.headers,
+        body: body ? JSON.stringify(body) : undefined,
+        signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
+      });
 
       if (!response.ok) {
         const errorText = await response.text();
-        this.log(`Alpaca API error (${response.status}): ${errorText}`, { type: 'error' });
+        this.log(`Alpaca API error (${response.status}): ${errorText}`, {
+          type: "error",
+        });
         throw new Error(`Alpaca API error (${response.status}): ${errorText}`);
       }
 
       // Handle responses with no content (e.g., 204 No Content)
-      if (response.status === 204 || response.headers.get('content-length') === '0') {
-        return null;
+      if (
+        response.status === 204 ||
+        response.headers.get("content-length") === "0"
+      ) {
+        return null as T;
       }
 
-      const contentType = response.headers.get('content-type');
-      if (contentType && contentType.includes('application/json')) {
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
         return await response.json();
       }
 
       // For non-JSON responses, return the text content
       const textContent = await response.text();
-      return textContent || null;
+      return (textContent || null) as T;
     } catch (err) {
       const error = err as Error;
       this.log(`Error in makeRequest: ${error.message}. Url: ${url}`, {
-        source: 'AlpacaAPI',
-        type: 'error',
+        source: "AlpacaAPI",
+        type: "error",
       });
       throw error;
     }
   }
 
   async getPositions(assetClass?: AssetClass): Promise<AlpacaPosition[]> {
-    const positions = (await this.makeRequest('/positions')) as AlpacaPosition[];
+    const positions = (await this.makeRequest(
+      "/positions",
+    )) as AlpacaPosition[];
     if (assetClass) {
-      return positions.filter((position) => position.asset_class === assetClass);
+      return positions.filter(
+        (position) => position.asset_class === assetClass,
+      );
     }
     return positions;
   }
@@ -391,29 +442,29 @@ export class AlpacaTradingAPI {
   async getOrders(params: GetOrdersParams = {}): Promise<AlpacaOrder[]> {
     const queryParams = new URLSearchParams();
 
-    if (params.status) queryParams.append('status', params.status);
-    if (params.limit) queryParams.append('limit', params.limit.toString());
-    if (params.after) queryParams.append('after', params.after);
-    if (params.until) queryParams.append('until', params.until);
-    if (params.direction) queryParams.append('direction', params.direction);
-    if (params.nested) queryParams.append('nested', params.nested.toString());
-    if (params.symbols) queryParams.append('symbols', params.symbols.join(','));
-    if (params.side) queryParams.append('side', params.side);
+    if (params.status) queryParams.append("status", params.status);
+    if (params.limit) queryParams.append("limit", params.limit.toString());
+    if (params.after) queryParams.append("after", params.after);
+    if (params.until) queryParams.append("until", params.until);
+    if (params.direction) queryParams.append("direction", params.direction);
+    if (params.nested) queryParams.append("nested", params.nested.toString());
+    if (params.symbols) queryParams.append("symbols", params.symbols.join(","));
+    if (params.side) queryParams.append("side", params.side);
 
-    const endpoint = `/orders${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    const endpoint = `/orders${queryParams.toString() ? `?${queryParams.toString()}` : ""}`;
     try {
       return await this.makeRequest(endpoint);
     } catch (error) {
-      this.log(`Error getting orders: ${error}`, { type: 'error' });
+      this.log(`Error getting orders: ${error}`, { type: "error" });
       throw error;
     }
   }
 
   async getAccountDetails(): Promise<AlpacaAccountDetails> {
     try {
-      return await this.makeRequest('/account');
+      return await this.makeRequest("/account");
     } catch (error) {
-      this.log(`Error getting account details: ${error}`, { type: 'error' });
+      this.log(`Error getting account details: ${error}`, { type: "error" });
       throw error;
     }
   }
@@ -429,32 +480,36 @@ export class AlpacaTradingAPI {
   async createTrailingStop(
     symbol: string,
     qty: number,
-    side: 'buy' | 'sell',
+    side: "buy" | "sell",
     trailPercent100: number,
-    position_intent: 'buy_to_open' | 'buy_to_close' | 'sell_to_open' | 'sell_to_close'
+    position_intent:
+      | "buy_to_open"
+      | "buy_to_close"
+      | "sell_to_open"
+      | "sell_to_close",
   ): Promise<void> {
     this.log(
       `Creating trailing stop ${side.toUpperCase()} ${qty} shares for ${symbol} with trail percent ${trailPercent100}%`,
       {
         symbol,
-      }
+      },
     );
 
     try {
-      await this.makeRequest(`/orders`, 'POST', {
+      await this.makeRequest(`/orders`, "POST", {
         symbol,
         qty: Math.abs(qty),
         side,
         position_intent,
-        order_class: 'simple',
-        type: 'trailing_stop',
+        order_class: "simple",
+        type: "trailing_stop",
         trail_percent: trailPercent100, // Already in decimal form (e.g., 4 for 4%)
-        time_in_force: 'gtc',
+        time_in_force: "gtc",
       });
     } catch (error) {
       this.log(`Error creating trailing stop: ${error}`, {
         symbol,
-        type: 'error',
+        type: "error",
       });
       throw error;
     }
@@ -470,30 +525,37 @@ export class AlpacaTradingAPI {
   async createMarketOrder(
     symbol: string,
     qty: number,
-    side: 'buy' | 'sell',
-    position_intent: 'buy_to_open' | 'buy_to_close' | 'sell_to_open' | 'sell_to_close',
-    client_order_id?: string
+    side: "buy" | "sell",
+    position_intent:
+      | "buy_to_open"
+      | "buy_to_close"
+      | "sell_to_open"
+      | "sell_to_close",
+    client_order_id?: string,
   ): Promise<AlpacaOrder> {
-    this.log(`Creating market order for ${symbol}: ${side} ${qty} shares (${position_intent})`, {
-      symbol,
-    });
+    this.log(
+      `Creating market order for ${symbol}: ${side} ${qty} shares (${position_intent})`,
+      {
+        symbol,
+      },
+    );
 
     const body: CreateOrderParams = {
       symbol,
       qty: Math.abs(qty).toString(),
       side,
       position_intent,
-      type: 'market',
-      time_in_force: 'day',
-      order_class: 'simple',
+      type: "market",
+      time_in_force: "day",
+      order_class: "simple",
     };
     if (client_order_id !== undefined) {
       body.client_order_id = client_order_id;
     }
     try {
-      return await this.makeRequest('/orders', 'POST', body);
+      return await this.makeRequest("/orders", "POST", body);
     } catch (error) {
-      this.log(`Error creating market order: ${error}`, { type: 'error' });
+      this.log(`Error creating market order: ${error}`, { type: "error" });
       throw error;
     }
   }
@@ -506,14 +568,15 @@ export class AlpacaTradingAPI {
   async getCurrentTrailPercent(symbol: string): Promise<number | null> {
     try {
       const orders = await this.getOrders({
-        status: 'open',
+        status: "open",
         symbols: [symbol],
       });
 
       const trailingStopOrder = orders.find(
         (order) =>
-          order.type === 'trailing_stop' &&
-          (order.position_intent === 'sell_to_close' || order.position_intent === 'buy_to_close')
+          order.type === "trailing_stop" &&
+          (order.position_intent === "sell_to_close" ||
+            order.position_intent === "buy_to_close"),
       );
 
       if (!trailingStopOrder) {
@@ -524,9 +587,12 @@ export class AlpacaTradingAPI {
       }
 
       if (!trailingStopOrder.trail_percent) {
-        this.log(`Trailing stop order found for ${symbol} but no trail_percent value`, {
-          symbol,
-        });
+        this.log(
+          `Trailing stop order found for ${symbol} but no trail_percent value`,
+          {
+            symbol,
+          },
+        );
         return null;
       }
 
@@ -535,7 +601,7 @@ export class AlpacaTradingAPI {
     } catch (error) {
       this.log(`Error getting current trail percent: ${error}`, {
         symbol,
-        type: 'error',
+        type: "error",
       });
       throw error;
     }
@@ -546,48 +612,64 @@ export class AlpacaTradingAPI {
    * @param symbol (string) - the symbol of the order
    * @param trailPercent100 (number) - the trail percent of the order (scale 100, i.e. 0.5 = 0.5%)
    */
-  async updateTrailingStop(symbol: string, trailPercent100: number): Promise<void> {
+  async updateTrailingStop(
+    symbol: string,
+    trailPercent100: number,
+  ): Promise<void> {
     // First get all open orders for this symbol
     const orders = await this.getOrders({
-      status: 'open',
+      status: "open",
       symbols: [symbol],
     });
 
     // Find the trailing stop order
-    const trailingStopOrder = orders.find((order) => order.type === 'trailing_stop');
+    const trailingStopOrder = orders.find(
+      (order) => order.type === "trailing_stop",
+    );
 
     if (!trailingStopOrder) {
-      this.log(`No open trailing stop order found for ${symbol}`, { type: 'error', symbol });
+      this.log(`No open trailing stop order found for ${symbol}`, {
+        type: "error",
+        symbol,
+      });
       return;
     }
 
     // Check if the trail_percent is already set to the desired value
-    const currentTrailPercent = trailingStopOrder.trail_percent ? parseFloat(trailingStopOrder.trail_percent) : null;
+    const currentTrailPercent = trailingStopOrder.trail_percent
+      ? parseFloat(trailingStopOrder.trail_percent)
+      : null;
 
     // Compare with a small epsilon to handle floating point precision
     const epsilon = 0.0001;
-    if (currentTrailPercent !== null && Math.abs(currentTrailPercent - trailPercent100) < epsilon) {
+    if (
+      currentTrailPercent !== null &&
+      Math.abs(currentTrailPercent - trailPercent100) < epsilon
+    ) {
       this.log(
         `Trailing stop for ${symbol} already set to ${trailPercent100}% (current: ${currentTrailPercent}%), skipping update`,
         {
           symbol,
-        }
+        },
       );
       return;
     }
 
-    this.log(`Updating trailing stop for ${symbol} from ${currentTrailPercent}% to ${trailPercent100}%`, {
-      symbol,
-    });
+    this.log(
+      `Updating trailing stop for ${symbol} from ${currentTrailPercent}% to ${trailPercent100}%`,
+      {
+        symbol,
+      },
+    );
 
     try {
-      await this.makeRequest(`/orders/${trailingStopOrder.id}`, 'PATCH', {
+      await this.makeRequest(`/orders/${trailingStopOrder.id}`, "PATCH", {
         trail: trailPercent100.toString(), // Changed from trail_percent to trail
       });
     } catch (error) {
       this.log(`Error updating trailing stop: ${error}`, {
         symbol,
-        type: 'error',
+        type: "error",
       });
       throw error;
     }
@@ -599,9 +681,9 @@ export class AlpacaTradingAPI {
   async cancelAllOrders(): Promise<void> {
     this.log(`Canceling all open orders`);
     try {
-      await this.makeRequest('/orders', 'DELETE');
+      await this.makeRequest("/orders", "DELETE");
     } catch (error) {
-      this.log(`Error canceling all orders: ${error}`, { type: 'error' });
+      this.log(`Error canceling all orders: ${error}`, { type: "error" });
     }
   }
 
@@ -615,13 +697,13 @@ export class AlpacaTradingAPI {
     this.log(`Attempting to cancel order ${orderId}`);
 
     try {
-      await this.makeRequest(`/orders/${orderId}`, 'DELETE');
+      await this.makeRequest(`/orders/${orderId}`, "DELETE");
       this.log(`Successfully canceled order ${orderId}`);
     } catch (error) {
       // If the error is a 422, it means the order is not cancelable
-      if (error instanceof Error && error.message.includes('422')) {
+      if (error instanceof Error && error.message.includes("422")) {
         this.log(`Order ${orderId} is not cancelable`, {
-          type: 'error',
+          type: "error",
         });
         throw new Error(`Order ${orderId} is not cancelable`);
       }
@@ -643,17 +725,21 @@ export class AlpacaTradingAPI {
   async createLimitOrder(
     symbol: string,
     qty: number,
-    side: 'buy' | 'sell',
+    side: "buy" | "sell",
     limitPrice: number,
-    position_intent: 'buy_to_open' | 'buy_to_close' | 'sell_to_open' | 'sell_to_close',
+    position_intent:
+      | "buy_to_open"
+      | "buy_to_close"
+      | "sell_to_open"
+      | "sell_to_close",
     extended_hours: boolean = false,
-    client_order_id?: string
+    client_order_id?: string,
   ): Promise<AlpacaOrder> {
     this.log(
       `Creating limit order for ${symbol}: ${side} ${qty} shares at $${limitPrice.toFixed(2)} (${position_intent})`,
       {
         symbol,
-      }
+      },
     );
 
     const body: CreateOrderParams = {
@@ -661,19 +747,19 @@ export class AlpacaTradingAPI {
       qty: Math.abs(qty).toString(),
       side,
       position_intent,
-      type: 'limit',
+      type: "limit",
       limit_price: this.roundPriceForAlpaca(limitPrice).toString(),
-      time_in_force: 'day',
-      order_class: 'simple',
+      time_in_force: "day",
+      order_class: "simple",
       extended_hours,
     };
     if (client_order_id !== undefined) {
       body.client_order_id = client_order_id;
     }
     try {
-      return await this.makeRequest('/orders', 'POST', body);
+      return await this.makeRequest("/orders", "POST", body);
     } catch (error) {
-      this.log(`Error creating limit order: ${error}`, { type: 'error' });
+      this.log(`Error creating limit order: ${error}`, { type: "error" });
       throw error;
     }
   }
@@ -685,20 +771,23 @@ export class AlpacaTradingAPI {
    * - useLimitOrders (boolean) - whether to use limit orders to close the positions
    */
   async closeAllPositions(
-    options: { cancel_orders: boolean; useLimitOrders: boolean } = { cancel_orders: true, useLimitOrders: false }
+    options: { cancel_orders: boolean; useLimitOrders: boolean } = {
+      cancel_orders: true,
+      useLimitOrders: false,
+    },
   ): Promise<void> {
     this.log(
-      `Closing all positions${options.useLimitOrders ? ' using limit orders' : ''}${
-        options.cancel_orders ? ' and canceling open orders' : ''
-      }`
+      `Closing all positions${options.useLimitOrders ? " using limit orders" : ""}${
+        options.cancel_orders ? " and canceling open orders" : ""
+      }`,
     );
 
     if (options.useLimitOrders) {
       // Get all positions
-      const positions = await this.getPositions('us_equity');
+      const positions = await this.getPositions("us_equity");
 
       if (positions.length === 0) {
-        this.log('No positions to close');
+        this.log("No positions to close");
         return;
       }
 
@@ -710,8 +799,8 @@ export class AlpacaTradingAPI {
 
       const lengthOfQuotes = Object.keys(quotesResponse.quotes).length;
       if (lengthOfQuotes === 0) {
-        this.log('No quotes available for positions, received 0 quotes', {
-          type: 'error',
+        this.log("No quotes available for positions, received 0 quotes", {
+          type: "error",
         });
         return;
       }
@@ -719,7 +808,7 @@ export class AlpacaTradingAPI {
       if (lengthOfQuotes !== positions.length) {
         this.log(
           `Received ${lengthOfQuotes} quotes for ${positions.length} positions, expected ${positions.length} quotes`,
-          { type: 'warn' }
+          { type: "warn" },
         );
         return;
       }
@@ -728,48 +817,70 @@ export class AlpacaTradingAPI {
       for (const position of positions) {
         const quote = quotesResponse.quotes[position.symbol];
         if (!quote) {
-          this.log(`No quote available for ${position.symbol}, skipping limit order`, {
-            symbol: position.symbol,
-            type: 'warn',
-          });
+          this.log(
+            `No quote available for ${position.symbol}, skipping limit order`,
+            {
+              symbol: position.symbol,
+              type: "warn",
+            },
+          );
           continue;
         }
 
         const qty = Math.abs(parseFloat(position.qty));
-        const side = position.side === 'long' ? 'sell' : 'buy';
-        const positionIntent = side === 'sell' ? 'sell_to_close' : 'buy_to_close';
+        const side = position.side === "long" ? "sell" : "buy";
+        const positionIntent =
+          side === "sell" ? "sell_to_close" : "buy_to_close";
 
         // Get the current price from the quote
-        const currentPrice = side === 'sell' ? quote.bp : quote.ap; // Use bid for sells, ask for buys
+        const currentPrice = side === "sell" ? quote.bp : quote.ap; // Use bid for sells, ask for buys
 
         if (!currentPrice) {
-          this.log(`No valid price available for ${position.symbol}, skipping limit order`, {
-            symbol: position.symbol,
-            type: 'warn',
-          });
+          this.log(
+            `No valid price available for ${position.symbol}, skipping limit order`,
+            {
+              symbol: position.symbol,
+              type: "warn",
+            },
+          );
           continue;
         }
 
         // Apply slippage from config
         const limitSlippagePercent1 = limitPriceSlippagePercent100 / 100;
         const limitPrice =
-          side === 'sell'
-            ? this.roundPriceForAlpaca(currentPrice * (1 - limitSlippagePercent1)) // Sell slightly lower
-            : this.roundPriceForAlpaca(currentPrice * (1 + limitSlippagePercent1)); // Buy slightly higher
+          side === "sell"
+            ? this.roundPriceForAlpaca(
+                currentPrice * (1 - limitSlippagePercent1),
+              ) // Sell slightly lower
+            : this.roundPriceForAlpaca(
+                currentPrice * (1 + limitSlippagePercent1),
+              ); // Buy slightly higher
 
         this.log(
           `Creating limit order to close ${position.symbol} position: ${side} ${qty} shares at $${limitPrice.toFixed(
-            2
+            2,
           )}`,
           {
             symbol: position.symbol,
-          }
+          },
         );
 
-        await this.createLimitOrder(position.symbol, qty, side, limitPrice, positionIntent);
+        await this.createLimitOrder(
+          position.symbol,
+          qty,
+          side,
+          limitPrice,
+          positionIntent,
+        );
       }
     } else {
-      await this.makeRequest('/positions', 'DELETE', undefined, options.cancel_orders ? '?cancel_orders=true' : '');
+      await this.makeRequest(
+        "/positions",
+        "DELETE",
+        undefined,
+        options.cancel_orders ? "?cancel_orders=true" : "",
+      );
     }
   }
 
@@ -779,14 +890,16 @@ export class AlpacaTradingAPI {
    * @returns Promise that resolves when all positions are closed
    */
   async closeAllPositionsAfterHours(): Promise<void> {
-    this.log('Closing all positions using limit orders during extended hours trading');
+    this.log(
+      "Closing all positions using limit orders during extended hours trading",
+    );
 
     // Get all positions
     const positions = await this.getPositions();
     this.log(`Found ${positions.length} positions to close`);
 
     if (positions.length === 0) {
-      this.log('No positions to close');
+      this.log("No positions to close");
       return;
     }
 
@@ -801,34 +914,42 @@ export class AlpacaTradingAPI {
     for (const position of positions) {
       const quote = quotesResponse.quotes[position.symbol];
       if (!quote) {
-        this.log(`No quote available for ${position.symbol}, skipping limit order`, {
-          symbol: position.symbol,
-          type: 'warn',
-        });
+        this.log(
+          `No quote available for ${position.symbol}, skipping limit order`,
+          {
+            symbol: position.symbol,
+            type: "warn",
+          },
+        );
         continue;
       }
 
       const qty = Math.abs(parseFloat(position.qty));
-      const side = position.side === 'long' ? 'sell' : 'buy';
-      const positionIntent = side === 'sell' ? 'sell_to_close' : 'buy_to_close';
+      const side = position.side === "long" ? "sell" : "buy";
+      const positionIntent = side === "sell" ? "sell_to_close" : "buy_to_close";
 
       // Get the current price from the quote
-      const currentPrice = side === 'sell' ? quote.bp : quote.ap; // Use bid for sells, ask for buys
+      const currentPrice = side === "sell" ? quote.bp : quote.ap; // Use bid for sells, ask for buys
 
       if (!currentPrice) {
-        this.log(`No valid price available for ${position.symbol}, skipping limit order`, {
-          symbol: position.symbol,
-          type: 'warn',
-        });
+        this.log(
+          `No valid price available for ${position.symbol}, skipping limit order`,
+          {
+            symbol: position.symbol,
+            type: "warn",
+          },
+        );
         continue;
       }
 
       // Apply slippage from config
       const limitSlippagePercent1 = limitPriceSlippagePercent100 / 100;
       const limitPrice =
-        side === 'sell'
+        side === "sell"
           ? this.roundPriceForAlpaca(currentPrice * (1 - limitSlippagePercent1)) // Sell slightly lower
-          : this.roundPriceForAlpaca(currentPrice * (1 + limitSlippagePercent1)); // Buy slightly higher
+          : this.roundPriceForAlpaca(
+              currentPrice * (1 + limitSlippagePercent1),
+            ); // Buy slightly higher
 
       this.log(
         `Creating extended hours limit order to close ${
@@ -836,7 +957,7 @@ export class AlpacaTradingAPI {
         } position: ${side} ${qty} shares at $${limitPrice.toFixed(2)}`,
         {
           symbol: position.symbol,
-        }
+        },
       );
 
       await this.createLimitOrder(
@@ -845,11 +966,13 @@ export class AlpacaTradingAPI {
         side,
         limitPrice,
         positionIntent,
-        true // Enable extended hours trading
+        true, // Enable extended hours trading
       );
     }
 
-    this.log(`All positions closed: ${positions.map((p) => p.symbol).join(', ')}`);
+    this.log(
+      `All positions closed: ${positions.map((p) => p.symbol).join(", ")}`,
+    );
   }
 
   onTradeUpdate(callback: (update: TradeUpdate) => void): void {
@@ -862,7 +985,7 @@ export class AlpacaTradingAPI {
    * @returns Portfolio history data
    */
   async getPortfolioHistory(params: {
-    timeframe?: '1Min' | '5Min' | '15Min' | '1H' | '1D';
+    timeframe?: "1Min" | "5Min" | "15Min" | "1H" | "1D";
     period?: string;
     extended_hours?: boolean;
     date_end?: string;
@@ -875,13 +998,23 @@ export class AlpacaTradingAPI {
     timeframe: string;
   }> {
     const queryParams = new URLSearchParams();
-    if (params.timeframe) queryParams.append('timeframe', params.timeframe);
-    if (params.period) queryParams.append('period', params.period);
-    if (params.extended_hours !== undefined) queryParams.append('extended_hours', params.extended_hours.toString());
-    if (params.date_end) queryParams.append('date_end', params.date_end);
+    if (params.timeframe) queryParams.append("timeframe", params.timeframe);
+    if (params.period) queryParams.append("period", params.period);
+    if (params.extended_hours !== undefined)
+      queryParams.append("extended_hours", params.extended_hours.toString());
+    if (params.date_end) queryParams.append("date_end", params.date_end);
 
-    const response = await this.makeRequest(`/account/portfolio/history?${queryParams.toString()}`);
-    return response;
+    const response = await this.makeRequest(
+      `/account/portfolio/history?${queryParams.toString()}`,
+    );
+    return response as {
+      timestamp: number[];
+      equity: number[];
+      profit_loss: number[];
+      profit_loss_pct: number[];
+      base_value: number;
+      timeframe: string;
+    };
   }
 
   /**
@@ -889,29 +1022,41 @@ export class AlpacaTradingAPI {
    * @param params Parameters to filter option contracts
    * @returns Option contracts matching the criteria
    */
-  async getOptionContracts(params: GetOptionContractsParams): Promise<OptionContractsResponse> {
+  async getOptionContracts(
+    params: GetOptionContractsParams,
+  ): Promise<OptionContractsResponse> {
     const queryParams = new URLSearchParams();
 
-    queryParams.append('underlying_symbols', params.underlying_symbols.join(','));
+    queryParams.append(
+      "underlying_symbols",
+      params.underlying_symbols.join(","),
+    );
 
-    if (params.expiration_date_gte) queryParams.append('expiration_date_gte', params.expiration_date_gte);
-    if (params.expiration_date_lte) queryParams.append('expiration_date_lte', params.expiration_date_lte);
-    if (params.strike_price_gte) queryParams.append('strike_price_gte', params.strike_price_gte);
-    if (params.strike_price_lte) queryParams.append('strike_price_lte', params.strike_price_lte);
-    if (params.type) queryParams.append('type', params.type);
-    if (params.status) queryParams.append('status', params.status);
-    if (params.limit) queryParams.append('limit', params.limit.toString());
-    if (params.page_token) queryParams.append('page_token', params.page_token);
+    if (params.expiration_date_gte)
+      queryParams.append("expiration_date_gte", params.expiration_date_gte);
+    if (params.expiration_date_lte)
+      queryParams.append("expiration_date_lte", params.expiration_date_lte);
+    if (params.strike_price_gte)
+      queryParams.append("strike_price_gte", params.strike_price_gte);
+    if (params.strike_price_lte)
+      queryParams.append("strike_price_lte", params.strike_price_lte);
+    if (params.type) queryParams.append("type", params.type);
+    if (params.status) queryParams.append("status", params.status);
+    if (params.limit) queryParams.append("limit", params.limit.toString());
+    if (params.page_token) queryParams.append("page_token", params.page_token);
 
-    this.log(`Fetching option contracts for ${params.underlying_symbols.join(', ')}`, {
-      symbol: params.underlying_symbols.join(', '),
-    });
+    this.log(
+      `Fetching option contracts for ${params.underlying_symbols.join(", ")}`,
+      {
+        symbol: params.underlying_symbols.join(", "),
+      },
+    );
 
     const response = (await this.makeRequest(
-      `/options/contracts?${queryParams.toString()}`
+      `/options/contracts?${queryParams.toString()}`,
     )) as OptionContractsResponse;
     this.log(`Found ${response.option_contracts.length} option contracts`, {
-      symbol: params.underlying_symbols.join(', '),
+      symbol: params.underlying_symbols.join(", "),
     });
     return response;
   }
@@ -925,10 +1070,15 @@ export class AlpacaTradingAPI {
     this.log(`Fetching option contract details for ${symbolOrId}`, {
       symbol: symbolOrId,
     });
-    const response = (await this.makeRequest(`/options/contracts/${symbolOrId}`)) as OptionContract;
-    this.log(`Found option contract details for ${symbolOrId}: ${response.name}`, {
-      symbol: symbolOrId,
-    });
+    const response = (await this.makeRequest(
+      `/options/contracts/${symbolOrId}`,
+    )) as OptionContract;
+    this.log(
+      `Found option contract details for ${symbolOrId}: ${response.name}`,
+      {
+        symbol: symbolOrId,
+      },
+    );
     return response;
   }
 
@@ -945,26 +1095,32 @@ export class AlpacaTradingAPI {
   async createOptionOrder(
     symbol: string,
     qty: number,
-    side: 'buy' | 'sell',
-    position_intent: 'buy_to_open' | 'buy_to_close' | 'sell_to_open' | 'sell_to_close',
-    type: 'market' | 'limit',
-    limitPrice?: number
+    side: "buy" | "sell",
+    position_intent:
+      | "buy_to_open"
+      | "buy_to_close"
+      | "sell_to_open"
+      | "sell_to_close",
+    type: "market" | "limit",
+    limitPrice?: number,
   ): Promise<AlpacaOrder> {
     if (!Number.isInteger(qty) || qty <= 0) {
-      this.log('Quantity must be a positive whole number for option orders', { type: 'error' });
+      this.log("Quantity must be a positive whole number for option orders", {
+        type: "error",
+      });
     }
 
-    if (type === 'limit' && limitPrice === undefined) {
-      this.log('Limit price is required for limit orders', { type: 'error' });
+    if (type === "limit" && limitPrice === undefined) {
+      this.log("Limit price is required for limit orders", { type: "error" });
     }
 
     this.log(
       `Creating ${type} option order for ${symbol}: ${side} ${qty} contracts (${position_intent})${
-        type === 'limit' ? ` at $${limitPrice?.toFixed(2)}` : ''
+        type === "limit" ? ` at $${limitPrice?.toFixed(2)}` : ""
       }`,
       {
         symbol,
-      }
+      },
     );
 
     const orderData: CreateOrderParams = {
@@ -973,16 +1129,16 @@ export class AlpacaTradingAPI {
       side,
       position_intent,
       type,
-      time_in_force: 'day',
-      order_class: 'simple',
+      time_in_force: "day",
+      order_class: "simple",
       extended_hours: false,
     };
 
-    if (type === 'limit' && limitPrice !== undefined) {
+    if (type === "limit" && limitPrice !== undefined) {
       orderData.limit_price = this.roundPriceForAlpaca(limitPrice).toString();
     }
 
-    return this.makeRequest('/orders', 'POST', orderData);
+    return this.makeRequest("/orders", "POST", orderData);
   }
 
   /**
@@ -996,44 +1152,50 @@ export class AlpacaTradingAPI {
   async createMultiLegOptionOrder(
     legs: OrderLeg[],
     qty: number,
-    type: 'market' | 'limit',
-    limitPrice?: number
+    type: "market" | "limit",
+    limitPrice?: number,
   ): Promise<AlpacaOrder> {
     if (!Number.isInteger(qty) || qty <= 0) {
-      this.log('Quantity must be a positive whole number for option orders', { type: 'error' });
+      this.log("Quantity must be a positive whole number for option orders", {
+        type: "error",
+      });
     }
 
-    if (type === 'limit' && limitPrice === undefined) {
-      this.log('Limit price is required for limit orders', { type: 'error' });
+    if (type === "limit" && limitPrice === undefined) {
+      this.log("Limit price is required for limit orders", { type: "error" });
     }
 
     if (legs.length < 2) {
-      this.log('Multi-leg orders require at least 2 legs', { type: 'error' });
+      this.log("Multi-leg orders require at least 2 legs", { type: "error" });
     }
 
-    const legSymbols = legs.map((leg) => leg.symbol).join(', ');
+    const legSymbols = legs.map((leg) => leg.symbol).join(", ");
     this.log(
       `Creating multi-leg ${type} option order with ${legs.length} legs (${legSymbols})${
-        type === 'limit' ? ` at $${limitPrice?.toFixed(2)}` : ''
+        type === "limit" ? ` at $${limitPrice?.toFixed(2)}` : ""
       }`,
       {
         symbol: legSymbols,
-      }
+      },
     );
 
     const orderData: CreateMultiLegOrderParams = {
-      order_class: 'mleg',
+      order_class: "mleg",
       qty: qty.toString(),
       type,
-      time_in_force: 'day',
+      time_in_force: "day",
       legs,
     };
 
-    if (type === 'limit' && limitPrice !== undefined) {
+    if (type === "limit" && limitPrice !== undefined) {
       orderData.limit_price = this.roundPriceForAlpaca(limitPrice).toString();
     }
 
-    return this.makeRequest('/orders', 'POST', orderData);
+    return this.makeRequest(
+      "/orders",
+      "POST",
+      orderData as unknown as Record<string, unknown>,
+    );
   }
 
   /**
@@ -1041,11 +1203,16 @@ export class AlpacaTradingAPI {
    * @param symbolOrContractId The symbol or ID of the option contract to exercise
    * @returns Response from the exercise request
    */
-  async exerciseOption(symbolOrContractId: string): Promise<ExerciseOptionResponse> {
+  async exerciseOption(
+    symbolOrContractId: string,
+  ): Promise<ExerciseOptionResponse> {
     this.log(`Exercising option contract ${symbolOrContractId}`, {
       symbol: symbolOrContractId,
     });
-    return this.makeRequest<ExerciseOptionResponse>(`/positions/${symbolOrContractId}/exercise`, 'POST');
+    return this.makeRequest<ExerciseOptionResponse>(
+      `/positions/${symbolOrContractId}/exercise`,
+      "POST",
+    );
   }
 
   /**
@@ -1053,13 +1220,13 @@ export class AlpacaTradingAPI {
    * @returns Array of option positions
    */
   async getOptionPositions(): Promise<AlpacaPosition[]> {
-    this.log('Fetching option positions');
-    const positions = await this.getPositions('us_option');
+    this.log("Fetching option positions");
+    const positions = await this.getPositions("us_option");
     return positions;
   }
 
   async getOptionsOpenSpreadTrades(): Promise<void> {
-    this.log('Fetching option open trades');
+    this.log("Fetching option open trades");
     // this function will get all open positions, extract the symbol and see when they were created.
     // figures out when the earliest date was (should be today)
     // then it pulls all orders after the earliest date that were closed and that were of class 'mleg'
@@ -1073,23 +1240,23 @@ export class AlpacaTradingAPI {
    * @returns Array of option account activities
    */
   async getOptionActivities(
-    activityType?: 'OPEXC' | 'OPASN' | 'OPEXP',
-    date?: string
+    activityType?: "OPEXC" | "OPASN" | "OPEXP",
+    date?: string,
   ): Promise<OptionAccountActivity[]> {
     const queryParams = new URLSearchParams();
 
     if (activityType) {
-      queryParams.append('activity_types', activityType);
+      queryParams.append("activity_types", activityType);
     } else {
-      queryParams.append('activity_types', 'OPEXC,OPASN,OPEXP');
+      queryParams.append("activity_types", "OPEXC,OPASN,OPEXP");
     }
 
     if (date) {
-      queryParams.append('date', date);
+      queryParams.append("date", date);
     }
 
     this.log(
-      `Fetching option activities${activityType ? ` of type ${activityType}` : ''}${date ? ` for date ${date}` : ''}`
+      `Fetching option activities${activityType ? ` of type ${activityType}` : ""}${date ? ` for date ${date}` : ""}`,
     );
 
     return this.makeRequest(`/account/activities?${queryParams.toString()}`);
@@ -1107,33 +1274,33 @@ export class AlpacaTradingAPI {
     lowerStrikeCallSymbol: string,
     higherStrikeCallSymbol: string,
     qty: number,
-    limitPrice: number
+    limitPrice: number,
   ): Promise<AlpacaOrder> {
     this.log(
       `Creating long call spread: Buy ${lowerStrikeCallSymbol}, Sell ${higherStrikeCallSymbol}, Qty: ${qty}, Price: $${limitPrice.toFixed(
-        2
+        2,
       )}`,
       {
         symbol: `${lowerStrikeCallSymbol},${higherStrikeCallSymbol}`,
-      }
+      },
     );
 
     const legs: OrderLeg[] = [
       {
         symbol: lowerStrikeCallSymbol,
-        ratio_qty: '1',
-        side: 'buy',
-        position_intent: 'buy_to_open',
+        ratio_qty: "1",
+        side: "buy",
+        position_intent: "buy_to_open",
       },
       {
         symbol: higherStrikeCallSymbol,
-        ratio_qty: '1',
-        side: 'sell',
-        position_intent: 'sell_to_open',
+        ratio_qty: "1",
+        side: "sell",
+        position_intent: "sell_to_open",
       },
     ];
 
-    return this.createMultiLegOptionOrder(legs, qty, 'limit', limitPrice);
+    return this.createMultiLegOptionOrder(legs, qty, "limit", limitPrice);
   }
 
   /**
@@ -1148,33 +1315,33 @@ export class AlpacaTradingAPI {
     higherStrikePutSymbol: string,
     lowerStrikePutSymbol: string,
     qty: number,
-    limitPrice: number
+    limitPrice: number,
   ): Promise<AlpacaOrder> {
     this.log(
       `Creating long put spread: Buy ${higherStrikePutSymbol}, Sell ${lowerStrikePutSymbol}, Qty: ${qty}, Price: $${limitPrice.toFixed(
-        2
+        2,
       )}`,
       {
         symbol: `${higherStrikePutSymbol},${lowerStrikePutSymbol}`,
-      }
+      },
     );
 
     const legs: OrderLeg[] = [
       {
         symbol: higherStrikePutSymbol,
-        ratio_qty: '1',
-        side: 'buy',
-        position_intent: 'buy_to_open',
+        ratio_qty: "1",
+        side: "buy",
+        position_intent: "buy_to_open",
       },
       {
         symbol: lowerStrikePutSymbol,
-        ratio_qty: '1',
-        side: 'sell',
-        position_intent: 'sell_to_open',
+        ratio_qty: "1",
+        side: "sell",
+        position_intent: "sell_to_open",
       },
     ];
 
-    return this.createMultiLegOptionOrder(legs, qty, 'limit', limitPrice);
+    return this.createMultiLegOptionOrder(legs, qty, "limit", limitPrice);
   }
 
   /**
@@ -1193,43 +1360,51 @@ export class AlpacaTradingAPI {
     shortCallSymbol: string,
     longCallSymbol: string,
     qty: number,
-    limitPrice: number
+    limitPrice: number,
   ): Promise<AlpacaOrder> {
-    this.log(`Creating iron condor with ${qty} contracts at $${limitPrice.toFixed(2)}`, {
-      symbol: `${longPutSymbol},${shortPutSymbol},${shortCallSymbol},${longCallSymbol}`,
-    });
+    this.log(
+      `Creating iron condor with ${qty} contracts at $${limitPrice.toFixed(2)}`,
+      {
+        symbol: `${longPutSymbol},${shortPutSymbol},${shortCallSymbol},${longCallSymbol}`,
+      },
+    );
 
     const legs: OrderLeg[] = [
       {
         symbol: longPutSymbol,
-        ratio_qty: '1',
-        side: 'buy',
-        position_intent: 'buy_to_open',
+        ratio_qty: "1",
+        side: "buy",
+        position_intent: "buy_to_open",
       },
       {
         symbol: shortPutSymbol,
-        ratio_qty: '1',
-        side: 'sell',
-        position_intent: 'sell_to_open',
+        ratio_qty: "1",
+        side: "sell",
+        position_intent: "sell_to_open",
       },
       {
         symbol: shortCallSymbol,
-        ratio_qty: '1',
-        side: 'sell',
-        position_intent: 'sell_to_open',
+        ratio_qty: "1",
+        side: "sell",
+        position_intent: "sell_to_open",
       },
       {
         symbol: longCallSymbol,
-        ratio_qty: '1',
-        side: 'buy',
-        position_intent: 'buy_to_open',
+        ratio_qty: "1",
+        side: "buy",
+        position_intent: "buy_to_open",
       },
     ];
 
     try {
-      return await this.createMultiLegOptionOrder(legs, qty, 'limit', limitPrice);
+      return await this.createMultiLegOptionOrder(
+        legs,
+        qty,
+        "limit",
+        limitPrice,
+      );
     } catch (error) {
-      this.log(`Error creating iron condor: ${error}`, { type: 'error' });
+      this.log(`Error creating iron condor: ${error}`, { type: "error" });
       throw error;
     }
   }
@@ -1246,23 +1421,30 @@ export class AlpacaTradingAPI {
     stockSymbol: string,
     callOptionSymbol: string,
     qty: number,
-    limitPrice: number
+    limitPrice: number,
   ): Promise<AlpacaOrder> {
     this.log(
       `Creating covered call: Sell ${callOptionSymbol} against ${stockSymbol}, Qty: ${qty}, Price: $${limitPrice.toFixed(
-        2
+        2,
       )}`,
       {
         symbol: `${stockSymbol},${callOptionSymbol}`,
-      }
+      },
     );
 
     // For covered calls, we don't need to include the stock leg if we already own the shares
     // We just create a simple sell order for the call option
     try {
-      return await this.createOptionOrder(callOptionSymbol, qty, 'sell', 'sell_to_open', 'limit', limitPrice);
+      return await this.createOptionOrder(
+        callOptionSymbol,
+        qty,
+        "sell",
+        "sell_to_open",
+        "limit",
+        limitPrice,
+      );
     } catch (error) {
-      this.log(`Error creating covered call: ${error}`, { type: 'error' });
+      this.log(`Error creating covered call: ${error}`, { type: "error" });
       throw error;
     }
   }
@@ -1280,40 +1462,50 @@ export class AlpacaTradingAPI {
     currentOptionSymbol: string,
     newOptionSymbol: string,
     qty: number,
-    currentPositionSide: 'buy' | 'sell',
-    limitPrice: number
+    currentPositionSide: "buy" | "sell",
+    limitPrice: number,
   ): Promise<AlpacaOrder> {
-    this.log(`Rolling ${qty} ${currentOptionSymbol} to ${newOptionSymbol} at net price $${limitPrice.toFixed(2)}`, {
-      symbol: `${currentOptionSymbol},${newOptionSymbol}`,
-    });
+    this.log(
+      `Rolling ${qty} ${currentOptionSymbol} to ${newOptionSymbol} at net price $${limitPrice.toFixed(2)}`,
+      {
+        symbol: `${currentOptionSymbol},${newOptionSymbol}`,
+      },
+    );
 
     // If current position is long, we need to sell to close and buy to open
     // If current position is short, we need to buy to close and sell to open
-    const closePositionSide = currentPositionSide === 'buy' ? 'sell' : 'buy';
+    const closePositionSide = currentPositionSide === "buy" ? "sell" : "buy";
     const openPositionSide = currentPositionSide;
 
-    const closePositionIntent = closePositionSide === 'buy' ? 'buy_to_close' : 'sell_to_close';
-    const openPositionIntent = openPositionSide === 'buy' ? 'buy_to_open' : 'sell_to_open';
+    const closePositionIntent =
+      closePositionSide === "buy" ? "buy_to_close" : "sell_to_close";
+    const openPositionIntent =
+      openPositionSide === "buy" ? "buy_to_open" : "sell_to_open";
 
     const legs: OrderLeg[] = [
       {
         symbol: currentOptionSymbol,
-        ratio_qty: '1',
+        ratio_qty: "1",
         side: closePositionSide,
         position_intent: closePositionIntent,
       },
       {
         symbol: newOptionSymbol,
-        ratio_qty: '1',
+        ratio_qty: "1",
         side: openPositionSide,
         position_intent: openPositionIntent,
       },
     ];
 
     try {
-      return await this.createMultiLegOptionOrder(legs, qty, 'limit', limitPrice);
+      return await this.createMultiLegOptionOrder(
+        legs,
+        qty,
+        "limit",
+        limitPrice,
+      );
     } catch (error) {
-      this.log(`Error rolling option position: ${error}`, { type: 'error' });
+      this.log(`Error rolling option position: ${error}`, { type: "error" });
       throw error;
     }
   }
@@ -1324,17 +1516,23 @@ export class AlpacaTradingAPI {
    * @param expirationDate The expiration date (YYYY-MM-DD format)
    * @returns Option contracts for the specified symbol and expiration date
    */
-  async getOptionChain(underlyingSymbol: string, expirationDate: string): Promise<OptionContract[]> {
-    this.log(`Fetching option chain for ${underlyingSymbol} with expiration date ${expirationDate}`, {
-      symbol: underlyingSymbol,
-    });
+  async getOptionChain(
+    underlyingSymbol: string,
+    expirationDate: string,
+  ): Promise<OptionContract[]> {
+    this.log(
+      `Fetching option chain for ${underlyingSymbol} with expiration date ${expirationDate}`,
+      {
+        symbol: underlyingSymbol,
+      },
+    );
 
     try {
       const params: GetOptionContractsParams = {
         underlying_symbols: [underlyingSymbol],
         expiration_date_gte: expirationDate,
         expiration_date_lte: expirationDate,
-        status: 'active',
+        status: "active",
         limit: 500, // Get a large number to ensure we get all strikes
       };
 
@@ -1343,12 +1541,12 @@ export class AlpacaTradingAPI {
     } catch (error) {
       this.log(
         `Failed to fetch option chain for ${underlyingSymbol}: ${
-          error instanceof Error ? error.message : 'Unknown error'
+          error instanceof Error ? error.message : "Unknown error"
         }`,
         {
-          type: 'error',
+          type: "error",
           symbol: underlyingSymbol,
-        }
+        },
       );
       return [];
     }
@@ -1367,7 +1565,7 @@ export class AlpacaTradingAPI {
     try {
       const params: GetOptionContractsParams = {
         underlying_symbols: [underlyingSymbol],
-        status: 'active',
+        status: "active",
         limit: 1000, // Get a large number to ensure we get contracts with all expiration dates
       };
 
@@ -1386,12 +1584,12 @@ export class AlpacaTradingAPI {
     } catch (error) {
       this.log(
         `Failed to fetch expiration dates for ${underlyingSymbol}: ${
-          error instanceof Error ? error.message : 'Unknown error'
+          error instanceof Error ? error.message : "Unknown error"
         }`,
         {
-          type: 'error',
+          type: "error",
           symbol: underlyingSymbol,
-        }
+        },
       );
       return [];
     }
@@ -1402,7 +1600,7 @@ export class AlpacaTradingAPI {
    * @returns The options trading level (0-3)
    */
   async getOptionsTradingLevel(): Promise<number> {
-    this.log('Fetching options trading level');
+    this.log("Fetching options trading level");
 
     const accountDetails = await this.getAccountDetails();
     return accountDetails.options_trading_level || 0;
@@ -1413,7 +1611,7 @@ export class AlpacaTradingAPI {
    * @returns Boolean indicating if options trading is enabled
    */
   async isOptionsEnabled(): Promise<boolean> {
-    this.log('Checking if options trading is enabled');
+    this.log("Checking if options trading is enabled");
 
     const accountDetails = await this.getAccountDetails();
 
@@ -1435,38 +1633,51 @@ export class AlpacaTradingAPI {
    * @returns Response from the close positions request
    */
   async closeAllOptionPositions(cancelOrders: boolean = true): Promise<void> {
-    this.log(`Closing all option positions${cancelOrders ? ' and canceling related orders' : ''}`);
+    this.log(
+      `Closing all option positions${cancelOrders ? " and canceling related orders" : ""}`,
+    );
 
     const optionPositions = await this.getOptionPositions();
 
     if (optionPositions.length === 0) {
-      this.log('No option positions to close');
+      this.log("No option positions to close");
       return;
     }
 
     // Create market orders to close each position
     for (const position of optionPositions) {
-      const side = position.side === 'long' ? 'sell' : 'buy';
-      const positionIntent = side === 'sell' ? 'sell_to_close' : 'buy_to_close';
+      const side = position.side === "long" ? "sell" : "buy";
+      const positionIntent = side === "sell" ? "sell_to_close" : "buy_to_close";
 
-      this.log(`Closing ${position.side} position of ${position.qty} contracts for ${position.symbol}`, {
-        symbol: position.symbol,
-      });
+      this.log(
+        `Closing ${position.side} position of ${position.qty} contracts for ${position.symbol}`,
+        {
+          symbol: position.symbol,
+        },
+      );
 
-      await this.createOptionOrder(position.symbol, parseInt(position.qty), side, positionIntent, 'market');
+      await this.createOptionOrder(
+        position.symbol,
+        parseInt(position.qty),
+        side,
+        positionIntent,
+        "market",
+      );
     }
 
     if (cancelOrders) {
       // Get all open option orders
-      const orders = await this.getOrders({ status: 'open' });
-      const optionOrders = orders.filter((order) => order.asset_class === 'us_option');
+      const orders = await this.getOrders({ status: "open" });
+      const optionOrders = orders.filter(
+        (order) => order.asset_class === "us_option",
+      );
 
       // Cancel each open option order
       for (const order of optionOrders) {
         this.log(`Canceling open order for ${order.symbol}`, {
           symbol: order.symbol,
         });
-        await this.makeRequest(`/orders/${order.id}`, 'DELETE');
+        await this.makeRequest(`/orders/${order.id}`, "DELETE");
       }
     }
   }
@@ -1477,10 +1688,16 @@ export class AlpacaTradingAPI {
    * @param qty Optional quantity to close (defaults to entire position)
    * @returns The created order
    */
-  async closeOptionPosition(symbol: string, qty?: number): Promise<AlpacaOrder> {
-    this.log(`Closing option position for ${symbol}${qty ? ` (${qty} contracts)` : ''}`, {
-      symbol,
-    });
+  async closeOptionPosition(
+    symbol: string,
+    qty?: number,
+  ): Promise<AlpacaOrder> {
+    this.log(
+      `Closing option position for ${symbol}${qty ? ` (${qty} contracts)` : ""}`,
+      {
+        symbol,
+      },
+    );
 
     // Get the position details
     const positions = await this.getOptionPositions();
@@ -1491,13 +1708,19 @@ export class AlpacaTradingAPI {
     }
 
     const quantityToClose = qty || parseInt(position.qty);
-    const side = position.side === 'long' ? 'sell' : 'buy';
-    const positionIntent = side === 'sell' ? 'sell_to_close' : 'buy_to_close';
+    const side = position.side === "long" ? "sell" : "buy";
+    const positionIntent = side === "sell" ? "sell_to_close" : "buy_to_close";
 
     try {
-      return await this.createOptionOrder(symbol, quantityToClose, side, positionIntent, 'market');
+      return await this.createOptionOrder(
+        symbol,
+        quantityToClose,
+        side,
+        positionIntent,
+        "market",
+      );
     } catch (error) {
-      this.log(`Error closing option position: ${error}`, { type: 'error' });
+      this.log(`Error closing option position: ${error}`, { type: "error" });
       throw error;
     }
   }
@@ -1512,11 +1735,11 @@ export class AlpacaTradingAPI {
     params: {
       symbol: string;
       qty: number;
-      side: 'buy' | 'sell';
+      side: "buy" | "sell";
       referencePrice?: number;
     },
     options?: {
-      type?: 'market' | 'limit';
+      type?: "market" | "limit";
       limitPrice?: number;
       extendedHours?: boolean;
       useStopLoss?: boolean;
@@ -1526,11 +1749,11 @@ export class AlpacaTradingAPI {
       takeProfitPrice?: number;
       takeProfitPercent100?: number;
       clientOrderId?: string;
-    }
+    },
   ): Promise<AlpacaOrder> {
     const { symbol, qty, side, referencePrice } = params;
     const {
-      type = 'market',
+      type = "market",
       limitPrice,
       extendedHours = false,
       useStopLoss = false,
@@ -1543,21 +1766,21 @@ export class AlpacaTradingAPI {
     } = options || {};
 
     // Validation: Extended hours + market order is not allowed
-    if (extendedHours && type === 'market') {
-      this.log('Cannot create market order with extended hours enabled', {
+    if (extendedHours && type === "market") {
+      this.log("Cannot create market order with extended hours enabled", {
         symbol,
-        type: 'error',
+        type: "error",
       });
-      throw new Error('Cannot create market order with extended hours enabled');
+      throw new Error("Cannot create market order with extended hours enabled");
     }
 
     // Validation: Limit orders require limit price
-    if (type === 'limit' && limitPrice === undefined) {
-      this.log('Limit price is required for limit orders', {
+    if (type === "limit" && limitPrice === undefined) {
+      this.log("Limit price is required for limit orders", {
         symbol,
-        type: 'error',
+        type: "error",
       });
-      throw new Error('Limit price is required for limit orders');
+      throw new Error("Limit price is required for limit orders");
     }
 
     let calculatedStopPrice: number | undefined;
@@ -1566,25 +1789,32 @@ export class AlpacaTradingAPI {
     // Handle stop loss validation and calculation
     if (useStopLoss) {
       if (stopPrice === undefined && stopPercent100 === undefined) {
-        this.log('Either stopPrice or stopPercent100 must be provided when useStopLoss is true', {
-          symbol,
-          type: 'error',
-        });
-        throw new Error('Either stopPrice or stopPercent100 must be provided when useStopLoss is true');
+        this.log(
+          "Either stopPrice or stopPercent100 must be provided when useStopLoss is true",
+          {
+            symbol,
+            type: "error",
+          },
+        );
+        throw new Error(
+          "Either stopPrice or stopPercent100 must be provided when useStopLoss is true",
+        );
       }
 
       if (stopPercent100 !== undefined) {
         if (referencePrice === undefined) {
-          this.log('referencePrice is required when using stopPercent100', {
+          this.log("referencePrice is required when using stopPercent100", {
             symbol,
-            type: 'error',
+            type: "error",
           });
-          throw new Error('referencePrice is required when using stopPercent100');
+          throw new Error(
+            "referencePrice is required when using stopPercent100",
+          );
         }
 
         // Calculate stop price based on percentage and side
         const stopPercentDecimal = stopPercent100 / 100;
-        if (side === 'buy') {
+        if (side === "buy") {
           // For buy orders, stop loss is below the reference price
           calculatedStopPrice = referencePrice * (1 - stopPercentDecimal);
         } else {
@@ -1599,30 +1829,42 @@ export class AlpacaTradingAPI {
     // Handle take profit validation and calculation
     if (useTakeProfit) {
       if (takeProfitPrice === undefined && takeProfitPercent100 === undefined) {
-        this.log('Either takeProfitPrice or takeProfitPercent100 must be provided when useTakeProfit is true', {
-          symbol,
-          type: 'error',
-        });
-        throw new Error('Either takeProfitPrice or takeProfitPercent100 must be provided when useTakeProfit is true');
+        this.log(
+          "Either takeProfitPrice or takeProfitPercent100 must be provided when useTakeProfit is true",
+          {
+            symbol,
+            type: "error",
+          },
+        );
+        throw new Error(
+          "Either takeProfitPrice or takeProfitPercent100 must be provided when useTakeProfit is true",
+        );
       }
 
       if (takeProfitPercent100 !== undefined) {
         if (referencePrice === undefined) {
-          this.log('referencePrice is required when using takeProfitPercent100', {
-            symbol,
-            type: 'error',
-          });
-          throw new Error('referencePrice is required when using takeProfitPercent100');
+          this.log(
+            "referencePrice is required when using takeProfitPercent100",
+            {
+              symbol,
+              type: "error",
+            },
+          );
+          throw new Error(
+            "referencePrice is required when using takeProfitPercent100",
+          );
         }
 
         // Calculate take profit price based on percentage and side
         const takeProfitPercentDecimal = takeProfitPercent100 / 100;
-        if (side === 'buy') {
+        if (side === "buy") {
           // For buy orders, take profit is above the reference price
-          calculatedTakeProfitPrice = referencePrice * (1 + takeProfitPercentDecimal);
+          calculatedTakeProfitPrice =
+            referencePrice * (1 + takeProfitPercentDecimal);
         } else {
           // For sell orders, take profit is below the reference price
-          calculatedTakeProfitPrice = referencePrice * (1 - takeProfitPercentDecimal);
+          calculatedTakeProfitPrice =
+            referencePrice * (1 - takeProfitPercentDecimal);
         }
       } else {
         calculatedTakeProfitPrice = takeProfitPrice;
@@ -1630,11 +1872,11 @@ export class AlpacaTradingAPI {
     }
 
     // Determine order class based on what's enabled
-    let orderClass: 'simple' | 'oto' | 'bracket' = 'simple';
+    let orderClass: "simple" | "oto" | "bracket" = "simple";
     if (useStopLoss && useTakeProfit) {
-      orderClass = 'bracket';
+      orderClass = "bracket";
     } else if (useStopLoss || useTakeProfit) {
-      orderClass = 'oto';
+      orderClass = "oto";
     }
 
     // Build the order request
@@ -1643,10 +1885,10 @@ export class AlpacaTradingAPI {
       qty: Math.abs(qty).toString(),
       side,
       type,
-      time_in_force: 'day',
+      time_in_force: "day",
       order_class: orderClass,
       extended_hours: extendedHours,
-      position_intent: side === 'buy' ? 'buy_to_open' : 'sell_to_open',
+      position_intent: side === "buy" ? "buy_to_open" : "sell_to_open",
     };
 
     if (clientOrderId) {
@@ -1654,7 +1896,7 @@ export class AlpacaTradingAPI {
     }
 
     // Add limit price for limit orders
-    if (type === 'limit' && limitPrice !== undefined) {
+    if (type === "limit" && limitPrice !== undefined) {
       orderData.limit_price = this.roundPriceForAlpaca(limitPrice).toString();
     }
 
@@ -1668,26 +1910,30 @@ export class AlpacaTradingAPI {
     // Add take profit if enabled
     if (useTakeProfit && calculatedTakeProfitPrice !== undefined) {
       orderData.take_profit = {
-        limit_price: this.roundPriceForAlpaca(calculatedTakeProfitPrice).toString(),
+        limit_price: this.roundPriceForAlpaca(
+          calculatedTakeProfitPrice,
+        ).toString(),
       };
     }
 
     const logMessage = `Creating ${orderClass} ${type} ${side} order for ${symbol}: ${qty} shares${
-      type === 'limit' ? ` at $${limitPrice?.toFixed(2)}` : ''
-    }${useStopLoss ? ` with stop loss at $${calculatedStopPrice?.toFixed(2)}` : ''}${
-      useTakeProfit ? ` with take profit at $${calculatedTakeProfitPrice?.toFixed(2)}` : ''
-    }${extendedHours ? ' (extended hours)' : ''}`;
+      type === "limit" ? ` at $${limitPrice?.toFixed(2)}` : ""
+    }${useStopLoss ? ` with stop loss at $${calculatedStopPrice?.toFixed(2)}` : ""}${
+      useTakeProfit
+        ? ` with take profit at $${calculatedTakeProfitPrice?.toFixed(2)}`
+        : ""
+    }${extendedHours ? " (extended hours)" : ""}`;
 
     this.log(logMessage, {
       symbol,
     });
 
     try {
-      return await this.makeRequest('/orders', 'POST', orderData);
+      return await this.makeRequest("/orders", "POST", orderData);
     } catch (error) {
       this.log(`Error creating equities trade: ${error}`, {
         symbol,
-        type: 'error',
+        type: "error",
       });
       throw error;
     }

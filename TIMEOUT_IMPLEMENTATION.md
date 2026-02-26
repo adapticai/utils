@@ -78,7 +78,7 @@ export {
   withTimeout,
   createTimeoutSignal,
   getTimeout,
-} from './http-timeout';
+} from "./http-timeout";
 ```
 
 ## Usage Examples
@@ -86,23 +86,25 @@ export {
 ### Using with fetch API (Recommended)
 
 ```typescript
-import { createTimeoutSignal, DEFAULT_TIMEOUTS } from '@adaptic/utils';
+import { createTimeoutSignal, DEFAULT_TIMEOUTS } from "@adaptic/utils";
 
 const response = await fetch(url, {
   signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
-  headers: { /* ... */ },
+  headers: {
+    /* ... */
+  },
 });
 ```
 
 ### Wrapping existing promises
 
 ```typescript
-import { withTimeout, DEFAULT_TIMEOUTS } from '@adaptic/utils';
+import { withTimeout, DEFAULT_TIMEOUTS } from "@adaptic/utils";
 
 const result = await withTimeout(
   someAsyncOperation(),
   DEFAULT_TIMEOUTS.GENERAL,
-  'Operation Name'
+  "Operation Name",
 );
 ```
 
@@ -130,6 +132,7 @@ export HTTP_TIMEOUT=30000             # Default for unspecified APIs
 ### Error Handling
 
 When a timeout occurs:
+
 - Fetch calls with `AbortSignal.timeout()` will throw an `AbortError`
 - `withTimeout()` wrapper will throw: `Error: Request timeout after {ms}ms: {label}`
 
@@ -139,9 +142,9 @@ Applications should handle these timeout errors appropriately:
 try {
   const data = await fetchData();
 } catch (error) {
-  if (error.name === 'AbortError' || error.message.includes('timeout')) {
+  if (error.name === "AbortError" || error.message.includes("timeout")) {
     // Handle timeout
-    console.error('Request timed out');
+    console.error("Request timed out");
   }
   throw error;
 }

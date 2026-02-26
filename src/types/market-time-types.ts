@@ -1,8 +1,20 @@
-export type Period = "1D" | "3D" | "1W" | "2W" | "1M" | "3M" | "6M" | "1Y" | "YTD";
+export type Period =
+  | "1D"
+  | "3D"
+  | "1W"
+  | "2W"
+  | "1M"
+  | "3M"
+  | "6M"
+  | "1Y"
+  | "YTD";
 
 export type Timeframe = "1Min" | "5Min" | "15Min" | "1H" | "1D";
 
-export type IntradayReporting = 'market_hours' | 'extended_hours' | 'continuous';
+export type IntradayReporting =
+  | "market_hours"
+  | "extended_hours"
+  | "continuous";
 
 export interface PeriodDates {
   start: string | number;
@@ -19,7 +31,7 @@ export interface MarketTimeParams {
   outputFormat?: OutputFormat;
 }
 
-export type OutputFormat = 'iso' | 'unix-seconds' | 'unix-ms';
+export type OutputFormat = "iso" | "unix-seconds" | "unix-ms";
 
 export interface MarketOpenCloseResult {
   marketOpen: boolean;
@@ -29,8 +41,14 @@ export interface MarketOpenCloseResult {
   closeExt: Date | null;
 }
 
-export type MarketStatusName = 'closed' | 'extended hours' | 'open' | 'unknown';
-export type MarketPeriodName = 'preMarket' | 'earlyMarket' | 'regularMarket' | 'afterMarket' | 'closed' | 'unknown';
+export type MarketStatusName = "closed" | "extended hours" | "open" | "unknown";
+export type MarketPeriodName =
+  | "preMarket"
+  | "earlyMarket"
+  | "regularMarket"
+  | "afterMarket"
+  | "closed"
+  | "unknown";
 
 export interface MarketStatus {
   time: Date;

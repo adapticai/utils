@@ -24,34 +24,34 @@
  * await stream.connect();
  * ```
  */
-import { AlpacaClient } from '../client';
-import { BaseStream, StreamConfig } from './base-stream';
-import { TradeUpdate } from '../../types/alpaca-types';
-import { getTradingWebSocketUrl } from '../../config/api-endpoints';
+import { AlpacaClient } from "../client";
+import { BaseStream, StreamConfig } from "./base-stream";
+import { TradeUpdate } from "../../types/alpaca-types";
+import { getTradingWebSocketUrl } from "../../config/api-endpoints";
 
 /**
  * Trading stream event names representing all possible order status changes.
  * These events are emitted when order state changes occur.
  */
 export type TradingStreamEvent =
-  | 'new'                     // Order has been received and created
-  | 'fill'                    // Order has been completely filled
-  | 'partial_fill'            // Order has been partially filled
-  | 'canceled'                // Order has been canceled
-  | 'expired'                 // Order has expired (e.g., day order at market close)
-  | 'done_for_day'            // Order is done for the day (not canceled or expired)
-  | 'replaced'                // Order has been replaced by another order
-  | 'rejected'                // Order has been rejected
-  | 'pending_new'             // Order is pending acceptance
-  | 'pending_cancel'          // Order cancellation is pending
-  | 'pending_replace'         // Order replacement is pending
-  | 'calculated'              // Order has been calculated (for multi-leg orders)
-  | 'suspended'               // Order has been suspended
-  | 'order_cancel_rejected'   // Order cancellation was rejected
-  | 'order_replace_rejected'  // Order replacement was rejected
-  | 'stopped'                 // Order has been stopped
-  | 'accepted'                // Order has been accepted
-  | 'accepted_for_bidding';   // Order has been accepted for bidding (auction)
+  | "new" // Order has been received and created
+  | "fill" // Order has been completely filled
+  | "partial_fill" // Order has been partially filled
+  | "canceled" // Order has been canceled
+  | "expired" // Order has expired (e.g., day order at market close)
+  | "done_for_day" // Order is done for the day (not canceled or expired)
+  | "replaced" // Order has been replaced by another order
+  | "rejected" // Order has been rejected
+  | "pending_new" // Order is pending acceptance
+  | "pending_cancel" // Order cancellation is pending
+  | "pending_replace" // Order replacement is pending
+  | "calculated" // Order has been calculated (for multi-leg orders)
+  | "suspended" // Order has been suspended
+  | "order_cancel_rejected" // Order cancellation was rejected
+  | "order_replace_rejected" // Order replacement was rejected
+  | "stopped" // Order has been stopped
+  | "accepted" // Order has been accepted
+  | "accepted_for_bidding"; // Order has been accepted for bidding (auction)
 
 /**
  * Trading stream event map for type-safe event handling.
@@ -59,36 +59,36 @@ export type TradingStreamEvent =
  */
 export interface TradingStreamEventMap {
   /** Generic trade update event - emitted for all order changes */
-  'trade_update': TradeUpdate;
+  trade_update: TradeUpdate;
   /** Emitted when stream is authenticated */
-  'authenticated': void;
+  authenticated: void;
   /** Emitted when stream is connected */
-  'connected': void;
+  connected: void;
   /** Emitted when stream is disconnected */
-  'disconnected': { code: number; reason: string };
+  disconnected: { code: number; reason: string };
   /** Emitted on stream errors */
-  'error': Error;
+  error: Error;
   /** Emitted when max reconnection attempts reached */
-  'max_reconnects': void;
+  max_reconnects: void;
   // Individual event types for specific order state changes
-  'new': TradeUpdate;
-  'fill': TradeUpdate;
-  'partial_fill': TradeUpdate;
-  'canceled': TradeUpdate;
-  'expired': TradeUpdate;
-  'done_for_day': TradeUpdate;
-  'replaced': TradeUpdate;
-  'rejected': TradeUpdate;
-  'pending_new': TradeUpdate;
-  'pending_cancel': TradeUpdate;
-  'pending_replace': TradeUpdate;
-  'calculated': TradeUpdate;
-  'suspended': TradeUpdate;
-  'order_cancel_rejected': TradeUpdate;
-  'order_replace_rejected': TradeUpdate;
-  'stopped': TradeUpdate;
-  'accepted': TradeUpdate;
-  'accepted_for_bidding': TradeUpdate;
+  new: TradeUpdate;
+  fill: TradeUpdate;
+  partial_fill: TradeUpdate;
+  canceled: TradeUpdate;
+  expired: TradeUpdate;
+  done_for_day: TradeUpdate;
+  replaced: TradeUpdate;
+  rejected: TradeUpdate;
+  pending_new: TradeUpdate;
+  pending_cancel: TradeUpdate;
+  pending_replace: TradeUpdate;
+  calculated: TradeUpdate;
+  suspended: TradeUpdate;
+  order_cancel_rejected: TradeUpdate;
+  order_replace_rejected: TradeUpdate;
+  stopped: TradeUpdate;
+  accepted: TradeUpdate;
+  accepted_for_bidding: TradeUpdate;
 }
 
 /**
@@ -101,9 +101,10 @@ export interface TradingStreamEventMap {
  * @extends BaseStream
  */
 export class TradingStream extends BaseStream {
-  protected readonly streamName = 'TradingStream';
+  protected readonly streamName = "TradingStream";
   private tradeUpdateCallback: ((update: TradeUpdate) => void) | null = null;
-  private orderCallbacks: Map<string, (update: TradeUpdate) => void> = new Map();
+  private orderCallbacks: Map<string, (update: TradeUpdate) => void> =
+    new Map();
 
   constructor(client: AlpacaClient, config: Partial<StreamConfig> = {}) {
     super(client, config);
@@ -113,7 +114,7 @@ export class TradingStream extends BaseStream {
    * Get the WebSocket URL for trading stream
    */
   protected getStreamUrl(): string {
-    return getTradingWebSocketUrl(this.client.isPaper() ? 'PAPER' : 'LIVE');
+    return getTradingWebSocketUrl(this.client.isPaper() ? "PAPER" : "LIVE");
   }
 
   /**
@@ -122,36 +123,38 @@ export class TradingStream extends BaseStream {
   protected authenticate(): Promise<void> {
     return new Promise((resolve, reject) => {
       if (!this.ws || this.ws.readyState !== 1) {
-        reject(new Error('WebSocket not ready for authentication'));
+        reject(new Error("WebSocket not ready for authentication"));
         return;
       }
 
       const config = this.client.getConfig();
       const authMessage = {
-        action: 'auth',
+        action: "auth",
         key: config.apiKey,
         secret: config.apiSecret,
       };
 
       const authTimeout = setTimeout(() => {
-        reject(new Error('Authentication timeout'));
+        reject(new Error("Authentication timeout"));
       }, this.config.authTimeout);
 
       const handleAuthResponse = (data: Buffer | ArrayBuffer | Buffer[]) => {
         try {
           const message = JSON.parse(data.toString());
-          if (message.stream === 'authorization') {
+          if (message.stream === "authorization") {
             clearTimeout(authTimeout);
-            this.ws?.removeListener('message', handleAuthResponse);
+            this.ws?.removeListener("message", handleAuthResponse);
 
-            if (message.data?.status === 'authorized') {
-              this.state = 'authenticated';
-              this.log('Trading stream authenticated');
-              this.emit('authenticated');
+            if (message.data?.status === "authorized") {
+              this.state = "authenticated";
+              this.log("Trading stream authenticated");
+              this.emit("authenticated");
               this.subscribeToTradeUpdates();
               resolve();
             } else {
-              reject(new Error(message.data?.message || 'Authentication failed'));
+              reject(
+                new Error(message.data?.message || "Authentication failed"),
+              );
             }
           }
         } catch (error) {
@@ -159,7 +162,7 @@ export class TradingStream extends BaseStream {
         }
       };
 
-      this.ws.on('message', handleAuthResponse);
+      this.ws.on("message", handleAuthResponse);
       this.ws.send(JSON.stringify(authMessage));
     });
   }
@@ -169,18 +172,20 @@ export class TradingStream extends BaseStream {
    */
   private subscribeToTradeUpdates(): void {
     if (!this.ws || this.ws.readyState !== 1) {
-      this.log('Cannot subscribe to trade updates: WebSocket not ready', { type: 'warn' });
+      this.log("Cannot subscribe to trade updates: WebSocket not ready", {
+        type: "warn",
+      });
       return;
     }
 
     const listenMessage = {
-      action: 'listen',
+      action: "listen",
       data: {
-        streams: ['trade_updates'],
+        streams: ["trade_updates"],
       },
     };
 
-    this.log('Subscribing to trade updates');
+    this.log("Subscribing to trade updates");
     this.ws.send(JSON.stringify(listenMessage));
   }
 
@@ -192,20 +197,20 @@ export class TradingStream extends BaseStream {
     const data = message.data as Record<string, unknown>;
 
     switch (stream) {
-      case 'authorization':
+      case "authorization":
         // Already handled in authenticate
         break;
 
-      case 'listening':
+      case "listening":
         this.handleListeningMessage(data);
         break;
 
-      case 'trade_updates':
+      case "trade_updates":
         this.handleTradeUpdate(data as unknown as TradeUpdate);
         break;
 
       default:
-        this.log(`Unknown stream type: ${stream}`, { type: 'debug' });
+        this.log(`Unknown stream type: ${stream}`, { type: "debug" });
     }
   }
 
@@ -214,8 +219,8 @@ export class TradingStream extends BaseStream {
    */
   private handleListeningMessage(data: Record<string, unknown>): void {
     const streams = data.streams as string[] | undefined;
-    if (streams?.includes('trade_updates')) {
-      this.log('Successfully subscribed to trade updates');
+    if (streams?.includes("trade_updates")) {
+      this.log("Successfully subscribed to trade updates");
     }
   }
 
@@ -224,7 +229,7 @@ export class TradingStream extends BaseStream {
    */
   private handleTradeUpdate(update: TradeUpdate): void {
     // Emit the generic trade_update event
-    this.emit('trade_update', update);
+    this.emit("trade_update", update);
 
     // Emit specific event based on update type
     const event = update.event as TradingStreamEvent;
@@ -248,7 +253,7 @@ export class TradingStream extends BaseStream {
 
     this.log(
       `Trade update: ${update.event} for ${update.order.symbol} (${update.order.side} ${update.order.qty || update.order.notional})`,
-      { type: 'debug', symbol: update.order.symbol }
+      { type: "debug", symbol: update.order.symbol },
     );
   }
 
@@ -256,7 +261,9 @@ export class TradingStream extends BaseStream {
    * Check if an event represents a terminal order state
    */
   private isTerminalState(event: string): boolean {
-    return ['fill', 'canceled', 'expired', 'rejected', 'replaced'].includes(event);
+    return ["fill", "canceled", "expired", "rejected", "replaced"].includes(
+      event,
+    );
   }
 
   /**
@@ -283,7 +290,7 @@ export class TradingStream extends BaseStream {
    */
   watchOrder(orderId: string, callback: (update: TradeUpdate) => void): void {
     this.orderCallbacks.set(orderId, callback);
-    this.log(`Watching order: ${orderId}`, { type: 'debug' });
+    this.log(`Watching order: ${orderId}`, { type: "debug" });
   }
 
   /**
@@ -293,7 +300,7 @@ export class TradingStream extends BaseStream {
    */
   unwatchOrder(orderId: string): void {
     this.orderCallbacks.delete(orderId);
-    this.log(`Unwatched order: ${orderId}`, { type: 'debug' });
+    this.log(`Unwatched order: ${orderId}`, { type: "debug" });
   }
 
   /**
@@ -318,7 +325,10 @@ export class TradingStream extends BaseStream {
    * console.log(`Order ${finalUpdate.event}: ${finalUpdate.order.filled_qty} filled`);
    * ```
    */
-  waitForOrderCompletion(orderId: string, timeoutMs: number = 30000): Promise<TradeUpdate> {
+  waitForOrderCompletion(
+    orderId: string,
+    timeoutMs: number = 30000,
+  ): Promise<TradeUpdate> {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         this.unwatchOrder(orderId);
@@ -339,25 +349,36 @@ export class TradingStream extends BaseStream {
    * Emits 'max_reconnects' event when maximum attempts are reached.
    */
   protected scheduleReconnect(): void {
-    if (this.config.maxReconnectAttempts > 0 && this.reconnectAttempts >= this.config.maxReconnectAttempts) {
-      this.log(`Max reconnection attempts (${this.config.maxReconnectAttempts}) reached`, { type: 'error' });
-      this.emit('max_reconnects');
+    if (
+      this.config.maxReconnectAttempts > 0 &&
+      this.reconnectAttempts >= this.config.maxReconnectAttempts
+    ) {
+      this.log(
+        `Max reconnection attempts (${this.config.maxReconnectAttempts}) reached`,
+        { type: "error" },
+      );
+      this.emit("max_reconnects");
       return;
     }
 
     this.reconnectAttempts++;
     // Exponential backoff capped at 5x the base delay
-    const delay = this.config.reconnectDelay * Math.min(this.reconnectAttempts, 5);
+    const delay =
+      this.config.reconnectDelay * Math.min(this.reconnectAttempts, 5);
 
-    this.log(`Scheduling reconnection attempt ${this.reconnectAttempts} in ${delay}ms`);
+    this.log(
+      `Scheduling reconnection attempt ${this.reconnectAttempts} in ${delay}ms`,
+    );
 
     setTimeout(async () => {
       try {
         await this.connect();
-        this.log('Reconnection successful');
-        this.emit('connected');
+        this.log("Reconnection successful");
+        this.emit("connected");
       } catch (error) {
-        this.log(`Reconnection failed: ${(error as Error).message}`, { type: 'error' });
+        this.log(`Reconnection failed: ${(error as Error).message}`, {
+          type: "error",
+        });
         // The handleClose will trigger another scheduleReconnect
       }
     }, delay);
@@ -368,7 +389,7 @@ export class TradingStream extends BaseStream {
    */
   on<K extends keyof TradingStreamEventMap>(
     event: K,
-    listener: (data: TradingStreamEventMap[K]) => void
+    listener: (data: TradingStreamEventMap[K]) => void,
   ): this {
     return super.on(event, listener as (...args: unknown[]) => void);
   }
@@ -378,7 +399,7 @@ export class TradingStream extends BaseStream {
    */
   once<K extends keyof TradingStreamEventMap>(
     event: K,
-    listener: (data: TradingStreamEventMap[K]) => void
+    listener: (data: TradingStreamEventMap[K]) => void,
   ): this {
     return super.once(event, listener as (...args: unknown[]) => void);
   }
@@ -388,7 +409,7 @@ export class TradingStream extends BaseStream {
    */
   emit<K extends keyof TradingStreamEventMap>(
     event: K,
-    data?: TradingStreamEventMap[K]
+    data?: TradingStreamEventMap[K],
   ): boolean {
     return super.emit(event, data);
   }
@@ -398,7 +419,7 @@ export class TradingStream extends BaseStream {
    */
   off<K extends keyof TradingStreamEventMap>(
     event: K,
-    listener: (data: TradingStreamEventMap[K]) => void
+    listener: (data: TradingStreamEventMap[K]) => void,
   ): this {
     return super.off(event, listener as (...args: unknown[]) => void);
   }
@@ -409,7 +430,7 @@ export class TradingStream extends BaseStream {
  */
 export function createTradingStream(
   client: AlpacaClient,
-  config: Partial<StreamConfig> = {}
+  config: Partial<StreamConfig> = {},
 ): TradingStream {
   return new TradingStream(client, config);
 }

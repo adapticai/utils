@@ -3,9 +3,9 @@
  * Real-time and historical cryptocurrency data
  * Crypto data is available 24/7
  */
-import { AlpacaClient } from '../client';
-import { log as baseLog } from '../../logging';
-import { LogOptions } from '../../types/logging-types';
+import { AlpacaClient } from "../client";
+import { log as baseLog } from "../../logging";
+import { LogOptions } from "../../types/logging-types";
 import {
   CryptoBar,
   CryptoPair,
@@ -14,14 +14,14 @@ import {
   USDTPairs,
   USDCPairs,
   USDPairs,
-} from '../../types/alpaca-types';
+} from "../../types/alpaca-types";
 
-const LOG_SOURCE = 'CryptoData';
+const LOG_SOURCE = "CryptoData";
 
 /**
  * Internal logging helper with consistent source
  */
-const log = (message: string, options: LogOptions = { type: 'info' }) => {
+const log = (message: string, options: LogOptions = { type: "info" }) => {
   baseLog(message, { ...options, source: LOG_SOURCE });
 };
 
@@ -33,10 +33,10 @@ export class CryptoDataError extends Error {
     message: string,
     public code: string,
     public symbol?: string,
-    public details?: unknown
+    public details?: unknown,
   ) {
     super(message);
-    this.name = 'CryptoDataError';
+    this.name = "CryptoDataError";
   }
 }
 
@@ -53,7 +53,7 @@ export interface CryptoTrade {
   /** Trade ID */
   id?: number;
   /** Taker side: 'B' for buy, 'S' for sell */
-  takerSide?: 'B' | 'S';
+  takerSide?: "B" | "S";
 }
 
 /**
@@ -87,7 +87,7 @@ export interface GetCryptoBarsParams {
   /** Maximum number of bars to return per symbol */
   limit?: number;
   /** Sort order */
-  sort?: 'asc' | 'desc';
+  sort?: "asc" | "desc";
 }
 
 /**
@@ -112,12 +112,12 @@ export interface CryptoSnapshot {
  * Normalize crypto symbol to Alpaca format
  */
 function normalizeCryptoSymbol(symbol: string): string {
-  if (symbol.includes('/')) {
+  if (symbol.includes("/")) {
     return symbol.toUpperCase();
   }
 
   const upperSymbol = symbol.toUpperCase();
-  const quoteCurrencies = ['USD', 'USDT', 'USDC', 'BTC'];
+  const quoteCurrencies = ["USD", "USDT", "USDC", "BTC"];
 
   for (const quote of quoteCurrencies) {
     if (upperSymbol.endsWith(quote)) {
@@ -135,7 +135,7 @@ function normalizeCryptoSymbol(symbol: string): string {
  * Convert date to RFC-3339 format string
  */
 function toRFC3339(date: Date | string): string {
-  if (typeof date === 'string') {
+  if (typeof date === "string") {
     return date;
   }
   return date.toISOString();
@@ -158,19 +158,25 @@ function toRFC3339(date: Date | string): string {
  */
 export async function getCryptoBars(
   client: AlpacaClient,
-  params: GetCryptoBarsParams
+  params: GetCryptoBarsParams,
 ): Promise<Map<string, CryptoBar[]>> {
   const { symbols, timeframe, start, end, limit, sort } = params;
 
   if (!symbols || symbols.length === 0) {
-    throw new CryptoDataError('At least one symbol is required', 'INVALID_SYMBOLS');
+    throw new CryptoDataError(
+      "At least one symbol is required",
+      "INVALID_SYMBOLS",
+    );
   }
 
   const normalizedSymbols = symbols.map(normalizeCryptoSymbol);
 
-  log(`Fetching crypto bars for ${normalizedSymbols.length} symbols with timeframe ${timeframe}`, {
-    type: 'debug',
-  });
+  log(
+    `Fetching crypto bars for ${normalizedSymbols.length} symbols with timeframe ${timeframe}`,
+    {
+      type: "debug",
+    },
+  );
 
   try {
     const sdk = client.getSDK();
@@ -200,12 +206,16 @@ export async function getCryptoBars(
     }
 
     // Use SDK's getCryptoBars method
-    // The SDK returns an async iterator, but TypeScript may not recognize it properly
+    // The SDK may return an async iterator or a Promise depending on the version;
+    // cast to any so TypeScript does not constrain the runtime duck-typing below.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const barsResponse = sdk.getCryptoBars(normalizedSymbols, options);
+    const barsResponse: any = sdk.getCryptoBars(normalizedSymbols, options);
 
     // Handle both async iterator and direct response formats
-    if (barsResponse && typeof barsResponse[Symbol.asyncIterator] === 'function') {
+    if (
+      barsResponse &&
+      typeof barsResponse[Symbol.asyncIterator] === "function"
+    ) {
       for await (const bar of barsResponse) {
         const symbol = bar.Symbol;
         const existingBars = result.get(symbol) || [];
@@ -250,16 +260,22 @@ export async function getCryptoBars(
               v: bar.Volume,
               n: bar.TradeCount || 0,
               vw: bar.VWAP || 0,
-            }))
+            })),
           );
         }
       }
     }
 
-    const totalBars = Array.from(result.values()).reduce((sum, bars) => sum + bars.length, 0);
-    log(`Successfully fetched ${totalBars} crypto bars for ${normalizedSymbols.length} symbols`, {
-      type: 'debug',
-    });
+    const totalBars = Array.from(result.values()).reduce(
+      (sum, bars) => sum + bars.length,
+      0,
+    );
+    log(
+      `Successfully fetched ${totalBars} crypto bars for ${normalizedSymbols.length} symbols`,
+      {
+        type: "debug",
+      },
+    );
 
     return result;
   } catch (error) {
@@ -268,13 +284,13 @@ export async function getCryptoBars(
     }
 
     const errorMessage = error instanceof Error ? error.message : String(error);
-    log(`Failed to fetch crypto bars: ${errorMessage}`, { type: 'error' });
+    log(`Failed to fetch crypto bars: ${errorMessage}`, { type: "error" });
 
     throw new CryptoDataError(
       `Failed to fetch crypto bars: ${errorMessage}`,
-      'FETCH_ERROR',
+      "FETCH_ERROR",
       undefined,
-      error
+      error,
     );
   }
 }
@@ -293,15 +309,20 @@ export async function getCryptoBars(
  */
 export async function getLatestCryptoTrades(
   client: AlpacaClient,
-  symbols: string[]
+  symbols: string[],
 ): Promise<Map<string, CryptoTrade>> {
   if (!symbols || symbols.length === 0) {
-    throw new CryptoDataError('At least one symbol is required', 'INVALID_SYMBOLS');
+    throw new CryptoDataError(
+      "At least one symbol is required",
+      "INVALID_SYMBOLS",
+    );
   }
 
   const normalizedSymbols = symbols.map(normalizeCryptoSymbol);
 
-  log(`Fetching latest crypto trades for ${normalizedSymbols.length} symbols`, { type: 'debug' });
+  log(`Fetching latest crypto trades for ${normalizedSymbols.length} symbols`, {
+    type: "debug",
+  });
 
   try {
     const sdk = client.getSDK();
@@ -316,7 +337,7 @@ export async function getLatestCryptoTrades(
         Size: number;
         Timestamp: string;
         ID?: number;
-        TakerSide?: 'B' | 'S';
+        TakerSide?: "B" | "S";
       };
 
       result.set(symbol, {
@@ -328,7 +349,10 @@ export async function getLatestCryptoTrades(
       });
     }
 
-    log(`Successfully fetched latest trades for ${result.size} crypto symbols`, { type: 'debug' });
+    log(
+      `Successfully fetched latest trades for ${result.size} crypto symbols`,
+      { type: "debug" },
+    );
 
     return result;
   } catch (error) {
@@ -337,13 +361,15 @@ export async function getLatestCryptoTrades(
     }
 
     const errorMessage = error instanceof Error ? error.message : String(error);
-    log(`Failed to fetch latest crypto trades: ${errorMessage}`, { type: 'error' });
+    log(`Failed to fetch latest crypto trades: ${errorMessage}`, {
+      type: "error",
+    });
 
     throw new CryptoDataError(
       `Failed to fetch latest crypto trades: ${errorMessage}`,
-      'FETCH_ERROR',
+      "FETCH_ERROR",
       undefined,
-      error
+      error,
     );
   }
 }
@@ -362,15 +388,20 @@ export async function getLatestCryptoTrades(
  */
 export async function getLatestCryptoQuotes(
   client: AlpacaClient,
-  symbols: string[]
+  symbols: string[],
 ): Promise<Map<string, CryptoQuote>> {
   if (!symbols || symbols.length === 0) {
-    throw new CryptoDataError('At least one symbol is required', 'INVALID_SYMBOLS');
+    throw new CryptoDataError(
+      "At least one symbol is required",
+      "INVALID_SYMBOLS",
+    );
   }
 
   const normalizedSymbols = symbols.map(normalizeCryptoSymbol);
 
-  log(`Fetching latest crypto quotes for ${normalizedSymbols.length} symbols`, { type: 'debug' });
+  log(`Fetching latest crypto quotes for ${normalizedSymbols.length} symbols`, {
+    type: "debug",
+  });
 
   try {
     const sdk = client.getSDK();
@@ -397,7 +428,10 @@ export async function getLatestCryptoQuotes(
       });
     }
 
-    log(`Successfully fetched latest quotes for ${result.size} crypto symbols`, { type: 'debug' });
+    log(
+      `Successfully fetched latest quotes for ${result.size} crypto symbols`,
+      { type: "debug" },
+    );
 
     return result;
   } catch (error) {
@@ -406,13 +440,15 @@ export async function getLatestCryptoQuotes(
     }
 
     const errorMessage = error instanceof Error ? error.message : String(error);
-    log(`Failed to fetch latest crypto quotes: ${errorMessage}`, { type: 'error' });
+    log(`Failed to fetch latest crypto quotes: ${errorMessage}`, {
+      type: "error",
+    });
 
     throw new CryptoDataError(
       `Failed to fetch latest crypto quotes: ${errorMessage}`,
-      'FETCH_ERROR',
+      "FETCH_ERROR",
       undefined,
-      error
+      error,
     );
   }
 }
@@ -431,11 +467,14 @@ export async function getLatestCryptoQuotes(
  */
 export async function getCryptoPrice(
   client: AlpacaClient,
-  symbol: string
+  symbol: string,
 ): Promise<number> {
   const normalizedSymbol = normalizeCryptoSymbol(symbol);
 
-  log(`Fetching price for ${normalizedSymbol}`, { type: 'debug', symbol: normalizedSymbol });
+  log(`Fetching price for ${normalizedSymbol}`, {
+    type: "debug",
+    symbol: normalizedSymbol,
+  });
 
   const trades = await getLatestCryptoTrades(client, [normalizedSymbol]);
   const trade = trades.get(normalizedSymbol);
@@ -443,8 +482,8 @@ export async function getCryptoPrice(
   if (!trade) {
     throw new CryptoDataError(
       `No price data available for ${normalizedSymbol}`,
-      'NO_DATA',
-      normalizedSymbol
+      "NO_DATA",
+      normalizedSymbol,
     );
   }
 
@@ -464,11 +503,19 @@ export async function getCryptoPrice(
  */
 export async function getCryptoSpread(
   client: AlpacaClient,
-  symbol: string
-): Promise<{ bid: number; ask: number; spread: number; spreadPercent: number }> {
+  symbol: string,
+): Promise<{
+  bid: number;
+  ask: number;
+  spread: number;
+  spreadPercent: number;
+}> {
   const normalizedSymbol = normalizeCryptoSymbol(symbol);
 
-  log(`Fetching spread for ${normalizedSymbol}`, { type: 'debug', symbol: normalizedSymbol });
+  log(`Fetching spread for ${normalizedSymbol}`, {
+    type: "debug",
+    symbol: normalizedSymbol,
+  });
 
   const quotes = await getLatestCryptoQuotes(client, [normalizedSymbol]);
   const quote = quotes.get(normalizedSymbol);
@@ -476,8 +523,8 @@ export async function getCryptoSpread(
   if (!quote) {
     throw new CryptoDataError(
       `No quote data available for ${normalizedSymbol}`,
-      'NO_DATA',
-      normalizedSymbol
+      "NO_DATA",
+      normalizedSymbol,
     );
   }
 
@@ -505,15 +552,20 @@ export async function getCryptoSpread(
  */
 export async function getCryptoSnapshots(
   client: AlpacaClient,
-  symbols: string[]
+  symbols: string[],
 ): Promise<Map<string, CryptoSnapshot>> {
   if (!symbols || symbols.length === 0) {
-    throw new CryptoDataError('At least one symbol is required', 'INVALID_SYMBOLS');
+    throw new CryptoDataError(
+      "At least one symbol is required",
+      "INVALID_SYMBOLS",
+    );
   }
 
   const normalizedSymbols = symbols.map(normalizeCryptoSymbol);
 
-  log(`Fetching crypto snapshots for ${normalizedSymbols.length} symbols`, { type: 'debug' });
+  log(`Fetching crypto snapshots for ${normalizedSymbols.length} symbols`, {
+    type: "debug",
+  });
 
   try {
     const sdk = client.getSDK();
@@ -529,7 +581,7 @@ export async function getCryptoSnapshots(
           Size: number;
           Timestamp: string;
           ID?: number;
-          TakerSide?: 'B' | 'S';
+          TakerSide?: "B" | "S";
         };
         latestQuote?: {
           BidPrice: number;
@@ -636,7 +688,9 @@ export async function getCryptoSnapshots(
       result.set(symbol, cryptoSnapshot);
     }
 
-    log(`Successfully fetched snapshots for ${result.size} crypto symbols`, { type: 'debug' });
+    log(`Successfully fetched snapshots for ${result.size} crypto symbols`, {
+      type: "debug",
+    });
 
     return result;
   } catch (error) {
@@ -645,13 +699,13 @@ export async function getCryptoSnapshots(
     }
 
     const errorMessage = error instanceof Error ? error.message : String(error);
-    log(`Failed to fetch crypto snapshots: ${errorMessage}`, { type: 'error' });
+    log(`Failed to fetch crypto snapshots: ${errorMessage}`, { type: "error" });
 
     throw new CryptoDataError(
       `Failed to fetch crypto snapshots: ${errorMessage}`,
-      'FETCH_ERROR',
+      "FETCH_ERROR",
       undefined,
-      error
+      error,
     );
   }
 }
@@ -674,11 +728,14 @@ export async function getCryptoTrades(
   symbol: string,
   start: Date,
   end?: Date,
-  limit?: number
+  limit?: number,
 ): Promise<CryptoTrade[]> {
   const normalizedSymbol = normalizeCryptoSymbol(symbol);
 
-  log(`Fetching crypto trades for ${normalizedSymbol}`, { type: 'debug', symbol: normalizedSymbol });
+  log(`Fetching crypto trades for ${normalizedSymbol}`, {
+    type: "debug",
+    symbol: normalizedSymbol,
+  });
 
   try {
     const sdk = client.getSDK();
@@ -696,11 +753,16 @@ export async function getCryptoTrades(
     }
 
     const trades: CryptoTrade[] = [];
+    // The SDK may return an async iterator or a Promise depending on the version;
+    // cast to any so TypeScript does not constrain the runtime duck-typing below.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const tradesResponse = sdk.getCryptoTrades(normalizedSymbol, options);
+    const tradesResponse: any = sdk.getCryptoTrades(normalizedSymbol, options);
 
     // Handle both async iterator and direct response formats
-    if (tradesResponse && typeof tradesResponse[Symbol.asyncIterator] === 'function') {
+    if (
+      tradesResponse &&
+      typeof tradesResponse[Symbol.asyncIterator] === "function"
+    ) {
       for await (const trade of tradesResponse) {
         trades.push({
           price: trade.Price,
@@ -724,7 +786,7 @@ export async function getCryptoTrades(
           Size: number;
           Timestamp: string;
           ID?: number;
-          TakerSide?: 'B' | 'S';
+          TakerSide?: "B" | "S";
         }>;
 
         for (const trade of tradeArray) {
@@ -744,10 +806,13 @@ export async function getCryptoTrades(
       }
     }
 
-    log(`Successfully fetched ${trades.length} crypto trades for ${normalizedSymbol}`, {
-      type: 'debug',
-      symbol: normalizedSymbol,
-    });
+    log(
+      `Successfully fetched ${trades.length} crypto trades for ${normalizedSymbol}`,
+      {
+        type: "debug",
+        symbol: normalizedSymbol,
+      },
+    );
 
     return trades;
   } catch (error) {
@@ -756,13 +821,13 @@ export async function getCryptoTrades(
     }
 
     const errorMessage = error instanceof Error ? error.message : String(error);
-    log(`Failed to fetch crypto trades: ${errorMessage}`, { type: 'error' });
+    log(`Failed to fetch crypto trades: ${errorMessage}`, { type: "error" });
 
     throw new CryptoDataError(
       `Failed to fetch crypto trades: ${errorMessage}`,
-      'FETCH_ERROR',
+      "FETCH_ERROR",
       normalizedSymbol,
-      error
+      error,
     );
   }
 }
@@ -781,16 +846,20 @@ export async function getCryptoTrades(
 export async function getCryptoDailyPrices(
   client: AlpacaClient,
   symbol: string,
-  days: number
+  days: number,
 ): Promise<CryptoBar[]> {
   const normalizedSymbol = normalizeCryptoSymbol(symbol);
 
   if (days <= 0) {
-    throw new CryptoDataError('Days must be a positive number', 'INVALID_DAYS', normalizedSymbol);
+    throw new CryptoDataError(
+      "Days must be a positive number",
+      "INVALID_DAYS",
+      normalizedSymbol,
+    );
   }
 
   log(`Fetching ${days} days of daily prices for ${normalizedSymbol}`, {
-    type: 'debug',
+    type: "debug",
     symbol: normalizedSymbol,
   });
 
@@ -800,7 +869,7 @@ export async function getCryptoDailyPrices(
 
   const result = await getCryptoBars(client, {
     symbols: [normalizedSymbol],
-    timeframe: '1Day',
+    timeframe: "1Day",
     start,
     limit: days,
   });
@@ -828,7 +897,7 @@ export async function getCryptoDailyPrices(
  */
 export async function getCrypto24HourChange(
   client: AlpacaClient,
-  symbol: string
+  symbol: string,
 ): Promise<{
   currentPrice: number;
   previousPrice: number;
@@ -838,7 +907,7 @@ export async function getCrypto24HourChange(
   const normalizedSymbol = normalizeCryptoSymbol(symbol);
 
   log(`Calculating 24h change for ${normalizedSymbol}`, {
-    type: 'debug',
+    type: "debug",
     symbol: normalizedSymbol,
   });
 
@@ -848,8 +917,8 @@ export async function getCrypto24HourChange(
   if (!snapshot?.latestTrade) {
     throw new CryptoDataError(
       `No price data available for ${normalizedSymbol}`,
-      'NO_DATA',
-      normalizedSymbol
+      "NO_DATA",
+      normalizedSymbol,
     );
   }
 
@@ -864,7 +933,8 @@ export async function getCrypto24HourChange(
   }
 
   const change = currentPrice - previousPrice;
-  const changePercent = previousPrice !== 0 ? (change / previousPrice) * 100 : 0;
+  const changePercent =
+    previousPrice !== 0 ? (change / previousPrice) * 100 : 0;
 
   return {
     currentPrice,
@@ -881,72 +951,77 @@ export async function getCrypto24HourChange(
 /**
  * All supported BTC trading pairs
  */
-export const BTC_PAIRS: BTCPairs[] = ['BCH/BTC', 'ETH/BTC', 'LTC/BTC', 'UNI/BTC'];
+export const BTC_PAIRS: BTCPairs[] = [
+  "BCH/BTC",
+  "ETH/BTC",
+  "LTC/BTC",
+  "UNI/BTC",
+];
 
 /**
  * All supported USDT trading pairs
  */
 export const USDT_PAIRS: USDTPairs[] = [
-  'AAVE/USDT',
-  'BCH/USDT',
-  'BTC/USDT',
-  'DOGE/USDT',
-  'ETH/USDT',
-  'LINK/USDT',
-  'LTC/USDT',
-  'SUSHI/USDT',
-  'UNI/USDT',
-  'YFI/USDT',
+  "AAVE/USDT",
+  "BCH/USDT",
+  "BTC/USDT",
+  "DOGE/USDT",
+  "ETH/USDT",
+  "LINK/USDT",
+  "LTC/USDT",
+  "SUSHI/USDT",
+  "UNI/USDT",
+  "YFI/USDT",
 ];
 
 /**
  * All supported USDC trading pairs
  */
 export const USDC_PAIRS: USDCPairs[] = [
-  'AAVE/USDC',
-  'AVAX/USDC',
-  'BAT/USDC',
-  'BCH/USDC',
-  'BTC/USDC',
-  'CRV/USDC',
-  'DOGE/USDC',
-  'DOT/USDC',
-  'ETH/USDC',
-  'GRT/USDC',
-  'LINK/USDC',
-  'LTC/USDC',
-  'MKR/USDC',
-  'SHIB/USDC',
-  'SUSHI/USDC',
-  'UNI/USDC',
-  'XTZ/USDC',
-  'YFI/USDC',
+  "AAVE/USDC",
+  "AVAX/USDC",
+  "BAT/USDC",
+  "BCH/USDC",
+  "BTC/USDC",
+  "CRV/USDC",
+  "DOGE/USDC",
+  "DOT/USDC",
+  "ETH/USDC",
+  "GRT/USDC",
+  "LINK/USDC",
+  "LTC/USDC",
+  "MKR/USDC",
+  "SHIB/USDC",
+  "SUSHI/USDC",
+  "UNI/USDC",
+  "XTZ/USDC",
+  "YFI/USDC",
 ];
 
 /**
  * All supported USD trading pairs
  */
 export const USD_PAIRS: USDPairs[] = [
-  'AAVE/USD',
-  'AVAX/USD',
-  'BAT/USD',
-  'BCH/USD',
-  'BTC/USD',
-  'CRV/USD',
-  'DOGE/USD',
-  'DOT/USD',
-  'ETH/USD',
-  'GRT/USD',
-  'LINK/USD',
-  'LTC/USD',
-  'MKR/USD',
-  'SHIB/USD',
-  'SUSHI/USD',
-  'UNI/USD',
-  'USDC/USD',
-  'USDT/USD',
-  'XTZ/USD',
-  'YFI/USD',
+  "AAVE/USD",
+  "AVAX/USD",
+  "BAT/USD",
+  "BCH/USD",
+  "BTC/USD",
+  "CRV/USD",
+  "DOGE/USD",
+  "DOT/USD",
+  "ETH/USD",
+  "GRT/USD",
+  "LINK/USD",
+  "LTC/USD",
+  "MKR/USD",
+  "SHIB/USD",
+  "SUSHI/USD",
+  "UNI/USD",
+  "USDC/USD",
+  "USDT/USD",
+  "XTZ/USD",
+  "YFI/USD",
 ];
 
 /**
@@ -972,16 +1047,16 @@ export function getSupportedCryptoPairs(): CryptoPair[] {
  * const usdPairs = getCryptoPairsByQuote('USD');
  */
 export function getCryptoPairsByQuote(
-  quoteCurrency: 'USD' | 'USDC' | 'USDT' | 'BTC'
+  quoteCurrency: "USD" | "USDC" | "USDT" | "BTC",
 ): CryptoPair[] {
   switch (quoteCurrency) {
-    case 'USD':
+    case "USD":
       return USD_PAIRS;
-    case 'USDC':
+    case "USDC":
       return USDC_PAIRS;
-    case 'USDT':
+    case "USDT":
       return USDT_PAIRS;
-    case 'BTC':
+    case "BTC":
       return BTC_PAIRS;
     default:
       return [];
@@ -1012,14 +1087,14 @@ export function isSupportedCryptoPair(symbol: string): boolean {
  */
 export function getPopularCryptoPairs(): CryptoPair[] {
   return [
-    'BTC/USD',
-    'ETH/USD',
-    'DOGE/USD',
-    'LINK/USD',
-    'AVAX/USD',
-    'SHIB/USD',
-    'LTC/USD',
-    'UNI/USD',
+    "BTC/USD",
+    "ETH/USD",
+    "DOGE/USD",
+    "LINK/USD",
+    "AVAX/USD",
+    "SHIB/USD",
+    "LTC/USD",
+    "UNI/USD",
   ];
 }
 

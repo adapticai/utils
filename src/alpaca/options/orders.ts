@@ -2,9 +2,9 @@
  * Options Orders Module
  * Create and manage option orders
  */
-import { AlpacaClient } from '../client';
-import { log as baseLog } from '../../logging';
-import { LogOptions } from '../../types/logging-types';
+import { AlpacaClient } from "../client";
+import { log as baseLog } from "../../logging";
+import { LogOptions } from "../../types/logging-types";
 import {
   AlpacaOrder,
   AlpacaPosition,
@@ -13,14 +13,14 @@ import {
   CreateMultiLegOrderParams,
   OrderLeg,
   OrderStatus,
-} from '../../types/alpaca-types';
+} from "../../types/alpaca-types";
 
-const LOG_SOURCE = 'OptionsOrders';
+const LOG_SOURCE = "OptionsOrders";
 
 /**
  * Internal logging helper with consistent source
  */
-const log = (message: string, options: LogOptions = { type: 'info' }) => {
+const log = (message: string, options: LogOptions = { type: "info" }) => {
   baseLog(message, { ...options, source: LOG_SOURCE });
 };
 
@@ -37,9 +37,9 @@ export interface SingleLegOptionOrderParams {
   /** Number of contracts to trade */
   qty: number;
   /** Order side: buy or sell */
-  side: 'buy' | 'sell';
+  side: "buy" | "sell";
   /** Order type: market or limit */
-  type: 'market' | 'limit';
+  type: "market" | "limit";
   /** Limit price for limit orders (price per share, not per contract) */
   limitPrice?: number;
   /** Position intent: indicates opening or closing a position */
@@ -132,23 +132,32 @@ export interface MultiLegValidationResult {
  */
 export async function createOptionOrder(
   client: AlpacaClient,
-  params: SingleLegOptionOrderParams
+  params: SingleLegOptionOrderParams,
 ): Promise<AlpacaOrder> {
-  const { symbol, qty, side, type, limitPrice, positionIntent, timeInForce, clientOrderId } = params;
+  const {
+    symbol,
+    qty,
+    side,
+    type,
+    limitPrice,
+    positionIntent,
+    timeInForce,
+    clientOrderId,
+  } = params;
 
   log(`Creating option order: ${side} ${qty} ${symbol} (${positionIntent})`, {
-    type: 'info',
+    type: "info",
     symbol,
     metadata: { type, limitPrice, positionIntent },
   });
 
   // Validate parameters
-  if (type === 'limit' && limitPrice === undefined) {
-    throw new Error('Limit price is required for limit orders');
+  if (type === "limit" && limitPrice === undefined) {
+    throw new Error("Limit price is required for limit orders");
   }
 
   if (qty <= 0 || !Number.isInteger(qty)) {
-    throw new Error('Quantity must be a positive integer');
+    throw new Error("Quantity must be a positive integer");
   }
 
   try {
@@ -159,11 +168,11 @@ export async function createOptionOrder(
       qty: qty.toString(),
       side,
       type,
-      time_in_force: timeInForce || 'day',
+      time_in_force: timeInForce || "day",
       position_intent: positionIntent,
     };
 
-    if (type === 'limit' && limitPrice !== undefined) {
+    if (type === "limit" && limitPrice !== undefined) {
       orderParams.limit_price = limitPrice.toString();
     }
 
@@ -171,10 +180,10 @@ export async function createOptionOrder(
       orderParams.client_order_id = clientOrderId;
     }
 
-    const order = await sdk.createOrder(orderParams) as AlpacaOrder;
+    const order = (await sdk.createOrder(orderParams)) as AlpacaOrder;
 
     log(`Option order created: ${order.id}`, {
-      type: 'info',
+      type: "info",
       symbol,
       metadata: {
         orderId: order.id,
@@ -186,9 +195,10 @@ export async function createOptionOrder(
 
     return order;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
     log(`Failed to create option order for ${symbol}: ${errorMessage}`, {
-      type: 'error',
+      type: "error",
       symbol,
       metadata: { params },
     });
@@ -214,15 +224,15 @@ export async function buyToOpen(
   symbol: string,
   qty: number,
   limitPrice?: number,
-  timeInForce: TimeInForce = 'day'
+  timeInForce: TimeInForce = "day",
 ): Promise<AlpacaOrder> {
   return createOptionOrder(client, {
     symbol,
     qty,
-    side: 'buy',
-    type: limitPrice !== undefined ? 'limit' : 'market',
+    side: "buy",
+    type: limitPrice !== undefined ? "limit" : "market",
     limitPrice,
-    positionIntent: 'buy_to_open',
+    positionIntent: "buy_to_open",
     timeInForce,
   });
 }
@@ -245,15 +255,15 @@ export async function sellToClose(
   symbol: string,
   qty: number,
   limitPrice?: number,
-  timeInForce: TimeInForce = 'day'
+  timeInForce: TimeInForce = "day",
 ): Promise<AlpacaOrder> {
   return createOptionOrder(client, {
     symbol,
     qty,
-    side: 'sell',
-    type: limitPrice !== undefined ? 'limit' : 'market',
+    side: "sell",
+    type: limitPrice !== undefined ? "limit" : "market",
     limitPrice,
-    positionIntent: 'sell_to_close',
+    positionIntent: "sell_to_close",
     timeInForce,
   });
 }
@@ -276,15 +286,15 @@ export async function sellToOpen(
   symbol: string,
   qty: number,
   limitPrice?: number,
-  timeInForce: TimeInForce = 'day'
+  timeInForce: TimeInForce = "day",
 ): Promise<AlpacaOrder> {
   return createOptionOrder(client, {
     symbol,
     qty,
-    side: 'sell',
-    type: limitPrice !== undefined ? 'limit' : 'market',
+    side: "sell",
+    type: limitPrice !== undefined ? "limit" : "market",
     limitPrice,
-    positionIntent: 'sell_to_open',
+    positionIntent: "sell_to_open",
     timeInForce,
   });
 }
@@ -307,15 +317,15 @@ export async function buyToClose(
   symbol: string,
   qty: number,
   limitPrice?: number,
-  timeInForce: TimeInForce = 'day'
+  timeInForce: TimeInForce = "day",
 ): Promise<AlpacaOrder> {
   return createOptionOrder(client, {
     symbol,
     qty,
-    side: 'buy',
-    type: limitPrice !== undefined ? 'limit' : 'market',
+    side: "buy",
+    type: limitPrice !== undefined ? "limit" : "market",
     limitPrice,
-    positionIntent: 'buy_to_close',
+    positionIntent: "buy_to_close",
     timeInForce,
   });
 }
@@ -330,33 +340,35 @@ export async function buyToClose(
  * @param params - Multi-leg order parameters
  * @returns Validation result with errors and warnings
  */
-export function validateMultiLegOrder(params: CreateMultiLegOrderParams): MultiLegValidationResult {
+export function validateMultiLegOrder(
+  params: CreateMultiLegOrderParams,
+): MultiLegValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
 
   // Check legs count
   if (!params.legs || params.legs.length < 2) {
-    errors.push('Multi-leg orders require at least 2 legs');
+    errors.push("Multi-leg orders require at least 2 legs");
   }
 
   if (params.legs && params.legs.length > 4) {
-    errors.push('Multi-leg orders support a maximum of 4 legs');
+    errors.push("Multi-leg orders support a maximum of 4 legs");
   }
 
   // Validate order class
-  if (params.order_class !== 'mleg') {
+  if (params.order_class !== "mleg") {
     errors.push("Order class must be 'mleg' for multi-leg orders");
   }
 
   // Validate quantity
   const qty = parseFloat(params.qty);
   if (isNaN(qty) || qty <= 0) {
-    errors.push('Quantity must be a positive number');
+    errors.push("Quantity must be a positive number");
   }
 
   // Validate limit price for limit orders
-  if (params.type === 'limit' && !params.limit_price) {
-    errors.push('Limit price is required for limit orders');
+  if (params.type === "limit" && !params.limit_price) {
+    errors.push("Limit price is required for limit orders");
   }
 
   // Validate each leg
@@ -378,11 +390,18 @@ export function validateMultiLegOrder(params: CreateMultiLegOrderParams): MultiL
         }
       }
 
-      if (!['buy', 'sell'].includes(leg.side)) {
+      if (!["buy", "sell"].includes(leg.side)) {
         errors.push(`Leg ${i + 1}: Side must be 'buy' or 'sell'`);
       }
 
-      if (!['buy_to_open', 'buy_to_close', 'sell_to_open', 'sell_to_close'].includes(leg.position_intent)) {
+      if (
+        ![
+          "buy_to_open",
+          "buy_to_close",
+          "sell_to_open",
+          "sell_to_close",
+        ].includes(leg.position_intent)
+      ) {
         errors.push(`Leg ${i + 1}: Invalid position intent`);
       }
 
@@ -437,25 +456,25 @@ export function validateMultiLegOrder(params: CreateMultiLegOrderParams): MultiL
  */
 export async function createMultiLegOptionOrder(
   client: AlpacaClient,
-  params: CreateMultiLegOrderParams
+  params: CreateMultiLegOrderParams,
 ): Promise<AlpacaOrder> {
-  const legSymbols = params.legs.map((l) => l.symbol).join(', ');
+  const legSymbols = params.legs.map((l) => l.symbol).join(", ");
   log(`Creating multi-leg option order: ${params.qty}x [${legSymbols}]`, {
-    type: 'info',
+    type: "info",
     metadata: { legsCount: params.legs.length, type: params.type },
   });
 
   // Validate parameters
   const validation = validateMultiLegOrder(params);
   if (!validation.isValid) {
-    const errorMsg = `Multi-leg order validation failed: ${validation.errors.join('; ')}`;
-    log(errorMsg, { type: 'error', metadata: { errors: validation.errors } });
+    const errorMsg = `Multi-leg order validation failed: ${validation.errors.join("; ")}`;
+    log(errorMsg, { type: "error", metadata: { errors: validation.errors } });
     throw new Error(errorMsg);
   }
 
   if (validation.warnings.length > 0) {
-    log(`Multi-leg order warnings: ${validation.warnings.join('; ')}`, {
-      type: 'warn',
+    log(`Multi-leg order warnings: ${validation.warnings.join("; ")}`, {
+      type: "warn",
       metadata: { warnings: validation.warnings },
     });
   }
@@ -475,10 +494,10 @@ export async function createMultiLegOptionOrder(
       orderParams.limit_price = params.limit_price;
     }
 
-    const order = await sdk.createOrder(orderParams) as AlpacaOrder;
+    const order = (await sdk.createOrder(orderParams)) as AlpacaOrder;
 
     log(`Multi-leg option order created: ${order.id}`, {
-      type: 'info',
+      type: "info",
       metadata: {
         orderId: order.id,
         status: order.status,
@@ -488,9 +507,10 @@ export async function createMultiLegOptionOrder(
 
     return order;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
     log(`Failed to create multi-leg option order: ${errorMessage}`, {
-      type: 'error',
+      type: "error",
       metadata: { params },
     });
     throw new Error(`Failed to create multi-leg option order: ${errorMessage}`);
@@ -528,30 +548,30 @@ export async function createVerticalSpread(
   shortSymbol: string,
   qty: number,
   limitPrice?: number,
-  timeInForce: TimeInForce = 'day'
+  timeInForce: TimeInForce = "day",
 ): Promise<AlpacaOrder> {
   log(`Creating vertical spread: ${qty}x ${longSymbol} / ${shortSymbol}`, {
-    type: 'info',
+    type: "info",
     metadata: { limitPrice },
   });
 
   const params: CreateMultiLegOrderParams = {
-    order_class: 'mleg',
+    order_class: "mleg",
     qty: qty.toString(),
-    type: limitPrice !== undefined ? 'limit' : 'market',
+    type: limitPrice !== undefined ? "limit" : "market",
     time_in_force: timeInForce,
     legs: [
       {
         symbol: longSymbol,
-        ratio_qty: '1',
-        side: 'buy',
-        position_intent: 'buy_to_open',
+        ratio_qty: "1",
+        side: "buy",
+        position_intent: "buy_to_open",
       },
       {
         symbol: shortSymbol,
-        ratio_qty: '1',
-        side: 'sell',
-        position_intent: 'sell_to_open',
+        ratio_qty: "1",
+        side: "sell",
+        position_intent: "sell_to_open",
       },
     ],
   };
@@ -595,42 +615,48 @@ export async function createIronCondor(
   callLongSymbol: string,
   qty: number,
   limitPrice?: number,
-  timeInForce: TimeInForce = 'day'
+  timeInForce: TimeInForce = "day",
 ): Promise<AlpacaOrder> {
   log(`Creating iron condor: ${qty}x contracts`, {
-    type: 'info',
-    metadata: { putLongSymbol, putShortSymbol, callShortSymbol, callLongSymbol, limitPrice },
+    type: "info",
+    metadata: {
+      putLongSymbol,
+      putShortSymbol,
+      callShortSymbol,
+      callLongSymbol,
+      limitPrice,
+    },
   });
 
   const params: CreateMultiLegOrderParams = {
-    order_class: 'mleg',
+    order_class: "mleg",
     qty: qty.toString(),
-    type: limitPrice !== undefined ? 'limit' : 'market',
+    type: limitPrice !== undefined ? "limit" : "market",
     time_in_force: timeInForce,
     legs: [
       {
         symbol: putLongSymbol,
-        ratio_qty: '1',
-        side: 'buy',
-        position_intent: 'buy_to_open',
+        ratio_qty: "1",
+        side: "buy",
+        position_intent: "buy_to_open",
       },
       {
         symbol: putShortSymbol,
-        ratio_qty: '1',
-        side: 'sell',
-        position_intent: 'sell_to_open',
+        ratio_qty: "1",
+        side: "sell",
+        position_intent: "sell_to_open",
       },
       {
         symbol: callShortSymbol,
-        ratio_qty: '1',
-        side: 'sell',
-        position_intent: 'sell_to_open',
+        ratio_qty: "1",
+        side: "sell",
+        position_intent: "sell_to_open",
       },
       {
         symbol: callLongSymbol,
-        ratio_qty: '1',
-        side: 'buy',
-        position_intent: 'buy_to_open',
+        ratio_qty: "1",
+        side: "buy",
+        position_intent: "buy_to_open",
       },
     ],
   };
@@ -668,30 +694,30 @@ export async function createStraddle(
   putSymbol: string,
   qty: number,
   limitPrice?: number,
-  timeInForce: TimeInForce = 'day'
+  timeInForce: TimeInForce = "day",
 ): Promise<AlpacaOrder> {
   log(`Creating straddle: ${qty}x ${callSymbol} + ${putSymbol}`, {
-    type: 'info',
+    type: "info",
     metadata: { limitPrice },
   });
 
   const params: CreateMultiLegOrderParams = {
-    order_class: 'mleg',
+    order_class: "mleg",
     qty: qty.toString(),
-    type: limitPrice !== undefined ? 'limit' : 'market',
+    type: limitPrice !== undefined ? "limit" : "market",
     time_in_force: timeInForce,
     legs: [
       {
         symbol: callSymbol,
-        ratio_qty: '1',
-        side: 'buy',
-        position_intent: 'buy_to_open',
+        ratio_qty: "1",
+        side: "buy",
+        position_intent: "buy_to_open",
       },
       {
         symbol: putSymbol,
-        ratio_qty: '1',
-        side: 'buy',
-        position_intent: 'buy_to_open',
+        ratio_qty: "1",
+        side: "buy",
+        position_intent: "buy_to_open",
       },
     ],
   };
@@ -720,30 +746,30 @@ export async function createStrangle(
   putSymbol: string,
   qty: number,
   limitPrice?: number,
-  timeInForce: TimeInForce = 'day'
+  timeInForce: TimeInForce = "day",
 ): Promise<AlpacaOrder> {
   log(`Creating strangle: ${qty}x ${callSymbol} + ${putSymbol}`, {
-    type: 'info',
+    type: "info",
     metadata: { limitPrice },
   });
 
   const params: CreateMultiLegOrderParams = {
-    order_class: 'mleg',
+    order_class: "mleg",
     qty: qty.toString(),
-    type: limitPrice !== undefined ? 'limit' : 'market',
+    type: limitPrice !== undefined ? "limit" : "market",
     time_in_force: timeInForce,
     legs: [
       {
         symbol: callSymbol,
-        ratio_qty: '1',
-        side: 'buy',
-        position_intent: 'buy_to_open',
+        ratio_qty: "1",
+        side: "buy",
+        position_intent: "buy_to_open",
       },
       {
         symbol: putSymbol,
-        ratio_qty: '1',
-        side: 'buy',
-        position_intent: 'buy_to_open',
+        ratio_qty: "1",
+        side: "buy",
+        position_intent: "buy_to_open",
       },
     ],
   };
@@ -782,12 +808,12 @@ export async function createStrangle(
 export async function closeOptionPosition(
   client: AlpacaClient,
   symbol: string,
-  options?: CloseOptionPositionParams
+  options?: CloseOptionPositionParams,
 ): Promise<AlpacaOrder> {
   log(`Closing option position: ${symbol}`, {
-    type: 'info',
+    type: "info",
     symbol,
-    metadata: options,
+    metadata: options as Record<string, unknown> | undefined,
   });
 
   try {
@@ -796,7 +822,7 @@ export async function closeOptionPosition(
     // First get the current position to determine side and quantity
     let position: AlpacaPosition;
     try {
-      position = await sdk.getPosition(symbol) as AlpacaPosition;
+      position = (await sdk.getPosition(symbol)) as AlpacaPosition;
     } catch (error) {
       throw new Error(`No position found for ${symbol}`);
     }
@@ -805,26 +831,30 @@ export async function closeOptionPosition(
     const closeQty = options?.qty ?? positionQty;
 
     if (closeQty > positionQty) {
-      throw new Error(`Close quantity (${closeQty}) exceeds position quantity (${positionQty})`);
+      throw new Error(
+        `Close quantity (${closeQty}) exceeds position quantity (${positionQty})`,
+      );
     }
 
     // Determine the correct side and intent based on current position
-    const isLong = position.side === 'long';
-    const side = isLong ? 'sell' : 'buy';
-    const positionIntent: PositionIntent = isLong ? 'sell_to_close' : 'buy_to_close';
+    const isLong = position.side === "long";
+    const side = isLong ? "sell" : "buy";
+    const positionIntent: PositionIntent = isLong
+      ? "sell_to_close"
+      : "buy_to_close";
 
     const order = await createOptionOrder(client, {
       symbol,
       qty: closeQty,
       side,
-      type: options?.limitPrice !== undefined ? 'limit' : 'market',
+      type: options?.limitPrice !== undefined ? "limit" : "market",
       limitPrice: options?.limitPrice,
       positionIntent,
-      timeInForce: options?.timeInForce || 'day',
+      timeInForce: options?.timeInForce || "day",
     });
 
     log(`Option position close order created: ${order.id}`, {
-      type: 'info',
+      type: "info",
       symbol,
       metadata: {
         orderId: order.id,
@@ -835,9 +865,10 @@ export async function closeOptionPosition(
 
     return order;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
     log(`Failed to close option position ${symbol}: ${errorMessage}`, {
-      type: 'error',
+      type: "error",
       symbol,
     });
     throw new Error(`Failed to close option position: ${errorMessage}`);
@@ -858,9 +889,9 @@ export async function closeOptionPosition(
  * }
  */
 export async function closeAllOptionPositions(
-  client: AlpacaClient
+  client: AlpacaClient,
 ): Promise<CloseAllOptionsResult> {
-  log('Closing all option positions', { type: 'info' });
+  log("Closing all option positions", { type: "info" });
 
   const result: CloseAllOptionsResult = {
     orders: [],
@@ -872,20 +903,20 @@ export async function closeAllOptionPositions(
     const sdk = client.getSDK();
 
     // Get all positions and filter for options
-    const positions = await sdk.getPositions() as AlpacaPosition[];
+    const positions = (await sdk.getPositions()) as AlpacaPosition[];
     const optionPositions = positions.filter(
-      (p) => p.asset_class === 'us_option'
+      (p) => p.asset_class === "us_option",
     );
 
     result.totalProcessed = optionPositions.length;
 
     if (optionPositions.length === 0) {
-      log('No option positions to close', { type: 'info' });
+      log("No option positions to close", { type: "info" });
       return result;
     }
 
     log(`Found ${optionPositions.length} option positions to close`, {
-      type: 'info',
+      type: "info",
       metadata: { symbols: optionPositions.map((p) => p.symbol) },
     });
 
@@ -895,30 +926,37 @@ export async function closeAllOptionPositions(
         const order = await closeOptionPosition(client, position.symbol);
         result.orders.push(order);
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        const errorMessage =
+          error instanceof Error ? error.message : "Unknown error";
         result.failed.push({
           symbol: position.symbol,
           error: errorMessage,
         });
         log(`Failed to close position ${position.symbol}: ${errorMessage}`, {
-          type: 'warn',
+          type: "warn",
           symbol: position.symbol,
         });
       }
     }
 
-    log(`Closed ${result.orders.length} option positions, ${result.failed.length} failed`, {
-      type: 'info',
-      metadata: {
-        closed: result.orders.length,
-        failed: result.failed.length,
+    log(
+      `Closed ${result.orders.length} option positions, ${result.failed.length} failed`,
+      {
+        type: "info",
+        metadata: {
+          closed: result.orders.length,
+          failed: result.failed.length,
+        },
       },
-    });
+    );
 
     return result;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    log(`Failed to close all option positions: ${errorMessage}`, { type: 'error' });
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    log(`Failed to close all option positions: ${errorMessage}`, {
+      type: "error",
+    });
     throw new Error(`Failed to close all option positions: ${errorMessage}`);
   }
 }
@@ -943,10 +981,10 @@ export async function closeAllOptionPositions(
 export async function exerciseOption(
   client: AlpacaClient,
   symbol: string,
-  qty?: number
+  qty?: number,
 ): Promise<void> {
-  log(`Exercising option: ${symbol}${qty ? ` (qty: ${qty})` : ''}`, {
-    type: 'info',
+  log(`Exercising option: ${symbol}${qty ? ` (qty: ${qty})` : ""}`, {
+    type: "info",
     symbol,
   });
 
@@ -956,21 +994,23 @@ export async function exerciseOption(
     // Get current position
     let position: AlpacaPosition;
     try {
-      position = await sdk.getPosition(symbol) as AlpacaPosition;
+      position = (await sdk.getPosition(symbol)) as AlpacaPosition;
     } catch (error) {
       throw new Error(`No position found for ${symbol}`);
     }
 
     // Verify it's a long position (can't exercise short options)
-    if (position.side !== 'long') {
-      throw new Error('Can only exercise long option positions');
+    if (position.side !== "long") {
+      throw new Error("Can only exercise long option positions");
     }
 
     const positionQty = Math.abs(parseFloat(position.qty));
     const exerciseQty = qty ?? positionQty;
 
     if (exerciseQty > positionQty) {
-      throw new Error(`Exercise quantity (${exerciseQty}) exceeds position quantity (${positionQty})`);
+      throw new Error(
+        `Exercise quantity (${exerciseQty}) exceeds position quantity (${positionQty})`,
+      );
     }
 
     // Call the exercise endpoint using direct API
@@ -980,17 +1020,22 @@ export async function exerciseOption(
       body.qty = qty.toString();
     }
 
-    await client.makeRequest(endpoint, 'POST', Object.keys(body).length > 0 ? body : undefined);
+    await client.makeRequest(
+      endpoint,
+      "POST",
+      Object.keys(body).length > 0 ? body : undefined,
+    );
 
     log(`Option exercised: ${symbol} (${exerciseQty} contracts)`, {
-      type: 'info',
+      type: "info",
       symbol,
       metadata: { exerciseQty },
     });
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
     log(`Failed to exercise option ${symbol}: ${errorMessage}`, {
-      type: 'error',
+      type: "error",
       symbol,
     });
     throw new Error(`Failed to exercise option: ${errorMessage}`);
@@ -1008,7 +1053,12 @@ export async function exerciseOption(
  * @returns True if the order is in a terminal state
  */
 export function isOptionOrderTerminal(status: OrderStatus): boolean {
-  const terminalStates: OrderStatus[] = ['filled', 'canceled', 'expired', 'rejected'];
+  const terminalStates: OrderStatus[] = [
+    "filled",
+    "canceled",
+    "expired",
+    "rejected",
+  ];
   return terminalStates.includes(status);
 }
 
@@ -1019,7 +1069,12 @@ export function isOptionOrderTerminal(status: OrderStatus): boolean {
  * @returns True if the order can be canceled
  */
 export function isOptionOrderCancelable(status: OrderStatus): boolean {
-  const cancelableStates: OrderStatus[] = ['new', 'partially_filled', 'accepted', 'pending_new'];
+  const cancelableStates: OrderStatus[] = [
+    "new",
+    "partially_filled",
+    "accepted",
+    "pending_new",
+  ];
   return cancelableStates.includes(status);
 }
 

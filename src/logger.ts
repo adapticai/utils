@@ -14,12 +14,14 @@ export interface Logger {
  * Normalizes context to a format suitable for logging.
  * Handles various types including primitives, objects, and errors.
  */
-function normalizeContext(context: unknown): Record<string, unknown> | undefined {
+function normalizeContext(
+  context: unknown,
+): Record<string, unknown> | undefined {
   if (context === undefined || context === null) {
     return undefined;
   }
 
-  if (typeof context === 'object' && context !== null) {
+  if (typeof context === "object" && context !== null) {
     // Handle Error objects
     if (context instanceof Error) {
       return {
@@ -44,10 +46,10 @@ function normalizeContext(context: unknown): Record<string, unknown> | undefined
  * Formats messages in a simple readable format.
  */
 const defaultLogger: Logger = {
-  error: (msg, ctx) => console.error(msg, normalizeContext(ctx) || ''),
-  warn: (msg, ctx) => console.warn(msg, normalizeContext(ctx) || ''),
-  info: (msg, ctx) => console.info(msg, normalizeContext(ctx) || ''),
-  debug: (msg, ctx) => console.debug(msg, normalizeContext(ctx) || ''),
+  error: (msg, ctx) => console.error(msg, normalizeContext(ctx) || ""),
+  warn: (msg, ctx) => console.warn(msg, normalizeContext(ctx) || ""),
+  info: (msg, ctx) => console.info(msg, normalizeContext(ctx) || ""),
+  debug: (msg, ctx) => console.debug(msg, normalizeContext(ctx) || ""),
 };
 
 let currentLogger: Logger = defaultLogger;

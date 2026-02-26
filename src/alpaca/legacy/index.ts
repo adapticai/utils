@@ -7,10 +7,10 @@
  */
 
 // Auth
-export { validateAuth, type ValidatedAuth } from './auth';
+export { validateAuth, type ValidatedAuth } from "./auth";
 
 // Utility functions
-export { roundPriceForAlpaca, cleanContent } from './utils';
+export { roundPriceForAlpaca, cleanContent } from "./utils";
 
 // Order functions
 export {
@@ -22,7 +22,7 @@ export {
   replaceOrder,
   cancelOrder,
   createLimitOrder,
-} from './orders';
+} from "./orders";
 
 // Position functions
 export {
@@ -31,7 +31,7 @@ export {
   closePosition,
   closeAllPositions,
   closeAllPositionsAfterHours,
-} from './positions';
+} from "./positions";
 
 // Account functions
 export {
@@ -39,13 +39,10 @@ export {
   fetchPortfolioHistory,
   getConfiguration,
   updateConfiguration,
-} from './account';
+} from "./account";
 
 // Market data functions
-export {
-  getLatestQuotes,
-  fetchNews,
-} from './market-data';
+export { getLatestQuotes, fetchNews } from "./market-data";
 
 // Asset functions
-export { getAsset } from './assets';
+export { getAsset } from "./assets";

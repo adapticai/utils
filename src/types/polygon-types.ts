@@ -93,7 +93,7 @@ export interface PolygonTickerInfo {
   /** The locale of the ticker. */
   locale: string;
   /** The market in which the ticker operates. */
-  market: 'stocks' | 'crypto' | 'indices' | 'fx' | 'otc';
+  market: "stocks" | "crypto" | "indices" | "fx" | "otc";
   /** The market capitalization. */
   market_cap: number;
   /** The name of the ticker. */
@@ -195,7 +195,7 @@ export interface PolygonBaseResponse {
  */
 export interface PolygonTradesResponse extends PolygonBaseResponse {
   /** The status of the response, which should be 'OK'. */
-  status: 'OK';
+  status: "OK";
   /** The next URL for pagination, if applicable. */
   next_url?: string;
   /** The array of trade results. */
@@ -207,7 +207,7 @@ export interface PolygonTradesResponse extends PolygonBaseResponse {
  */
 export interface PolygonErrorResponse extends PolygonBaseResponse {
   /** The status of the error response. */
-  status: 'ERROR' | 'NOT_AUTHORIZED' | string;
+  status: "ERROR" | "NOT_AUTHORIZED" | string;
   /** The error message. */
   message: string;
 }

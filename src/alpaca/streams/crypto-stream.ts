@@ -5,10 +5,10 @@
  * Uses the official Alpaca SDK crypto_stream_v1beta3 for reliable real-time data.
  * Provides automatic reconnection, subscription management, and type-safe events.
  */
-import { EventEmitter } from 'events';
-import { AlpacaClient } from '../client';
-import { log as baseLog } from '../../logging';
-import { LogOptions } from '../../types/logging-types';
+import { EventEmitter } from "events";
+import { AlpacaClient } from "../client";
+import { log as baseLog } from "../../logging";
+import { LogOptions } from "../../types/logging-types";
 import {
   AlpacaCryptoTradeStream,
   AlpacaCryptoQuoteStream,
@@ -17,8 +17,13 @@ import {
   AlpacaCryptoUpdatedBarStream,
   AlpacaCryptoStreamMessage,
   CryptoPair,
-} from '../../types/alpaca-types';
-import { StreamConfig, StreamState, SubscriptionRequest, DEFAULT_STREAM_CONFIG } from './base-stream';
+} from "../../types/alpaca-types";
+import {
+  StreamConfig,
+  StreamState,
+  SubscriptionRequest,
+  DEFAULT_STREAM_CONFIG,
+} from "./base-stream";
 
 // SDK types from @alpacahq/alpaca-trade-api
 interface AlpacaSDKCryptoTrade {
@@ -51,7 +56,7 @@ interface AlpacaSDKCryptoBar {
 /**
  * Crypto stream location
  */
-export type CryptoStreamLocation = 'us';
+export type CryptoStreamLocation = "us";
 
 /**
  * Crypto stream configuration
@@ -66,7 +71,7 @@ export interface CryptoStreamConfig extends StreamConfig {
  */
 export const DEFAULT_CRYPTO_STREAM_CONFIG: Partial<CryptoStreamConfig> = {
   ...DEFAULT_STREAM_CONFIG,
-  location: 'us',
+  location: "us",
 };
 
 /**
@@ -94,27 +99,35 @@ export interface CryptoStreamEventMap {
  */
 export class CryptoDataStream extends EventEmitter {
   private client: AlpacaClient;
-  private socket: EventEmitter | null = null;
-  private state: StreamState = 'disconnected';
+  private socket: any = null;
+  private state: StreamState = "disconnected";
   private location: CryptoStreamLocation;
   private config: CryptoStreamConfig;
-  private subscriptions: SubscriptionRequest = { trades: [], quotes: [], bars: [] };
+  private subscriptions: SubscriptionRequest = {
+    trades: [],
+    quotes: [],
+    bars: [],
+  };
   private pendingSubscriptions: SubscriptionRequest | null = null;
   // Map to track symbol association for SDK events (SDK doesn't include symbol in callbacks)
-  private currentSymbol: string = '';
+  private currentSymbol: string = "";
 
   constructor(client: AlpacaClient, config: Partial<CryptoStreamConfig> = {}) {
     super();
     this.client = client;
-    this.config = { ...DEFAULT_CRYPTO_STREAM_CONFIG, ...config } as CryptoStreamConfig;
-    this.location = config.location || DEFAULT_CRYPTO_STREAM_CONFIG.location || 'us';
+    this.config = {
+      ...DEFAULT_CRYPTO_STREAM_CONFIG,
+      ...config,
+    } as CryptoStreamConfig;
+    this.location =
+      config.location || DEFAULT_CRYPTO_STREAM_CONFIG.location || "us";
   }
 
   /**
    * Log helper
    */
-  private log(message: string, options: LogOptions = { type: 'info' }): void {
-    baseLog(message, { ...options, source: 'CryptoDataStream' });
+  private log(message: string, options: LogOptions = { type: "info" }): void {
+    baseLog(message, { ...options, source: "CryptoDataStream" });
   }
 
   /**
@@ -128,7 +141,7 @@ export class CryptoDataStream extends EventEmitter {
    * Check if stream is connected and authenticated
    */
   isStreamConnected(): boolean {
-    return this.state === 'authenticated';
+    return this.state === "authenticated";
   }
 
   /**
@@ -143,7 +156,9 @@ export class CryptoDataStream extends EventEmitter {
    */
   setLocation(location: CryptoStreamLocation): void {
     if (this.isStreamConnected()) {
-      this.log('Cannot change location while connected. Disconnect first.', { type: 'warn' });
+      this.log("Cannot change location while connected. Disconnect first.", {
+        type: "warn",
+      });
       return;
     }
     this.location = location;
@@ -160,46 +175,46 @@ export class CryptoDataStream extends EventEmitter {
    * Connect to the crypto data stream using SDK
    */
   async connect(): Promise<void> {
-    if (this.state === 'connecting' || this.state === 'authenticated') {
-      this.log('Already connected or connecting', { type: 'debug' });
+    if (this.state === "connecting" || this.state === "authenticated") {
+      this.log("Already connected or connecting", { type: "debug" });
       return;
     }
 
     return new Promise((resolve, reject) => {
-      this.state = 'connecting';
-      this.log('Connecting to crypto data stream...');
+      this.state = "connecting";
+      this.log("Connecting to crypto data stream...");
 
       const sdk = this.client.getSDK();
       this.socket = sdk.crypto_stream_v1beta3;
 
       if (!this.socket) {
-        this.state = 'error';
-        reject(new Error('Crypto data stream not available on SDK'));
+        this.state = "error";
+        reject(new Error("Crypto data stream not available on SDK"));
         return;
       }
 
       const connectionTimeout = setTimeout(() => {
-        if (this.state === 'connecting') {
-          this.state = 'error';
-          reject(new Error('Connection timeout'));
+        if (this.state === "connecting") {
+          this.state = "error";
+          reject(new Error("Connection timeout"));
         }
       }, this.config.connectionTimeout || 30000);
 
       // Handle connection
       this.socket.onConnect(() => {
         clearTimeout(connectionTimeout);
-        this.state = 'connected';
-        this.log('WebSocket connected, awaiting authentication');
+        this.state = "connected";
+        this.log("WebSocket connected, awaiting authentication");
       });
 
       // Handle state changes
       this.socket.onStateChange((newState: string) => {
-        this.log(`State changed: ${newState}`, { type: 'debug' });
-        if (newState === 'authenticated') {
-          this.state = 'authenticated';
-          this.log('Crypto stream authenticated');
-          this.emit('authenticated', undefined);
-          this.emit('connected', undefined);
+        this.log(`State changed: ${newState}`, { type: "debug" });
+        if (newState === "authenticated") {
+          this.state = "authenticated";
+          this.log("Crypto stream authenticated");
+          this.emit("authenticated", undefined);
+          this.emit("connected", undefined);
 
           // Send pending subscriptions
           if (this.pendingSubscriptions) {
@@ -209,26 +224,26 @@ export class CryptoDataStream extends EventEmitter {
 
           resolve();
         }
-        this.emit('stateChange', newState as StreamState);
+        this.emit("stateChange", newState as StreamState);
       });
 
       // Handle errors
       this.socket.onError((err: Error) => {
-        this.log(`Stream error: ${err.message}`, { type: 'error' });
-        this.emit('error', err);
+        this.log(`Stream error: ${err.message}`, { type: "error" });
+        this.emit("error", err);
 
-        if (this.state === 'connecting') {
+        if (this.state === "connecting") {
           clearTimeout(connectionTimeout);
-          this.state = 'error';
+          this.state = "error";
           reject(err);
         }
       });
 
       // Handle disconnection
       this.socket.onDisconnect(() => {
-        this.state = 'disconnected';
-        this.log('Disconnected from crypto data stream', { type: 'warn' });
-        this.emit('disconnected', { code: 0, reason: 'disconnected' });
+        this.state = "disconnected";
+        this.log("Disconnected from crypto data stream", { type: "warn" });
+        this.emit("disconnected", { code: 0, reason: "disconnected" });
       });
 
       // Set up data handlers
@@ -244,39 +259,47 @@ export class CryptoDataStream extends EventEmitter {
    */
   private setupDataHandlers(): void {
     // Trade events
-    this.socket.onCryptoTrade((trade: AlpacaSDKCryptoTrade & { Symbol?: string }) => {
-      const converted = this.convertTrade(trade);
-      this.emit('trade', converted);
-      this.emit('data', converted);
-    });
+    this.socket.onCryptoTrade(
+      (trade: AlpacaSDKCryptoTrade & { Symbol?: string }) => {
+        const converted = this.convertTrade(trade);
+        this.emit("trade", converted);
+        this.emit("data", converted);
+      },
+    );
 
     // Quote events
-    this.socket.onCryptoQuote((quote: AlpacaSDKCryptoQuote & { Symbol?: string }) => {
-      const converted = this.convertQuote(quote);
-      this.emit('quote', converted);
-      this.emit('data', converted);
-    });
+    this.socket.onCryptoQuote(
+      (quote: AlpacaSDKCryptoQuote & { Symbol?: string }) => {
+        const converted = this.convertQuote(quote);
+        this.emit("quote", converted);
+        this.emit("data", converted);
+      },
+    );
 
     // Bar events (minute bars)
     this.socket.onCryptoBar((bar: AlpacaSDKCryptoBar & { Symbol?: string }) => {
       const converted = this.convertBar(bar);
-      this.emit('bar', converted);
-      this.emit('data', converted);
+      this.emit("bar", converted);
+      this.emit("data", converted);
     });
 
     // Daily bar events
-    this.socket.onCryptoDailyBar((bar: AlpacaSDKCryptoBar & { Symbol?: string }) => {
-      const converted = this.convertDailyBar(bar);
-      this.emit('dailyBar', converted);
-      this.emit('data', converted);
-    });
+    this.socket.onCryptoDailyBar(
+      (bar: AlpacaSDKCryptoBar & { Symbol?: string }) => {
+        const converted = this.convertDailyBar(bar);
+        this.emit("dailyBar", converted);
+        this.emit("data", converted);
+      },
+    );
 
     // Updated bar events
-    this.socket.onCryptoUpdatedBar((bar: AlpacaSDKCryptoBar & { Symbol?: string }) => {
-      const converted = this.convertUpdatedBar(bar);
-      this.emit('updatedBar', converted);
-      this.emit('data', converted);
-    });
+    this.socket.onCryptoUpdatedBar(
+      (bar: AlpacaSDKCryptoBar & { Symbol?: string }) => {
+        const converted = this.convertUpdatedBar(bar);
+        this.emit("updatedBar", converted);
+        this.emit("data", converted);
+      },
+    );
   }
 
   /**
@@ -284,14 +307,14 @@ export class CryptoDataStream extends EventEmitter {
    */
   disconnect(): void {
     if (!this.socket) {
-      this.log('No socket to disconnect', { type: 'warn' });
+      this.log("No socket to disconnect", { type: "warn" });
       return;
     }
 
-    this.log('Disconnecting from crypto data stream');
+    this.log("Disconnecting from crypto data stream");
     this.socket.disconnect();
-    this.state = 'disconnected';
-    this.emit('disconnected', { code: 0, reason: 'manual disconnect' });
+    this.state = "disconnected";
+    this.emit("disconnected", { code: 0, reason: "manual disconnect" });
   }
 
   /**
@@ -300,13 +323,19 @@ export class CryptoDataStream extends EventEmitter {
   subscribe(request: SubscriptionRequest): void {
     // Merge with existing subscriptions
     if (request.trades) {
-      this.subscriptions.trades = [...new Set([...(this.subscriptions.trades || []), ...request.trades])];
+      this.subscriptions.trades = [
+        ...new Set([...(this.subscriptions.trades || []), ...request.trades]),
+      ];
     }
     if (request.quotes) {
-      this.subscriptions.quotes = [...new Set([...(this.subscriptions.quotes || []), ...request.quotes])];
+      this.subscriptions.quotes = [
+        ...new Set([...(this.subscriptions.quotes || []), ...request.quotes]),
+      ];
     }
     if (request.bars) {
-      this.subscriptions.bars = [...new Set([...(this.subscriptions.bars || []), ...request.bars])];
+      this.subscriptions.bars = [
+        ...new Set([...(this.subscriptions.bars || []), ...request.bars]),
+      ];
     }
 
     if (this.isStreamConnected()) {
@@ -323,17 +352,17 @@ export class CryptoDataStream extends EventEmitter {
     // Remove from existing subscriptions
     if (request.trades) {
       this.subscriptions.trades = (this.subscriptions.trades || []).filter(
-        (s) => !request.trades!.includes(s)
+        (s) => !request.trades!.includes(s),
       );
     }
     if (request.quotes) {
       this.subscriptions.quotes = (this.subscriptions.quotes || []).filter(
-        (s) => !request.quotes!.includes(s)
+        (s) => !request.quotes!.includes(s),
       );
     }
     if (request.bars) {
       this.subscriptions.bars = (this.subscriptions.bars || []).filter(
-        (s) => !request.bars!.includes(s)
+        (s) => !request.bars!.includes(s),
       );
     }
 
@@ -402,7 +431,13 @@ export class CryptoDataStream extends EventEmitter {
    * Subscribe to popular crypto pairs
    */
   subscribePopularPairs(): void {
-    const popularPairs: CryptoPair[] = ['BTC/USD', 'ETH/USD', 'DOGE/USD', 'LINK/USD', 'AVAX/USD'];
+    const popularPairs: CryptoPair[] = [
+      "BTC/USD",
+      "ETH/USD",
+      "DOGE/USD",
+      "LINK/USD",
+      "AVAX/USD",
+    ];
     this.subscribeAll(popularPairs);
   }
 
@@ -411,7 +446,7 @@ export class CryptoDataStream extends EventEmitter {
    */
   private sendSubscription(): void {
     if (!this.socket || !this.isStreamConnected()) {
-      this.log('Cannot send subscription: socket not ready', { type: 'warn' });
+      this.log("Cannot send subscription: socket not ready", { type: "warn" });
       return;
     }
 
@@ -419,18 +454,28 @@ export class CryptoDataStream extends EventEmitter {
 
     if (trades && trades.length > 0) {
       this.socket.subscribeForTrades(trades);
-      this.log(`Subscribed to crypto trades: ${trades.join(', ')}`, { type: 'debug' });
+      this.log(`Subscribed to crypto trades: ${trades.join(", ")}`, {
+        type: "debug",
+      });
     }
     if (quotes && quotes.length > 0) {
       this.socket.subscribeForQuotes(quotes);
-      this.log(`Subscribed to crypto quotes: ${quotes.join(', ')}`, { type: 'debug' });
+      this.log(`Subscribed to crypto quotes: ${quotes.join(", ")}`, {
+        type: "debug",
+      });
     }
     if (bars && bars.length > 0) {
       this.socket.subscribeForBars(bars);
-      this.log(`Subscribed to crypto bars: ${bars.join(', ')}`, { type: 'debug' });
+      this.log(`Subscribed to crypto bars: ${bars.join(", ")}`, {
+        type: "debug",
+      });
     }
 
-    this.emit('subscription', { trades: trades || [], quotes: quotes || [], bars: bars || [] });
+    this.emit("subscription", {
+      trades: trades || [],
+      quotes: quotes || [],
+      bars: bars || [],
+    });
   }
 
   /**
@@ -438,41 +483,55 @@ export class CryptoDataStream extends EventEmitter {
    */
   private sendUnsubscription(request: SubscriptionRequest): void {
     if (!this.socket || !this.isStreamConnected()) {
-      this.log('Cannot send unsubscription: socket not ready', { type: 'warn' });
+      this.log("Cannot send unsubscription: socket not ready", {
+        type: "warn",
+      });
       return;
     }
 
     if (request.trades && request.trades.length > 0) {
       this.socket.unsubscribeFromTrades(request.trades);
-      this.log(`Unsubscribed from crypto trades: ${request.trades.join(', ')}`, { type: 'debug' });
+      this.log(
+        `Unsubscribed from crypto trades: ${request.trades.join(", ")}`,
+        { type: "debug" },
+      );
     }
     if (request.quotes && request.quotes.length > 0) {
       this.socket.unsubscribeFromQuotes(request.quotes);
-      this.log(`Unsubscribed from crypto quotes: ${request.quotes.join(', ')}`, { type: 'debug' });
+      this.log(
+        `Unsubscribed from crypto quotes: ${request.quotes.join(", ")}`,
+        { type: "debug" },
+      );
     }
     if (request.bars && request.bars.length > 0) {
       this.socket.unsubscribeFromBars(request.bars);
-      this.log(`Unsubscribed from crypto bars: ${request.bars.join(', ')}`, { type: 'debug' });
+      this.log(`Unsubscribed from crypto bars: ${request.bars.join(", ")}`, {
+        type: "debug",
+      });
     }
   }
 
   // Conversion helpers: SDK format -> Stream format
-  private convertTrade(trade: AlpacaSDKCryptoTrade & { Symbol?: string }): AlpacaCryptoTradeStream {
+  private convertTrade(
+    trade: AlpacaSDKCryptoTrade & { Symbol?: string },
+  ): AlpacaCryptoTradeStream {
     return {
-      T: 't',
-      S: trade.Symbol || '',
+      T: "t",
+      S: trade.Symbol || "",
       p: trade.Price,
       s: trade.Size,
       t: trade.Timestamp,
       i: trade.Id,
-      tks: trade.TakerSide === 'buy' ? 'B' : 'S',
+      tks: trade.TakerSide === "buy" ? "B" : "S",
     };
   }
 
-  private convertQuote(quote: AlpacaSDKCryptoQuote & { Symbol?: string }): AlpacaCryptoQuoteStream {
+  private convertQuote(
+    quote: AlpacaSDKCryptoQuote & { Symbol?: string },
+  ): AlpacaCryptoQuoteStream {
     return {
-      T: 'q',
-      S: quote.Symbol || '',
+      T: "q",
+      S: quote.Symbol || "",
       bp: quote.BidPrice,
       bs: quote.BidSize,
       ap: quote.AskPrice,
@@ -481,10 +540,12 @@ export class CryptoDataStream extends EventEmitter {
     };
   }
 
-  private convertBar(bar: AlpacaSDKCryptoBar & { Symbol?: string }): AlpacaCryptoBarStream {
+  private convertBar(
+    bar: AlpacaSDKCryptoBar & { Symbol?: string },
+  ): AlpacaCryptoBarStream {
     return {
-      T: 'b',
-      S: bar.Symbol || '',
+      T: "b",
+      S: bar.Symbol || "",
       o: bar.Open,
       h: bar.High,
       l: bar.Low,
@@ -496,10 +557,12 @@ export class CryptoDataStream extends EventEmitter {
     };
   }
 
-  private convertDailyBar(bar: AlpacaSDKCryptoBar & { Symbol?: string }): AlpacaCryptoDailyBarStream {
+  private convertDailyBar(
+    bar: AlpacaSDKCryptoBar & { Symbol?: string },
+  ): AlpacaCryptoDailyBarStream {
     return {
-      T: 'd',
-      S: bar.Symbol || '',
+      T: "d",
+      S: bar.Symbol || "",
       o: bar.Open,
       h: bar.High,
       l: bar.Low,
@@ -511,10 +574,12 @@ export class CryptoDataStream extends EventEmitter {
     };
   }
 
-  private convertUpdatedBar(bar: AlpacaSDKCryptoBar & { Symbol?: string }): AlpacaCryptoUpdatedBarStream {
+  private convertUpdatedBar(
+    bar: AlpacaSDKCryptoBar & { Symbol?: string },
+  ): AlpacaCryptoUpdatedBarStream {
     return {
-      T: 'u',
-      S: bar.Symbol || '',
+      T: "u",
+      S: bar.Symbol || "",
       o: bar.Open,
       h: bar.High,
       l: bar.Low,
@@ -531,7 +596,7 @@ export class CryptoDataStream extends EventEmitter {
    */
   on<K extends keyof CryptoStreamEventMap>(
     event: K,
-    listener: (data: CryptoStreamEventMap[K]) => void
+    listener: (data: CryptoStreamEventMap[K]) => void,
   ): this {
     return super.on(event, listener as (...args: unknown[]) => void);
   }
@@ -539,7 +604,10 @@ export class CryptoDataStream extends EventEmitter {
   /**
    * Type-safe event emitter
    */
-  emit<K extends keyof CryptoStreamEventMap>(event: K, data?: CryptoStreamEventMap[K]): boolean {
+  emit<K extends keyof CryptoStreamEventMap>(
+    event: K,
+    data?: CryptoStreamEventMap[K],
+  ): boolean {
     return super.emit(event, data);
   }
 }
@@ -549,7 +617,7 @@ export class CryptoDataStream extends EventEmitter {
  */
 export function createCryptoDataStream(
   client: AlpacaClient,
-  config: Partial<CryptoStreamConfig> = {}
+  config: Partial<CryptoStreamConfig> = {},
 ): CryptoDataStream {
   return new CryptoDataStream(client, config);
 }

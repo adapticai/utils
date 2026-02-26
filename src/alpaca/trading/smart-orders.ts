@@ -10,8 +10,8 @@
  *
  * @module smart-orders
  */
-import { AlpacaClient } from '../client';
-import { AlpacaOrder, OrderSide, TimeInForce } from '../../types/alpaca-types';
+import { AlpacaClient } from "../client";
+import { AlpacaOrder, OrderSide, TimeInForce } from "../../types/alpaca-types";
 import {
   createBracketOrder,
   createProtectiveBracket,
@@ -19,22 +19,26 @@ import {
   BracketOrderResult,
   BracketOrderExecutor,
   createExecutorFromTradingAPI,
-} from './bracket-orders';
-import { createOCOOrder, OCOOrderParams, OCOOrderResult } from './oco-orders';
-import { createOTOOrder, OTOOrderParams, OTOOrderResult } from './oto-orders';
-import { createTrailingStop, updateTrailingStop, TrailingStopParams } from './trailing-stops';
-import { log as baseLog } from '../../logging';
-import { LogOptions } from '../../types/logging-types';
+} from "./bracket-orders";
+import { createOCOOrder, OCOOrderParams, OCOOrderResult } from "./oco-orders";
+import { createOTOOrder, OTOOrderParams, OTOOrderResult } from "./oto-orders";
+import {
+  createTrailingStop,
+  updateTrailingStop,
+  TrailingStopParams,
+} from "./trailing-stops";
+import { log as baseLog } from "../../logging";
+import { LogOptions } from "../../types/logging-types";
 
-const log = (message: string, options: LogOptions = { type: 'info' }) => {
-  baseLog(message, { ...options, source: 'SmartOrders' });
+const log = (message: string, options: LogOptions = { type: "info" }) => {
+  baseLog(message, { ...options, source: "SmartOrders" });
 };
 
 // Re-export all types for convenience
-export * from './bracket-orders';
-export * from './oco-orders';
-export * from './oto-orders';
-export * from './trailing-stops';
+export * from "./bracket-orders";
+export * from "./oco-orders";
+export * from "./oto-orders";
+export * from "./trailing-stops";
 
 /**
  * Unified smart order creation parameters
@@ -51,7 +55,7 @@ export interface SmartOrderParams {
   /** Entry configuration (optional - if omitted, assumes existing position) */
   entry?: {
     /** Entry order type */
-    type: 'market' | 'limit';
+    type: "market" | "limit";
     /** Limit price for entry (required if type is 'limit') */
     limitPrice?: number;
   };
@@ -87,12 +91,21 @@ export interface SmartOrderParams {
 /**
  * Type of order determined by smart order analysis
  */
-export type SmartOrderType = 'bracket' | 'oco' | 'oto' | 'trailing_stop' | 'simple';
+export type SmartOrderType =
+  | "bracket"
+  | "oco"
+  | "oto"
+  | "trailing_stop"
+  | "simple";
 
 /**
  * Result of smart order creation - union of all possible result types
  */
-export type SmartOrderResult = BracketOrderResult | OCOOrderResult | OTOOrderResult | AlpacaOrder;
+export type SmartOrderResult =
+  | BracketOrderResult
+  | OCOOrderResult
+  | OTOOrderResult
+  | AlpacaOrder;
 
 /**
  * Analyze parameters and determine the best order type
@@ -128,25 +141,25 @@ export function determineOrderType(params: SmartOrderParams): SmartOrderType {
 
   // Bracket: Entry + Take Profit + Stop Loss
   if (hasEntry && hasTakeProfit && hasStopLoss) {
-    return 'bracket';
+    return "bracket";
   }
 
   // OCO: Take Profit + Stop Loss (no entry - for existing position)
   if (!hasEntry && hasTakeProfit && hasStopLoss) {
-    return 'oco';
+    return "oco";
   }
 
   // OTO: Entry + single exit (either TP or SL)
-  if (hasEntry && (hasTakeProfit !== hasStopLoss)) {
-    return 'oto';
+  if (hasEntry && hasTakeProfit !== hasStopLoss) {
+    return "oto";
   }
 
   // Trailing Stop
   if (hasTrailingStop) {
-    return 'trailing_stop';
+    return "trailing_stop";
   }
 
-  return 'simple';
+  return "simple";
 }
 
 /**
@@ -212,15 +225,17 @@ function createExecutorFromClient(client: AlpacaClient): BracketOrderExecutor {
  */
 export async function createSmartOrder(
   client: AlpacaClient,
-  params: SmartOrderParams
+  params: SmartOrderParams,
 ): Promise<SmartOrderResult> {
   const orderType = determineOrderType(params);
 
-  log(`Creating smart order: ${orderType} for ${params.symbol}`, { type: 'info' });
-  log(`  Side: ${params.side}, Qty: ${params.qty}`, { type: 'debug' });
+  log(`Creating smart order: ${orderType} for ${params.symbol}`, {
+    type: "info",
+  });
+  log(`  Side: ${params.side}, Qty: ${params.qty}`, { type: "debug" });
 
   switch (orderType) {
-    case 'bracket': {
+    case "bracket": {
       const executor = createExecutorFromClient(client);
       return createBracketOrder(executor, {
         symbol: params.symbol,
@@ -235,7 +250,7 @@ export async function createSmartOrder(
       });
     }
 
-    case 'oco': {
+    case "oco": {
       return createOCOOrder(client, {
         symbol: params.symbol,
         qty: params.qty,
@@ -246,20 +261,20 @@ export async function createSmartOrder(
       });
     }
 
-    case 'oto': {
+    case "oto": {
       // Determine exit side (opposite of entry)
-      const exitSide: OrderSide = params.side === 'buy' ? 'sell' : 'buy';
+      const exitSide: OrderSide = params.side === "buy" ? "sell" : "buy";
 
       // Build dependent order based on what's provided (TP or SL)
       const dependent = params.takeProfit
         ? {
             side: exitSide,
-            type: 'limit' as const,
+            type: "limit" as const,
             limitPrice: params.takeProfit.limitPrice,
           }
         : {
             side: exitSide,
-            type: 'stop' as const,
+            type: "stop" as const,
             stopPrice: params.stopLoss!.stopPrice,
             limitPrice: params.stopLoss!.limitPrice,
           };
@@ -276,7 +291,7 @@ export async function createSmartOrder(
       });
     }
 
-    case 'trailing_stop': {
+    case "trailing_stop": {
       return createTrailingStop(client, {
         symbol: params.symbol,
         qty: params.qty,
@@ -290,9 +305,9 @@ export async function createSmartOrder(
 
     default:
       throw new Error(
-        'Simple orders should use createOrder directly. ' +
-        'Smart orders require at least one of: entry+takeProfit+stopLoss (bracket), ' +
-        'takeProfit+stopLoss (OCO), entry+takeProfit/stopLoss (OTO), or trailingStop.'
+        "Simple orders should use createOrder directly. " +
+          "Smart orders require at least one of: entry+takeProfit+stopLoss (bracket), " +
+          "takeProfit+stopLoss (OCO), entry+takeProfit/stopLoss (OTO), or trailingStop.",
       );
   }
 }
@@ -349,7 +364,7 @@ export interface PercentageBracketParams {
  */
 export async function createPercentageBracket(
   client: AlpacaClient,
-  params: PercentageBracketParams
+  params: PercentageBracketParams,
 ): Promise<BracketOrderResult> {
   const {
     symbol,
@@ -358,26 +373,29 @@ export async function createPercentageBracket(
     entryPrice,
     takeProfitPercent,
     stopLossPercent,
-    timeInForce = 'gtc',
+    timeInForce = "gtc",
   } = params;
 
   // Multiplier: +1 for buy (profit above, stop below), -1 for sell (profit below, stop above)
-  const multiplier = side === 'buy' ? 1 : -1;
+  const multiplier = side === "buy" ? 1 : -1;
 
-  const takeProfitPrice = entryPrice * (1 + (multiplier * takeProfitPercent / 100));
-  const stopLossPrice = entryPrice * (1 - (multiplier * stopLossPercent / 100));
+  const takeProfitPrice =
+    entryPrice * (1 + (multiplier * takeProfitPercent) / 100);
+  const stopLossPrice = entryPrice * (1 - (multiplier * stopLossPercent) / 100);
 
   // Round to 2 decimal places for prices >= $1, 4 decimal places for prices < $1
   const roundPrice = (price: number): number => {
-    return price >= 1 ? Math.round(price * 100) / 100 : Math.round(price * 10000) / 10000;
+    return price >= 1
+      ? Math.round(price * 100) / 100
+      : Math.round(price * 10000) / 10000;
   };
 
   log(
     `Creating percentage bracket for ${symbol}: ` +
-    `${side} ${qty} @ $${entryPrice} | ` +
-    `TP: ${takeProfitPercent}% ($${roundPrice(takeProfitPrice).toFixed(2)}) | ` +
-    `SL: ${stopLossPercent}% ($${roundPrice(stopLossPrice).toFixed(2)})`,
-    { symbol, type: 'info' }
+      `${side} ${qty} @ $${entryPrice} | ` +
+      `TP: ${takeProfitPercent}% ($${roundPrice(takeProfitPrice).toFixed(2)}) | ` +
+      `SL: ${stopLossPercent}% ($${roundPrice(stopLossPrice).toFixed(2)})`,
+    { symbol, type: "info" },
   );
 
   const executor = createExecutorFromClient(client);
@@ -386,7 +404,7 @@ export async function createPercentageBracket(
     symbol,
     qty,
     side,
-    type: 'limit',
+    type: "limit",
     limitPrice: entryPrice,
     takeProfit: { limitPrice: roundPrice(takeProfitPrice) },
     stopLoss: { stopPrice: roundPrice(stopLossPrice) },
@@ -444,7 +462,7 @@ export interface RiskManagedPositionParams {
  */
 export async function createRiskManagedPosition(
   client: AlpacaClient,
-  params: RiskManagedPositionParams
+  params: RiskManagedPositionParams,
 ): Promise<BracketOrderResult | OTOOrderResult> {
   const {
     symbol,
@@ -453,7 +471,7 @@ export async function createRiskManagedPosition(
     stopPrice,
     riskAmount,
     takeProfitPrice,
-    timeInForce = 'gtc',
+    timeInForce = "gtc",
   } = params;
 
   const stopDistance = Math.abs(entryPrice - stopPrice);
@@ -462,17 +480,17 @@ export async function createRiskManagedPosition(
   if (qty < 1) {
     throw new Error(
       `Risk amount $${riskAmount.toFixed(2)} is too small for stop distance $${stopDistance.toFixed(2)}. ` +
-      `Minimum position size would be 1 share, requiring risk of at least $${stopDistance.toFixed(2)}.`
+        `Minimum position size would be 1 share, requiring risk of at least $${stopDistance.toFixed(2)}.`,
     );
   }
 
   const actualRisk = qty * stopDistance;
   log(
     `Creating risk-managed position for ${symbol}: ` +
-    `${side} ${qty} shares @ $${entryPrice} | ` +
-    `Stop: $${stopPrice} | ` +
-    `Risking: $${actualRisk.toFixed(2)} (target: $${riskAmount.toFixed(2)})`,
-    { symbol, type: 'info' }
+      `${side} ${qty} shares @ $${entryPrice} | ` +
+      `Stop: $${stopPrice} | ` +
+      `Risking: $${actualRisk.toFixed(2)} (target: $${riskAmount.toFixed(2)})`,
+    { symbol, type: "info" },
   );
 
   const executor = createExecutorFromClient(client);
@@ -483,7 +501,7 @@ export async function createRiskManagedPosition(
       symbol,
       qty,
       side,
-      type: 'limit',
+      type: "limit",
       limitPrice: entryPrice,
       takeProfit: { limitPrice: takeProfitPrice },
       stopLoss: { stopPrice },
@@ -491,17 +509,17 @@ export async function createRiskManagedPosition(
     });
   } else {
     // Create OTO order with just stop loss
-    const exitSide: OrderSide = side === 'buy' ? 'sell' : 'buy';
+    const exitSide: OrderSide = side === "buy" ? "sell" : "buy";
 
     return createOTOOrder(client, {
       symbol,
       qty,
       side,
-      type: 'limit',
+      type: "limit",
       limitPrice: entryPrice,
       dependent: {
         side: exitSide,
-        type: 'stop',
+        type: "stop",
         stopPrice,
       },
       timeInForce,
@@ -529,12 +547,12 @@ export function calculateRewardRiskRatio(
   entryPrice: number,
   takeProfitPrice: number,
   stopLossPrice: number,
-  side: OrderSide
+  side: OrderSide,
 ): number {
   let reward: number;
   let risk: number;
 
-  if (side === 'buy') {
+  if (side === "buy") {
     reward = takeProfitPrice - entryPrice;
     risk = entryPrice - stopLossPrice;
   } else {
@@ -543,11 +561,11 @@ export function calculateRewardRiskRatio(
   }
 
   if (risk <= 0) {
-    throw new Error('Risk must be positive. Check stop loss placement.');
+    throw new Error("Risk must be positive. Check stop loss placement.");
   }
 
   if (reward <= 0) {
-    throw new Error('Reward must be positive. Check take profit placement.');
+    throw new Error("Reward must be positive. Check take profit placement.");
   }
 
   return reward / risk;
@@ -573,13 +591,13 @@ export function calculatePositionSize(
   accountValue: number,
   riskPercent: number,
   entryPrice: number,
-  stopPrice: number
+  stopPrice: number,
 ): number {
   const riskAmount = accountValue * (riskPercent / 100);
   const stopDistance = Math.abs(entryPrice - stopPrice);
 
   if (stopDistance <= 0) {
-    throw new Error('Stop distance must be positive');
+    throw new Error("Stop distance must be positive");
   }
 
   return Math.floor(riskAmount / stopDistance);

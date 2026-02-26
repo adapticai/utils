@@ -1,14 +1,17 @@
 # API Endpoints Standardization - Refactoring Summary
 
 ## Overview
+
 Successfully centralized all Alpaca API base URLs into a single configuration file to improve maintainability and consistency across the codebase.
 
 ## Changes Made
 
 ### 1. Created Centralized Configuration
+
 **File**: `/Users/jstein/adapticai/utils/src/config/api-endpoints.ts`
 
 This new file provides:
+
 - **Trading API URLs** (v2): Paper and Live endpoints
 - **Market Data API URLs**:
   - Stocks (v2)
@@ -26,6 +29,7 @@ This new file provides:
 ### 2. Updated Files with Centralized Endpoints
 
 #### Core Files
+
 1. **`src/alpaca-functions.ts`**
    - Replaced 11+ hardcoded URL instances
    - Now imports: `getTradingApiUrl`, `MARKET_DATA_API`
@@ -45,6 +49,7 @@ This new file provides:
    - Now imports: `MARKET_DATA_API`
 
 #### Alpaca SDK Module Files
+
 5. **`src/alpaca/client.ts`**
    - Updated trading API base URL
    - Now imports: `getTradingApiUrl`
@@ -58,6 +63,7 @@ This new file provides:
    - Now imports: `getTradingWebSocketUrl`
 
 #### Export File
+
 8. **`src/index.ts`**
    - Added exports for all API endpoint configuration
    - Exports: `TRADING_API`, `MARKET_DATA_API`, `WEBSOCKET_STREAMS`, helper functions, `AccountType`
@@ -65,6 +71,7 @@ This new file provides:
 ### 3. API Version Standards
 
 The codebase now consistently uses:
+
 - **Trading API**: v2 (stable, production-ready)
 - **Stock Market Data**: v2 (stable)
 - **Crypto Market Data**: v1beta3 (latest beta)
@@ -74,12 +81,14 @@ The codebase now consistently uses:
 ## Results
 
 ### Before
+
 - 33 hardcoded URL instances scattered across 7+ files
 - Inconsistent API versions (mix of v1beta1, v1beta2, v1beta3)
 - Difficult to update URLs when API versions change
 - Risk of typos and inconsistencies
 
 ### After
+
 - **1 centralized configuration file**
 - **7 files updated** to use centralized endpoints
 - Only 1 hardcoded URL remaining (in JSDoc comment as documentation)
@@ -111,12 +120,12 @@ The engine package can now import centralized endpoints:
 
 ```typescript
 // Old way (don't do this)
-const url = 'https://paper-api.alpaca.markets/v2';
+const url = "https://paper-api.alpaca.markets/v2";
 
 // New way (recommended)
-import { getTradingApiUrl, MARKET_DATA_API } from '@adaptic/utils';
+import { getTradingApiUrl, MARKET_DATA_API } from "@adaptic/utils";
 
-const tradingUrl = getTradingApiUrl('PAPER');  // Type-safe!
+const tradingUrl = getTradingApiUrl("PAPER"); // Type-safe!
 const stockDataUrl = MARKET_DATA_API.STOCKS;
 ```
 

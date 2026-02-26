@@ -7,6 +7,7 @@ A comprehensive, production-ready asset allocation algorithm has been implemente
 ## Implementation Details
 
 ### Location
+
 - **Package**: `/Users/eli/adapticai/utils`
 - **Main Algorithm**: `/Users/eli/adapticai/utils/src/asset-allocation-algorithm.ts`
 - **Type Definitions**: `/Users/eli/adapticai/utils/src/types/asset-allocation-types.ts`
@@ -29,6 +30,7 @@ A comprehensive, production-ready asset allocation algorithm has been implemente
 Five predefined risk profiles with optimal default allocations:
 
 #### Conservative
+
 - **Risk Score**: 20
 - **Max Volatility**: 8%
 - **Max Drawdown**: 10%
@@ -36,6 +38,7 @@ Five predefined risk profiles with optimal default allocations:
 - **Default Allocation**: 50% ETF, 20% Equities, 10% FOREX, 15% Options, 5% Other
 
 #### Moderate Conservative
+
 - **Risk Score**: 35
 - **Max Volatility**: 12%
 - **Max Drawdown**: 15%
@@ -43,6 +46,7 @@ Five predefined risk profiles with optimal default allocations:
 - **Default Allocation**: 40% ETF, 30% Equities, 10% FOREX, 15% Options, 5% Crypto
 
 #### Moderate
+
 - **Risk Score**: 50
 - **Max Volatility**: 15%
 - **Max Drawdown**: 20%
@@ -50,6 +54,7 @@ Five predefined risk profiles with optimal default allocations:
 - **Default Allocation**: 40% Equities, 25% ETF, 15% Options, 10% Futures, 10% Other
 
 #### Moderate Aggressive
+
 - **Risk Score**: 70
 - **Max Volatility**: 20%
 - **Max Drawdown**: 25%
@@ -57,6 +62,7 @@ Five predefined risk profiles with optimal default allocations:
 - **Default Allocation**: 50% Equities, 20% Options, 10% Futures, 10% ETF, 10% Other
 
 #### Aggressive
+
 - **Risk Score**: 85
 - **Max Volatility**: 30%
 - **Max Drawdown**: 35%
@@ -68,31 +74,37 @@ Five predefined risk profiles with optimal default allocations:
 The algorithm dynamically adjusts allocations based on six market conditions:
 
 #### Bull Market
+
 - Increases allocation to equities, options, and crypto
 - Reduces defensive positions (ETFs)
 - Growth-oriented positioning
 
 #### Bear Market
+
 - Increases ETF and FOREX allocations
 - Reduces equities, options, and crypto
 - Capital preservation focus
 
 #### High Volatility
+
 - Reduces options, futures, and crypto exposure
 - Increases stable asset allocations
 - Risk mitigation strategy
 
 #### Low Volatility
+
 - Can increase risk-seeking assets
 - Higher options and crypto allocations
 - Opportunistic positioning
 
 #### Sideways Market
+
 - Favors income and options strategies
 - Balanced allocation approach
 - Range-bound optimization
 
 #### Crisis Mode
+
 - Maximum defensive positioning
 - Heavy ETF allocation
 - Minimal exposure to volatile assets
@@ -194,26 +206,31 @@ Automatic rebalancing recommendations:
 ### Optimization Algorithms
 
 #### Sharpe Ratio Maximization
+
 - Calculates excess returns (return - risk-free rate)
 - Weights assets by Sharpe ratio
 - Blends with base allocation (50/50)
 
 #### Minimum Risk
+
 - Weights inversely to volatility
 - Penalizes high-correlation assets
 - Blends with base allocation (60/40)
 
 #### Maximum Return
+
 - Weights by expected return
 - Applies volatility penalty for high-risk assets
 - Respects risk profile constraints
 
 #### Risk Parity
+
 - Equal risk contribution from each asset
 - Inverse volatility weighting
 - All-weather approach
 
 #### Maximum Diversification
+
 - Minimizes average correlation
 - Weights inversely to correlation
 - Enhances portfolio resilience
@@ -223,41 +240,43 @@ Automatic rebalancing recommendations:
 ### Basic Usage
 
 ```typescript
-import { generateOptimalAllocation } from '@adaptic/utils';
+import { generateOptimalAllocation } from "@adaptic/utils";
 
 const recommendation = await generateOptimalAllocation({
-  riskProfile: 'MODERATE',
+  riskProfile: "MODERATE",
   marketConditions: {
     volatilityIndex: 18.5,
-    trendDirection: 'UP',
+    trendDirection: "UP",
     marketStrength: 65,
     sentimentScore: 58,
-    interestRateLevel: 'MEDIUM',
+    interestRateLevel: "MEDIUM",
     inflationRate: 3.2,
     creditSpread: 250,
-    economicPhase: 'EXPANSION'
+    economicPhase: "EXPANSION",
   },
   accountSize: 100000,
-  assetCharacteristics: [ /* asset data */ ],
+  assetCharacteristics: [
+    /* asset data */
+  ],
   preferences: {
     maxDrawdown: 20,
     targetReturn: 10,
-    rebalancingFrequency: 90
-  }
+    rebalancingFrequency: 90,
+  },
 });
 ```
 
 ### Advanced Configuration
 
 ```typescript
-import { AssetAllocationEngine } from '@adaptic/utils';
+import { AssetAllocationEngine } from "@adaptic/utils";
 
 const engine = new AssetAllocationEngine({
-  objective: 'MAX_SHARPE',
+  objective: "MAX_SHARPE",
   riskFreeRate: 0.045,
   rebalancingThreshold: 3,
   timeHorizon: 10,
-  allowLeverage: false
+  allowLeverage: false,
 });
 
 const recommendation = await engine.generateAllocation(input);
@@ -269,17 +288,19 @@ const recommendation = await engine.generateAllocation(input);
 const recommendation = await generateOptimalAllocation({
   ...input,
   currentPositions: new Map([
-    ['EQUITIES', 45000],
-    ['OPTIONS', 20000],
-    ['ETF', 25000],
-    ['CRYPTO', 10000]
-  ])
+    ["EQUITIES", 45000],
+    ["OPTIONS", 20000],
+    ["ETF", 25000],
+    ["CRYPTO", 10000],
+  ]),
 });
 
 // Check rebalancing actions
 if (recommendation.rebalancing) {
-  recommendation.rebalancing.forEach(action => {
-    console.log(`${action.action} ${action.assetClass}: $${action.tradeAmount}`);
+  recommendation.rebalancing.forEach((action) => {
+    console.log(
+      `${action.action} ${action.assetClass}: $${action.tradeAmount}`,
+    );
   });
 }
 ```
@@ -287,21 +308,25 @@ if (recommendation.rebalancing) {
 ## Integration Points
 
 ### Risk Management System
+
 - Real-time risk monitoring
 - Automatic risk threshold alerts
 - Dynamic risk reduction triggers
 
 ### Trading Systems
+
 - Automated rebalancing execution
 - Order generation from allocations
 - Transaction cost optimization
 
 ### Portfolio Dashboard
+
 - Visual allocation display
 - Risk metric visualization
 - Performance tracking
 
 ### Compliance Systems
+
 - Position limit validation
 - Concentration checks
 - Regulatory compliance
@@ -316,12 +341,14 @@ if (recommendation.rebalancing) {
 ## Validation & Testing
 
 ### Test Coverage
+
 - Unit tests for each optimization algorithm
 - Integration tests for complete allocation flow
 - Edge case testing (crisis scenarios, small accounts)
 - Validation against known portfolios
 
 ### Example Scenarios Implemented
+
 1. Conservative retirement portfolio ($250k)
 2. Aggressive growth portfolio ($50k)
 3. Portfolio rebalancing ($100k)
@@ -376,10 +403,10 @@ Potential improvements:
 export {
   AssetAllocationEngine,
   generateOptimalAllocation,
-  getDefaultRiskProfile
-} from './asset-allocation-algorithm';
+  getDefaultRiskProfile,
+} from "./asset-allocation-algorithm";
 
-export * from './types/asset-allocation-types';
+export * from "./types/asset-allocation-types";
 ```
 
 ## Documentation

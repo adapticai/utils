@@ -39,7 +39,7 @@ The Vitest configuration is in `vitest.config.ts`:
 1. Create test files with `.test.ts` or `.spec.ts` extension in `src/__tests__/`
 2. Import test utilities from `vitest`:
    ```typescript
-   import { describe, it, expect, beforeEach, vi } from 'vitest';
+   import { describe, it, expect, beforeEach, vi } from "vitest";
    ```
 3. Follow existing test patterns for consistency
 4. Use meaningful test data (not just import verification)
@@ -48,6 +48,7 @@ The Vitest configuration is in `vitest.config.ts`:
 ## Type Safety
 
 All tests follow strict TypeScript typing:
+
 - Explicit types for test data
 - No use of `any` type
 - Proper typing of mock functions with `vi.fn()`
@@ -57,6 +58,7 @@ All tests follow strict TypeScript typing:
 Coverage reports are generated in the `coverage/` directory when running `npm run test:coverage`.
 
 Target coverage metrics:
+
 - Statements: >80%
 - Branches: >75%
 - Functions: >80%

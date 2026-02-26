@@ -2,8 +2,8 @@
  * API response validation utility.
  * Parses API responses through Zod schemas to catch breaking API changes early.
  */
-import { z, ZodError } from 'zod';
-import { getLogger } from '../logger';
+import { z, ZodError } from "zod";
+import { getLogger } from "../logger";
 
 /**
  * Result of a validation attempt.
@@ -46,7 +46,7 @@ export class ValidationResponseError extends Error {
 
   constructor(message: string, issues: z.ZodIssue[], originalData: unknown) {
     super(message);
-    this.name = 'ValidationResponseError';
+    this.name = "ValidationResponseError";
     this.issues = issues;
     this.originalData = originalData;
   }
@@ -79,9 +79,9 @@ export class ValidationResponseError extends Error {
 export function validateResponse<T>(
   data: unknown,
   schema: z.ZodType<T>,
-  options: ValidateResponseOptions = {}
+  options: ValidateResponseOptions = {},
 ): T {
-  const { strict = false, label = 'API response' } = options;
+  const { strict = false, label = "API response" } = options;
 
   try {
     const parsed = schema.parse(data);
@@ -89,8 +89,8 @@ export function validateResponse<T>(
   } catch (error) {
     if (error instanceof ZodError) {
       const issuesSummary = error.issues
-        .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
-        .join('; ');
+        .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
+        .join("; ");
 
       const message = `${label} validation failed: ${issuesSummary}`;
 
@@ -100,11 +100,11 @@ export function validateResponse<T>(
 
       // Non-strict: log warning and return original data
       getLogger().warn(message, {
-        source: 'validateResponse',
+        source: "validateResponse",
         label,
         issueCount: error.issues.length,
         issues: error.issues.map((i) => ({
-          path: i.path.join('.'),
+          path: i.path.join("."),
           message: i.message,
           code: i.code,
         })),
@@ -138,7 +138,7 @@ export function validateResponse<T>(
  */
 export function safeValidateResponse<T>(
   data: unknown,
-  schema: z.ZodType<T>
+  schema: z.ZodType<T>,
 ): ValidationResult<T> {
   const result = schema.safeParse(data);
 

@@ -47,7 +47,7 @@ export interface FibonacciParams {
 export interface FibonacciLevel {
   level: number;
   price: number;
-  type: 'retracement' | 'extension';
+  type: "retracement" | "extension";
 }
 
 export interface FibonacciData {
@@ -55,7 +55,7 @@ export interface FibonacciData {
   levels?: FibonacciLevel[];
   swingHigh?: number;
   swingLow?: number;
-  trend?: 'uptrend' | 'downtrend';
+  trend?: "uptrend" | "downtrend";
   close: number;
 }
 
@@ -92,7 +92,7 @@ export interface SupportResistanceParams {
 export interface SupportResistanceLevel {
   price: number;
   strength: number;
-  type: 'support' | 'resistance';
+  type: "support" | "resistance";
 }
 
 export interface SupportResistanceData {

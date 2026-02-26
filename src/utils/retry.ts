@@ -1,4 +1,4 @@
-import { getLogger } from '../logger';
+import { getLogger } from "../logger";
 
 /**
  * Retry utility with exponential backoff for handling transient errors in external API calls.
@@ -27,7 +27,13 @@ export interface RetryConfig {
 }
 
 interface ErrorDetails {
-  type: 'RATE_LIMIT' | 'SERVER_ERROR' | 'CLIENT_ERROR' | 'AUTH_ERROR' | 'NETWORK_ERROR' | 'UNKNOWN';
+  type:
+    | "RATE_LIMIT"
+    | "SERVER_ERROR"
+    | "CLIENT_ERROR"
+    | "AUTH_ERROR"
+    | "NETWORK_ERROR"
+    | "UNKNOWN";
   reason: string;
   status: number | null;
   retryAfter?: number;
@@ -52,7 +58,7 @@ const DEFAULT_RETRY_CONFIG: RetryConfig = {
 function analyzeError(
   error: unknown,
   response: Response | null,
-  config: RetryConfig
+  config: RetryConfig,
 ): ErrorDetails {
   // Handle Response objects with error status codes
   if (response && !response.ok) {
@@ -60,11 +66,13 @@ function analyzeError(
 
     // Rate limit errors - always retryable
     if (status === 429) {
-      const retryAfterHeader = response.headers.get('Retry-After');
-      const retryAfter = retryAfterHeader ? parseInt(retryAfterHeader, 10) * 1000 : undefined;
+      const retryAfterHeader = response.headers.get("Retry-After");
+      const retryAfter = retryAfterHeader
+        ? parseInt(retryAfterHeader, 10) * 1000
+        : undefined;
       return {
-        type: 'RATE_LIMIT',
-        reason: 'Rate limit exceeded',
+        type: "RATE_LIMIT",
+        reason: "Rate limit exceeded",
         status,
         retryAfter,
         isRetryable: true,
@@ -74,8 +82,11 @@ function analyzeError(
     // Authentication errors - never retry
     if (status === 401 || status === 403) {
       return {
-        type: 'AUTH_ERROR',
-        reason: status === 401 ? 'Authentication failed - invalid credentials' : 'Access forbidden - insufficient permissions',
+        type: "AUTH_ERROR",
+        reason:
+          status === 401
+            ? "Authentication failed - invalid credentials"
+            : "Access forbidden - insufficient permissions",
         status,
         isRetryable: false,
       };
@@ -84,7 +95,7 @@ function analyzeError(
     // Server errors - check if in retryable list
     if (status >= 500 && status < 600) {
       return {
-        type: 'SERVER_ERROR',
+        type: "SERVER_ERROR",
         reason: `Server error (${status})`,
         status,
         isRetryable: config.retryableStatusCodes.includes(status),
@@ -94,7 +105,7 @@ function analyzeError(
     // Other client errors - never retry
     if (status >= 400 && status < 500) {
       return {
-        type: 'CLIENT_ERROR',
+        type: "CLIENT_ERROR",
         reason: `Client error (${status})`,
         status,
         isRetryable: false,
@@ -103,10 +114,10 @@ function analyzeError(
   }
 
   // Handle network errors (TypeError from fetch API)
-  if (error instanceof TypeError && error.message.includes('fetch')) {
+  if (error instanceof TypeError && error.message.includes("fetch")) {
     return {
-      type: 'NETWORK_ERROR',
-      reason: 'Network connectivity issue',
+      type: "NETWORK_ERROR",
+      reason: "Network connectivity issue",
       status: null,
       isRetryable: config.retryOnNetworkError,
     };
@@ -115,42 +126,52 @@ function analyzeError(
   // Handle error objects with messages
   if (error instanceof Error) {
     // Parse error messages that might contain status information
-    if (error.message.includes('429') || error.message.includes('RATE_LIMIT')) {
+    if (error.message.includes("429") || error.message.includes("RATE_LIMIT")) {
       const match = error.message.match(/RATE_LIMIT: 429:(\d+)/);
       const retryAfter = match ? parseInt(match[1], 10) : undefined;
       return {
-        type: 'RATE_LIMIT',
-        reason: 'Rate limit exceeded',
+        type: "RATE_LIMIT",
+        reason: "Rate limit exceeded",
         status: 429,
         retryAfter,
         isRetryable: true,
       };
     }
 
-    if (error.message.includes('401') || error.message.includes('403') || error.message.includes('AUTH_ERROR')) {
-      const status = error.message.includes('401') ? 401 : 403;
+    if (
+      error.message.includes("401") ||
+      error.message.includes("403") ||
+      error.message.includes("AUTH_ERROR")
+    ) {
+      const status = error.message.includes("401") ? 401 : 403;
       return {
-        type: 'AUTH_ERROR',
+        type: "AUTH_ERROR",
         reason: `Authentication error (${status})`,
         status,
         isRetryable: false,
       };
     }
 
-    if (error.message.includes('SERVER_ERROR') || error.message.match(/50[0-9]/)) {
+    if (
+      error.message.includes("SERVER_ERROR") ||
+      error.message.match(/50[0-9]/)
+    ) {
       const statusMatch = error.message.match(/50[0-9]/);
       const status = statusMatch ? parseInt(statusMatch[0], 10) : 500;
       return {
-        type: 'SERVER_ERROR',
+        type: "SERVER_ERROR",
         reason: `Server error (${status})`,
         status,
         isRetryable: config.retryableStatusCodes.includes(status),
       };
     }
 
-    if (error.message.includes('network') || error.message.includes('NETWORK_ERROR')) {
+    if (
+      error.message.includes("network") ||
+      error.message.includes("NETWORK_ERROR")
+    ) {
       return {
-        type: 'NETWORK_ERROR',
+        type: "NETWORK_ERROR",
         reason: error.message,
         status: null,
         isRetryable: config.retryOnNetworkError,
@@ -160,7 +181,7 @@ function analyzeError(
 
   // Unknown error - not retryable by default for safety
   return {
-    type: 'UNKNOWN',
+    type: "UNKNOWN",
     reason: error instanceof Error ? error.message : String(error),
     status: null,
     isRetryable: false,
@@ -174,7 +195,11 @@ function analyzeError(
  * @param maxDelay - Maximum delay in milliseconds
  * @returns Delay in milliseconds
  */
-function calculateBackoff(attempt: number, baseDelay: number, maxDelay: number): number {
+function calculateBackoff(
+  attempt: number,
+  baseDelay: number,
+  maxDelay: number,
+): number {
   // Exponential backoff: baseDelay * 2^(attempt-1)
   const exponentialDelay = baseDelay * Math.pow(2, attempt - 1);
 
@@ -228,7 +253,7 @@ function calculateBackoff(attempt: number, baseDelay: number, maxDelay: number):
 export async function withRetry<T>(
   fn: () => Promise<T>,
   config: Partial<RetryConfig> = {},
-  label: string = 'unknown'
+  label: string = "unknown",
 ): Promise<T> {
   const fullConfig: RetryConfig = { ...DEFAULT_RETRY_CONFIG, ...config };
 
@@ -240,7 +265,9 @@ export async function withRetry<T>(
 
       // If we succeeded after retries, log it
       if (attempt > 1) {
-        getLogger().info(`[${label}] Succeeded on attempt ${attempt}/${fullConfig.maxRetries}`);
+        getLogger().info(
+          `[${label}] Succeeded on attempt ${attempt}/${fullConfig.maxRetries}`,
+        );
       }
 
       return result;
@@ -249,10 +276,13 @@ export async function withRetry<T>(
 
       // If this is the last attempt, throw the error
       if (attempt === fullConfig.maxRetries) {
-        getLogger().error(`[${label}] Failed after ${fullConfig.maxRetries} attempts`, {
-          error: error instanceof Error ? error.message : String(error),
-          timestamp: new Date().toISOString(),
-        });
+        getLogger().error(
+          `[${label}] Failed after ${fullConfig.maxRetries} attempts`,
+          {
+            error: error instanceof Error ? error.message : String(error),
+            timestamp: new Date().toISOString(),
+          },
+        );
         throw error;
       }
 
@@ -262,36 +292,53 @@ export async function withRetry<T>(
 
       // If error is not retryable, fail immediately
       if (!errorDetails.isRetryable) {
-        getLogger().error(`[${label}] Non-retryable error (${errorDetails.type})`, {
-          reason: errorDetails.reason,
-          status: errorDetails.status,
-          timestamp: new Date().toISOString(),
-        });
+        getLogger().error(
+          `[${label}] Non-retryable error (${errorDetails.type})`,
+          {
+            reason: errorDetails.reason,
+            status: errorDetails.status,
+            timestamp: new Date().toISOString(),
+          },
+        );
         throw error;
       }
 
       // Calculate delay for next retry
       let delayMs: number;
-      if (errorDetails.type === 'RATE_LIMIT' && errorDetails.retryAfter) {
+      if (errorDetails.type === "RATE_LIMIT" && errorDetails.retryAfter) {
         // Use Retry-After header if available
         delayMs = errorDetails.retryAfter;
-      } else if (errorDetails.type === 'RATE_LIMIT') {
+      } else if (errorDetails.type === "RATE_LIMIT") {
         // For rate limits without Retry-After, use a longer minimum delay
-        delayMs = Math.max(calculateBackoff(attempt, fullConfig.baseDelayMs, fullConfig.maxDelayMs), 5000);
+        delayMs = Math.max(
+          calculateBackoff(
+            attempt,
+            fullConfig.baseDelayMs,
+            fullConfig.maxDelayMs,
+          ),
+          5000,
+        );
       } else {
         // Standard exponential backoff with jitter
-        delayMs = calculateBackoff(attempt, fullConfig.baseDelayMs, fullConfig.maxDelayMs);
+        delayMs = calculateBackoff(
+          attempt,
+          fullConfig.baseDelayMs,
+          fullConfig.maxDelayMs,
+        );
       }
 
       // Log the retry attempt
-      getLogger().warn(`[${label}] Attempt ${attempt}/${fullConfig.maxRetries} failed: ${errorDetails.reason}. Retrying in ${delayMs}ms...`, {
-        attemptNumber: attempt,
-        totalRetries: fullConfig.maxRetries,
-        errorType: errorDetails.type,
-        httpStatus: errorDetails.status,
-        retryDelay: delayMs,
-        timestamp: new Date().toISOString(),
-      });
+      getLogger().warn(
+        `[${label}] Attempt ${attempt}/${fullConfig.maxRetries} failed: ${errorDetails.reason}. Retrying in ${delayMs}ms...`,
+        {
+          attemptNumber: attempt,
+          totalRetries: fullConfig.maxRetries,
+          errorType: errorDetails.type,
+          httpStatus: errorDetails.status,
+          retryDelay: delayMs,
+          timestamp: new Date().toISOString(),
+        },
+      );
 
       // Call the optional retry callback
       if (fullConfig.onRetry) {

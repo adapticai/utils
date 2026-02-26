@@ -8,7 +8,7 @@
  *
  * Provides both async iterator and collect-all patterns.
  */
-import { getLogger } from '../logger';
+import { getLogger } from "../logger";
 
 /**
  * Configuration for cursor-based pagination.
@@ -16,7 +16,7 @@ import { getLogger } from '../logger';
  */
 export interface CursorPaginationConfig<TItem, TResponse> {
   /** Pagination strategy type */
-  type: 'cursor';
+  type: "cursor";
   /**
    * Function that fetches a single page of results.
    * @param cursor - The cursor/page token for the next page (undefined for first page)
@@ -50,7 +50,7 @@ export interface CursorPaginationConfig<TItem, TResponse> {
  */
 export interface UrlPaginationConfig<TItem, TResponse> {
   /** Pagination strategy type */
-  type: 'url';
+  type: "url";
   /**
    * Function that fetches a page from a given URL.
    * For the first page, the URL is the initial request URL.
@@ -88,7 +88,7 @@ export interface UrlPaginationConfig<TItem, TResponse> {
  */
 export interface OffsetPaginationConfig<TItem, TResponse> {
   /** Pagination strategy type */
-  type: 'offset';
+  type: "offset";
   /**
    * Function that fetches a page at a given offset.
    * @param offset - The current offset (starts at 0)
@@ -152,15 +152,15 @@ const DEFAULT_MAX_PAGES = 1000;
  * ```
  */
 export async function* paginate<TItem, TResponse>(
-  config: PaginationConfig<TItem, TResponse>
+  config: PaginationConfig<TItem, TResponse>,
 ): AsyncGenerator<TItem, void, undefined> {
   const maxPages = config.maxPages ?? DEFAULT_MAX_PAGES;
   const maxItems = config.maxItems ?? Infinity;
-  const label = config.label ?? 'paginate';
+  const label = config.label ?? "paginate";
   let pageCount = 0;
   let itemCount = 0;
 
-  if (config.type === 'cursor') {
+  if (config.type === "cursor") {
     let cursor: string | undefined;
 
     while (pageCount < maxPages && itemCount < maxItems) {
@@ -182,7 +182,7 @@ export async function* paginate<TItem, TResponse>(
       }
       cursor = nextCursor;
     }
-  } else if (config.type === 'url') {
+  } else if (config.type === "url") {
     let url: string | undefined | null = config.initialUrl;
 
     while (url && pageCount < maxPages && itemCount < maxItems) {
@@ -200,7 +200,7 @@ export async function* paginate<TItem, TResponse>(
 
       url = config.getNextUrl(response);
     }
-  } else if (config.type === 'offset') {
+  } else if (config.type === "offset") {
     let offset = 0;
     let totalCount: number | undefined;
 
@@ -237,12 +237,15 @@ export async function* paginate<TItem, TResponse>(
   }
 
   if (pageCount >= maxPages) {
-    getLogger().warn(`${label}: Stopped pagination after ${pageCount} pages (safety limit)`, {
-      source: 'paginator',
-      label,
-      pageCount,
-      itemCount,
-    });
+    getLogger().warn(
+      `${label}: Stopped pagination after ${pageCount} pages (safety limit)`,
+      {
+        source: "paginator",
+        label,
+        pageCount,
+        itemCount,
+      },
+    );
   }
 }
 
@@ -267,7 +270,7 @@ export async function* paginate<TItem, TResponse>(
  * ```
  */
 export async function paginateAll<TItem, TResponse>(
-  config: PaginationConfig<TItem, TResponse>
+  config: PaginationConfig<TItem, TResponse>,
 ): Promise<TItem[]> {
   const items: TItem[] = [];
 

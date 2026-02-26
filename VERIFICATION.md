@@ -1,15 +1,18 @@
 # API Endpoints Standardization - Verification Report
 
 ## Build Status
+
 ✓ Build succeeds without errors
 ✓ All TypeScript files compile correctly
 ✓ Distribution files generated successfully
 
 ## Files Created
+
 1. `/Users/jstein/adapticai/utils/src/config/api-endpoints.ts` - Centralized configuration
 2. `/Users/jstein/adapticai/utils/REFACTORING_SUMMARY.md` - Detailed documentation
 
 ## Files Modified (9 total)
+
 1. `src/alpaca-functions.ts` - 11+ URL replacements
 2. `src/alpaca-trading-api.ts` - 2 URL replacements
 3. `src/alpaca-market-data-api.ts` - 15+ URL replacements
@@ -22,18 +25,21 @@
 ## Hardcoded URLs Status
 
 ### Before Refactoring
+
 ```bash
 grep -rn "https://" src/ --include="*.ts" | wc -l
 # Result: 33 hardcoded URLs
 ```
 
 ### After Refactoring
+
 ```bash
 grep -rn "https://" src/ --include="*.ts" | grep -v "api-endpoints.ts" | grep -v ".test.ts"
 # Result: 1 URL (JSDoc comment only)
 ```
 
 ## API Versions Standardized
+
 - Trading API: **v2** (all instances)
 - Stock Market Data: **v2** (all instances)
 - Crypto Market Data: **v1beta3** (all instances)
@@ -41,7 +47,9 @@ grep -rn "https://" src/ --include="*.ts" | grep -v "api-endpoints.ts" | grep -v
 - News API: **v1beta1** (all instances)
 
 ## Exports Verified
+
 The following are now exported from `@adaptic/utils`:
+
 - `TRADING_API` - Trading API base URLs object
 - `MARKET_DATA_API` - Market data API base URLs object
 - `WEBSOCKET_STREAMS` - WebSocket stream URLs object
@@ -53,17 +61,21 @@ The following are now exported from `@adaptic/utils`:
 - `AccountType` - Type definition
 
 ## Type Definitions Generated
+
 ✓ `dist/types/config/api-endpoints.d.ts` exists
 ✓ All exported functions and constants have proper TypeScript types
 
 ## Backward Compatibility
+
 ✓ All deprecated functions remain available
 ✓ No breaking changes to public API
 ✓ Engine package imports work without modification
 ✓ Existing function signatures unchanged
 
 ## Engine Package Impact
+
 The engine package uses the following from utils:
+
 - `AlpacaMarketDataAPI` (10+ files) - Still available, marked as deprecated
 - `AlpacaTradingAPI` (5+ files) - Still available, marked as deprecated
 - Various types - All still exported
@@ -71,8 +83,10 @@ The engine package uses the following from utils:
 **No changes required in engine package** - all imports continue to work.
 
 ## Deprecated Functions
+
 The following functions are marked with `@deprecated` JSDoc tags:
-- `TradingAPI` 
+
+- `TradingAPI`
 - `MarketDataAPI`
 - `makeRequest`
 - `accountDetails`
@@ -89,29 +103,31 @@ The following functions are marked with `@deprecated` JSDoc tags:
 These functions remain functional but should be migrated to newer SDK-based equivalents.
 
 ## Usage Example
+
 ```typescript
 // Import centralized endpoints
-import { 
-  getTradingApiUrl, 
+import {
+  getTradingApiUrl,
   MARKET_DATA_API,
-  getTradingWebSocketUrl 
-} from '@adaptic/utils';
+  getTradingWebSocketUrl,
+} from "@adaptic/utils";
 
 // Use in your code
-const paperUrl = getTradingApiUrl('PAPER');
+const paperUrl = getTradingApiUrl("PAPER");
 // Returns: 'https://paper-api.alpaca.markets/v2'
 
-const liveUrl = getTradingApiUrl('LIVE');
+const liveUrl = getTradingApiUrl("LIVE");
 // Returns: 'https://api.alpaca.markets/v2'
 
 const stockDataUrl = MARKET_DATA_API.STOCKS;
 // Returns: 'https://data.alpaca.markets/v2'
 
-const wsUrl = getTradingWebSocketUrl('PAPER');
+const wsUrl = getTradingWebSocketUrl("PAPER");
 // Returns: 'wss://paper-api.alpaca.markets/stream'
 ```
 
 ## Next Steps
+
 1. ✓ Centralize API endpoints - **COMPLETE**
 2. ✓ Update all files to use centralized endpoints - **COMPLETE**
 3. ✓ Verify build succeeds - **COMPLETE**
@@ -141,7 +157,9 @@ ls dist/types/config/
 ```
 
 ## Summary
+
 ✅ **All objectives achieved**
+
 - Centralized all API base URLs
 - Standardized API versions
 - Maintained backward compatibility

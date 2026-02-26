@@ -2,15 +2,17 @@
  * Zod schemas for Alpha Vantage API response validation.
  * Validates API responses against expected shapes to catch breaking API changes early.
  */
-import { z } from 'zod';
+import { z } from "zod";
 
 // ===== Quote Schemas =====
 
 /** Schema for Alpha Vantage Global Quote response */
 export const AlphaVantageQuoteResponseSchema = z.object({
-  'Global Quote': z.object({
-    '01. symbol': z.string(),
-  }).catchall(z.string()),
+  "Global Quote": z
+    .object({
+      "01. symbol": z.string(),
+    })
+    .catchall(z.string()),
 });
 
 // ===== News Schemas =====

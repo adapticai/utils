@@ -2,13 +2,17 @@
  * News Module
  * Market news and analysis using Alpaca SDK
  */
-import { AlpacaClient } from '../client';
-import { AlpacaNewsArticle, SimpleNews, NewsResponse } from '../../types/alpaca-types';
-import { log as baseLog } from '../../logging';
-import { LogOptions } from '../../types/logging-types';
+import { AlpacaClient } from "../client";
+import {
+  AlpacaNewsArticle,
+  SimpleNews,
+  NewsResponse,
+} from "../../types/alpaca-types";
+import { log as baseLog } from "../../logging";
+import { LogOptions } from "../../types/logging-types";
 
-const log = (message: string, options: LogOptions = { type: 'info' }) => {
-  baseLog(message, { ...options, source: 'AlpacaNews' });
+const log = (message: string, options: LogOptions = { type: "info" }) => {
+  baseLog(message, { ...options, source: "AlpacaNews" });
 };
 
 /**
@@ -19,10 +23,10 @@ export class NewsError extends Error {
     message: string,
     public code: string,
     public symbol?: string,
-    public details?: unknown
+    public details?: unknown,
   ) {
     super(message);
-    this.name = 'NewsError';
+    this.name = "NewsError";
   }
 }
 
@@ -39,7 +43,7 @@ export interface GetNewsParams {
   /** Maximum number of articles to return (default 10, max 50) */
   limit?: number;
   /** Sort order: 'asc' for oldest first, 'desc' for newest first (default) */
-  sort?: 'asc' | 'desc';
+  sort?: "asc" | "desc";
   /** Include full article content (default false) */
   includeContent?: boolean;
 }
@@ -49,37 +53,41 @@ export interface GetNewsParams {
  */
 function stripHtml(html: string): string {
   if (!html) {
-    return '';
+    return "";
   }
 
   // Remove HTML tags
-  let text = html.replace(/<[^>]*>/g, ' ');
+  let text = html.replace(/<[^>]*>/g, " ");
 
   // Decode common HTML entities
   text = text
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
     .replace(/&apos;/g, "'")
     .replace(/&#x27;/g, "'")
-    .replace(/&#x2F;/g, '/')
-    .replace(/&mdash;/g, '-')
-    .replace(/&ndash;/g, '-')
-    .replace(/&hellip;/g, '...')
+    .replace(/&#x2F;/g, "/")
+    .replace(/&mdash;/g, "-")
+    .replace(/&ndash;/g, "-")
+    .replace(/&hellip;/g, "...")
     .replace(/&ldquo;/g, '"')
     .replace(/&rdquo;/g, '"')
     .replace(/&lsquo;/g, "'")
     .replace(/&rsquo;/g, "'");
 
   // Decode numeric HTML entities
-  text = text.replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code, 10)));
-  text = text.replace(/&#x([0-9a-fA-F]+);/g, (_, code) => String.fromCharCode(parseInt(code, 16)));
+  text = text.replace(/&#(\d+);/g, (_, code) =>
+    String.fromCharCode(parseInt(code, 10)),
+  );
+  text = text.replace(/&#x([0-9a-fA-F]+);/g, (_, code) =>
+    String.fromCharCode(parseInt(code, 16)),
+  );
 
   // Normalize whitespace
-  text = text.replace(/\s+/g, ' ').trim();
+  text = text.replace(/\s+/g, " ").trim();
 
   return text;
 }
@@ -88,7 +96,7 @@ function stripHtml(html: string): string {
  * Convert date to RFC-3339 format string
  */
 function toRFC3339(date: Date | string): string {
-  if (typeof date === 'string') {
+  if (typeof date === "string") {
     return date;
   }
   return date.toISOString();
@@ -108,36 +116,127 @@ function calculateSentiment(text: string): number {
 
   // Positive indicators
   const positiveWords = [
-    'surge', 'surges', 'surging', 'soar', 'soars', 'soaring',
-    'gain', 'gains', 'gained', 'rise', 'rises', 'rising', 'rose',
-    'jump', 'jumps', 'jumped', 'boost', 'boosts', 'boosted',
-    'profit', 'profits', 'profitable', 'growth', 'growing', 'grew',
-    'beat', 'beats', 'beating', 'exceed', 'exceeds', 'exceeded',
-    'outperform', 'outperforms', 'strong', 'stronger', 'strongest',
-    'upgrade', 'upgrades', 'upgraded', 'bullish', 'rally', 'rallies',
-    'record', 'high', 'highs', 'positive', 'optimistic', 'upbeat',
-    'success', 'successful', 'breakthrough', 'innovation', 'innovative',
+    "surge",
+    "surges",
+    "surging",
+    "soar",
+    "soars",
+    "soaring",
+    "gain",
+    "gains",
+    "gained",
+    "rise",
+    "rises",
+    "rising",
+    "rose",
+    "jump",
+    "jumps",
+    "jumped",
+    "boost",
+    "boosts",
+    "boosted",
+    "profit",
+    "profits",
+    "profitable",
+    "growth",
+    "growing",
+    "grew",
+    "beat",
+    "beats",
+    "beating",
+    "exceed",
+    "exceeds",
+    "exceeded",
+    "outperform",
+    "outperforms",
+    "strong",
+    "stronger",
+    "strongest",
+    "upgrade",
+    "upgrades",
+    "upgraded",
+    "bullish",
+    "rally",
+    "rallies",
+    "record",
+    "high",
+    "highs",
+    "positive",
+    "optimistic",
+    "upbeat",
+    "success",
+    "successful",
+    "breakthrough",
+    "innovation",
+    "innovative",
   ];
 
   // Negative indicators
   const negativeWords = [
-    'drop', 'drops', 'dropped', 'fall', 'falls', 'falling', 'fell',
-    'decline', 'declines', 'declined', 'plunge', 'plunges', 'plunged',
-    'crash', 'crashes', 'crashed', 'tumble', 'tumbles', 'tumbled',
-    'loss', 'losses', 'losing', 'lost', 'miss', 'misses', 'missed',
-    'downgrade', 'downgrades', 'downgraded', 'bearish', 'selloff',
-    'weak', 'weaker', 'weakest', 'concern', 'concerns', 'worried',
-    'warning', 'warns', 'warned', 'risk', 'risks', 'risky',
-    'negative', 'pessimistic', 'underperform', 'underperforms',
-    'layoff', 'layoffs', 'lawsuit', 'investigation', 'fraud',
-    'recession', 'bankruptcy', 'default', 'crisis', 'trouble',
+    "drop",
+    "drops",
+    "dropped",
+    "fall",
+    "falls",
+    "falling",
+    "fell",
+    "decline",
+    "declines",
+    "declined",
+    "plunge",
+    "plunges",
+    "plunged",
+    "crash",
+    "crashes",
+    "crashed",
+    "tumble",
+    "tumbles",
+    "tumbled",
+    "loss",
+    "losses",
+    "losing",
+    "lost",
+    "miss",
+    "misses",
+    "missed",
+    "downgrade",
+    "downgrades",
+    "downgraded",
+    "bearish",
+    "selloff",
+    "weak",
+    "weaker",
+    "weakest",
+    "concern",
+    "concerns",
+    "worried",
+    "warning",
+    "warns",
+    "warned",
+    "risk",
+    "risks",
+    "risky",
+    "negative",
+    "pessimistic",
+    "underperform",
+    "underperforms",
+    "layoff",
+    "layoffs",
+    "lawsuit",
+    "investigation",
+    "fraud",
+    "recession",
+    "bankruptcy",
+    "default",
+    "crisis",
+    "trouble",
   ];
 
   let positiveCount = 0;
   let negativeCount = 0;
 
   for (const word of positiveWords) {
-    const regex = new RegExp(`\\b${word}\\b`, 'gi');
+    const regex = new RegExp(`\\b${word}\\b`, "gi");
     const matches = lowerText.match(regex);
     if (matches) {
       positiveCount += matches.length;
@@ -145,7 +244,7 @@ function calculateSentiment(text: string): number {
   }
 
   for (const word of negativeWords) {
-    const regex = new RegExp(`\\b${word}\\b`, 'gi');
+    const regex = new RegExp(`\\b${word}\\b`, "gi");
     const matches = lowerText.match(regex);
     if (matches) {
       negativeCount += matches.length;
@@ -164,7 +263,10 @@ function calculateSentiment(text: string): number {
 /**
  * Convert Alpaca news article to simplified news format
  */
-function toSimpleNews(article: AlpacaNewsArticle, includeContent: boolean = false): SimpleNews {
+function toSimpleNews(
+  article: AlpacaNewsArticle,
+  includeContent: boolean = false,
+): SimpleNews {
   const cleanSummary = stripHtml(article.summary);
   const cleanContent = includeContent ? stripHtml(article.content) : undefined;
 
@@ -195,11 +297,20 @@ function toSimpleNews(article: AlpacaNewsArticle, includeContent: boolean = fals
  */
 export async function getNews(
   client: AlpacaClient,
-  params: GetNewsParams = {}
+  params: GetNewsParams = {},
 ): Promise<SimpleNews[]> {
-  const { symbols, start, end, limit = 10, sort = 'desc', includeContent = false } = params;
+  const {
+    symbols,
+    start,
+    end,
+    limit = 10,
+    sort = "desc",
+    includeContent = false,
+  } = params;
 
-  log(`Fetching news${symbols ? ` for ${symbols.join(', ')}` : ''}`, { type: 'debug' });
+  log(`Fetching news${symbols ? ` for ${symbols.join(", ")}` : ""}`, {
+    type: "debug",
+  });
 
   try {
     const sdk = client.getSDK();
@@ -209,7 +320,7 @@ export async function getNews(
       start?: string;
       end?: string;
       limit: number;
-      sort: 'asc' | 'desc';
+      sort: "asc" | "desc";
       include_content?: boolean;
     } = {
       limit: Math.min(limit, 50), // API max is 50
@@ -217,7 +328,10 @@ export async function getNews(
     };
 
     if (symbols && symbols.length > 0) {
-      options.symbols = symbols.map((s) => s.toUpperCase().trim()).filter(Boolean).join(',');
+      options.symbols = symbols
+        .map((s) => s.toUpperCase().trim())
+        .filter(Boolean)
+        .join(",");
     }
     if (start) {
       options.start = toRFC3339(start);
@@ -233,7 +347,7 @@ export async function getNews(
     const response = await sdk.getNews(options);
 
     if (!response || !Array.isArray(response)) {
-      log('No news data returned', { type: 'debug' });
+      log("No news data returned", { type: "debug" });
       return [];
     }
 
@@ -242,7 +356,7 @@ export async function getNews(
     const articles: SimpleNews[] = response.map((article) => {
       // SDK returns properties in different format
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const sdkArticle = (article as unknown) as {
+      const sdkArticle = article as unknown as {
         ID?: number;
         id?: number;
         Author?: string;
@@ -270,17 +384,17 @@ export async function getNews(
       // Normalize to our expected format
       const normalizedArticle: AlpacaNewsArticle = {
         id: sdkArticle.ID || sdkArticle.id || 0,
-        author: sdkArticle.Author || sdkArticle.author || '',
-        content: sdkArticle.Content || sdkArticle.content || '',
-        created_at: sdkArticle.CreatedAt || sdkArticle.created_at || '',
-        updated_at: sdkArticle.UpdatedAt || sdkArticle.updated_at || '',
-        headline: sdkArticle.Headline || sdkArticle.headline || '',
-        source: sdkArticle.Source || sdkArticle.source || '',
-        summary: sdkArticle.Summary || sdkArticle.summary || '',
-        url: sdkArticle.URL || sdkArticle.url || '',
+        author: sdkArticle.Author || sdkArticle.author || "",
+        content: sdkArticle.Content || sdkArticle.content || "",
+        created_at: sdkArticle.CreatedAt || sdkArticle.created_at || "",
+        updated_at: sdkArticle.UpdatedAt || sdkArticle.updated_at || "",
+        headline: sdkArticle.Headline || sdkArticle.headline || "",
+        source: sdkArticle.Source || sdkArticle.source || "",
+        summary: sdkArticle.Summary || sdkArticle.summary || "",
+        url: sdkArticle.URL || sdkArticle.url || "",
         symbols: sdkArticle.Symbols || sdkArticle.symbols || [],
         images: (sdkArticle.Images || sdkArticle.images || []).map((img) => ({
-          size: img.size as 'large' | 'small' | 'thumb',
+          size: img.size as "large" | "small" | "thumb",
           url: img.url,
         })),
       };
@@ -288,7 +402,9 @@ export async function getNews(
       return toSimpleNews(normalizedArticle, includeContent);
     });
 
-    log(`Successfully fetched ${articles.length} news articles`, { type: 'debug' });
+    log(`Successfully fetched ${articles.length} news articles`, {
+      type: "debug",
+    });
 
     return articles;
   } catch (error) {
@@ -297,13 +413,13 @@ export async function getNews(
     }
 
     const errorMessage = error instanceof Error ? error.message : String(error);
-    log(`Failed to fetch news: ${errorMessage}`, { type: 'error' });
+    log(`Failed to fetch news: ${errorMessage}`, { type: "error" });
 
     throw new NewsError(
       `Failed to fetch news: ${errorMessage}`,
-      'FETCH_ERROR',
+      "FETCH_ERROR",
       undefined,
-      error
+      error,
     );
   }
 }
@@ -319,20 +435,20 @@ export async function getNews(
 export async function getLatestNews(
   client: AlpacaClient,
   symbol: string,
-  limit: number = 10
+  limit: number = 10,
 ): Promise<SimpleNews[]> {
   const normalizedSymbol = symbol.toUpperCase().trim();
 
   if (!normalizedSymbol) {
-    throw new NewsError('Symbol is required', 'INVALID_SYMBOL');
+    throw new NewsError("Symbol is required", "INVALID_SYMBOL");
   }
 
-  log(`Fetching latest news for ${normalizedSymbol}`, { type: 'debug' });
+  log(`Fetching latest news for ${normalizedSymbol}`, { type: "debug" });
 
   return getNews(client, {
     symbols: [normalizedSymbol],
     limit,
-    sort: 'desc',
+    sort: "desc",
   });
 }
 
@@ -348,15 +464,15 @@ export async function getLatestNews(
 export async function searchNews(
   client: AlpacaClient,
   query: string,
-  limit: number = 10
+  limit: number = 10,
 ): Promise<SimpleNews[]> {
   if (!query || query.trim().length === 0) {
-    throw new NewsError('Search query is required', 'INVALID_QUERY');
+    throw new NewsError("Search query is required", "INVALID_QUERY");
   }
 
   const searchQuery = query.trim().toLowerCase();
 
-  log(`Searching news for: ${searchQuery}`, { type: 'debug' });
+  log(`Searching news for: ${searchQuery}`, { type: "debug" });
 
   try {
     // Fetch more articles than needed to filter client-side
@@ -364,14 +480,14 @@ export async function searchNews(
 
     const articles = await getNews(client, {
       limit: fetchLimit,
-      sort: 'desc',
+      sort: "desc",
     });
 
     // Filter articles that match the search query
     const matchingArticles = articles.filter((article) => {
       const title = article.title.toLowerCase();
       const summary = article.summary.toLowerCase();
-      const content = article.content?.toLowerCase() || '';
+      const content = article.content?.toLowerCase() || "";
 
       return (
         title.includes(searchQuery) ||
@@ -383,7 +499,9 @@ export async function searchNews(
     // Return only the requested number of articles
     const result = matchingArticles.slice(0, limit);
 
-    log(`Found ${result.length} news articles matching "${query}"`, { type: 'debug' });
+    log(`Found ${result.length} news articles matching "${query}"`, {
+      type: "debug",
+    });
 
     return result;
   } catch (error) {
@@ -392,13 +510,13 @@ export async function searchNews(
     }
 
     const errorMessage = error instanceof Error ? error.message : String(error);
-    log(`Failed to search news: ${errorMessage}`, { type: 'error' });
+    log(`Failed to search news: ${errorMessage}`, { type: "error" });
 
     throw new NewsError(
       `Failed to search news: ${errorMessage}`,
-      'SEARCH_ERROR',
+      "SEARCH_ERROR",
       undefined,
-      error
+      error,
     );
   }
 }
@@ -413,21 +531,25 @@ export async function searchNews(
 export async function getNewsForSymbols(
   client: AlpacaClient,
   symbols: string[],
-  limit: number = 5
+  limit: number = 5,
 ): Promise<Map<string, SimpleNews[]>> {
   if (!symbols || symbols.length === 0) {
-    throw new NewsError('At least one symbol is required', 'INVALID_SYMBOLS');
+    throw new NewsError("At least one symbol is required", "INVALID_SYMBOLS");
   }
 
-  const normalizedSymbols = symbols.map((s) => s.toUpperCase().trim()).filter(Boolean);
+  const normalizedSymbols = symbols
+    .map((s) => s.toUpperCase().trim())
+    .filter(Boolean);
 
-  log(`Fetching news for ${normalizedSymbols.length} symbols`, { type: 'debug' });
+  log(`Fetching news for ${normalizedSymbols.length} symbols`, {
+    type: "debug",
+  });
 
   // Fetch news for all symbols at once
   const allNews = await getNews(client, {
     symbols: normalizedSymbols,
     limit: normalizedSymbols.length * limit,
-    sort: 'desc',
+    sort: "desc",
   });
 
   // Group news by symbol
@@ -440,7 +562,9 @@ export async function getNewsForSymbols(
 
   // Distribute articles to their respective symbols
   for (const article of allNews) {
-    const articleSymbols = Array.isArray(article.symbols) ? article.symbols : [article.symbols];
+    const articleSymbols = Array.isArray(article.symbols)
+      ? article.symbols
+      : [article.symbols];
 
     for (const symbol of articleSymbols) {
       const upperSymbol = symbol.toUpperCase();
@@ -454,7 +578,9 @@ export async function getNewsForSymbols(
     }
   }
 
-  log(`Successfully fetched news for ${newsBySymbol.size} symbols`, { type: 'debug' });
+  log(`Successfully fetched news for ${newsBySymbol.size} symbols`, {
+    type: "debug",
+  });
 
   return newsBySymbol;
 }
@@ -469,7 +595,7 @@ export async function getNewsForSymbols(
 export async function getSymbolSentiment(
   client: AlpacaClient,
   symbol: string,
-  limit: number = 10
+  limit: number = 10,
 ): Promise<{ sentiment: number; articleCount: number }> {
   const news = await getLatestNews(client, symbol, limit);
 
@@ -480,10 +606,16 @@ export async function getSymbolSentiment(
     };
   }
 
-  const totalSentiment = news.reduce((sum, article) => sum + article.sentiment, 0);
+  const totalSentiment = news.reduce(
+    (sum, article) => sum + article.sentiment,
+    0,
+  );
   const avgSentiment = totalSentiment / news.length;
 
-  log(`Sentiment for ${symbol}: ${avgSentiment.toFixed(3)} (${news.length} articles)`, { type: 'debug' });
+  log(
+    `Sentiment for ${symbol}: ${avgSentiment.toFixed(3)} (${news.length} articles)`,
+    { type: "debug" },
+  );
 
   return {
     sentiment: avgSentiment,

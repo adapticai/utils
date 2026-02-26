@@ -5,6 +5,7 @@ This module provides a structured error type hierarchy for all API integrations 
 ## Overview
 
 All error classes extend from `AdapticUtilsError`, which provides:
+
 - Structured error information (code, service, message)
 - Automatic retry capability detection based on error type
 - Error chaining with `cause` parameter
@@ -15,6 +16,7 @@ All error classes extend from `AdapticUtilsError`, which provides:
 ### Base Error
 
 #### `AdapticUtilsError`
+
 Base class for all utils errors.
 
 ```typescript
@@ -30,6 +32,7 @@ new AdapticUtilsError(
 ### API-Specific Errors
 
 #### `AlpacaApiError`
+
 Errors from Alpaca Trading and Market Data APIs.
 
 ```typescript
@@ -42,10 +45,12 @@ new AlpacaApiError(
 ```
 
 **Auto-retryable when:**
+
 - Status code is 429 (rate limit)
 - Status code is 5xx (server error)
 
 #### `PolygonApiError`
+
 Errors from Polygon.io market data API.
 
 ```typescript
@@ -58,10 +63,12 @@ new PolygonApiError(
 ```
 
 **Auto-retryable when:**
+
 - Status code is 429 (rate limit)
 - Status code is 5xx (server error)
 
 #### `AlphaVantageError`
+
 Errors from AlphaVantage financial data API.
 
 ```typescript
@@ -74,12 +81,14 @@ new AlphaVantageError(
 ```
 
 **Auto-retryable when:**
+
 - Status code is 429 (rate limit)
 - Status code is 5xx (server error)
 
 ### General Error Types
 
 #### `TimeoutError`
+
 Request timeout errors. Always retryable.
 
 ```typescript
@@ -92,6 +101,7 @@ new TimeoutError(
 ```
 
 #### `ValidationError`
+
 Input validation failures. Never retryable.
 
 ```typescript
@@ -104,6 +114,7 @@ new ValidationError(
 ```
 
 #### `AuthenticationError`
+
 Authentication/authorization failures. Never retryable.
 
 ```typescript
@@ -116,6 +127,7 @@ new AuthenticationError(
 ```
 
 #### `RateLimitError`
+
 Rate limit exceeded. Always retryable.
 
 ```typescript
@@ -128,6 +140,7 @@ new RateLimitError(
 ```
 
 #### `HttpClientError`
+
 4xx client errors. Never retryable.
 
 ```typescript
@@ -140,6 +153,7 @@ new HttpClientError(
 ```
 
 #### `HttpServerError`
+
 5xx server errors. Always retryable.
 
 ```typescript
@@ -152,6 +166,7 @@ new HttpServerError(
 ```
 
 #### `WebSocketError`
+
 WebSocket connection/communication errors.
 
 ```typescript
@@ -164,6 +179,7 @@ new WebSocketError(
 ```
 
 #### `NetworkError`
+
 Low-level network failures. Always retryable.
 
 ```typescript
@@ -175,6 +191,7 @@ new NetworkError(
 ```
 
 #### `DataFormatError`
+
 Data parsing/format errors. Never retryable.
 
 ```typescript
@@ -190,27 +207,27 @@ new DataFormatError(
 ### Basic Usage
 
 ```typescript
-import { AlpacaApiError, ValidationError } from '@adaptic/utils';
+import { AlpacaApiError, ValidationError } from "@adaptic/utils";
 
 // API error with status code
 throw new AlpacaApiError(
-  'Failed to fetch account details',
-  'ACCOUNT_FETCH_ERROR',
-  500
+  "Failed to fetch account details",
+  "ACCOUNT_FETCH_ERROR",
+  500,
 );
 
 // Validation error
 throw new ValidationError(
-  'Symbol must be a non-empty string',
-  'alpaca',
-  'symbol'
+  "Symbol must be a non-empty string",
+  "alpaca",
+  "symbol",
 );
 ```
 
 ### Error Handling with Retry Logic
 
 ```typescript
-import { AlpacaApiError, TimeoutError } from '@adaptic/utils';
+import { AlpacaApiError, TimeoutError } from "@adaptic/utils";
 
 async function fetchWithRetry(fn: () => Promise<any>, maxRetries = 3) {
   let lastError;
@@ -227,10 +244,14 @@ async function fetchWithRetry(fn: () => Promise<any>, maxRetries = 3) {
 
         // If it's a rate limit error, wait for the specified time
         if (error instanceof RateLimitError && error.retryAfterMs) {
-          await new Promise(resolve => setTimeout(resolve, error.retryAfterMs));
+          await new Promise((resolve) =>
+            setTimeout(resolve, error.retryAfterMs),
+          );
         } else {
           // Exponential backoff
-          await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+          await new Promise((resolve) =>
+            setTimeout(resolve, Math.pow(2, attempt) * 1000),
+          );
         }
 
         continue;
@@ -248,25 +269,25 @@ async function fetchWithRetry(fn: () => Promise<any>, maxRetries = 3) {
 ### Error Chaining
 
 ```typescript
-import { AlpacaApiError, NetworkError } from '@adaptic/utils';
+import { AlpacaApiError, NetworkError } from "@adaptic/utils";
 
 async function fetchData() {
   try {
-    const response = await fetch('https://api.alpaca.markets/v2/account');
+    const response = await fetch("https://api.alpaca.markets/v2/account");
     if (!response.ok) {
       throw new AlpacaApiError(
-        'Failed to fetch account',
-        'ACCOUNT_FETCH_ERROR',
-        response.status
+        "Failed to fetch account",
+        "ACCOUNT_FETCH_ERROR",
+        response.status,
       );
     }
     return response.json();
   } catch (error) {
-    if (error instanceof TypeError && error.message.includes('fetch')) {
+    if (error instanceof TypeError && error.message.includes("fetch")) {
       throw new NetworkError(
-        'Network request failed',
-        'alpaca',
-        error // Chain the original error
+        "Network request failed",
+        "alpaca",
+        error, // Chain the original error
       );
     }
     throw error;
@@ -280,15 +301,15 @@ async function fetchData() {
 import {
   AdapticUtilsError,
   AlpacaApiError,
-  AuthenticationError
-} from '@adaptic/utils';
+  AuthenticationError,
+} from "@adaptic/utils";
 
 try {
   await someApiCall();
 } catch (error) {
   if (error instanceof AuthenticationError) {
     // Handle auth errors specifically
-    console.error('Authentication failed:', error.message);
+    console.error("Authentication failed:", error.message);
     // Redirect to login, etc.
   } else if (error instanceof AlpacaApiError) {
     // Handle Alpaca-specific errors
@@ -301,7 +322,7 @@ try {
     }
   } else {
     // Handle unexpected errors
-    console.error('Unexpected error:', error);
+    console.error("Unexpected error:", error);
   }
 }
 ```
@@ -324,11 +345,7 @@ throw new Error(`Alpaca API error (${response.status}): ${errorText}`);
 ### After
 
 ```typescript
-throw new AlpacaApiError(
-  errorText,
-  'API_ERROR',
-  response.status
-);
+throw new AlpacaApiError(errorText, "API_ERROR", response.status);
 ```
 
 ## Best Practices

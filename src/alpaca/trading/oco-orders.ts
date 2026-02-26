@@ -11,13 +11,13 @@
  * @module oco-orders
  */
 
-import { AlpacaClient } from '../client';
-import { AlpacaOrder, OrderSide, TimeInForce } from '../../types/alpaca-types';
-import { log as baseLog } from '../../logging';
-import { LogOptions } from '../../types/logging-types';
+import { AlpacaClient } from "../client";
+import { AlpacaOrder, OrderSide, TimeInForce } from "../../types/alpaca-types";
+import { log as baseLog } from "../../logging";
+import { LogOptions } from "../../types/logging-types";
 
-const log = (message: string, options: LogOptions = { type: 'info' }) => {
-  baseLog(message, { ...options, source: 'OCOOrders' });
+const log = (message: string, options: LogOptions = { type: "info" }) => {
+  baseLog(message, { ...options, source: "OCOOrders" });
 };
 
 /**
@@ -83,7 +83,9 @@ export interface OCOOrderResult {
  * or 4 decimal places for prices less than $1
  */
 function roundPriceForAlpaca(price: number): number {
-  return price >= 1 ? Math.round(price * 100) / 100 : Math.round(price * 10000) / 10000;
+  return price >= 1
+    ? Math.round(price * 100) / 100
+    : Math.round(price * 10000) / 10000;
 }
 
 /**
@@ -91,51 +93,54 @@ function roundPriceForAlpaca(price: number): number {
  * @throws Error if parameters are invalid
  */
 function validateOCOParams(params: OCOOrderParams): void {
-  if (!params.symbol || params.symbol.trim() === '') {
-    throw new Error('OCO order requires a valid symbol');
+  if (!params.symbol || params.symbol.trim() === "") {
+    throw new Error("OCO order requires a valid symbol");
   }
 
   if (!params.qty || params.qty <= 0) {
-    throw new Error('OCO order requires a positive quantity');
+    throw new Error("OCO order requires a positive quantity");
   }
 
   if (!Number.isInteger(params.qty)) {
-    throw new Error('OCO order quantity must be a whole number');
+    throw new Error("OCO order quantity must be a whole number");
   }
 
   if (!params.takeProfit || !params.takeProfit.limitPrice) {
-    throw new Error('OCO order requires takeProfit with limitPrice');
+    throw new Error("OCO order requires takeProfit with limitPrice");
   }
 
   if (params.takeProfit.limitPrice <= 0) {
-    throw new Error('Take profit limitPrice must be positive');
+    throw new Error("Take profit limitPrice must be positive");
   }
 
   if (!params.stopLoss || !params.stopLoss.stopPrice) {
-    throw new Error('OCO order requires stopLoss with stopPrice');
+    throw new Error("OCO order requires stopLoss with stopPrice");
   }
 
   if (params.stopLoss.stopPrice <= 0) {
-    throw new Error('Stop loss stopPrice must be positive');
+    throw new Error("Stop loss stopPrice must be positive");
   }
 
-  if (params.stopLoss.limitPrice !== undefined && params.stopLoss.limitPrice <= 0) {
-    throw new Error('Stop loss limitPrice must be positive if provided');
+  if (
+    params.stopLoss.limitPrice !== undefined &&
+    params.stopLoss.limitPrice <= 0
+  ) {
+    throw new Error("Stop loss limitPrice must be positive if provided");
   }
 
   // Validate price logic based on side
-  if (params.side === 'sell') {
+  if (params.side === "sell") {
     // For sell orders (closing long): take profit should be higher than stop
     if (params.takeProfit.limitPrice <= params.stopLoss.stopPrice) {
       throw new Error(
-        'For sell OCO orders, take profit limit price must be higher than stop loss price'
+        "For sell OCO orders, take profit limit price must be higher than stop loss price",
       );
     }
   } else {
     // For buy orders (closing short): take profit should be lower than stop
     if (params.takeProfit.limitPrice >= params.stopLoss.stopPrice) {
       throw new Error(
-        'For buy OCO orders, take profit limit price must be lower than stop loss price'
+        "For buy OCO orders, take profit limit price must be lower than stop loss price",
       );
     }
   }
@@ -193,19 +198,28 @@ function validateOCOParams(params: OCOOrderParams): void {
  */
 export async function createOCOOrder(
   client: AlpacaClient,
-  params: OCOOrderParams
+  params: OCOOrderParams,
 ): Promise<OCOOrderResult> {
   // Validate parameters
   validateOCOParams(params);
 
-  const { symbol, qty, side, takeProfit, stopLoss, timeInForce = 'gtc' } = params;
+  const {
+    symbol,
+    qty,
+    side,
+    takeProfit,
+    stopLoss,
+    timeInForce = "gtc",
+  } = params;
 
   log(
     `Creating OCO order for ${symbol}: ${side} ${qty} shares | ` +
-    `Take profit at $${takeProfit.limitPrice.toFixed(2)} | ` +
-    `Stop loss at $${stopLoss.stopPrice.toFixed(2)}` +
-    (stopLoss.limitPrice ? ` (limit: $${stopLoss.limitPrice.toFixed(2)})` : ''),
-    { symbol, type: 'info' }
+      `Take profit at $${takeProfit.limitPrice.toFixed(2)} | ` +
+      `Stop loss at $${stopLoss.stopPrice.toFixed(2)}` +
+      (stopLoss.limitPrice
+        ? ` (limit: $${stopLoss.limitPrice.toFixed(2)})`
+        : ""),
+    { symbol, type: "info" },
   );
 
   const sdk = client.getSDK();
@@ -216,9 +230,9 @@ export async function createOCOOrder(
       symbol,
       qty: qty.toString(),
       side,
-      type: 'limit', // Primary order is the take profit limit
+      type: "limit", // Primary order is the take profit limit
       time_in_force: timeInForce,
-      order_class: 'oco',
+      order_class: "oco",
       limit_price: roundPriceForAlpaca(takeProfit.limitPrice).toString(),
       stop_loss: {
         stop_price: roundPriceForAlpaca(stopLoss.stopPrice).toString(),
@@ -227,16 +241,18 @@ export async function createOCOOrder(
 
     // Add stop-limit price if provided
     if (stopLoss.limitPrice !== undefined) {
-      orderRequest.stop_loss.limit_price = roundPriceForAlpaca(stopLoss.limitPrice).toString();
+      (orderRequest.stop_loss as any).limit_price = roundPriceForAlpaca(
+        stopLoss.limitPrice,
+      ).toString();
     }
 
-    log(
-      `Submitting OCO order request: ${JSON.stringify(orderRequest)}`,
-      { symbol, type: 'debug' }
-    );
+    log(`Submitting OCO order request: ${JSON.stringify(orderRequest)}`, {
+      symbol,
+      type: "debug",
+    });
 
     // Submit the order
-    const order = await sdk.createOrder(orderRequest) as AlpacaOrder;
+    const order = (await sdk.createOrder(orderRequest)) as AlpacaOrder;
 
     // Extract leg orders from the response
     const legs = order.legs || [];
@@ -244,24 +260,23 @@ export async function createOCOOrder(
     if (legs.length < 2) {
       log(
         `OCO order created but legs not found in response. Order ID: ${order.id}`,
-        { symbol, type: 'warn' }
+        { symbol, type: "warn" },
       );
     }
 
     // Identify take profit and stop loss orders from legs
     // Take profit is the limit order, stop loss is the stop/stop_limit order
-    const takeProfitOrder = legs.find(
-      (leg) => leg.type === 'limit'
-    ) || order;
+    const takeProfitOrder = legs.find((leg) => leg.type === "limit") || order;
 
-    const stopLossOrder = legs.find(
-      (leg) => leg.type === 'stop' || leg.type === 'stop_limit'
-    ) || legs.find((leg) => leg !== takeProfitOrder) || order;
+    const stopLossOrder =
+      legs.find((leg) => leg.type === "stop" || leg.type === "stop_limit") ||
+      legs.find((leg) => leg !== takeProfitOrder) ||
+      order;
 
     log(
       `OCO order created successfully | Parent ID: ${order.id} | ` +
-      `Take profit ID: ${takeProfitOrder.id} | Stop loss ID: ${stopLossOrder.id}`,
-      { symbol, type: 'info' }
+        `Take profit ID: ${takeProfitOrder.id} | Stop loss ID: ${stopLossOrder.id}`,
+      { symbol, type: "info" },
     );
 
     return {
@@ -271,11 +286,12 @@ export async function createOCOOrder(
       parentOrderId: order.id,
     };
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    log(
-      `Failed to create OCO order for ${symbol}: ${errorMessage}`,
-      { symbol, type: 'error' }
-    );
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    log(`Failed to create OCO order for ${symbol}: ${errorMessage}`, {
+      symbol,
+      type: "error",
+    });
     throw error;
   }
 }
@@ -294,18 +310,23 @@ export async function createOCOOrder(
  */
 export async function cancelOCOOrder(
   client: AlpacaClient,
-  parentOrderId: string
+  parentOrderId: string,
 ): Promise<void> {
-  log(`Canceling OCO order group: ${parentOrderId}`, { type: 'info' });
+  log(`Canceling OCO order group: ${parentOrderId}`, { type: "info" });
 
   const sdk = client.getSDK();
 
   try {
     await sdk.cancelOrder(parentOrderId);
-    log(`OCO order group canceled successfully: ${parentOrderId}`, { type: 'info' });
+    log(`OCO order group canceled successfully: ${parentOrderId}`, {
+      type: "info",
+    });
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    log(`Failed to cancel OCO order ${parentOrderId}: ${errorMessage}`, { type: 'error' });
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    log(`Failed to cancel OCO order ${parentOrderId}: ${errorMessage}`, {
+      type: "error",
+    });
     throw error;
   }
 }
@@ -327,23 +348,26 @@ export async function cancelOCOOrder(
  */
 export async function getOCOOrderStatus(
   client: AlpacaClient,
-  parentOrderId: string
+  parentOrderId: string,
 ): Promise<AlpacaOrder> {
-  log(`Getting OCO order status: ${parentOrderId}`, { type: 'debug' });
+  log(`Getting OCO order status: ${parentOrderId}`, { type: "debug" });
 
   const sdk = client.getSDK();
 
   try {
-    const order = await sdk.getOrder(parentOrderId) as AlpacaOrder;
+    const order = (await sdk.getOrder(parentOrderId)) as AlpacaOrder;
     log(
       `OCO order ${parentOrderId} status: ${order.status} | ` +
-      `Legs: ${order.legs?.length || 0}`,
-      { type: 'debug' }
+        `Legs: ${order.legs?.length || 0}`,
+      { type: "debug" },
     );
     return order;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    log(`Failed to get OCO order status ${parentOrderId}: ${errorMessage}`, { type: 'error' });
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    log(`Failed to get OCO order status ${parentOrderId}: ${errorMessage}`, {
+      type: "error",
+    });
     throw error;
   }
 }
@@ -375,18 +399,18 @@ export async function protectLongPosition(
   qty: number,
   takeProfitPrice: number,
   stopLossPrice: number,
-  stopLimitPrice?: number
+  stopLimitPrice?: number,
 ): Promise<OCOOrderResult> {
   return createOCOOrder(client, {
     symbol,
     qty,
-    side: 'sell',
+    side: "sell",
     takeProfit: { limitPrice: takeProfitPrice },
     stopLoss: {
       stopPrice: stopLossPrice,
       limitPrice: stopLimitPrice,
     },
-    timeInForce: 'gtc',
+    timeInForce: "gtc",
   });
 }
 
@@ -417,18 +441,18 @@ export async function protectShortPosition(
   qty: number,
   takeProfitPrice: number,
   stopLossPrice: number,
-  stopLimitPrice?: number
+  stopLimitPrice?: number,
 ): Promise<OCOOrderResult> {
   return createOCOOrder(client, {
     symbol,
     qty,
-    side: 'buy',
+    side: "buy",
     takeProfit: { limitPrice: takeProfitPrice },
     stopLoss: {
       stopPrice: stopLossPrice,
       limitPrice: stopLimitPrice,
     },
-    timeInForce: 'gtc',
+    timeInForce: "gtc",
   });
 }
 

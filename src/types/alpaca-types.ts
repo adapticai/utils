@@ -1,7 +1,10 @@
 // src/types/alpaca-types.ts
 
-import { ApolloClientType, NormalizedCacheObject } from '@adaptic/backend-legacy';
-import { types } from '@adaptic/backend-legacy';
+import {
+  ApolloClientType,
+  NormalizedCacheObject,
+} from "@adaptic/backend-legacy";
+import { types } from "@adaptic/backend-legacy";
 
 /**
  * Represents the authentication details for Alpaca.
@@ -10,7 +13,7 @@ export interface AlpacaAuth {
   adapticAccountId?: string; // Optional account ID for Adaptic
   alpacaApiKey?: string; // API key for Alpaca
   alpacaApiSecret?: string; // API secret for Alpaca
-  type?: 'PAPER' | 'LIVE'; // Type of Alpaca account
+  type?: "PAPER" | "LIVE"; // Type of Alpaca account
 }
 
 /**
@@ -56,13 +59,13 @@ export interface AccountConfiguration {
   allocation?: AllocationConfig;
 
   // Regulatory & Safety Settings
-  dtbp_check: 'both' | 'entry' | 'exit';
-  trade_confirm_email: 'all' | 'none';
+  dtbp_check: "both" | "entry" | "exit";
+  trade_confirm_email: "all" | "none";
   no_shorting: boolean;
   fractional_trading: boolean;
-  max_margin_multiplier: '1' | '2' | '4';
+  max_margin_multiplier: "1" | "2" | "4";
   max_options_trading_level?: 0 | 1 | 2 | 3;
-  pdt_check: 'both' | 'entry' | 'exit';
+  pdt_check: "both" | "entry" | "exit";
   ptp_no_exception_entry: boolean;
 
   // Portfolio Protection
@@ -133,7 +136,7 @@ export type AlpacaPosition = {
   qty: string; // Quantity of the asset
   qty_available: string; // Available quantity of the asset
   avg_entry_price: string; // Average entry price of the position
-  side: 'long' | 'short'; // Position side
+  side: "long" | "short"; // Position side
   market_value: string; // Market value of the position
   cost_basis: string; // Cost basis of the position
   unrealized_pl: string; // Unrealized profit/loss
@@ -146,53 +149,62 @@ export type AlpacaPosition = {
 };
 
 // Order Types
-export type OrderSide = 'buy' | 'sell';
+export type OrderSide = "buy" | "sell";
 
 /**
  * Represents the type of order.
  */
-export type OrderType = 'market' | 'limit' | 'stop' | 'stop_limit' | 'trailing_stop';
+export type OrderType =
+  | "market"
+  | "limit"
+  | "stop"
+  | "stop_limit"
+  | "trailing_stop";
 
 /**
  * Represents the time in force for an order.
  */
-export type TimeInForce = 'day' | 'gtc' | 'opg' | 'cls' | 'ioc' | 'fok';
+export type TimeInForce = "day" | "gtc" | "opg" | "cls" | "ioc" | "fok";
 
 /**
  * Represents the class of an order.
  */
-export type OrderClass = 'simple' | 'oco' | 'oto' | 'bracket' | 'mleg';
+export type OrderClass = "simple" | "oco" | "oto" | "bracket" | "mleg";
 
 /**
  * Represents the status of an order.
  */
 export type OrderStatus =
-  | 'new'
-  | 'partially_filled'
-  | 'filled'
-  | 'done_for_day'
-  | 'canceled'
-  | 'expired'
-  | 'replaced'
-  | 'pending_cancel'
-  | 'pending_replace'
-  | 'accepted'
-  | 'pending_new'
-  | 'accepted_for_bidding'
-  | 'stopped'
-  | 'rejected'
-  | 'suspended'
-  | 'calculated';
+  | "new"
+  | "partially_filled"
+  | "filled"
+  | "done_for_day"
+  | "canceled"
+  | "expired"
+  | "replaced"
+  | "pending_cancel"
+  | "pending_replace"
+  | "accepted"
+  | "pending_new"
+  | "accepted_for_bidding"
+  | "stopped"
+  | "rejected"
+  | "suspended"
+  | "calculated";
 
 /**
  * Represents the class of an asset.
  */
-export type AssetClass = 'us_equity' | 'us_option' | 'crypto';
+export type AssetClass = "us_equity" | "us_option" | "crypto";
 
 /**
  * Represents the intent of a position.
  */
-export type PositionIntent = 'buy_to_open' | 'buy_to_close' | 'sell_to_open' | 'sell_to_close';
+export type PositionIntent =
+  | "buy_to_open"
+  | "buy_to_close"
+  | "sell_to_open"
+  | "sell_to_close";
 
 /**
  * Parameters for take profit orders.
@@ -235,7 +247,7 @@ export interface CreateOrderParams {
   legs?: OrderLeg[]; // Optional legs for multi-leg orders
 }
 export interface CreateMultiLegOrderParams {
-  order_class: 'mleg'; // Must be 'mleg' for multi-leg orders
+  order_class: "mleg"; // Must be 'mleg' for multi-leg orders
   qty: string; // Quantity of the multi-leg order
   type: OrderType; // Type of the order (market or limit)
   limit_price?: string; // Optional limit price for limit orders
@@ -252,11 +264,11 @@ export interface CreateMultiLegOrderParams {
  * Parameters for getting orders.
  */
 export interface GetOrdersParams {
-  status?: 'open' | 'closed' | 'all'; // Status of the orders
+  status?: "open" | "closed" | "all"; // Status of the orders
   limit?: number; // Optional limit on the number of orders
   after?: string; // Optional date to filter orders after
   until?: string; // Optional date to filter orders until
-  direction?: 'asc' | 'desc'; // Optional direction for sorting
+  direction?: "asc" | "desc"; // Optional direction for sorting
   nested?: boolean; // Optional nested parameter
   symbols?: string[]; // Optional symbols to filter orders
   side?: OrderSide; // Optional side to filter orders
@@ -266,11 +278,11 @@ export interface GetOrdersParams {
  * SDK-compatible parameters for getting orders (with symbols as string)
  */
 export interface SDKGetOrdersParams {
-  status?: 'open' | 'closed' | 'all';
+  status?: "open" | "closed" | "all";
   limit?: number;
   after?: string;
   until?: string;
-  direction?: 'asc' | 'desc';
+  direction?: "asc" | "desc";
   nested?: boolean;
   symbols?: string; // SDK expects comma-separated string
   side?: OrderSide;
@@ -339,10 +351,10 @@ export type CryptoTimeframe =
   | `${number}T` // 1-59 minutes
   | `${number}Hour`
   | `${number}H` // 1-23 hours
-  | '1Day'
-  | '1D'
-  | '1Week'
-  | '1W'
+  | "1Day"
+  | "1D"
+  | "1Week"
+  | "1W"
   | `${1 | 2 | 3 | 4 | 6 | 12}Month`
   | `${1 | 2 | 3 | 4 | 6 | 12}M`;
 
@@ -370,10 +382,20 @@ export interface CryptoBarsParams {
   end?: Date; // End date for fetching bars
   limit?: number; // Maximum number of bars to return
   page_token?: string; // Token for pagination
-  sort?: 'asc' | 'desc'; // Sorting order
+  sort?: "asc" | "desc"; // Sorting order
 }
 
-export type TimeFrame = '1Min' | '5Min' | '15Min' | '30Min' | '1Hour' | '2Hour' | '4Hour' | '1Day' | '1Week' | '1Month';
+export type TimeFrame =
+  | "1Min"
+  | "5Min"
+  | "15Min"
+  | "30Min"
+  | "1Hour"
+  | "2Hour"
+  | "4Hour"
+  | "1Day"
+  | "1Week"
+  | "1Month";
 
 /**
  * Response structure for fetching cryptocurrency bars.
@@ -386,58 +408,58 @@ export interface CryptoBarsResponse {
 }
 
 // Supported trading pairs
-export type BTCPairs = 'BCH/BTC' | 'ETH/BTC' | 'LTC/BTC' | 'UNI/BTC';
+export type BTCPairs = "BCH/BTC" | "ETH/BTC" | "LTC/BTC" | "UNI/BTC";
 export type USDTPairs =
-  | 'AAVE/USDT'
-  | 'BCH/USDT'
-  | 'BTC/USDT'
-  | 'DOGE/USDT'
-  | 'ETH/USDT'
-  | 'LINK/USDT'
-  | 'LTC/USDT'
-  | 'SUSHI/USDT'
-  | 'UNI/USDT'
-  | 'YFI/USDT';
+  | "AAVE/USDT"
+  | "BCH/USDT"
+  | "BTC/USDT"
+  | "DOGE/USDT"
+  | "ETH/USDT"
+  | "LINK/USDT"
+  | "LTC/USDT"
+  | "SUSHI/USDT"
+  | "UNI/USDT"
+  | "YFI/USDT";
 export type USDCPairs =
-  | 'AAVE/USDC'
-  | 'AVAX/USDC'
-  | 'BAT/USDC'
-  | 'BCH/USDC'
-  | 'BTC/USDC'
-  | 'CRV/USDC'
-  | 'DOGE/USDC'
-  | 'DOT/USDC'
-  | 'ETH/USDC'
-  | 'GRT/USDC'
-  | 'LINK/USDC'
-  | 'LTC/USDC'
-  | 'MKR/USDC'
-  | 'SHIB/USDC'
-  | 'SUSHI/USDC'
-  | 'UNI/USDC'
-  | 'XTZ/USDC'
-  | 'YFI/USDC';
+  | "AAVE/USDC"
+  | "AVAX/USDC"
+  | "BAT/USDC"
+  | "BCH/USDC"
+  | "BTC/USDC"
+  | "CRV/USDC"
+  | "DOGE/USDC"
+  | "DOT/USDC"
+  | "ETH/USDC"
+  | "GRT/USDC"
+  | "LINK/USDC"
+  | "LTC/USDC"
+  | "MKR/USDC"
+  | "SHIB/USDC"
+  | "SUSHI/USDC"
+  | "UNI/USDC"
+  | "XTZ/USDC"
+  | "YFI/USDC";
 export type USDPairs =
-  | 'AAVE/USD'
-  | 'AVAX/USD'
-  | 'BAT/USD'
-  | 'BCH/USD'
-  | 'BTC/USD'
-  | 'CRV/USD'
-  | 'DOGE/USD'
-  | 'DOT/USD'
-  | 'ETH/USD'
-  | 'GRT/USD'
-  | 'LINK/USD'
-  | 'LTC/USD'
-  | 'MKR/USD'
-  | 'SHIB/USD'
-  | 'SUSHI/USD'
-  | 'UNI/USD'
-  | 'USDC/USD'
-  | 'USDT/USD'
-  | 'XTZ/USD'
-  | 'YFI/USD';
+  | "AAVE/USD"
+  | "AVAX/USD"
+  | "BAT/USD"
+  | "BCH/USD"
+  | "BTC/USD"
+  | "CRV/USD"
+  | "DOGE/USD"
+  | "DOT/USD"
+  | "ETH/USD"
+  | "GRT/USD"
+  | "LINK/USD"
+  | "LTC/USD"
+  | "MKR/USD"
+  | "SHIB/USD"
+  | "SUSHI/USD"
+  | "UNI/USD"
+  | "USDC/USD"
+  | "USDT/USD"
+  | "XTZ/USD"
+  | "YFI/USD";
 
 /**
  * Represents a cryptocurrency trading pair.
@@ -448,7 +470,7 @@ export type CryptoPair = BTCPairs | USDTPairs | USDCPairs | USDPairs;
  * Represents an image associated with a news article.
  */
 export interface NewsImage {
-  size: 'large' | 'small' | 'thumb'; // Size of the image
+  size: "large" | "small" | "thumb"; // Size of the image
   url: string; // URL of the image
 }
 
@@ -498,13 +520,13 @@ export interface SimpleNews {
  */
 export interface PortfolioHistoryParams {
   period?: string; // Format: number + unit (e.g., '1D', '1W', '1M', '1A')
-  timeframe?: '1Min' | '5Min' | '15Min' | '1H' | '1D'; // Timeframe for the data
-  intraday_reporting?: 'market_hours' | 'extended_hours' | 'continuous'; // Reporting mode
+  timeframe?: "1Min" | "5Min" | "15Min" | "1H" | "1D"; // Timeframe for the data
+  intraday_reporting?: "market_hours" | "extended_hours" | "continuous"; // Reporting mode
   start?: string; // Start date in RFC3339 format
   end?: string; // End date in RFC3339 format
   date_end?: string; // End date in YYYY-MM-DD format (deprecated)
   extended_hours?: boolean; // Extended hours trading (deprecated)
-  pnl_reset?: 'per_day' | 'no_reset'; // PnL reset option
+  pnl_reset?: "per_day" | "no_reset"; // PnL reset option
   cashflow_types?: string; // Cashflow types to include
 }
 
@@ -547,13 +569,13 @@ export interface AlpacaAccountDetails {
   id: string; // Account ID
   account_number: string; // Account number
   status:
-    | 'ONBOARDING'
-    | 'SUBMISSION_FAILED'
-    | 'SUBMITTED'
-    | 'ACCOUNT_UPDATED'
-    | 'APPROVAL_PENDING'
-    | 'ACTIVE'
-    | 'REJECTED'; // Account status
+    | "ONBOARDING"
+    | "SUBMISSION_FAILED"
+    | "SUBMITTED"
+    | "ACCOUNT_UPDATED"
+    | "APPROVAL_PENDING"
+    | "ACTIVE"
+    | "REJECTED"; // Account status
   currency: string; // Currency of the account
   cash: string; // Cash balance
   portfolio_value: string; // Deprecated, equivalent to equity
@@ -572,7 +594,7 @@ export interface AlpacaAccountDetails {
   short_market_value: string; // Short market value
   equity: string; // Equity value
   last_equity: string; // Last equity value
-  multiplier: '1' | '2' | '4'; // Margin multiplier
+  multiplier: "1" | "2" | "4"; // Margin multiplier
   buying_power: string; // Buying power
   initial_margin: string; // Initial margin
   maintenance_margin: string; // Maintenance margin
@@ -594,11 +616,11 @@ export interface AlpacaAccountDetails {
  */
 export interface AlpacaAsset {
   id: string; // Asset ID
-  class: 'us_equity' | 'us_option' | 'crypto'; // Class of the asset
+  class: "us_equity" | "us_option" | "crypto"; // Class of the asset
   exchange: string; // Exchange where the asset is traded
   symbol: string; // Symbol of the asset
   name: string; // Name of the asset
-  status: 'active' | 'inactive'; // Status of the asset
+  status: "active" | "inactive"; // Status of the asset
   tradable: boolean; // Indicates if the asset is tradable
   marginable: boolean; // Indicates if the asset is marginable
   shortable: boolean; // Indicates if the asset is shortable
@@ -617,7 +639,7 @@ export interface GetAssetParams {
   symbolOrAssetId: string; // Symbol or asset ID to retrieve
 }
 
-export type DataFeed = 'sip' | 'iex' | 'delayed_sip';
+export type DataFeed = "sip" | "iex" | "delayed_sip";
 
 export interface AlpacaQuote {
   t: string; // RFC-3339 timestamp with nanoseconds
@@ -679,17 +701,17 @@ export interface LatestQuotesResponse {
 export type OptionsTradingLevel = 0 | 1 | 2 | 3;
 
 // Option Contract Type
-export type OptionType = 'call' | 'put';
+export type OptionType = "call" | "put";
 
 // Option Style
-export type OptionStyle = 'american' | 'european';
+export type OptionStyle = "american" | "european";
 
 // Option Contract
 export interface OptionContract {
   id: string;
   symbol: string;
   name: string;
-  status: 'active' | 'inactive';
+  status: "active" | "inactive";
   tradable: boolean;
   expiration_date: string;
   root_symbol: string;
@@ -713,7 +735,7 @@ export interface GetOptionContractsParams {
   strike_price_gte?: string;
   strike_price_lte?: string;
   type?: OptionType;
-  status?: 'active' | 'inactive';
+  status?: "active" | "inactive";
   limit?: number;
   page_token?: string;
 }
@@ -729,8 +751,12 @@ export interface OptionContractsResponse {
 export interface OrderLeg {
   symbol: string;
   ratio_qty: string;
-  side: 'buy' | 'sell';
-  position_intent: 'buy_to_open' | 'buy_to_close' | 'sell_to_open' | 'sell_to_close';
+  side: "buy" | "sell";
+  position_intent:
+    | "buy_to_open"
+    | "buy_to_close"
+    | "sell_to_open"
+    | "sell_to_close";
 }
 
 // Option Greeks
@@ -841,7 +867,7 @@ export interface OptionsChainParams {
    * The source feed of the data. opra is the official OPRA feed, indicative is a free indicative feed
    * where trades are delayed and quotes are modified. Default: opra if the user has a subscription, otherwise indicative.
    */
-  feed?: 'opra' | 'indicative';
+  feed?: "opra" | "indicative";
   /**
    * Number of maximum snapshots to return in a response (1 to 1000)
    * The limit applies to the total number of data points, not the number per symbol!
@@ -920,7 +946,7 @@ export interface HistoricalOptionsBarsParams {
   /** Pagination token for next page */
   page_token?: string;
   /** Sort order (asc or desc) */
-  sort?: 'asc' | 'desc';
+  sort?: "asc" | "desc";
 }
 
 // Parameters for historical options trades request
@@ -942,7 +968,7 @@ export interface HistoricalOptionsTradesParams {
   /** Pagination token for next page */
   page_token?: string;
   /** Sort order (asc or desc) */
-  sort?: 'asc' | 'desc';
+  sort?: "asc" | "desc";
 }
 
 // Parameters for options snapshots request
@@ -966,7 +992,7 @@ export interface OptionsExchangeCodesResponse {
 }
 
 // Tick type for condition codes
-export type OptionTickType = 'trade' | 'quote';
+export type OptionTickType = "trade" | "quote";
 
 /**
  * Configuration for options spread trading strategies.
@@ -974,7 +1000,7 @@ export type OptionTickType = 'trade' | 'quote';
  */
 export interface OptionsSpreadConfig {
   /** Strategy type to use - only spreads allowed */
-  strategy: 'call_spread' | 'put_spread';
+  strategy: "call_spread" | "put_spread";
   /** Days to expiration target (will find closest available) */
   daysToExpiration: number;
   /** Delta target for the long leg (0.1-0.9 range) */
@@ -994,9 +1020,8 @@ export interface OptionsSpreadConfig {
   targetMovePercent100?: number;
 }
 
-
 // Option-specific non-trade activity types
-export type OptionActivityType = 'OPEXC' | 'OPASN' | 'OPEXP';
+export type OptionActivityType = "OPEXC" | "OPASN" | "OPEXP";
 
 // Option-specific account activity
 export interface OptionAccountActivity {
@@ -1008,21 +1033,21 @@ export interface OptionAccountActivity {
   symbol: string;
   qty: string;
   price?: string;
-  status: 'executed';
+  status: "executed";
 }
 
 export interface TradeUpdate {
   event:
-    | 'new'
-    | 'fill'
-    | 'partial_fill'
-    | 'canceled'
-    | 'expired'
-    | 'pending_new'
-    | 'pending_cancel'
-    | 'pending_replace'
-    | 'replaced'
-    | 'done_for_day';
+    | "new"
+    | "fill"
+    | "partial_fill"
+    | "canceled"
+    | "expired"
+    | "pending_new"
+    | "pending_cancel"
+    | "pending_replace"
+    | "replaced"
+    | "done_for_day";
   price?: string;
   timestamp: string;
   qty?: string;
@@ -1030,9 +1055,9 @@ export interface TradeUpdate {
   order: AlpacaOrder;
 }
 
-export type AlpacaAccountType = 'PAPER' | 'LIVE';
-export type AlpacaOrderType = 'limit' | 'market' | 'options';
-export type EngineType = 'adaptic' | 'brain' | 'quant';
+export type AlpacaAccountType = "PAPER" | "LIVE";
+export type AlpacaOrderType = "limit" | "market" | "options";
+export type EngineType = "adaptic" | "brain" | "quant";
 
 export interface AlpacaCredentials {
   accountName: string; // The account identifier used in logs and tracking
@@ -1044,8 +1069,8 @@ export interface AlpacaCredentials {
 }
 
 // Re-export class types for external use
-export type { AlpacaTradingAPI } from '../alpaca-trading-api';
-export type { AlpacaMarketDataAPI } from '../alpaca-market-data-api';
+export type { AlpacaTradingAPI } from "../alpaca-trading-api";
+export type { AlpacaMarketDataAPI } from "../alpaca-market-data-api";
 
 // ===== REAL-TIME DATA STREAM TYPES =====
 
@@ -1063,7 +1088,7 @@ export interface AlpacaStreamMessage {
  * @see https://docs.alpaca.markets/docs/real-time-stock-pricing-data#trades
  */
 export interface AlpacaTradeStream extends AlpacaStreamMessage {
-  T: 't';
+  T: "t";
   i: number; // Trade ID
   x: string; // Exchange code
   p: number; // Trade price
@@ -1078,7 +1103,7 @@ export interface AlpacaTradeStream extends AlpacaStreamMessage {
  * @see https://docs.alpaca.markets/docs/real-time-stock-pricing-data#quotes
  */
 export interface AlpacaQuoteStream extends AlpacaStreamMessage {
-  T: 'q';
+  T: "q";
   ax: string; // Ask exchange code
   ap: number; // Ask price
   as: number; // Ask size
@@ -1095,7 +1120,7 @@ export interface AlpacaQuoteStream extends AlpacaStreamMessage {
  * @see https://docs.alpaca.markets/docs/real-time-stock-pricing-data#bars
  */
 export interface AlpacaBarStream extends AlpacaStreamMessage {
-  T: 'b';
+  T: "b";
   o: number; // Open price
   h: number; // High price
   l: number; // Low price
@@ -1110,16 +1135,16 @@ export interface AlpacaBarStream extends AlpacaStreamMessage {
  * Real-time daily stock bar message. (T: 'd')
  * @see https://docs.alpaca.markets/docs/real-time-stock-pricing-data#bars
  */
-export interface AlpacaDailyBarStream extends Omit<AlpacaBarStream, 'T'> {
-  T: 'd';
+export interface AlpacaDailyBarStream extends Omit<AlpacaBarStream, "T"> {
+  T: "d";
 }
 
 /**
  * Real-time updated stock bar message. (T: 'u')
  * @see https://docs.alpaca.markets/docs/real-time-stock-pricing-data#bars
  */
-export interface AlpacaUpdatedBarStream extends Omit<AlpacaBarStream, 'T'> {
-  T: 'u';
+export interface AlpacaUpdatedBarStream extends Omit<AlpacaBarStream, "T"> {
+  T: "u";
 }
 
 /**
@@ -1127,7 +1152,7 @@ export interface AlpacaUpdatedBarStream extends Omit<AlpacaBarStream, 'T'> {
  * @see https://docs.alpaca.markets/docs/real-time-stock-pricing-data#trading-status
  */
 export interface AlpacaTradingStatusStream extends AlpacaStreamMessage {
-  T: 's';
+  T: "s";
   sc: string; // Status code
   sm: string; // Status message
   rc: string; // Reason code
@@ -1141,7 +1166,7 @@ export interface AlpacaTradingStatusStream extends AlpacaStreamMessage {
  * @see https://docs.alpaca.markets/docs/real-time-stock-pricing-data#lulds
  */
 export interface AlpacaLULDStream extends AlpacaStreamMessage {
-  T: 'l';
+  T: "l";
   ldp: number; // Limit down price
   lup: number; // Limit up price
   i: string; // LULD indicator
@@ -1154,7 +1179,7 @@ export interface AlpacaLULDStream extends AlpacaStreamMessage {
  * @see https://docs.alpaca.markets/docs/real-time-stock-pricing-data#trade-corrections
  */
 export interface AlpacaTradeCorrectionStream extends AlpacaStreamMessage {
-  T: 'c';
+  T: "c";
   oi: number; // Original trade ID
   ci: number; // Corrected trade ID
   ox: string; // Original exchange
@@ -1174,7 +1199,7 @@ export interface AlpacaTradeCorrectionStream extends AlpacaStreamMessage {
  * @see https://docs.alpaca.markets/docs/real-time-stock-pricing-data#trade-cancelserros
  */
 export interface AlpacaTradeCancelStream extends AlpacaStreamMessage {
-  T: 'x';
+  T: "x";
   i: number; // Trade ID to be canceled
   p: number; // Price of the canceled trade
   s: number; // Size of the canceled trade
@@ -1187,7 +1212,7 @@ export interface AlpacaTradeCancelStream extends AlpacaStreamMessage {
  * @see https://docs.alpaca.markets/docs/real-time-stock-pricing-data#order-imbalances
  */
 export interface AlpacaOrderImbalanceStream extends AlpacaStreamMessage {
-  T: 'i';
+  T: "i";
   p: number; // Price
   z: string; // Tape
   t: string; // RFC-3339 formatted timestamp
@@ -1198,7 +1223,7 @@ export interface AlpacaOrderImbalanceStream extends AlpacaStreamMessage {
  * @see https://docs.alpaca.markets/docs/real-time-option-data#trades
  */
 export interface AlpacaOptionTradeStream extends AlpacaStreamMessage {
-  T: 't';
+  T: "t";
   p: number; // Trade price
   s: number; // Trade size
   c: string[]; // Trade conditions
@@ -1211,7 +1236,7 @@ export interface AlpacaOptionTradeStream extends AlpacaStreamMessage {
  * @see https://docs.alpaca.markets/docs/real-time-option-data#quotes
  */
 export interface AlpacaOptionQuoteStream extends AlpacaStreamMessage {
-  T: 'q';
+  T: "q";
   ap: number; // Ask price
   as: number; // Ask size
   ax: string; // Ask exchange
@@ -1226,7 +1251,7 @@ export interface AlpacaOptionQuoteStream extends AlpacaStreamMessage {
  * @see https://docs.alpaca.markets/docs/real-time-option-data#bars
  */
 export interface AlpacaOptionBarStream extends AlpacaStreamMessage {
-  T: 'b';
+  T: "b";
   o: number; // Open
   h: number; // High
   l: number; // Low
@@ -1249,48 +1274,51 @@ export type AlpacaStockStreamMessage =
   | AlpacaTradeCancelStream
   | AlpacaOrderImbalanceStream;
 
-export type AlpacaOptionStreamMessage = AlpacaOptionTradeStream | AlpacaOptionQuoteStream | AlpacaOptionBarStream;
+export type AlpacaOptionStreamMessage =
+  | AlpacaOptionTradeStream
+  | AlpacaOptionQuoteStream
+  | AlpacaOptionBarStream;
 
 // Type-safe event names for market data streams
 export type StockStreamEventName =
-  | 'stock-t' // Trade events
-  | 'stock-q' // Quote events
-  | 'stock-b' // Minute bar events
-  | 'stock-d' // Daily bar events
-  | 'stock-u' // Updated bar events
-  | 'stock-s' // Trading status events
-  | 'stock-l' // LULD events
-  | 'stock-c' // Trade correction events
-  | 'stock-x' // Trade cancel/error events
-  | 'stock-i' // Order imbalance events
-  | 'stock-data'; // Generic data event
+  | "stock-t" // Trade events
+  | "stock-q" // Quote events
+  | "stock-b" // Minute bar events
+  | "stock-d" // Daily bar events
+  | "stock-u" // Updated bar events
+  | "stock-s" // Trading status events
+  | "stock-l" // LULD events
+  | "stock-c" // Trade correction events
+  | "stock-x" // Trade cancel/error events
+  | "stock-i" // Order imbalance events
+  | "stock-data"; // Generic data event
 
 export type OptionStreamEventName =
-  | 'option-t' // Option trade events
-  | 'option-q' // Option quote events
-  | 'option-b' // Option bar events
-  | 'option-data'; // Generic option data event
+  | "option-t" // Option trade events
+  | "option-q" // Option quote events
+  | "option-b" // Option bar events
+  | "option-data"; // Generic option data event
 
 // Event payload mapping
 export interface StockStreamEventMap {
-  'stock-t': AlpacaTradeStream;
-  'stock-q': AlpacaQuoteStream;
-  'stock-b': AlpacaBarStream;
-  'stock-d': AlpacaDailyBarStream;
-  'stock-u': AlpacaUpdatedBarStream;
-  'stock-s': AlpacaTradingStatusStream;
-  'stock-l': AlpacaLULDStream;
-  'stock-c': AlpacaTradeCorrectionStream;
-  'stock-x': AlpacaTradeCancelStream;
-  'stock-i': AlpacaOrderImbalanceStream;
-  'stock-data': AlpacaStockStreamMessage;
+  "stock-t": AlpacaTradeStream;
+  "stock-q": AlpacaQuoteStream;
+  "stock-b": AlpacaBarStream;
+  "stock-d": AlpacaDailyBarStream;
+  "stock-u": AlpacaUpdatedBarStream;
+  "stock-s": AlpacaTradingStatusStream;
+  "stock-l": AlpacaLULDStream;
+  "stock-c": AlpacaTradeCorrectionStream;
+  "stock-x": AlpacaTradeCancelStream;
+  "stock-i": AlpacaOrderImbalanceStream;
+  "stock-data": AlpacaStockStreamMessage;
 }
 
 export interface OptionStreamEventMap {
-  'option-t': AlpacaOptionTradeStream;
-  'option-q': AlpacaOptionQuoteStream;
-  'option-b': AlpacaOptionBarStream;
-  'option-data': AlpacaOptionStreamMessage;
+  "option-t": AlpacaOptionTradeStream;
+  "option-q": AlpacaOptionQuoteStream;
+  "option-b": AlpacaOptionBarStream;
+  "option-data": AlpacaOptionStreamMessage;
 }
 
 // ===== CRYPTO STREAM TYPES =====
@@ -1300,74 +1328,74 @@ export interface OptionStreamEventMap {
  * Format: wss://stream.data.alpaca.markets/v1beta3/crypto/us
  */
 export interface AlpacaCryptoTradeStream {
-  T: 't';          // Message type: trade
-  S: string;       // Symbol (e.g., "BTC/USD")
-  p: number;       // Trade price
-  s: number;       // Trade size
-  t: string;       // Timestamp (RFC-3339)
-  i: number;       // Trade ID
-  tks: 'B' | 'S';  // Taker side: B=buy, S=sell
+  T: "t"; // Message type: trade
+  S: string; // Symbol (e.g., "BTC/USD")
+  p: number; // Trade price
+  s: number; // Trade size
+  t: string; // Timestamp (RFC-3339)
+  i: number; // Trade ID
+  tks: "B" | "S"; // Taker side: B=buy, S=sell
 }
 
 /**
  * Crypto quote stream message from Alpaca WebSocket
  */
 export interface AlpacaCryptoQuoteStream {
-  T: 'q';          // Message type: quote
-  S: string;       // Symbol (e.g., "BTC/USD")
-  bp: number;      // Bid price
-  bs: number;      // Bid size
-  ap: number;      // Ask price
-  as: number;      // Ask size
-  t: string;       // Timestamp (RFC-3339)
+  T: "q"; // Message type: quote
+  S: string; // Symbol (e.g., "BTC/USD")
+  bp: number; // Bid price
+  bs: number; // Bid size
+  ap: number; // Ask price
+  as: number; // Ask size
+  t: string; // Timestamp (RFC-3339)
 }
 
 /**
  * Crypto bar stream message from Alpaca WebSocket
  */
 export interface AlpacaCryptoBarStream {
-  T: 'b';          // Message type: bar
-  S: string;       // Symbol (e.g., "BTC/USD")
-  o: number;       // Open price
-  h: number;       // High price
-  l: number;       // Low price
-  c: number;       // Close price
-  v: number;       // Volume
-  t: string;       // Timestamp (RFC-3339)
-  n: number;       // Number of trades
-  vw: number;      // Volume weighted average price
+  T: "b"; // Message type: bar
+  S: string; // Symbol (e.g., "BTC/USD")
+  o: number; // Open price
+  h: number; // High price
+  l: number; // Low price
+  c: number; // Close price
+  v: number; // Volume
+  t: string; // Timestamp (RFC-3339)
+  n: number; // Number of trades
+  vw: number; // Volume weighted average price
 }
 
 /**
  * Crypto daily bar stream message from Alpaca WebSocket
  */
 export interface AlpacaCryptoDailyBarStream {
-  T: 'd';          // Message type: daily bar
-  S: string;       // Symbol
-  o: number;       // Open price
-  h: number;       // High price
-  l: number;       // Low price
-  c: number;       // Close price
-  v: number;       // Volume
-  t: string;       // Timestamp (RFC-3339)
-  n: number;       // Number of trades
-  vw: number;      // Volume weighted average price
+  T: "d"; // Message type: daily bar
+  S: string; // Symbol
+  o: number; // Open price
+  h: number; // High price
+  l: number; // Low price
+  c: number; // Close price
+  v: number; // Volume
+  t: string; // Timestamp (RFC-3339)
+  n: number; // Number of trades
+  vw: number; // Volume weighted average price
 }
 
 /**
  * Crypto updated bar stream message from Alpaca WebSocket
  */
 export interface AlpacaCryptoUpdatedBarStream {
-  T: 'u';          // Message type: updated bar
-  S: string;       // Symbol
-  o: number;       // Open price
-  h: number;       // High price
-  l: number;       // Low price
-  c: number;       // Close price
-  v: number;       // Volume
-  t: string;       // Timestamp (RFC-3339)
-  n: number;       // Number of trades
-  vw: number;      // Volume weighted average price
+  T: "u"; // Message type: updated bar
+  S: string; // Symbol
+  o: number; // Open price
+  h: number; // High price
+  l: number; // Low price
+  c: number; // Close price
+  v: number; // Volume
+  t: string; // Timestamp (RFC-3339)
+  n: number; // Number of trades
+  vw: number; // Volume weighted average price
 }
 
 /**
@@ -1384,23 +1412,23 @@ export type AlpacaCryptoStreamMessage =
  * Type-safe event names for crypto market data streams
  */
 export type CryptoStreamEventName =
-  | 'crypto-t'    // Trade events
-  | 'crypto-q'    // Quote events
-  | 'crypto-b'    // Minute bar events
-  | 'crypto-d'    // Daily bar events
-  | 'crypto-u'    // Updated bar events
-  | 'crypto-data'; // Generic data event
+  | "crypto-t" // Trade events
+  | "crypto-q" // Quote events
+  | "crypto-b" // Minute bar events
+  | "crypto-d" // Daily bar events
+  | "crypto-u" // Updated bar events
+  | "crypto-data"; // Generic data event
 
 /**
  * Event payload mapping for crypto streams
  */
 export interface CryptoStreamEventMap {
-  'crypto-t': AlpacaCryptoTradeStream;
-  'crypto-q': AlpacaCryptoQuoteStream;
-  'crypto-b': AlpacaCryptoBarStream;
-  'crypto-d': AlpacaCryptoDailyBarStream;
-  'crypto-u': AlpacaCryptoUpdatedBarStream;
-  'crypto-data': AlpacaCryptoStreamMessage;
+  "crypto-t": AlpacaCryptoTradeStream;
+  "crypto-q": AlpacaCryptoQuoteStream;
+  "crypto-b": AlpacaCryptoBarStream;
+  "crypto-d": AlpacaCryptoDailyBarStream;
+  "crypto-u": AlpacaCryptoUpdatedBarStream;
+  "crypto-data": AlpacaCryptoStreamMessage;
 }
 
 // ===== WEBSOCKET MESSAGE TYPES =====
@@ -1409,10 +1437,10 @@ export interface CryptoStreamEventMap {
  * WebSocket authorization response message
  */
 export interface AlpacaAuthMessage {
-  stream: 'authorization';
+  stream: "authorization";
   data: {
-    status: 'authorized' | 'unauthorized';
-    action: 'authenticate';
+    status: "authorized" | "unauthorized";
+    action: "authenticate";
     message?: string;
   };
 }
@@ -1421,7 +1449,7 @@ export interface AlpacaAuthMessage {
  * WebSocket listening response message
  */
 export interface AlpacaListenMessage {
-  stream: 'listening';
+  stream: "listening";
   data: {
     streams: string[];
   };
@@ -1432,7 +1460,7 @@ export interface AlpacaListenMessage {
  */
 export interface AlpacaWebSocketMessage {
   stream: string;
-  data: AlpacaAuthMessage['data'] | AlpacaListenMessage['data'] | TradeUpdate;
+  data: AlpacaAuthMessage["data"] | AlpacaListenMessage["data"] | TradeUpdate;
 }
 
 /**
@@ -1441,10 +1469,10 @@ export interface AlpacaWebSocketMessage {
 export interface ExerciseOptionResponse {
   id: string;
   symbol: string;
-  side: 'long' | 'short';
+  side: "long" | "short";
   qty: string;
-  asset_class: 'us_option';
-  status: 'pending' | 'complete' | 'failed';
+  asset_class: "us_option";
+  status: "pending" | "complete" | "failed";
 }
 
 /**

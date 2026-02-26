@@ -8,7 +8,7 @@
  * @module @adaptic/utils/alpaca/streams
  */
 
-import { AlpacaClient } from './client';
+import { AlpacaClient } from "./client";
 
 /**
  * Stream manager interface for managing WebSocket connections
@@ -33,7 +33,14 @@ export interface StreamManager {
 /**
  * Stream event types
  */
-export type StreamEventType = 'trade' | 'quote' | 'bar' | 'trade_update' | 'error' | 'connected' | 'disconnected';
+export type StreamEventType =
+  | "trade"
+  | "quote"
+  | "bar"
+  | "trade_update"
+  | "error"
+  | "connected"
+  | "disconnected";
 
 /**
  * Stream event handler
@@ -86,27 +93,39 @@ export interface StreamManagerConfig {
  * streamManager.subscribeToTrades(['AAPL', 'GOOGL']);
  * ```
  */
-export function createStreamManager(_config: StreamManagerConfig): StreamManager {
+export function createStreamManager(
+  _config: StreamManagerConfig,
+): StreamManager {
   // Placeholder implementation
   // The actual implementation would use the Alpaca SDK's WebSocket capabilities
   return {
     connectTradingStream: async () => {
-      throw new Error('Stream manager not yet implemented. Use Alpaca SDK streaming directly.');
+      throw new Error(
+        "Stream manager not yet implemented. Use Alpaca SDK streaming directly.",
+      );
     },
     connectDataStream: async () => {
-      throw new Error('Stream manager not yet implemented. Use Alpaca SDK streaming directly.');
+      throw new Error(
+        "Stream manager not yet implemented. Use Alpaca SDK streaming directly.",
+      );
     },
     disconnect: () => {
       // No-op placeholder
     },
     subscribeToTrades: (_symbols: string[]) => {
-      throw new Error('Stream manager not yet implemented. Use Alpaca SDK streaming directly.');
+      throw new Error(
+        "Stream manager not yet implemented. Use Alpaca SDK streaming directly.",
+      );
     },
     subscribeToQuotes: (_symbols: string[]) => {
-      throw new Error('Stream manager not yet implemented. Use Alpaca SDK streaming directly.');
+      throw new Error(
+        "Stream manager not yet implemented. Use Alpaca SDK streaming directly.",
+      );
     },
     subscribeToBars: (_symbols: string[]) => {
-      throw new Error('Stream manager not yet implemented. Use Alpaca SDK streaming directly.');
+      throw new Error(
+        "Stream manager not yet implemented. Use Alpaca SDK streaming directly.",
+      );
     },
     unsubscribe: (_symbols: string[]) => {
       // No-op placeholder

@@ -6,10 +6,10 @@
  */
 
 // Core client
-export * from './client';
+export * from "./client";
 
 // Trading - re-export with explicit names to avoid conflicts
-export * from './trading';
+export * from "./trading";
 
 // Market Data - use explicit exports
 export {
@@ -22,7 +22,7 @@ export {
   QuoteError,
   // Types
   type SpreadInfo,
-} from './market-data/quotes';
+} from "./market-data/quotes";
 
 export {
   // Bars
@@ -39,7 +39,7 @@ export {
   // Types
   type GetBarsParams,
   type BarAnalysis,
-} from './market-data/bars';
+} from "./market-data/bars";
 
 export {
   // Trades
@@ -52,7 +52,7 @@ export {
   TradeError,
   // Types
   type GetHistoricalTradesParams,
-} from './market-data/trades';
+} from "./market-data/trades";
 
 export {
   // News
@@ -64,7 +64,7 @@ export {
   NewsError,
   // Types
   type GetNewsParams,
-} from './market-data/news';
+} from "./market-data/news";
 
 // Options - use explicit exports with prefixes to avoid conflicts
 export {
@@ -87,7 +87,7 @@ export {
   type GetOptionChainParams,
   type ATMOptionsResult,
   type GroupedOptionChain,
-} from './options/contracts';
+} from "./options/contracts";
 
 export {
   // Option Orders
@@ -113,7 +113,7 @@ export {
   type CloseAllOptionsResult,
   type ExerciseOptionParams,
   type MultiLegValidationResult,
-} from './options/orders';
+} from "./options/orders";
 
 export {
   // Strategies
@@ -134,7 +134,7 @@ export {
   type RollPositionParams,
   type StrangleParams,
   type ButterflySpreadParams,
-} from './options/strategies';
+} from "./options/strategies";
 
 export {
   // Options Data
@@ -157,7 +157,7 @@ export {
   // Types
   type OptionsFeed,
   type GetHistoricalOptionsBarsParams,
-} from './options/data';
+} from "./options/data";
 
 // Crypto - use explicit exports with prefixes to avoid conflicts
 export {
@@ -175,7 +175,7 @@ export {
   getOpenCryptoOrders,
   cancelAllCryptoOrders,
   isCryptoPair,
-} from './crypto/orders';
+} from "./crypto/orders";
 
 export {
   // Crypto Data
@@ -201,47 +201,53 @@ export {
   USDT_PAIRS,
   USDC_PAIRS,
   USD_PAIRS,
-} from './crypto/data';
+} from "./crypto/data";
 
 // Streams
-export * from './streams';
+export * from "./streams";
 
 // Legacy AlpacaAuth-based API functions (backward compatibility)
-import * as legacyApi from './legacy';
+import * as legacyApi from "./legacy";
 export { legacyApi };
 
 // Convenience namespace export
-import { createAlpacaClient, AlpacaClient, AlpacaClientConfig, createClientFromEnv, clearClientCache } from './client';
+import {
+  createAlpacaClient,
+  AlpacaClient,
+  AlpacaClientConfig,
+  createClientFromEnv,
+  clearClientCache,
+} from "./client";
 
 // Trading imports
-import * as trading from './trading/orders';
-import * as orderUtils from './trading/order-utils';
-import * as bracketOrders from './trading/bracket-orders';
-import * as ocoOrders from './trading/oco-orders';
-import * as otoOrders from './trading/oto-orders';
-import * as trailingStops from './trading/trailing-stops';
-import * as smartOrders from './trading/smart-orders';
-import * as positions from './trading/positions';
-import * as account from './trading/account';
+import * as trading from "./trading/orders";
+import * as orderUtils from "./trading/order-utils";
+import * as bracketOrders from "./trading/bracket-orders";
+import * as ocoOrders from "./trading/oco-orders";
+import * as otoOrders from "./trading/oto-orders";
+import * as trailingStops from "./trading/trailing-stops";
+import * as smartOrders from "./trading/smart-orders";
+import * as positions from "./trading/positions";
+import * as account from "./trading/account";
 
 // Market Data imports
-import * as quotes from './market-data/quotes';
-import * as bars from './market-data/bars';
-import * as trades from './market-data/trades';
-import * as news from './market-data/news';
+import * as quotes from "./market-data/quotes";
+import * as bars from "./market-data/bars";
+import * as trades from "./market-data/trades";
+import * as news from "./market-data/news";
 
 // Options imports
-import * as optionContracts from './options/contracts';
-import * as optionOrders from './options/orders';
-import * as optionStrategies from './options/strategies';
-import * as optionData from './options/data';
+import * as optionContracts from "./options/contracts";
+import * as optionOrders from "./options/orders";
+import * as optionStrategies from "./options/strategies";
+import * as optionData from "./options/data";
 
 // Crypto imports
-import * as cryptoOrders from './crypto/orders';
-import * as cryptoData from './crypto/data';
+import * as cryptoOrders from "./crypto/orders";
+import * as cryptoData from "./crypto/data";
 
 // Streams imports
-import * as streams from './streams';
+import * as streams from "./streams";
 
 /**
  * Alpaca namespace for convenient access to all functionality

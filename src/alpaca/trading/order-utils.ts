@@ -7,17 +7,17 @@
  * @module order-utils
  */
 
-import { AlpacaClient } from '../client';
-import { log as baseLog } from '../../logging';
-import { LogOptions } from '../../types/logging-types';
+import { AlpacaClient } from "../client";
+import { log as baseLog } from "../../logging";
+import { LogOptions } from "../../types/logging-types";
 import {
   AlpacaOrder,
   GetOrdersParams,
   OrderStatus,
-} from '../../types/alpaca-types';
+} from "../../types/alpaca-types";
 
-const log = (message: string, options: LogOptions = { type: 'info' }) => {
-  baseLog(message, { ...options, source: 'OrderUtils' });
+const log = (message: string, options: LogOptions = { type: "info" }) => {
+  baseLog(message, { ...options, source: "OrderUtils" });
 };
 
 /**
@@ -34,40 +34,40 @@ const MAX_ORDERS_PER_REQUEST = 500;
  * Order statuses that are considered "open"
  */
 const OPEN_ORDER_STATUSES: OrderStatus[] = [
-  'new',
-  'accepted',
-  'pending_new',
-  'accepted_for_bidding',
-  'partially_filled',
+  "new",
+  "accepted",
+  "pending_new",
+  "accepted_for_bidding",
+  "partially_filled",
 ];
 
 /**
  * Order statuses that indicate a filled order
  */
-const FILLED_ORDER_STATUSES: OrderStatus[] = ['filled'];
+const FILLED_ORDER_STATUSES: OrderStatus[] = ["filled"];
 
 /**
  * Order statuses that can still potentially be filled
  */
 const FILLABLE_ORDER_STATUSES: OrderStatus[] = [
-  'new',
-  'accepted',
-  'pending_new',
-  'accepted_for_bidding',
-  'partially_filled',
+  "new",
+  "accepted",
+  "pending_new",
+  "accepted_for_bidding",
+  "partially_filled",
 ];
 
 /**
  * Terminal order statuses (order is no longer active)
  */
 const TERMINAL_ORDER_STATUSES: OrderStatus[] = [
-  'filled',
-  'canceled',
-  'expired',
-  'replaced',
-  'stopped',
-  'rejected',
-  'suspended',
+  "filled",
+  "canceled",
+  "expired",
+  "replaced",
+  "stopped",
+  "rejected",
+  "suspended",
 ];
 
 /**
@@ -91,7 +91,7 @@ export interface GetFilledOrdersParams {
   /** Optional symbols to filter by */
   symbols?: string[];
   /** Optional side filter */
-  side?: 'buy' | 'sell';
+  side?: "buy" | "sell";
 }
 
 /**
@@ -105,11 +105,11 @@ export interface GetOrderHistoryParams {
   /** Optional symbols to filter by */
   symbols?: string[];
   /** Optional status filter */
-  status?: 'open' | 'closed' | 'all';
+  status?: "open" | "closed" | "all";
   /** Optional side filter */
-  side?: 'buy' | 'sell';
+  side?: "buy" | "sell";
   /** Sort direction */
-  direction?: 'asc' | 'desc';
+  direction?: "asc" | "desc";
 }
 
 /**
@@ -182,7 +182,9 @@ async function delay(ms: number): Promise<void> {
 /**
  * Build SDK-compatible query parameters from GetOrdersParams
  */
-function buildOrderQueryParams(params: GetOrdersParams): Record<string, unknown> {
+function buildOrderQueryParams(
+  params: GetOrdersParams,
+): Record<string, unknown> {
   const queryParams: Record<string, unknown> = {};
 
   if (params.status) queryParams.status = params.status;
@@ -192,7 +194,7 @@ function buildOrderQueryParams(params: GetOrdersParams): Record<string, unknown>
   if (params.direction) queryParams.direction = params.direction;
   if (params.nested !== undefined) queryParams.nested = params.nested;
   if (params.symbols && params.symbols.length > 0) {
-    queryParams.symbols = params.symbols.join(',');
+    queryParams.symbols = params.symbols.join(",");
   }
   if (params.side) queryParams.side = params.side;
 
@@ -217,13 +219,13 @@ function buildOrderQueryParams(params: GetOrdersParams): Record<string, unknown>
 export async function getOrdersBySymbol(
   client: AlpacaClient,
   symbol: string,
-  params: Omit<GetOrdersParams, 'symbols'> = {}
+  params: Omit<GetOrdersParams, "symbols"> = {},
 ): Promise<AlpacaOrder[]> {
   const sdk = client.getSDK();
 
   try {
     log(`Fetching orders for symbol: ${symbol}`, {
-      type: 'debug',
+      type: "debug",
       metadata: { symbol, ...params },
     });
 
@@ -239,19 +241,22 @@ export async function getOrdersBySymbol(
     if (params.nested !== undefined) queryParams.nested = params.nested;
     if (params.side) queryParams.side = params.side;
 
-    const orders = await sdk.getOrders(queryParams);
+    const orders = await sdk.getOrders(queryParams as any);
 
     log(`Found ${orders.length} orders for ${symbol}`, {
-      type: 'debug',
+      type: "debug",
       metadata: { symbol, count: orders.length },
     });
 
     return orders as AlpacaOrder[];
   } catch (error) {
-    log(`Error fetching orders for symbol ${symbol}: ${(error as Error).message}`, {
-      type: 'error',
-      metadata: { symbol, error: (error as Error).message },
-    });
+    log(
+      `Error fetching orders for symbol ${symbol}: ${(error as Error).message}`,
+      {
+        type: "error",
+        metadata: { symbol, error: (error as Error).message },
+      },
+    );
     throw error;
   }
 }
@@ -271,16 +276,16 @@ export async function getOrdersBySymbol(
  */
 export async function getOpenOrders(
   client: AlpacaClient,
-  params: Omit<GetOrdersParams, 'status'> = {}
+  params: Omit<GetOrdersParams, "status"> = {},
 ): Promise<AlpacaOrder[]> {
   const sdk = client.getSDK();
 
   try {
-    log('Fetching open orders', { type: 'debug' });
+    log("Fetching open orders", { type: "debug" });
 
     // Build query parameters as Record<string, unknown> to match SDK expectations
     const queryParams: Record<string, unknown> = {
-      status: 'open',
+      status: "open",
     };
     if (params.limit) queryParams.limit = params.limit;
     if (params.after) queryParams.after = params.after;
@@ -288,21 +293,21 @@ export async function getOpenOrders(
     if (params.direction) queryParams.direction = params.direction;
     if (params.nested !== undefined) queryParams.nested = params.nested;
     if (params.symbols && params.symbols.length > 0) {
-      queryParams.symbols = params.symbols.join(',');
+      queryParams.symbols = params.symbols.join(",");
     }
     if (params.side) queryParams.side = params.side;
 
-    const orders = await sdk.getOrders(queryParams);
+    const orders = await sdk.getOrders(queryParams as any);
 
     log(`Found ${orders.length} open orders`, {
-      type: 'debug',
+      type: "debug",
       metadata: { count: orders.length },
     });
 
     return orders as AlpacaOrder[];
   } catch (error) {
     log(`Error fetching open orders: ${(error as Error).message}`, {
-      type: 'error',
+      type: "error",
       metadata: { error: (error as Error).message },
     });
     throw error;
@@ -326,19 +331,25 @@ export async function getOpenOrders(
  */
 export async function getFilledOrders(
   client: AlpacaClient,
-  params: GetFilledOrdersParams
+  params: GetFilledOrdersParams,
 ): Promise<AlpacaOrder[]> {
   const sdk = client.getSDK();
   const { startDate, endDate, symbols, side } = params;
 
   try {
-    log(`Fetching filled orders from ${startDate.toISOString()} to ${endDate.toISOString()}`, {
-      type: 'debug',
-      metadata: { startDate: startDate.toISOString(), endDate: endDate.toISOString() },
-    });
+    log(
+      `Fetching filled orders from ${startDate.toISOString()} to ${endDate.toISOString()}`,
+      {
+        type: "debug",
+        metadata: {
+          startDate: startDate.toISOString(),
+          endDate: endDate.toISOString(),
+        },
+      },
+    );
 
     const queryParams: GetOrdersParams = {
-      status: 'closed',
+      status: "closed",
       after: startDate.toISOString(),
       until: endDate.toISOString(),
       limit: MAX_ORDERS_PER_REQUEST,
@@ -352,22 +363,25 @@ export async function getFilledOrders(
       queryParams.side = side;
     }
 
-    const allOrders = await getAllOrders(client, { ...queryParams, fetchAll: true });
+    const allOrders = await getAllOrders(client, {
+      ...queryParams,
+      fetchAll: true,
+    });
 
     // Filter to only filled orders
     const filledOrders = allOrders.filter((order) =>
-      FILLED_ORDER_STATUSES.includes(order.status as OrderStatus)
+      FILLED_ORDER_STATUSES.includes(order.status as OrderStatus),
     );
 
     log(`Found ${filledOrders.length} filled orders in date range`, {
-      type: 'debug',
+      type: "debug",
       metadata: { count: filledOrders.length },
     });
 
     return filledOrders;
   } catch (error) {
     log(`Error fetching filled orders: ${(error as Error).message}`, {
-      type: 'error',
+      type: "error",
       metadata: { error: (error as Error).message },
     });
     throw error;
@@ -401,15 +415,15 @@ export async function getFilledOrders(
  */
 export async function getOrderHistory(
   client: AlpacaClient,
-  params: GetOrderHistoryParams = {}
+  params: GetOrderHistoryParams = {},
 ): Promise<OrderHistoryResult> {
   const {
     pageSize = 100,
     page = 1,
     symbols,
-    status = 'all',
+    status = "all",
     side,
-    direction = 'desc',
+    direction = "desc",
   } = params;
 
   const effectivePageSize = Math.min(pageSize, MAX_ORDERS_PER_REQUEST);
@@ -417,7 +431,7 @@ export async function getOrderHistory(
 
   try {
     log(`Fetching order history page ${page} (size: ${effectivePageSize})`, {
-      type: 'debug',
+      type: "debug",
       metadata: { page, pageSize: effectivePageSize },
     });
 
@@ -453,7 +467,7 @@ export async function getOrderHistory(
 
         if (allPreviousOrders.length > 0) {
           const lastOrder = allPreviousOrders[allPreviousOrders.length - 1];
-          if (direction === 'desc') {
+          if (direction === "desc") {
             batchParams.until = lastOrder.created_at;
           } else {
             batchParams.after = lastOrder.created_at;
@@ -461,14 +475,20 @@ export async function getOrderHistory(
         }
 
         const sdkParams = buildOrderQueryParams(batchParams);
-        currentBatch = (await sdk.getOrders(sdkParams)) as AlpacaOrder[];
+        currentBatch = (await sdk.getOrders(sdkParams as any)) as AlpacaOrder[];
         allPreviousOrders.push(...currentBatch);
         iterations++;
 
-        if (iterations < maxIterations && currentBatch.length === effectivePageSize) {
+        if (
+          iterations < maxIterations &&
+          currentBatch.length === effectivePageSize
+        ) {
           await delay(DEFAULT_PAGINATION_DELAY_MS);
         }
-      } while (currentBatch.length === effectivePageSize && iterations < maxIterations);
+      } while (
+        currentBatch.length === effectivePageSize &&
+        iterations < maxIterations
+      );
 
       // Get the orders for the requested page
       const startIndex = (page - 1) * effectivePageSize;
@@ -480,13 +500,15 @@ export async function getOrderHistory(
         page,
         pageSize: effectivePageSize,
         totalFetched: allPreviousOrders.length,
-        hasMore: endIndex < allPreviousOrders.length || currentBatch.length === effectivePageSize,
+        hasMore:
+          endIndex < allPreviousOrders.length ||
+          currentBatch.length === effectivePageSize,
       };
     }
 
     // First page - simple fetch
     const sdkParams = buildOrderQueryParams(baseParams);
-    const orders = (await sdk.getOrders(sdkParams)) as AlpacaOrder[];
+    const orders = (await sdk.getOrders(sdkParams as any)) as AlpacaOrder[];
 
     return {
       orders,
@@ -497,7 +519,7 @@ export async function getOrderHistory(
     };
   } catch (error) {
     log(`Error fetching order history: ${(error as Error).message}`, {
-      type: 'error',
+      type: "error",
       metadata: { error: (error as Error).message },
     });
     throw error;
@@ -525,7 +547,7 @@ export async function getOrderHistory(
  */
 export async function getAllOrders(
   client: AlpacaClient,
-  params: GetAllOrdersParams = {}
+  params: GetAllOrdersParams = {},
 ): Promise<AlpacaOrder[]> {
   const {
     fetchAll = false,
@@ -543,12 +565,12 @@ export async function getAllOrders(
         limit: queryParams.limit || MAX_ORDERS_PER_REQUEST,
       };
       const sdkParams = buildOrderQueryParams(singleParams);
-      const orders = await sdk.getOrders(sdkParams);
+      const orders = await sdk.getOrders(sdkParams as any);
       return orders as AlpacaOrder[];
     }
 
-    log('Fetching all orders with pagination', {
-      type: 'debug',
+    log("Fetching all orders with pagination", {
+      type: "debug",
       metadata: { params: queryParams },
     });
 
@@ -568,11 +590,11 @@ export async function getAllOrders(
       }
 
       const sdkParams = buildOrderQueryParams(batchParams);
-      const batch = (await sdk.getOrders(sdkParams)) as AlpacaOrder[];
+      const batch = (await sdk.getOrders(sdkParams as any)) as AlpacaOrder[];
       pageCount++;
 
       log(`Fetched page ${pageCount}: ${batch.length} orders`, {
-        type: 'debug',
+        type: "debug",
         metadata: { pageCount, batchSize: batch.length },
       });
 
@@ -598,15 +620,18 @@ export async function getAllOrders(
       }
     }
 
-    log(`Fetched total of ${allOrders.length} orders across ${pageCount} pages`, {
-      type: 'info',
-      metadata: { totalOrders: allOrders.length, pageCount },
-    });
+    log(
+      `Fetched total of ${allOrders.length} orders across ${pageCount} pages`,
+      {
+        type: "info",
+        metadata: { totalOrders: allOrders.length, pageCount },
+      },
+    );
 
     return allOrders;
   } catch (error) {
     log(`Error fetching all orders: ${(error as Error).message}`, {
-      type: 'error',
+      type: "error",
       metadata: { error: (error as Error).message },
     });
     throw error;
@@ -639,19 +664,15 @@ export async function getAllOrders(
  */
 export async function waitForOrderFill(
   client: AlpacaClient,
-  params: WaitForOrderFillParams
+  params: WaitForOrderFillParams,
 ): Promise<WaitForOrderFillResult> {
-  const {
-    orderId,
-    timeoutMs = 60000,
-    pollIntervalMs = 1000,
-  } = params;
+  const { orderId, timeoutMs = 60000, pollIntervalMs = 1000 } = params;
 
   const sdk = client.getSDK();
   const startTime = Date.now();
 
   log(`Waiting for order ${orderId} to fill (timeout: ${timeoutMs}ms)`, {
-    type: 'debug',
+    type: "debug",
     metadata: { orderId, timeoutMs, pollIntervalMs },
   });
 
@@ -662,10 +683,13 @@ export async function waitForOrderFill(
       if (elapsed >= timeoutMs) {
         // Fetch final state before returning
         const order = (await sdk.getOrder(orderId)) as AlpacaOrder;
-        log(`Order ${orderId} timed out after ${elapsed}ms, status: ${order.status}`, {
-          type: 'warn',
-          metadata: { orderId, elapsed, status: order.status },
-        });
+        log(
+          `Order ${orderId} timed out after ${elapsed}ms, status: ${order.status}`,
+          {
+            type: "warn",
+            metadata: { orderId, elapsed, status: order.status },
+          },
+        );
 
         return {
           filled: FILLED_ORDER_STATUSES.includes(order.status as OrderStatus),
@@ -679,7 +703,7 @@ export async function waitForOrderFill(
       // Check if filled
       if (FILLED_ORDER_STATUSES.includes(order.status as OrderStatus)) {
         log(`Order ${orderId} filled after ${elapsed}ms`, {
-          type: 'info',
+          type: "info",
           metadata: { orderId, elapsed, status: order.status },
         });
 
@@ -692,10 +716,13 @@ export async function waitForOrderFill(
 
       // Check if terminal but not filled
       if (TERMINAL_ORDER_STATUSES.includes(order.status as OrderStatus)) {
-        log(`Order ${orderId} reached terminal state ${order.status} after ${elapsed}ms`, {
-          type: 'info',
-          metadata: { orderId, elapsed, status: order.status },
-        });
+        log(
+          `Order ${orderId} reached terminal state ${order.status} after ${elapsed}ms`,
+          {
+            type: "info",
+            metadata: { orderId, elapsed, status: order.status },
+          },
+        );
 
         return {
           filled: false,
@@ -709,7 +736,7 @@ export async function waitForOrderFill(
     }
   } catch (error) {
     log(`Error waiting for order fill: ${(error as Error).message}`, {
-      type: 'error',
+      type: "error",
       metadata: { orderId, error: (error as Error).message },
     });
     throw error;
@@ -787,7 +814,9 @@ export function calculateOrderValue(order: AlpacaOrder): number | null {
   // For filled orders, use filled quantity and average price
   if (isOrderFilled(order)) {
     const filledQty = parseFloat(order.filled_qty);
-    const avgPrice = order.filled_avg_price ? parseFloat(order.filled_avg_price) : null;
+    const avgPrice = order.filled_avg_price
+      ? parseFloat(order.filled_avg_price)
+      : null;
 
     if (avgPrice !== null && !isNaN(filledQty) && !isNaN(avgPrice)) {
       return filledQty * avgPrice;
@@ -846,8 +875,8 @@ export function formatOrderSummary(order: AlpacaOrder): OrderSummary {
     side: order.side,
     type: order.type,
     status: order.status,
-    qty: order.qty || '0',
-    filledQty: order.filled_qty || '0',
+    qty: order.qty || "0",
+    filledQty: order.filled_qty || "0",
     limitPrice: order.limit_price,
     stopPrice: order.stop_price,
     avgFillPrice: order.filled_avg_price,
@@ -873,11 +902,11 @@ export function formatOrderSummary(order: AlpacaOrder): OrderSummary {
  */
 export function formatOrderForLog(order: AlpacaOrder): string {
   const side = order.side.toUpperCase();
-  const qty = order.qty || order.notional || '?';
+  const qty = order.qty || order.notional || "?";
   const qtyLabel = order.notional ? `$${order.notional}` : qty;
   const type = order.type.toUpperCase();
 
-  let priceInfo = '';
+  let priceInfo = "";
   if (order.limit_price) {
     priceInfo = ` @ $${order.limit_price}`;
   } else if (order.stop_price) {
@@ -886,7 +915,7 @@ export function formatOrderForLog(order: AlpacaOrder): string {
     priceInfo = ` trail ${order.trail_percent}%`;
   }
 
-  let fillInfo = '';
+  let fillInfo = "";
   if (order.filled_qty && parseFloat(order.filled_qty) > 0) {
     fillInfo = ` - filled ${order.filled_qty}`;
     if (order.filled_avg_price) {
@@ -948,7 +977,9 @@ export function roundPriceForAlpacaNumber(price: number): number {
  * }
  * ```
  */
-export function groupOrdersBySymbol(orders: AlpacaOrder[]): Map<string, AlpacaOrder[]> {
+export function groupOrdersBySymbol(
+  orders: AlpacaOrder[],
+): Map<string, AlpacaOrder[]> {
   const grouped = new Map<string, AlpacaOrder[]>();
 
   for (const order of orders) {
@@ -966,7 +997,9 @@ export function groupOrdersBySymbol(orders: AlpacaOrder[]): Map<string, AlpacaOr
  * @param orders - Array of orders to group
  * @returns Map of status to orders
  */
-export function groupOrdersByStatus(orders: AlpacaOrder[]): Map<string, AlpacaOrder[]> {
+export function groupOrdersByStatus(
+  orders: AlpacaOrder[],
+): Map<string, AlpacaOrder[]> {
   const grouped = new Map<string, AlpacaOrder[]>();
 
   for (const order of orders) {
@@ -1010,7 +1043,7 @@ export function calculateTotalFilledValue(orders: AlpacaOrder[]): number {
 export function filterOrdersByDateRange(
   orders: AlpacaOrder[],
   startDate: Date,
-  endDate: Date
+  endDate: Date,
 ): AlpacaOrder[] {
   const startMs = startDate.getTime();
   const endMs = endDate.getTime();
@@ -1030,7 +1063,7 @@ export function filterOrdersByDateRange(
  */
 export function sortOrdersByDate(
   orders: AlpacaOrder[],
-  direction: 'asc' | 'desc' = 'desc'
+  direction: "asc" | "desc" = "desc",
 ): AlpacaOrder[] {
   const sorted = [...orders];
 
@@ -1038,7 +1071,7 @@ export function sortOrdersByDate(
     const dateA = new Date(a.created_at).getTime();
     const dateB = new Date(b.created_at).getTime();
 
-    return direction === 'asc' ? dateA - dateB : dateB - dateA;
+    return direction === "asc" ? dateA - dateB : dateB - dateA;
   });
 
   return sorted;

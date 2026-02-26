@@ -5,17 +5,22 @@
  * Uses the official Alpaca SDK option_stream for reliable real-time data.
  * Provides automatic reconnection, subscription management, and type-safe events.
  */
-import { EventEmitter } from 'events';
-import { AlpacaClient } from '../client';
-import { log as baseLog } from '../../logging';
-import { LogOptions } from '../../types/logging-types';
+import { EventEmitter } from "events";
+import { AlpacaClient } from "../client";
+import { log as baseLog } from "../../logging";
+import { LogOptions } from "../../types/logging-types";
 import {
   AlpacaOptionTradeStream,
   AlpacaOptionQuoteStream,
   AlpacaOptionBarStream,
   AlpacaOptionStreamMessage,
-} from '../../types/alpaca-types';
-import { StreamConfig, StreamState, SubscriptionRequest, DEFAULT_STREAM_CONFIG } from './base-stream';
+} from "../../types/alpaca-types";
+import {
+  StreamConfig,
+  StreamState,
+  SubscriptionRequest,
+  DEFAULT_STREAM_CONFIG,
+} from "./base-stream";
 
 // SDK types from @alpacahq/alpaca-trade-api
 interface AlpacaSDKOptionTrade {
@@ -42,7 +47,7 @@ interface AlpacaSDKOptionQuote {
 /**
  * Option stream data feed type
  */
-export type OptionDataFeed = 'opra' | 'indicative';
+export type OptionDataFeed = "opra" | "indicative";
 
 /**
  * Option stream configuration
@@ -57,7 +62,7 @@ export interface OptionStreamConfig extends StreamConfig {
  */
 export const DEFAULT_OPTION_STREAM_CONFIG: Partial<OptionStreamConfig> = {
   ...DEFAULT_STREAM_CONFIG,
-  feed: 'opra',
+  feed: "opra",
 };
 
 /**
@@ -82,25 +87,32 @@ export interface OptionStreamEventMap {
  */
 export class OptionDataStream extends EventEmitter {
   private client: AlpacaClient;
-  private socket: EventEmitter | null = null;
-  private state: StreamState = 'disconnected';
+  private socket: any = null;
+  private state: StreamState = "disconnected";
   private feed: OptionDataFeed;
   private config: OptionStreamConfig;
-  private subscriptions: { trades: string[]; quotes: string[] } = { trades: [], quotes: [] };
-  private pendingSubscriptions: { trades: string[]; quotes: string[] } | null = null;
+  private subscriptions: { trades: string[]; quotes: string[] } = {
+    trades: [],
+    quotes: [],
+  };
+  private pendingSubscriptions: { trades: string[]; quotes: string[] } | null =
+    null;
 
   constructor(client: AlpacaClient, config: Partial<OptionStreamConfig> = {}) {
     super();
     this.client = client;
-    this.config = { ...DEFAULT_OPTION_STREAM_CONFIG, ...config } as OptionStreamConfig;
-    this.feed = config.feed || DEFAULT_OPTION_STREAM_CONFIG.feed || 'opra';
+    this.config = {
+      ...DEFAULT_OPTION_STREAM_CONFIG,
+      ...config,
+    } as OptionStreamConfig;
+    this.feed = config.feed || DEFAULT_OPTION_STREAM_CONFIG.feed || "opra";
   }
 
   /**
    * Log helper
    */
-  private log(message: string, options: LogOptions = { type: 'info' }): void {
-    baseLog(message, { ...options, source: 'OptionDataStream' });
+  private log(message: string, options: LogOptions = { type: "info" }): void {
+    baseLog(message, { ...options, source: "OptionDataStream" });
   }
 
   /**
@@ -114,7 +126,7 @@ export class OptionDataStream extends EventEmitter {
    * Check if stream is connected and authenticated
    */
   isStreamConnected(): boolean {
-    return this.state === 'authenticated';
+    return this.state === "authenticated";
   }
 
   /**
@@ -129,7 +141,9 @@ export class OptionDataStream extends EventEmitter {
    */
   setFeed(feed: OptionDataFeed): void {
     if (this.isStreamConnected()) {
-      this.log('Cannot change feed while connected. Disconnect first.', { type: 'warn' });
+      this.log("Cannot change feed while connected. Disconnect first.", {
+        type: "warn",
+      });
       return;
     }
     this.feed = feed;
@@ -146,46 +160,46 @@ export class OptionDataStream extends EventEmitter {
    * Connect to the option data stream using SDK
    */
   async connect(): Promise<void> {
-    if (this.state === 'connecting' || this.state === 'authenticated') {
-      this.log('Already connected or connecting', { type: 'debug' });
+    if (this.state === "connecting" || this.state === "authenticated") {
+      this.log("Already connected or connecting", { type: "debug" });
       return;
     }
 
     return new Promise((resolve, reject) => {
-      this.state = 'connecting';
-      this.log('Connecting to option data stream...');
+      this.state = "connecting";
+      this.log("Connecting to option data stream...");
 
       const sdk = this.client.getSDK();
       this.socket = sdk.option_stream;
 
       if (!this.socket) {
-        this.state = 'error';
-        reject(new Error('Option data stream not available on SDK'));
+        this.state = "error";
+        reject(new Error("Option data stream not available on SDK"));
         return;
       }
 
       const connectionTimeout = setTimeout(() => {
-        if (this.state === 'connecting') {
-          this.state = 'error';
-          reject(new Error('Connection timeout'));
+        if (this.state === "connecting") {
+          this.state = "error";
+          reject(new Error("Connection timeout"));
         }
       }, this.config.connectionTimeout || 30000);
 
       // Handle connection
       this.socket.onConnect(() => {
         clearTimeout(connectionTimeout);
-        this.state = 'connected';
-        this.log('WebSocket connected, awaiting authentication');
+        this.state = "connected";
+        this.log("WebSocket connected, awaiting authentication");
       });
 
       // Handle state changes
       this.socket.onStateChange((newState: string) => {
-        this.log(`State changed: ${newState}`, { type: 'debug' });
-        if (newState === 'authenticated') {
-          this.state = 'authenticated';
-          this.log('Option stream authenticated');
-          this.emit('authenticated', undefined);
-          this.emit('connected', undefined);
+        this.log(`State changed: ${newState}`, { type: "debug" });
+        if (newState === "authenticated") {
+          this.state = "authenticated";
+          this.log("Option stream authenticated");
+          this.emit("authenticated", undefined);
+          this.emit("connected", undefined);
 
           // Send pending subscriptions
           if (this.pendingSubscriptions) {
@@ -195,26 +209,26 @@ export class OptionDataStream extends EventEmitter {
 
           resolve();
         }
-        this.emit('stateChange', newState as StreamState);
+        this.emit("stateChange", newState as StreamState);
       });
 
       // Handle errors
       this.socket.onError((err: Error) => {
-        this.log(`Stream error: ${err.message}`, { type: 'error' });
-        this.emit('error', err);
+        this.log(`Stream error: ${err.message}`, { type: "error" });
+        this.emit("error", err);
 
-        if (this.state === 'connecting') {
+        if (this.state === "connecting") {
           clearTimeout(connectionTimeout);
-          this.state = 'error';
+          this.state = "error";
           reject(err);
         }
       });
 
       // Handle disconnection
       this.socket.onDisconnect(() => {
-        this.state = 'disconnected';
-        this.log('Disconnected from option data stream', { type: 'warn' });
-        this.emit('disconnected', { code: 0, reason: 'disconnected' });
+        this.state = "disconnected";
+        this.log("Disconnected from option data stream", { type: "warn" });
+        this.emit("disconnected", { code: 0, reason: "disconnected" });
       });
 
       // Set up data handlers
@@ -232,15 +246,15 @@ export class OptionDataStream extends EventEmitter {
     // Trade events
     this.socket.onOptionTrade((trade: AlpacaSDKOptionTrade) => {
       const converted = this.convertTrade(trade);
-      this.emit('trade', converted);
-      this.emit('data', converted);
+      this.emit("trade", converted);
+      this.emit("data", converted);
     });
 
     // Quote events
     this.socket.onOptionQuote((quote: AlpacaSDKOptionQuote) => {
       const converted = this.convertQuote(quote);
-      this.emit('quote', converted);
-      this.emit('data', converted);
+      this.emit("quote", converted);
+      this.emit("data", converted);
     });
   }
 
@@ -249,14 +263,14 @@ export class OptionDataStream extends EventEmitter {
    */
   disconnect(): void {
     if (!this.socket) {
-      this.log('No socket to disconnect', { type: 'warn' });
+      this.log("No socket to disconnect", { type: "warn" });
       return;
     }
 
-    this.log('Disconnecting from option data stream');
+    this.log("Disconnecting from option data stream");
     this.socket.disconnect();
-    this.state = 'disconnected';
-    this.emit('disconnected', { code: 0, reason: 'manual disconnect' });
+    this.state = "disconnected";
+    this.emit("disconnected", { code: 0, reason: "manual disconnect" });
   }
 
   /**
@@ -265,10 +279,14 @@ export class OptionDataStream extends EventEmitter {
   subscribe(request: SubscriptionRequest): void {
     // Merge with existing subscriptions (options only support trades and quotes)
     if (request.trades) {
-      this.subscriptions.trades = [...new Set([...(this.subscriptions.trades || []), ...request.trades])];
+      this.subscriptions.trades = [
+        ...new Set([...(this.subscriptions.trades || []), ...request.trades]),
+      ];
     }
     if (request.quotes) {
-      this.subscriptions.quotes = [...new Set([...(this.subscriptions.quotes || []), ...request.quotes])];
+      this.subscriptions.quotes = [
+        ...new Set([...(this.subscriptions.quotes || []), ...request.quotes]),
+      ];
     }
 
     if (this.isStreamConnected()) {
@@ -285,12 +303,12 @@ export class OptionDataStream extends EventEmitter {
     // Remove from existing subscriptions
     if (request.trades) {
       this.subscriptions.trades = (this.subscriptions.trades || []).filter(
-        (s) => !request.trades!.includes(s)
+        (s) => !request.trades!.includes(s),
       );
     }
     if (request.quotes) {
       this.subscriptions.quotes = (this.subscriptions.quotes || []).filter(
-        (s) => !request.quotes!.includes(s)
+        (s) => !request.quotes!.includes(s),
       );
     }
 
@@ -317,7 +335,9 @@ export class OptionDataStream extends EventEmitter {
    * Subscribe to option bars (not supported by SDK - logs warning)
    */
   subscribeBars(symbols: string[]): void {
-    this.log('Option bars are not supported by the SDK option_stream', { type: 'warn' });
+    this.log("Option bars are not supported by the SDK option_stream", {
+      type: "warn",
+    });
   }
 
   /**
@@ -345,7 +365,9 @@ export class OptionDataStream extends EventEmitter {
    * Unsubscribe from option bars (not supported)
    */
   unsubscribeBars(symbols: string[]): void {
-    this.log('Option bars are not supported by the SDK option_stream', { type: 'warn' });
+    this.log("Option bars are not supported by the SDK option_stream", {
+      type: "warn",
+    });
   }
 
   /**
@@ -369,7 +391,7 @@ export class OptionDataStream extends EventEmitter {
    */
   private sendSubscription(): void {
     if (!this.socket || !this.isStreamConnected()) {
-      this.log('Cannot send subscription: socket not ready', { type: 'warn' });
+      this.log("Cannot send subscription: socket not ready", { type: "warn" });
       return;
     }
 
@@ -377,14 +399,18 @@ export class OptionDataStream extends EventEmitter {
 
     if (trades && trades.length > 0) {
       this.socket.subscribeForTrades(trades);
-      this.log(`Subscribed to option trades: ${trades.join(', ')}`, { type: 'debug' });
+      this.log(`Subscribed to option trades: ${trades.join(", ")}`, {
+        type: "debug",
+      });
     }
     if (quotes && quotes.length > 0) {
       this.socket.subscribeForQuotes(quotes);
-      this.log(`Subscribed to option quotes: ${quotes.join(', ')}`, { type: 'debug' });
+      this.log(`Subscribed to option quotes: ${quotes.join(", ")}`, {
+        type: "debug",
+      });
     }
 
-    this.emit('subscription', { trades: trades || [], quotes: quotes || [] });
+    this.emit("subscription", { trades: trades || [], quotes: quotes || [] });
   }
 
   /**
@@ -392,25 +418,33 @@ export class OptionDataStream extends EventEmitter {
    */
   private sendUnsubscription(request: SubscriptionRequest): void {
     if (!this.socket || !this.isStreamConnected()) {
-      this.log('Cannot send unsubscription: socket not ready', { type: 'warn' });
+      this.log("Cannot send unsubscription: socket not ready", {
+        type: "warn",
+      });
       return;
     }
 
     if (request.trades && request.trades.length > 0) {
       this.socket.unsubscribeFromTrades(request.trades);
-      this.log(`Unsubscribed from option trades: ${request.trades.join(', ')}`, { type: 'debug' });
+      this.log(
+        `Unsubscribed from option trades: ${request.trades.join(", ")}`,
+        { type: "debug" },
+      );
     }
     if (request.quotes && request.quotes.length > 0) {
       this.socket.unsubscribeFromQuotes(request.quotes);
-      this.log(`Unsubscribed from option quotes: ${request.quotes.join(', ')}`, { type: 'debug' });
+      this.log(
+        `Unsubscribed from option quotes: ${request.quotes.join(", ")}`,
+        { type: "debug" },
+      );
     }
   }
 
   // Conversion helpers: SDK format -> Stream format
   private convertTrade(trade: AlpacaSDKOptionTrade): AlpacaOptionTradeStream {
     return {
-      T: 't',
-      S: trade.Symbol || '',
+      T: "t",
+      S: trade.Symbol || "",
       p: trade.Price,
       s: trade.Size,
       c: trade.Condition ? [trade.Condition] : [],
@@ -421,8 +455,8 @@ export class OptionDataStream extends EventEmitter {
 
   private convertQuote(quote: AlpacaSDKOptionQuote): AlpacaOptionQuoteStream {
     return {
-      T: 'q',
-      S: quote.Symbol || '',
+      T: "q",
+      S: quote.Symbol || "",
       ap: quote.AskPrice,
       as: quote.AskSize,
       ax: quote.AskExchange,
@@ -438,7 +472,7 @@ export class OptionDataStream extends EventEmitter {
    */
   on<K extends keyof OptionStreamEventMap>(
     event: K,
-    listener: (data: OptionStreamEventMap[K]) => void
+    listener: (data: OptionStreamEventMap[K]) => void,
   ): this {
     return super.on(event, listener as (...args: unknown[]) => void);
   }
@@ -446,7 +480,10 @@ export class OptionDataStream extends EventEmitter {
   /**
    * Type-safe event emitter
    */
-  emit<K extends keyof OptionStreamEventMap>(event: K, data?: OptionStreamEventMap[K]): boolean {
+  emit<K extends keyof OptionStreamEventMap>(
+    event: K,
+    data?: OptionStreamEventMap[K],
+  ): boolean {
     return super.emit(event, data);
   }
 }
@@ -456,7 +493,7 @@ export class OptionDataStream extends EventEmitter {
  */
 export function createOptionDataStream(
   client: AlpacaClient,
-  config: Partial<OptionStreamConfig> = {}
+  config: Partial<OptionStreamConfig> = {},
 ): OptionDataStream {
   return new OptionDataStream(client, config);
 }

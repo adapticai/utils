@@ -29,8 +29,8 @@ import {
   AllocationPreferences,
   AllocationConstraint,
   DefaultRiskProfile,
-  RiskAdjustedParameters
-} from './types/asset-allocation-types';
+  RiskAdjustedParameters,
+} from "./types/asset-allocation-types";
 
 /**
  * Asset Allocation Engine
@@ -44,117 +44,120 @@ import {
  */
 export class AssetAllocationEngine {
   private readonly defaultConfig: AllocationStrategyConfig = {
-    objective: 'MAX_SHARPE',
+    objective: "MAX_SHARPE",
     riskFreeRate: 0.04, // 4% risk-free rate
     rebalancingThreshold: 5, // 5% drift threshold
-    transactionCostModel: 'PERCENTAGE',
+    transactionCostModel: "PERCENTAGE",
     timeHorizon: 5, // 5 year horizon
     allowLeverage: false,
-    includeAlternatives: true
+    includeAlternatives: true,
   };
 
   /**
    * Default risk profiles with typical asset class allocations
    */
-  private readonly defaultRiskProfiles: Map<RiskProfile, DefaultRiskProfile> = new Map([
-    [
-      'CONSERVATIVE',
-      {
-        profile: 'CONSERVATIVE',
-        description: 'Capital preservation focused with minimal volatility',
-        baseAllocations: new Map<AllocationAssetClass, number>([
-          ['EQUITIES', 0.20],
-          ['OPTIONS', 0.05],
-          ['FUTURES', 0.00],
-          ['ETF', 0.50],
-          ['FOREX', 0.10],
-          ['CRYPTO', 0.00]
-        ]),
-        maxVolatility: 8,
-        maxDrawdown: 10,
-        targetReturn: 5,
-        riskScore: 20
-      }
-    ],
-    [
-      'MODERATE_CONSERVATIVE',
-      {
-        profile: 'MODERATE_CONSERVATIVE',
-        description: 'Income focused with moderate growth potential',
-        baseAllocations: new Map<AllocationAssetClass, number>([
-          ['EQUITIES', 0.30],
-          ['OPTIONS', 0.10],
-          ['FUTURES', 0.05],
-          ['ETF', 0.40],
-          ['FOREX', 0.10],
-          ['CRYPTO', 0.05]
-        ]),
-        maxVolatility: 12,
-        maxDrawdown: 15,
-        targetReturn: 7,
-        riskScore: 35
-      }
-    ],
-    [
-      'MODERATE',
-      {
-        profile: 'MODERATE',
-        description: 'Balanced growth and income with managed volatility',
-        baseAllocations: new Map<AllocationAssetClass, number>([
-          ['EQUITIES', 0.40],
-          ['OPTIONS', 0.15],
-          ['FUTURES', 0.10],
-          ['ETF', 0.25],
-          ['FOREX', 0.05],
-          ['CRYPTO', 0.05]
-        ]),
-        maxVolatility: 15,
-        maxDrawdown: 20,
-        targetReturn: 10,
-        riskScore: 50
-      }
-    ],
-    [
-      'MODERATE_AGGRESSIVE',
-      {
-        profile: 'MODERATE_AGGRESSIVE',
-        description: 'Growth focused with higher volatility tolerance',
-        baseAllocations: new Map<AllocationAssetClass, number>([
-          ['EQUITIES', 0.50],
-          ['OPTIONS', 0.20],
-          ['FUTURES', 0.10],
-          ['ETF', 0.10],
-          ['FOREX', 0.05],
-          ['CRYPTO', 0.05]
-        ]),
-        maxVolatility: 20,
-        maxDrawdown: 25,
-        targetReturn: 13,
-        riskScore: 70
-      }
-    ],
-    [
-      'AGGRESSIVE',
-      {
-        profile: 'AGGRESSIVE',
-        description: 'Maximum growth with high volatility acceptance',
-        baseAllocations: new Map<AllocationAssetClass, number>([
-          ['EQUITIES', 0.45],
-          ['OPTIONS', 0.25],
-          ['FUTURES', 0.15],
-          ['ETF', 0.05],
-          ['FOREX', 0.05],
-          ['CRYPTO', 0.05]
-        ]),
-        maxVolatility: 30,
-        maxDrawdown: 35,
-        targetReturn: 18,
-        riskScore: 85
-      }
-    ]
-  ]);
+  private readonly defaultRiskProfiles: Map<RiskProfile, DefaultRiskProfile> =
+    new Map([
+      [
+        "CONSERVATIVE",
+        {
+          profile: "CONSERVATIVE",
+          description: "Capital preservation focused with minimal volatility",
+          baseAllocations: new Map<AllocationAssetClass, number>([
+            ["EQUITIES", 0.2],
+            ["OPTIONS", 0.05],
+            ["FUTURES", 0.0],
+            ["ETF", 0.5],
+            ["FOREX", 0.1],
+            ["CRYPTO", 0.0],
+          ]),
+          maxVolatility: 8,
+          maxDrawdown: 10,
+          targetReturn: 5,
+          riskScore: 20,
+        },
+      ],
+      [
+        "MODERATE_CONSERVATIVE",
+        {
+          profile: "MODERATE_CONSERVATIVE",
+          description: "Income focused with moderate growth potential",
+          baseAllocations: new Map<AllocationAssetClass, number>([
+            ["EQUITIES", 0.3],
+            ["OPTIONS", 0.1],
+            ["FUTURES", 0.05],
+            ["ETF", 0.4],
+            ["FOREX", 0.1],
+            ["CRYPTO", 0.05],
+          ]),
+          maxVolatility: 12,
+          maxDrawdown: 15,
+          targetReturn: 7,
+          riskScore: 35,
+        },
+      ],
+      [
+        "MODERATE",
+        {
+          profile: "MODERATE",
+          description: "Balanced growth and income with managed volatility",
+          baseAllocations: new Map<AllocationAssetClass, number>([
+            ["EQUITIES", 0.4],
+            ["OPTIONS", 0.15],
+            ["FUTURES", 0.1],
+            ["ETF", 0.25],
+            ["FOREX", 0.05],
+            ["CRYPTO", 0.05],
+          ]),
+          maxVolatility: 15,
+          maxDrawdown: 20,
+          targetReturn: 10,
+          riskScore: 50,
+        },
+      ],
+      [
+        "MODERATE_AGGRESSIVE",
+        {
+          profile: "MODERATE_AGGRESSIVE",
+          description: "Growth focused with higher volatility tolerance",
+          baseAllocations: new Map<AllocationAssetClass, number>([
+            ["EQUITIES", 0.5],
+            ["OPTIONS", 0.2],
+            ["FUTURES", 0.1],
+            ["ETF", 0.1],
+            ["FOREX", 0.05],
+            ["CRYPTO", 0.05],
+          ]),
+          maxVolatility: 20,
+          maxDrawdown: 25,
+          targetReturn: 13,
+          riskScore: 70,
+        },
+      ],
+      [
+        "AGGRESSIVE",
+        {
+          profile: "AGGRESSIVE",
+          description: "Maximum growth with high volatility acceptance",
+          baseAllocations: new Map<AllocationAssetClass, number>([
+            ["EQUITIES", 0.45],
+            ["OPTIONS", 0.25],
+            ["FUTURES", 0.15],
+            ["ETF", 0.05],
+            ["FOREX", 0.05],
+            ["CRYPTO", 0.05],
+          ]),
+          maxVolatility: 30,
+          maxDrawdown: 35,
+          targetReturn: 18,
+          riskScore: 85,
+        },
+      ],
+    ]);
 
-  constructor(private config: AllocationStrategyConfig = {} as AllocationStrategyConfig) {
+  constructor(
+    private config: AllocationStrategyConfig = {} as AllocationStrategyConfig,
+  ) {
     this.config = { ...this.defaultConfig, ...config };
   }
 
@@ -163,14 +166,18 @@ export class AssetAllocationEngine {
    * @param profile - The risk profile to retrieve
    * @returns The default risk profile characteristics or undefined if not found
    */
-  public getDefaultRiskProfile(profile: RiskProfile): DefaultRiskProfile | undefined {
+  public getDefaultRiskProfile(
+    profile: RiskProfile,
+  ): DefaultRiskProfile | undefined {
     return this.defaultRiskProfiles.get(profile);
   }
 
   /**
    * Generate optimal asset allocation recommendation
    */
-  public async generateAllocation(input: AllocationInput): Promise<AllocationRecommendation> {
+  public async generateAllocation(
+    input: AllocationInput,
+  ): Promise<AllocationRecommendation> {
     // Step 1: Determine risk profile if not provided
     const riskProfile = input.riskProfile || this.inferRiskProfile(input);
 
@@ -184,7 +191,7 @@ export class AssetAllocationEngine {
     const marketAdjustedAllocations = this.adjustForMarketConditions(
       baseAllocations,
       marketCondition,
-      input.marketConditions
+      input.marketConditions,
     );
 
     // Step 5: Apply user preferences and constraints
@@ -192,7 +199,7 @@ export class AssetAllocationEngine {
       marketAdjustedAllocations,
       input.preferences,
       input.constraints,
-      input.assetCharacteristics
+      input.assetCharacteristics,
     );
 
     // Step 6: Optimize allocations using selected objective
@@ -200,26 +207,26 @@ export class AssetAllocationEngine {
       constrainedAllocations,
       input.assetCharacteristics,
       input.accountSize,
-      riskProfile
+      riskProfile,
     );
 
     // Step 7: Calculate portfolio metrics
     const portfolioMetrics = this.calculatePortfolioMetrics(
       optimizedAllocations,
-      input.assetCharacteristics
+      input.assetCharacteristics,
     );
 
     // Step 8: Perform risk analysis
     const riskAnalysis = this.performRiskAnalysis(
       optimizedAllocations,
       input.assetCharacteristics,
-      riskProfile
+      riskProfile,
     );
 
     // Step 9: Calculate diversification metrics
     const diversification = this.calculateDiversification(
       optimizedAllocations,
-      input.assetCharacteristics
+      input.assetCharacteristics,
     );
 
     // Step 10: Generate rebalancing recommendations if current positions exist
@@ -227,7 +234,7 @@ export class AssetAllocationEngine {
       ? this.generateRebalancingActions(
           input.currentPositions,
           optimizedAllocations,
-          input.accountSize
+          input.accountSize,
         )
       : undefined;
 
@@ -239,7 +246,7 @@ export class AssetAllocationEngine {
         input.accountSize,
         input.assetCharacteristics,
         portfolioMetrics,
-        riskProfile
+        riskProfile,
       ),
       portfolioMetrics,
       riskAnalysis,
@@ -247,10 +254,17 @@ export class AssetAllocationEngine {
       rebalancing,
       timestamp: new Date(),
       nextRebalancingDate: this.calculateNextRebalancingDate(
-        input.preferences?.rebalancingFrequency
+        input.preferences?.rebalancingFrequency,
       ),
-      methodology: this.getMethodologyDescription(this.config.objective, riskProfile),
-      warnings: this.generateWarnings(optimizedAllocations, riskAnalysis, input)
+      methodology: this.getMethodologyDescription(
+        this.config.objective,
+        riskProfile,
+      ),
+      warnings: this.generateWarnings(
+        optimizedAllocations,
+        riskAnalysis,
+        input,
+      ),
     };
 
     return recommendation;
@@ -286,11 +300,11 @@ export class AssetAllocationEngine {
     }
 
     // Map score to profile
-    if (riskScore < 30) return 'CONSERVATIVE';
-    if (riskScore < 45) return 'MODERATE_CONSERVATIVE';
-    if (riskScore < 60) return 'MODERATE';
-    if (riskScore < 75) return 'MODERATE_AGGRESSIVE';
-    return 'AGGRESSIVE';
+    if (riskScore < 30) return "CONSERVATIVE";
+    if (riskScore < 45) return "MODERATE_CONSERVATIVE";
+    if (riskScore < 60) return "MODERATE";
+    if (riskScore < 75) return "MODERATE_AGGRESSIVE";
+    return "AGGRESSIVE";
   }
 
   /**
@@ -299,12 +313,12 @@ export class AssetAllocationEngine {
   private assessMarketCondition(metrics: MarketMetrics): MarketCondition {
     // High volatility check
     if (metrics.volatilityIndex > 30) {
-      return 'HIGH_VOLATILITY';
+      return "HIGH_VOLATILITY";
     }
 
     // Low volatility check
     if (metrics.volatilityIndex < 12) {
-      return 'LOW_VOLATILITY';
+      return "LOW_VOLATILITY";
     }
 
     // Crisis detection
@@ -313,35 +327,37 @@ export class AssetAllocationEngine {
       metrics.sentimentScore < 20 ||
       metrics.creditSpread > 500
     ) {
-      return 'CRISIS';
+      return "CRISIS";
     }
 
     // Bull market
     if (
-      metrics.trendDirection === 'UP' &&
+      metrics.trendDirection === "UP" &&
       metrics.marketStrength > 60 &&
       metrics.sentimentScore > 60
     ) {
-      return 'BULL';
+      return "BULL";
     }
 
     // Bear market
     if (
-      metrics.trendDirection === 'DOWN' &&
+      metrics.trendDirection === "DOWN" &&
       metrics.marketStrength < 40 &&
       metrics.sentimentScore < 40
     ) {
-      return 'BEAR';
+      return "BEAR";
     }
 
     // Default to sideways
-    return 'SIDEWAYS';
+    return "SIDEWAYS";
   }
 
   /**
    * Get base allocations from risk profile
    */
-  private getBaseAllocations(riskProfile: RiskProfile): Map<AllocationAssetClass, number> {
+  private getBaseAllocations(
+    riskProfile: RiskProfile,
+  ): Map<AllocationAssetClass, number> {
     const profile = this.defaultRiskProfiles.get(riskProfile);
     if (!profile) {
       throw new Error(`Unknown risk profile: ${riskProfile}`);
@@ -355,70 +371,70 @@ export class AssetAllocationEngine {
   private adjustForMarketConditions(
     baseAllocations: Map<AllocationAssetClass, number>,
     condition: MarketCondition,
-    metrics: MarketMetrics
+    metrics: MarketMetrics,
   ): Map<AllocationAssetClass, number> {
     const adjusted = new Map(baseAllocations);
 
     switch (condition) {
-      case 'CRISIS':
+      case "CRISIS":
         // Shift to defensive assets
-        this.scaleAllocation(adjusted, 'EQUITIES', 0.5);
-        this.scaleAllocation(adjusted, 'OPTIONS', 0.3);
-        this.scaleAllocation(adjusted, 'FUTURES', 0.2);
-        this.scaleAllocation(adjusted, 'ETF', 1.5);
-        this.scaleAllocation(adjusted, 'CRYPTO', 0.1);
+        this.scaleAllocation(adjusted, "EQUITIES", 0.5);
+        this.scaleAllocation(adjusted, "OPTIONS", 0.3);
+        this.scaleAllocation(adjusted, "FUTURES", 0.2);
+        this.scaleAllocation(adjusted, "ETF", 1.5);
+        this.scaleAllocation(adjusted, "CRYPTO", 0.1);
         break;
 
-      case 'HIGH_VOLATILITY':
+      case "HIGH_VOLATILITY":
         // Reduce volatile assets
-        this.scaleAllocation(adjusted, 'OPTIONS', 0.7);
-        this.scaleAllocation(adjusted, 'FUTURES', 0.7);
-        this.scaleAllocation(adjusted, 'CRYPTO', 0.5);
-        this.scaleAllocation(adjusted, 'ETF', 1.2);
+        this.scaleAllocation(adjusted, "OPTIONS", 0.7);
+        this.scaleAllocation(adjusted, "FUTURES", 0.7);
+        this.scaleAllocation(adjusted, "CRYPTO", 0.5);
+        this.scaleAllocation(adjusted, "ETF", 1.2);
         break;
 
-      case 'LOW_VOLATILITY':
+      case "LOW_VOLATILITY":
         // Can take more risk
-        this.scaleAllocation(adjusted, 'EQUITIES', 1.1);
-        this.scaleAllocation(adjusted, 'OPTIONS', 1.2);
-        this.scaleAllocation(adjusted, 'CRYPTO', 1.3);
+        this.scaleAllocation(adjusted, "EQUITIES", 1.1);
+        this.scaleAllocation(adjusted, "OPTIONS", 1.2);
+        this.scaleAllocation(adjusted, "CRYPTO", 1.3);
         break;
 
-      case 'BULL':
+      case "BULL":
         // Increase growth assets
-        this.scaleAllocation(adjusted, 'EQUITIES', 1.2);
-        this.scaleAllocation(adjusted, 'OPTIONS', 1.1);
-        this.scaleAllocation(adjusted, 'CRYPTO', 1.2);
-        this.scaleAllocation(adjusted, 'ETF', 0.9);
+        this.scaleAllocation(adjusted, "EQUITIES", 1.2);
+        this.scaleAllocation(adjusted, "OPTIONS", 1.1);
+        this.scaleAllocation(adjusted, "CRYPTO", 1.2);
+        this.scaleAllocation(adjusted, "ETF", 0.9);
         break;
 
-      case 'BEAR':
+      case "BEAR":
         // Defensive positioning
-        this.scaleAllocation(adjusted, 'EQUITIES', 0.7);
-        this.scaleAllocation(adjusted, 'OPTIONS', 0.8);
-        this.scaleAllocation(adjusted, 'CRYPTO', 0.6);
-        this.scaleAllocation(adjusted, 'ETF', 1.3);
-        this.scaleAllocation(adjusted, 'FOREX', 1.2);
+        this.scaleAllocation(adjusted, "EQUITIES", 0.7);
+        this.scaleAllocation(adjusted, "OPTIONS", 0.8);
+        this.scaleAllocation(adjusted, "CRYPTO", 0.6);
+        this.scaleAllocation(adjusted, "ETF", 1.3);
+        this.scaleAllocation(adjusted, "FOREX", 1.2);
         break;
 
-      case 'SIDEWAYS':
+      case "SIDEWAYS":
         // Favor income and options strategies
-        this.scaleAllocation(adjusted, 'OPTIONS', 1.2);
-        this.scaleAllocation(adjusted, 'EQUITIES', 0.95);
+        this.scaleAllocation(adjusted, "OPTIONS", 1.2);
+        this.scaleAllocation(adjusted, "EQUITIES", 0.95);
         break;
     }
 
     // Additional adjustments based on specific metrics
     if (metrics.inflationRate > 4) {
       // High inflation - favor real assets
-      this.scaleAllocation(adjusted, 'CRYPTO', 1.1);
-      this.scaleAllocation(adjusted, 'ETF', 0.9);
+      this.scaleAllocation(adjusted, "CRYPTO", 1.1);
+      this.scaleAllocation(adjusted, "ETF", 0.9);
     }
 
-    if (metrics.interestRateLevel === 'HIGH') {
+    if (metrics.interestRateLevel === "HIGH") {
       // High rates - favor fixed income and reduce growth
-      this.scaleAllocation(adjusted, 'EQUITIES', 0.9);
-      this.scaleAllocation(adjusted, 'ETF', 1.1);
+      this.scaleAllocation(adjusted, "EQUITIES", 0.9);
+      this.scaleAllocation(adjusted, "ETF", 1.1);
     }
 
     // Normalize to sum to 1.0
@@ -431,7 +447,7 @@ export class AssetAllocationEngine {
   private scaleAllocation(
     allocations: Map<AllocationAssetClass, number>,
     assetClass: AllocationAssetClass,
-    scaleFactor: number
+    scaleFactor: number,
   ): void {
     const current = allocations.get(assetClass) || 0;
     allocations.set(assetClass, current * scaleFactor);
@@ -440,8 +456,13 @@ export class AssetAllocationEngine {
   /**
    * Normalize allocations to sum to 1.0
    */
-  private normalizeAllocations(allocations: Map<AllocationAssetClass, number>): Map<AllocationAssetClass, number> {
-    const total = Array.from(allocations.values()).reduce((sum, val) => sum + val, 0);
+  private normalizeAllocations(
+    allocations: Map<AllocationAssetClass, number>,
+  ): Map<AllocationAssetClass, number> {
+    const total = Array.from(allocations.values()).reduce(
+      (sum, val) => sum + val,
+      0,
+    );
 
     if (total === 0) {
       // Equal weight if all zeros
@@ -465,19 +486,22 @@ export class AssetAllocationEngine {
     allocations: Map<AllocationAssetClass, number>,
     preferences?: AllocationPreferences,
     constraints?: AllocationConstraint[],
-    characteristics?: AssetClassCharacteristics[]
+    characteristics?: AssetClassCharacteristics[],
   ): Map<AllocationAssetClass, number> {
     const constrained = new Map(allocations);
 
     // Apply exclusions
     if (preferences?.excludedAssetClasses) {
-      preferences.excludedAssetClasses.forEach(asset => {
+      preferences.excludedAssetClasses.forEach((asset) => {
         constrained.set(asset, 0);
       });
     }
 
     // Apply preferred asset classes
-    if (preferences?.preferredAssetClasses && preferences.preferredAssetClasses.length > 0) {
+    if (
+      preferences?.preferredAssetClasses &&
+      preferences.preferredAssetClasses.length > 0
+    ) {
       // Zero out non-preferred assets
       constrained.forEach((_, asset) => {
         if (!preferences.preferredAssetClasses!.includes(asset)) {
@@ -505,18 +529,18 @@ export class AssetAllocationEngine {
 
     // Apply specific constraints
     if (constraints) {
-      constraints.forEach(constraint => {
+      constraints.forEach((constraint) => {
         if (constraint.assetClass) {
           const current = constrained.get(constraint.assetClass) || 0;
 
           switch (constraint.type) {
-            case 'MIN_ALLOCATION':
+            case "MIN_ALLOCATION":
               if (current < constraint.value && constraint.hard) {
                 constrained.set(constraint.assetClass, constraint.value);
               }
               break;
 
-            case 'MAX_ALLOCATION':
+            case "MAX_ALLOCATION":
               if (current > constraint.value) {
                 constrained.set(constraint.assetClass, constraint.value);
               }
@@ -537,24 +561,24 @@ export class AssetAllocationEngine {
     allocations: Map<AllocationAssetClass, number>,
     characteristics: AssetClassCharacteristics[],
     accountSize: number,
-    riskProfile: RiskProfile
+    riskProfile: RiskProfile,
   ): Map<AllocationAssetClass, number> {
-    const charMap = new Map(characteristics.map(c => [c.assetClass, c]));
+    const charMap = new Map(characteristics.map((c) => [c.assetClass, c]));
 
     switch (this.config.objective) {
-      case 'MAX_SHARPE':
+      case "MAX_SHARPE":
         return this.maximizeSharpeRatio(allocations, charMap);
 
-      case 'MIN_RISK':
+      case "MIN_RISK":
         return this.minimizeRisk(allocations, charMap);
 
-      case 'MAX_RETURN':
+      case "MAX_RETURN":
         return this.maximizeReturn(allocations, charMap, riskProfile);
 
-      case 'RISK_PARITY':
+      case "RISK_PARITY":
         return this.riskParityAllocation(allocations, charMap);
 
-      case 'MAX_DIVERSIFICATION':
+      case "MAX_DIVERSIFICATION":
         return this.maximizeDiversification(allocations, charMap);
 
       default:
@@ -567,7 +591,7 @@ export class AssetAllocationEngine {
    */
   private maximizeSharpeRatio(
     allocations: Map<AllocationAssetClass, number>,
-    characteristics: Map<AllocationAssetClass, AssetClassCharacteristics>
+    characteristics: Map<AllocationAssetClass, AssetClassCharacteristics>,
   ): Map<AllocationAssetClass, number> {
     const optimized = new Map<AllocationAssetClass, number>();
 
@@ -576,7 +600,8 @@ export class AssetAllocationEngine {
     allocations.forEach((_, asset) => {
       const char = characteristics.get(asset);
       if (char) {
-        const excessReturn = char.expectedReturn - this.config.riskFreeRate * 100;
+        const excessReturn =
+          char.expectedReturn - this.config.riskFreeRate * 100;
         excessReturns.set(asset, excessReturn);
       }
     });
@@ -622,7 +647,7 @@ export class AssetAllocationEngine {
    */
   private minimizeRisk(
     allocations: Map<AllocationAssetClass, number>,
-    characteristics: Map<AllocationAssetClass, AssetClassCharacteristics>
+    characteristics: Map<AllocationAssetClass, AssetClassCharacteristics>,
   ): Map<AllocationAssetClass, number> {
     const optimized = new Map<AllocationAssetClass, number>();
 
@@ -667,7 +692,7 @@ export class AssetAllocationEngine {
   private maximizeReturn(
     allocations: Map<AllocationAssetClass, number>,
     characteristics: Map<AllocationAssetClass, AssetClassCharacteristics>,
-    riskProfile: RiskProfile
+    riskProfile: RiskProfile,
   ): Map<AllocationAssetClass, number> {
     const profile = this.defaultRiskProfiles.get(riskProfile);
     if (!profile) return allocations;
@@ -682,9 +707,8 @@ export class AssetAllocationEngine {
       const char = characteristics.get(asset);
       if (char) {
         // Penalize high volatility assets
-        const volatilityPenalty = char.volatility > profile.maxVolatility
-          ? 0.5
-          : 1.0;
+        const volatilityPenalty =
+          char.volatility > profile.maxVolatility ? 0.5 : 1.0;
 
         const adjustedReturn = char.expectedReturn * volatilityPenalty;
         adjustedReturns.set(asset, Math.max(0, adjustedReturn));
@@ -719,7 +743,7 @@ export class AssetAllocationEngine {
    */
   private riskParityAllocation(
     allocations: Map<AllocationAssetClass, number>,
-    characteristics: Map<AllocationAssetClass, AssetClassCharacteristics>
+    characteristics: Map<AllocationAssetClass, AssetClassCharacteristics>,
   ): Map<AllocationAssetClass, number> {
     // Simplified risk parity: weight inversely to volatility
     return this.minimizeRisk(allocations, characteristics);
@@ -730,7 +754,7 @@ export class AssetAllocationEngine {
    */
   private maximizeDiversification(
     allocations: Map<AllocationAssetClass, number>,
-    characteristics: Map<AllocationAssetClass, AssetClassCharacteristics>
+    characteristics: Map<AllocationAssetClass, AssetClassCharacteristics>,
   ): Map<AllocationAssetClass, number> {
     const optimized = new Map<AllocationAssetClass, number>();
 
@@ -790,9 +814,9 @@ export class AssetAllocationEngine {
    */
   private calculatePortfolioMetrics(
     allocations: Map<AllocationAssetClass, number>,
-    characteristics: AssetClassCharacteristics[]
+    characteristics: AssetClassCharacteristics[],
   ): PortfolioMetrics {
-    const charMap = new Map(characteristics.map(c => [c.assetClass, c]));
+    const charMap = new Map(characteristics.map((c) => [c.assetClass, c]));
 
     let expectedReturn = 0;
     let portfolioVariance = 0;
@@ -834,11 +858,13 @@ export class AssetAllocationEngine {
 
     // Calculate Sharpe ratio
     const excessReturn = expectedReturn - this.config.riskFreeRate * 100;
-    const sharpeRatio = expectedVolatility > 0 ? excessReturn / expectedVolatility : 0;
+    const sharpeRatio =
+      expectedVolatility > 0 ? excessReturn / expectedVolatility : 0;
 
     // Calculate Sortino ratio (simplified - using volatility as proxy)
     const downsideDeviation = expectedVolatility * 0.7; // Rough approximation
-    const sortinoRatio = downsideDeviation > 0 ? excessReturn / downsideDeviation : 0;
+    const sortinoRatio =
+      downsideDeviation > 0 ? excessReturn / downsideDeviation : 0;
 
     // Estimate maximum drawdown (rough approximation)
     const maxDrawdown = expectedVolatility * 1.5;
@@ -865,7 +891,7 @@ export class AssetAllocationEngine {
       conditionalVaR,
       beta,
       alpha,
-      informationRatio
+      informationRatio,
     };
   }
 
@@ -875,9 +901,9 @@ export class AssetAllocationEngine {
   private performRiskAnalysis(
     allocations: Map<AllocationAssetClass, number>,
     characteristics: AssetClassCharacteristics[],
-    riskProfile: RiskProfile
+    riskProfile: RiskProfile,
   ): RiskAnalysis {
-    const charMap = new Map(characteristics.map(c => [c.assetClass, c]));
+    const charMap = new Map(characteristics.map((c) => [c.assetClass, c]));
     const profile = this.defaultRiskProfiles.get(riskProfile)!;
 
     // Calculate portfolio volatility
@@ -890,14 +916,17 @@ export class AssetAllocationEngine {
     });
 
     // Risk score (0-100)
-    const riskScore = Math.min(100, (totalVolatility / profile.maxVolatility) * 100);
+    const riskScore = Math.min(
+      100,
+      (totalVolatility / profile.maxVolatility) * 100,
+    );
 
     // Risk level
-    let riskLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'EXTREME';
-    if (riskScore < 40) riskLevel = 'LOW';
-    else if (riskScore < 60) riskLevel = 'MEDIUM';
-    else if (riskScore < 80) riskLevel = 'HIGH';
-    else riskLevel = 'EXTREME';
+    let riskLevel: "LOW" | "MEDIUM" | "HIGH" | "EXTREME";
+    if (riskScore < 40) riskLevel = "LOW";
+    else if (riskScore < 60) riskLevel = "MEDIUM";
+    else if (riskScore < 80) riskLevel = "HIGH";
+    else riskLevel = "EXTREME";
 
     // Systematic vs idiosyncratic risk (simplified)
     const systematicRisk = totalVolatility * 0.7; // 70% systematic
@@ -917,14 +946,14 @@ export class AssetAllocationEngine {
 
     // Concentration risk (HHI)
     let hhi = 0;
-    allocations.forEach(weight => {
+    allocations.forEach((weight) => {
       hhi += weight * weight;
     });
     const concentrationRisk = hhi * 100;
 
     // Currency risk (simplified)
-    const forexWeight = allocations.get('FOREX') || 0;
-    const cryptoWeight = allocations.get('CRYPTO') || 0;
+    const forexWeight = allocations.get("FOREX") || 0;
+    const cryptoWeight = allocations.get("CRYPTO") || 0;
     const currencyRisk = (forexWeight + cryptoWeight) * 50;
 
     // Risk decomposition by asset class
@@ -956,7 +985,7 @@ export class AssetAllocationEngine {
       liquidityRisk,
       concentrationRisk,
       currencyRisk,
-      riskDecomposition
+      riskDecomposition,
     };
   }
 
@@ -965,13 +994,13 @@ export class AssetAllocationEngine {
    */
   private calculateDiversification(
     allocations: Map<AllocationAssetClass, number>,
-    characteristics: AssetClassCharacteristics[]
+    characteristics: AssetClassCharacteristics[],
   ): DiversificationMetrics {
-    const charMap = new Map(characteristics.map(c => [c.assetClass, c]));
+    const charMap = new Map(characteristics.map((c) => [c.assetClass, c]));
 
     // Herfindahl-Hirschman Index (concentration measure)
     let hhi = 0;
-    allocations.forEach(weight => {
+    allocations.forEach((weight) => {
       hhi += weight * weight;
     });
 
@@ -999,7 +1028,8 @@ export class AssetAllocationEngine {
       }
     }
 
-    const averageCorrelation = correlationCount > 0 ? sumCorrelations / correlationCount : 0;
+    const averageCorrelation =
+      correlationCount > 0 ? sumCorrelations / correlationCount : 0;
 
     // Diversification ratio (weighted average vol / portfolio vol)
     let weightedAvgVol = 0;
@@ -1032,10 +1062,13 @@ export class AssetAllocationEngine {
     }
 
     const portfolioVol = Math.sqrt(portfolioVar) * 100;
-    const diversificationRatio = portfolioVol > 0 ? weightedAvgVol / portfolioVol : 1;
+    const diversificationRatio =
+      portfolioVol > 0 ? weightedAvgVol / portfolioVol : 1;
 
     // Asset class diversity score (based on number of asset classes used)
-    const nonZeroAllocations = Array.from(allocations.values()).filter(w => w > 0.01).length;
+    const nonZeroAllocations = Array.from(allocations.values()).filter(
+      (w) => w > 0.01,
+    ).length;
     const totalAssetClasses = allocations.size;
     const assetClassDiversity = (nonZeroAllocations / totalAssetClasses) * 100;
 
@@ -1061,7 +1094,7 @@ export class AssetAllocationEngine {
       averageCorrelation,
       maxPairwiseCorrelation: maxCorr,
       correlationMatrix,
-      assetClassDiversity
+      assetClassDiversity,
     };
   }
 
@@ -1071,13 +1104,13 @@ export class AssetAllocationEngine {
   private generateRebalancingActions(
     currentPositions: Map<AllocationAssetClass, number>,
     targetAllocations: Map<AllocationAssetClass, number>,
-    accountSize: number
+    accountSize: number,
   ): RebalancingAction[] {
     const actions: RebalancingAction[] = [];
 
     // Calculate current total value
     let currentTotal = 0;
-    currentPositions.forEach(amount => {
+    currentPositions.forEach((amount) => {
       currentTotal += amount;
     });
 
@@ -1097,11 +1130,11 @@ export class AssetAllocationEngine {
           assetClass: asset,
           currentAllocation: currentWeight,
           targetAllocation: targetWeight,
-          action: tradeDelta > 0 ? 'BUY' : 'SELL',
+          action: tradeDelta > 0 ? "BUY" : "SELL",
           tradeAmount: Math.abs(tradeDelta),
-          priority: drift > 0.15 ? 1 : drift > 0.10 ? 2 : 3,
+          priority: drift > 0.15 ? 1 : drift > 0.1 ? 2 : 3,
           estimatedCost: Math.abs(tradeDelta) * 0.001, // 0.1% transaction cost
-          reason: `Drift of ${(drift * 100).toFixed(2)}% exceeds threshold`
+          reason: `Drift of ${(drift * 100).toFixed(2)}% exceeds threshold`,
         });
       }
     });
@@ -1120,20 +1153,22 @@ export class AssetAllocationEngine {
     accountSize: number,
     characteristics: AssetClassCharacteristics[],
     portfolioMetrics: PortfolioMetrics,
-    riskProfile: RiskProfile
+    riskProfile: RiskProfile,
   ): AssetAllocation[] {
-    const charMap = new Map(characteristics.map(c => [c.assetClass, c]));
+    const charMap = new Map(characteristics.map((c) => [c.assetClass, c]));
     const assetAllocations: AssetAllocation[] = [];
 
     allocations.forEach((weight, asset) => {
-      if (weight > 0.001) { // Only include meaningful allocations
+      if (weight > 0.001) {
+        // Only include meaningful allocations
         const char = charMap.get(asset);
         const amount = accountSize * weight;
 
         // Calculate risk contribution
         const assetVol = char?.volatility || 0;
         const portfolioVol = portfolioMetrics.expectedVolatility;
-        const riskContribution = portfolioVol > 0 ? (weight * assetVol) / portfolioVol : 0;
+        const riskContribution =
+          portfolioVol > 0 ? (weight * assetVol) / portfolioVol : 0;
 
         // Calculate return contribution
         const assetReturn = char?.expectedReturn || 0;
@@ -1144,11 +1179,13 @@ export class AssetAllocationEngine {
           asset,
           weight,
           char,
-          riskProfile
+          riskProfile,
         );
 
         // Calculate confidence (based on data quality and market conditions)
-        const confidence = char ? Math.min(0.95, 0.7 + (char.liquidityScore / 200)) : 0.5;
+        const confidence = char
+          ? Math.min(0.95, 0.7 + char.liquidityScore / 200)
+          : 0.5;
 
         assetAllocations.push({
           assetClass: asset,
@@ -1157,7 +1194,7 @@ export class AssetAllocationEngine {
           riskContribution,
           returnContribution,
           rationale,
-          confidence
+          confidence,
         });
       }
     });
@@ -1175,7 +1212,7 @@ export class AssetAllocationEngine {
     asset: AllocationAssetClass,
     weight: number,
     characteristics: AssetClassCharacteristics | undefined,
-    riskProfile: RiskProfile
+    riskProfile: RiskProfile,
   ): string {
     if (!characteristics) {
       return `${(weight * 100).toFixed(1)}% allocated to ${asset}`;
@@ -1185,38 +1222,38 @@ export class AssetAllocationEngine {
 
     // Add size description
     if (weight > 0.3) {
-      reasons.push('Core holding');
+      reasons.push("Core holding");
     } else if (weight > 0.15) {
-      reasons.push('Significant position');
+      reasons.push("Significant position");
     } else if (weight > 0.05) {
-      reasons.push('Moderate allocation');
+      reasons.push("Moderate allocation");
     } else {
-      reasons.push('Tactical allocation');
+      reasons.push("Tactical allocation");
     }
 
     // Add characteristic-based reasoning
     if (characteristics.sharpeRatio > 1.5) {
-      reasons.push('strong risk-adjusted returns');
+      reasons.push("strong risk-adjusted returns");
     }
 
     if (characteristics.volatility < 15) {
-      reasons.push('low volatility');
+      reasons.push("low volatility");
     } else if (characteristics.volatility > 25) {
-      reasons.push('high growth potential');
+      reasons.push("high growth potential");
     }
 
     if (characteristics.liquidityScore > 80) {
-      reasons.push('high liquidity');
+      reasons.push("high liquidity");
     }
 
     // Add risk profile context
-    if (riskProfile === 'CONSERVATIVE' && asset === 'ETF') {
-      reasons.push('diversification and stability');
-    } else if (riskProfile === 'AGGRESSIVE' && asset === 'OPTIONS') {
-      reasons.push('leveraged growth opportunities');
+    if (riskProfile === "CONSERVATIVE" && asset === "ETF") {
+      reasons.push("diversification and stability");
+    } else if (riskProfile === "AGGRESSIVE" && asset === "OPTIONS") {
+      reasons.push("leveraged growth opportunities");
     }
 
-    return `${(weight * 100).toFixed(1)}% allocation - ${reasons.join(', ')}`;
+    return `${(weight * 100).toFixed(1)}% allocation - ${reasons.join(", ")}`;
   }
 
   /**
@@ -1234,16 +1271,18 @@ export class AssetAllocationEngine {
    */
   private getMethodologyDescription(
     objective: OptimizationObjective,
-    riskProfile: RiskProfile
+    riskProfile: RiskProfile,
   ): string {
     const descriptions: Record<OptimizationObjective, string> = {
-      MAX_SHARPE: 'Sharpe ratio maximization with risk-adjusted return optimization',
-      MIN_RISK: 'Minimum variance optimization prioritizing capital preservation',
-      MAX_RETURN: 'Return maximization within risk tolerance constraints',
-      RISK_PARITY: 'Equal risk contribution across asset classes',
-      MAX_DIVERSIFICATION: 'Correlation-based diversification maximization',
-      TARGET_RETURN: 'Target return achievement with minimum required risk',
-      TARGET_RISK: 'Target risk level with maximum potential return'
+      MAX_SHARPE:
+        "Sharpe ratio maximization with risk-adjusted return optimization",
+      MIN_RISK:
+        "Minimum variance optimization prioritizing capital preservation",
+      MAX_RETURN: "Return maximization within risk tolerance constraints",
+      RISK_PARITY: "Equal risk contribution across asset classes",
+      MAX_DIVERSIFICATION: "Correlation-based diversification maximization",
+      TARGET_RETURN: "Target return achievement with minimum required risk",
+      TARGET_RISK: "Target risk level with maximum potential return",
     };
 
     return `${descriptions[objective]} tailored for ${riskProfile} risk profile`;
@@ -1255,58 +1294,61 @@ export class AssetAllocationEngine {
   private generateWarnings(
     allocations: Map<AllocationAssetClass, number>,
     riskAnalysis: RiskAnalysis,
-    input: AllocationInput
+    input: AllocationInput,
   ): string[] {
     const warnings: string[] = [];
 
     // High risk warning
-    if (riskAnalysis.riskLevel === 'HIGH' || riskAnalysis.riskLevel === 'EXTREME') {
+    if (
+      riskAnalysis.riskLevel === "HIGH" ||
+      riskAnalysis.riskLevel === "EXTREME"
+    ) {
       warnings.push(
-        `Portfolio risk level is ${riskAnalysis.riskLevel}. Consider reducing exposure to volatile assets.`
+        `Portfolio risk level is ${riskAnalysis.riskLevel}. Consider reducing exposure to volatile assets.`,
       );
     }
 
     // Concentration warning
     if (riskAnalysis.concentrationRisk > 40) {
       warnings.push(
-        'High concentration detected. Portfolio may benefit from additional diversification.'
+        "High concentration detected. Portfolio may benefit from additional diversification.",
       );
     }
 
     // Liquidity warning
     if (riskAnalysis.liquidityRisk > 30) {
       warnings.push(
-        'Some positions may have limited liquidity. Consider exit strategies in advance.'
+        "Some positions may have limited liquidity. Consider exit strategies in advance.",
       );
     }
 
     // Small account warning
     if (input.accountSize < 5000) {
       warnings.push(
-        'Small account size may limit diversification. Consider focusing on ETFs for broader exposure.'
+        "Small account size may limit diversification. Consider focusing on ETFs for broader exposure.",
       );
     }
 
     // High volatility market warning
     if (input.marketConditions.volatilityIndex > 25) {
       warnings.push(
-        'Market volatility is elevated. Consider maintaining higher cash reserves.'
+        "Market volatility is elevated. Consider maintaining higher cash reserves.",
       );
     }
 
     // Crypto allocation warning
-    const cryptoAlloc = allocations.get('CRYPTO') || 0;
+    const cryptoAlloc = allocations.get("CRYPTO") || 0;
     if (cryptoAlloc > 0.15) {
       warnings.push(
-        'Cryptocurrency allocation exceeds 15%. Be aware of high volatility and regulatory risks.'
+        "Cryptocurrency allocation exceeds 15%. Be aware of high volatility and regulatory risks.",
       );
     }
 
     // Options allocation warning
-    const optionsAlloc = allocations.get('OPTIONS') || 0;
+    const optionsAlloc = allocations.get("OPTIONS") || 0;
     if (optionsAlloc > 0.25) {
       warnings.push(
-        'Options allocation is significant. Ensure adequate knowledge and risk management.'
+        "Options allocation is significant. Ensure adequate knowledge and risk management.",
       );
     }
 
@@ -1328,7 +1370,7 @@ export class AssetAllocationEngine {
  */
 export async function generateOptimalAllocation(
   input: AllocationInput,
-  config?: Partial<AllocationStrategyConfig>
+  config?: Partial<AllocationStrategyConfig>,
 ): Promise<AllocationRecommendation> {
   const engine = new AssetAllocationEngine(config as AllocationStrategyConfig);
   return engine.generateAllocation(input);
@@ -1337,7 +1379,9 @@ export async function generateOptimalAllocation(
 /**
  * Convenience function to get default risk profile characteristics
  */
-export function getDefaultRiskProfile(profile: RiskProfile): DefaultRiskProfile | undefined {
+export function getDefaultRiskProfile(
+  profile: RiskProfile,
+): DefaultRiskProfile | undefined {
   const engine = new AssetAllocationEngine();
   return engine.getDefaultRiskProfile(profile);
 }

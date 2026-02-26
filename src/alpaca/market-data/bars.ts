@@ -2,13 +2,13 @@
  * Bars Module
  * Historical and real-time OHLCV data using Alpaca SDK
  */
-import { AlpacaClient } from '../client';
-import { Bar, TimeFrame, SDKMarketDataOptions } from '../../types/alpaca-types';
-import { log as baseLog } from '../../logging';
-import { LogOptions } from '../../types/logging-types';
+import { AlpacaClient } from "../client";
+import { Bar, TimeFrame, SDKMarketDataOptions } from "../../types/alpaca-types";
+import { log as baseLog } from "../../logging";
+import { LogOptions } from "../../types/logging-types";
 
-const log = (message: string, options: LogOptions = { type: 'info' }) => {
-  baseLog(message, { ...options, source: 'AlpacaBars' });
+const log = (message: string, options: LogOptions = { type: "info" }) => {
+  baseLog(message, { ...options, source: "AlpacaBars" });
 };
 
 /**
@@ -19,10 +19,10 @@ export class BarError extends Error {
     message: string,
     public code: string,
     public symbol?: string,
-    public details?: unknown
+    public details?: unknown,
   ) {
     super(message);
-    this.name = 'BarError';
+    this.name = "BarError";
   }
 }
 
@@ -41,9 +41,9 @@ export interface GetBarsParams {
   /** Maximum number of bars to return per symbol */
   limit?: number;
   /** Price adjustment type */
-  adjustment?: 'raw' | 'split' | 'dividend' | 'all';
+  adjustment?: "raw" | "split" | "dividend" | "all";
   /** Data feed (sip for premium, iex for free tier) */
-  feed?: 'sip' | 'iex';
+  feed?: "sip" | "iex";
 }
 
 /**
@@ -76,7 +76,7 @@ export interface BarAnalysis {
  * Convert date to RFC-3339 format string
  */
 function toRFC3339(date: Date | string): string {
-  if (typeof date === 'string') {
+  if (typeof date === "string") {
     return date;
   }
   return date.toISOString();
@@ -90,26 +90,31 @@ function toRFC3339(date: Date | string): string {
  */
 export async function getBars(
   client: AlpacaClient,
-  params: GetBarsParams
+  params: GetBarsParams,
 ): Promise<Map<string, Bar[]>> {
   const { symbols, timeframe, start, end, limit, adjustment, feed } = params;
 
   if (!symbols || symbols.length === 0) {
-    throw new BarError('At least one symbol is required', 'INVALID_SYMBOLS');
+    throw new BarError("At least one symbol is required", "INVALID_SYMBOLS");
   }
 
-  const normalizedSymbols = symbols.map((s) => s.toUpperCase().trim()).filter(Boolean);
+  const normalizedSymbols = symbols
+    .map((s) => s.toUpperCase().trim())
+    .filter(Boolean);
 
   if (normalizedSymbols.length === 0) {
-    throw new BarError('No valid symbols provided', 'INVALID_SYMBOLS');
+    throw new BarError("No valid symbols provided", "INVALID_SYMBOLS");
   }
 
-  log(`Fetching bars for ${normalizedSymbols.length} symbols with timeframe ${timeframe}`, { type: 'debug' });
+  log(
+    `Fetching bars for ${normalizedSymbols.length} symbols with timeframe ${timeframe}`,
+    { type: "debug" },
+  );
 
   try {
     const sdk = client.getSDK();
     const config = client.getConfig();
-    const dataFeed = feed || config.dataFeed || 'iex';
+    const dataFeed = feed || config.dataFeed || "iex";
 
     const options: {
       timeframe: string;
@@ -145,7 +150,7 @@ export async function getBars(
     }
 
     // Fetch bars - the SDK handles pagination internally via async iterator
-    const barsIterator = sdk.getBarsV2(normalizedSymbols.join(','), options);
+    const barsIterator = sdk.getBarsV2(normalizedSymbols.join(","), options);
 
     for await (const bar of barsIterator) {
       const symbol = bar.Symbol;
@@ -165,8 +170,14 @@ export async function getBars(
       result.set(symbol, existingBars);
     }
 
-    const totalBars = Array.from(result.values()).reduce((sum, bars) => sum + bars.length, 0);
-    log(`Successfully fetched ${totalBars} bars for ${normalizedSymbols.length} symbols`, { type: 'debug' });
+    const totalBars = Array.from(result.values()).reduce(
+      (sum, bars) => sum + bars.length,
+      0,
+    );
+    log(
+      `Successfully fetched ${totalBars} bars for ${normalizedSymbols.length} symbols`,
+      { type: "debug" },
+    );
 
     return result;
   } catch (error) {
@@ -175,13 +186,13 @@ export async function getBars(
     }
 
     const errorMessage = error instanceof Error ? error.message : String(error);
-    log(`Failed to fetch bars: ${errorMessage}`, { type: 'error' });
+    log(`Failed to fetch bars: ${errorMessage}`, { type: "error" });
 
     throw new BarError(
       `Failed to fetch bars: ${errorMessage}`,
-      'FETCH_ERROR',
+      "FETCH_ERROR",
       undefined,
-      error
+      error,
     );
   }
 }
@@ -194,23 +205,29 @@ export async function getBars(
  */
 export async function getLatestBars(
   client: AlpacaClient,
-  symbols: string[]
+  symbols: string[],
 ): Promise<Map<string, Bar>> {
   if (!symbols || symbols.length === 0) {
-    throw new BarError('At least one symbol is required', 'INVALID_SYMBOLS');
+    throw new BarError("At least one symbol is required", "INVALID_SYMBOLS");
   }
 
-  const normalizedSymbols = symbols.map((s) => s.toUpperCase().trim()).filter(Boolean);
+  const normalizedSymbols = symbols
+    .map((s) => s.toUpperCase().trim())
+    .filter(Boolean);
 
-  log(`Fetching latest bars for ${normalizedSymbols.length} symbols`, { type: 'debug' });
+  log(`Fetching latest bars for ${normalizedSymbols.length} symbols`, {
+    type: "debug",
+  });
 
   try {
     const sdk = client.getSDK();
     const config = client.getConfig();
-    const dataFeed = config.dataFeed || 'iex';
+    const dataFeed = config.dataFeed || "iex";
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const response = await sdk.getLatestBars(normalizedSymbols, { feed: dataFeed } as SDKMarketDataOptions);
+    const response = await sdk.getLatestBars(normalizedSymbols, {
+      feed: dataFeed,
+    } as any);
 
     const result = new Map<string, Bar>();
 
@@ -238,7 +255,9 @@ export async function getLatestBars(
       });
     }
 
-    log(`Successfully fetched latest bars for ${result.size} symbols`, { type: 'debug' });
+    log(`Successfully fetched latest bars for ${result.size} symbols`, {
+      type: "debug",
+    });
 
     return result;
   } catch (error) {
@@ -247,13 +266,13 @@ export async function getLatestBars(
     }
 
     const errorMessage = error instanceof Error ? error.message : String(error);
-    log(`Failed to fetch latest bars: ${errorMessage}`, { type: 'error' });
+    log(`Failed to fetch latest bars: ${errorMessage}`, { type: "error" });
 
     throw new BarError(
       `Failed to fetch latest bars: ${errorMessage}`,
-      'FETCH_ERROR',
+      "FETCH_ERROR",
       undefined,
-      error
+      error,
     );
   }
 }
@@ -268,19 +287,21 @@ export async function getLatestBars(
 export async function getDailyPrices(
   client: AlpacaClient,
   symbol: string,
-  days: number
+  days: number,
 ): Promise<Bar[]> {
   const normalizedSymbol = symbol.toUpperCase().trim();
 
   if (!normalizedSymbol) {
-    throw new BarError('Symbol is required', 'INVALID_SYMBOL');
+    throw new BarError("Symbol is required", "INVALID_SYMBOL");
   }
 
   if (days <= 0) {
-    throw new BarError('Days must be a positive number', 'INVALID_DAYS');
+    throw new BarError("Days must be a positive number", "INVALID_DAYS");
   }
 
-  log(`Fetching ${days} days of daily prices for ${normalizedSymbol}`, { type: 'debug' });
+  log(`Fetching ${days} days of daily prices for ${normalizedSymbol}`, {
+    type: "debug",
+  });
 
   // Calculate start date (add buffer for weekends/holidays)
   const bufferDays = Math.ceil(days * 1.5) + 10;
@@ -289,10 +310,10 @@ export async function getDailyPrices(
 
   const result = await getBars(client, {
     symbols: [normalizedSymbol],
-    timeframe: '1Day',
+    timeframe: "1Day",
     start,
     limit: days,
-    adjustment: 'all',
+    adjustment: "all",
   });
 
   const bars = result.get(normalizedSymbol) || [];
@@ -319,15 +340,17 @@ export async function getIntradayPrices(
   symbol: string,
   timeframe: TimeFrame,
   start: Date,
-  end?: Date
+  end?: Date,
 ): Promise<Bar[]> {
   const normalizedSymbol = symbol.toUpperCase().trim();
 
   if (!normalizedSymbol) {
-    throw new BarError('Symbol is required', 'INVALID_SYMBOL');
+    throw new BarError("Symbol is required", "INVALID_SYMBOL");
   }
 
-  log(`Fetching intraday prices for ${normalizedSymbol} (${timeframe})`, { type: 'debug' });
+  log(`Fetching intraday prices for ${normalizedSymbol} (${timeframe})`, {
+    type: "debug",
+  });
 
   const result = await getBars(client, {
     symbols: [normalizedSymbol],
@@ -347,15 +370,15 @@ export async function getIntradayPrices(
  */
 export async function getPreviousClose(
   client: AlpacaClient,
-  symbol: string
+  symbol: string,
 ): Promise<number> {
   const normalizedSymbol = symbol.toUpperCase().trim();
 
   if (!normalizedSymbol) {
-    throw new BarError('Symbol is required', 'INVALID_SYMBOL');
+    throw new BarError("Symbol is required", "INVALID_SYMBOL");
   }
 
-  log(`Fetching previous close for ${normalizedSymbol}`, { type: 'debug' });
+  log(`Fetching previous close for ${normalizedSymbol}`, { type: "debug" });
 
   // Get the last 2 daily bars to ensure we have the previous day
   const bars = await getDailyPrices(client, normalizedSymbol, 2);
@@ -363,14 +386,15 @@ export async function getPreviousClose(
   if (bars.length === 0) {
     throw new BarError(
       `No price data available for ${normalizedSymbol}`,
-      'NO_DATA',
-      normalizedSymbol
+      "NO_DATA",
+      normalizedSymbol,
     );
   }
 
   // If we have 2 bars, the previous close is from the second-to-last bar
   // If we only have 1 bar, use that bar's close
-  const previousBar = bars.length >= 2 ? bars[bars.length - 2] : bars[bars.length - 1];
+  const previousBar =
+    bars.length >= 2 ? bars[bars.length - 2] : bars[bars.length - 1];
 
   return previousBar.c;
 }
@@ -447,7 +471,7 @@ export function analyzeBars(bars: Bar[]): BarAnalysis {
 export async function getPriceRange(
   client: AlpacaClient,
   symbol: string,
-  days: number
+  days: number,
 ): Promise<BarAnalysis> {
   const bars = await getDailyPrices(client, symbol, days);
   return analyzeBars(bars);
@@ -463,7 +487,7 @@ export async function getPriceRange(
 export async function getAverageDailyVolume(
   client: AlpacaClient,
   symbol: string,
-  days: number = 20
+  days: number = 20,
 ): Promise<number> {
   const bars = await getDailyPrices(client, symbol, days);
 
@@ -487,13 +511,15 @@ export async function hasSufficientVolume(
   client: AlpacaClient,
   symbol: string,
   minAvgVolume: number = 100000,
-  days: number = 20
+  days: number = 20,
 ): Promise<boolean> {
   try {
     const avgVolume = await getAverageDailyVolume(client, symbol, days);
     return avgVolume >= minAvgVolume;
   } catch (error) {
-    log(`Failed to check volume for ${symbol}: ${(error as Error).message}`, { type: 'warn' });
+    log(`Failed to check volume for ${symbol}: ${(error as Error).message}`, {
+      type: "warn",
+    });
     return false;
   }
 }

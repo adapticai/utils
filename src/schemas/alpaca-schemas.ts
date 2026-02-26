@@ -2,19 +2,19 @@
  * Zod schemas for Alpaca API response validation.
  * Validates API responses against expected shapes to catch breaking API changes early.
  */
-import { z } from 'zod';
+import { z } from "zod";
 
 // ===== Account Schemas =====
 
 /** Schema for Alpaca account status values */
 const AlpacaAccountStatusSchema = z.enum([
-  'ONBOARDING',
-  'SUBMISSION_FAILED',
-  'SUBMITTED',
-  'ACCOUNT_UPDATED',
-  'APPROVAL_PENDING',
-  'ACTIVE',
-  'REJECTED',
+  "ONBOARDING",
+  "SUBMISSION_FAILED",
+  "SUBMITTED",
+  "ACCOUNT_UPDATED",
+  "APPROVAL_PENDING",
+  "ACTIVE",
+  "REJECTED",
 ]);
 
 /** Schema for Alpaca account details response */
@@ -40,7 +40,7 @@ export const AlpacaAccountDetailsSchema = z.object({
   short_market_value: z.string(),
   equity: z.string(),
   last_equity: z.string(),
-  multiplier: z.enum(['1', '2', '4']),
+  multiplier: z.enum(["1", "2", "4"]),
   buying_power: z.string(),
   initial_margin: z.string(),
   maintenance_margin: z.string(),
@@ -51,8 +51,18 @@ export const AlpacaAccountDetailsSchema = z.object({
   daytrading_buying_power: z.string(),
   regt_buying_power: z.string(),
   options_buying_power: z.string(),
-  options_approved_level: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]),
-  options_trading_level: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]),
+  options_approved_level: z.union([
+    z.literal(0),
+    z.literal(1),
+    z.literal(2),
+    z.literal(3),
+  ]),
+  options_trading_level: z.union([
+    z.literal(0),
+    z.literal(1),
+    z.literal(2),
+    z.literal(3),
+  ]),
   intraday_adjustments: z.string(),
   pending_reg_taf_fees: z.string(),
 });
@@ -69,7 +79,7 @@ export const AlpacaPositionSchema = z.object({
   qty: z.string(),
   qty_available: z.string(),
   avg_entry_price: z.string(),
-  side: z.enum(['long', 'short']),
+  side: z.enum(["long", "short"]),
   market_value: z.string(),
   cost_basis: z.string(),
   unrealized_pl: z.string(),
@@ -87,46 +97,52 @@ export const AlpacaPositionsArraySchema = z.array(AlpacaPositionSchema);
 // ===== Order Schemas =====
 
 /** Schema for order side */
-const OrderSideSchema = z.enum(['buy', 'sell']);
+const OrderSideSchema = z.enum(["buy", "sell"]);
 
 /** Schema for order type */
-const OrderTypeSchema = z.enum(['market', 'limit', 'stop', 'stop_limit', 'trailing_stop']);
+const OrderTypeSchema = z.enum([
+  "market",
+  "limit",
+  "stop",
+  "stop_limit",
+  "trailing_stop",
+]);
 
 /** Schema for time in force */
-const TimeInForceSchema = z.enum(['day', 'gtc', 'opg', 'cls', 'ioc', 'fok']);
+const TimeInForceSchema = z.enum(["day", "gtc", "opg", "cls", "ioc", "fok"]);
 
 /** Schema for order class */
-const OrderClassSchema = z.enum(['simple', 'oco', 'oto', 'bracket', 'mleg']);
+const OrderClassSchema = z.enum(["simple", "oco", "oto", "bracket", "mleg"]);
 
 /** Schema for order status */
 const OrderStatusSchema = z.enum([
-  'new',
-  'partially_filled',
-  'filled',
-  'done_for_day',
-  'canceled',
-  'expired',
-  'replaced',
-  'pending_cancel',
-  'pending_replace',
-  'accepted',
-  'pending_new',
-  'accepted_for_bidding',
-  'stopped',
-  'rejected',
-  'suspended',
-  'calculated',
+  "new",
+  "partially_filled",
+  "filled",
+  "done_for_day",
+  "canceled",
+  "expired",
+  "replaced",
+  "pending_cancel",
+  "pending_replace",
+  "accepted",
+  "pending_new",
+  "accepted_for_bidding",
+  "stopped",
+  "rejected",
+  "suspended",
+  "calculated",
 ]);
 
 /** Schema for asset class */
-const AssetClassSchema = z.enum(['us_equity', 'us_option', 'crypto']);
+const AssetClassSchema = z.enum(["us_equity", "us_option", "crypto"]);
 
 /** Schema for position intent */
 const PositionIntentSchema = z.enum([
-  'buy_to_open',
-  'buy_to_close',
-  'sell_to_open',
-  'sell_to_close',
+  "buy_to_open",
+  "buy_to_close",
+  "sell_to_open",
+  "sell_to_close",
 ]);
 
 /** Schema for Alpaca order response */
@@ -239,7 +255,7 @@ export const AlpacaLatestTradesResponseSchema = z.object({
 
 /** Schema for a news image */
 const NewsImageSchema = z.object({
-  size: z.enum(['large', 'small', 'thumb']),
+  size: z.enum(["large", "small", "thumb"]),
   url: z.string(),
 });
 
@@ -280,15 +296,20 @@ export const AlpacaPortfolioHistoryResponseSchema = z.object({
 
 /** Schema for crypto bars response */
 export const AlpacaCryptoBarsResponseSchema = z.object({
-  bars: z.record(z.string(), z.array(z.object({
-    t: z.union([z.string(), z.date()]),
-    o: z.number(),
-    h: z.number(),
-    l: z.number(),
-    c: z.number(),
-    v: z.number(),
-    n: z.number(),
-    vw: z.number(),
-  }))),
+  bars: z.record(
+    z.string(),
+    z.array(
+      z.object({
+        t: z.union([z.string(), z.date()]),
+        o: z.number(),
+        h: z.number(),
+        l: z.number(),
+        c: z.number(),
+        v: z.number(),
+        n: z.number(),
+        vw: z.number(),
+      }),
+    ),
+  ),
   next_page_token: z.string().optional().nullable(),
 });

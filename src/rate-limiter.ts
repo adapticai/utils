@@ -14,8 +14,9 @@
  * ```
  */
 
-import { getLogger } from './logger';
-import { RateLimitError } from './errors';
+import { getLogger } from "./logger";
+import { RateLimitError } from "./errors";
+export { RateLimitError };
 
 /**
  * Configuration for a rate limiter instance
@@ -116,14 +117,19 @@ export class TokenBucketRateLimiter {
     }
 
     // No tokens available, queue the request
-    logger.debug(`Rate limit reached for ${this.config.label}, queuing request`, {
-      queueLength: this.queue.length,
-    });
+    logger.debug(
+      `Rate limit reached for ${this.config.label}, queuing request`,
+      {
+        queueLength: this.queue.length,
+      },
+    );
 
     return new Promise<void>((resolve, reject) => {
       const timeoutHandle = setTimeout(() => {
         // Remove from queue on timeout
-        const index = this.queue.findIndex(req => req.timeoutHandle === timeoutHandle);
+        const index = this.queue.findIndex(
+          (req) => req.timeoutHandle === timeoutHandle,
+        );
         if (index !== -1) {
           this.queue.splice(index, 1);
         }
@@ -131,7 +137,7 @@ export class TokenBucketRateLimiter {
         const error = new RateLimitError(
           `Rate limit timeout for ${this.config.label} after ${this.timeoutMs}ms`,
           this.config.label,
-          undefined
+          undefined,
         );
 
         logger.warn(`Rate limit timeout for ${this.config.label}`, {
@@ -233,8 +239,8 @@ export class TokenBucketRateLimiter {
         new RateLimitError(
           `Rate limiter reset for ${this.config.label}`,
           this.config.label,
-          undefined
-        )
+          undefined,
+        ),
       );
     }
 
@@ -276,7 +282,7 @@ export const rateLimiters = {
   alpaca: new TokenBucketRateLimiter({
     maxTokens: 200,
     refillRate: 200 / 60, // 200 requests per 60 seconds (~3.33/sec)
-    label: 'alpaca',
+    label: "alpaca",
     timeoutMs: 60000,
   }),
 
@@ -290,7 +296,7 @@ export const rateLimiters = {
   polygon: new TokenBucketRateLimiter({
     maxTokens: 5,
     refillRate: 5, // 5 requests per second
-    label: 'polygon',
+    label: "polygon",
     timeoutMs: 30000,
   }),
 
@@ -315,7 +321,7 @@ export const rateLimiters = {
   alphaVantage: new TokenBucketRateLimiter({
     maxTokens: 5,
     refillRate: 5 / 60, // 5 requests per 60 seconds (~0.083/sec)
-    label: 'alphaVantage',
+    label: "alphaVantage",
     timeoutMs: 60000,
   }),
 };

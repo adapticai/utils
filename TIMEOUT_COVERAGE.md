@@ -1,6 +1,7 @@
 # HTTP Timeout Coverage Report
 
 ## Overview
+
 This document lists all external HTTP API calls that now have timeout protection.
 
 ## Coverage by API Provider
@@ -8,12 +9,14 @@ This document lists all external HTTP API calls that now have timeout protection
 ### Alpaca Markets API (24 endpoints)
 
 #### Crypto API (`src/crypto.ts`)
+
 - ✅ `fetchBars()` - Historical crypto price bars
-- ✅ `fetchNews()` - Crypto news articles  
+- ✅ `fetchNews()` - Crypto news articles
 - ✅ `fetchLatestTrades()` - Latest crypto trades
 - ✅ `fetchLatestQuotes()` - Latest crypto bid/ask quotes
 
 #### Trading API (`src/alpaca-functions.ts`)
+
 - ✅ `createOrder()` - Create new order
 - ✅ `getOrders()` - Get all orders (paginated)
 - ✅ `getOrder()` - Get specific order
@@ -30,43 +33,50 @@ This document lists all external HTTP API calls that now have timeout protection
 - ✅ `getAsset()` - Get asset information
 
 #### Trading API Class (`src/alpaca-trading-api.ts`)
+
 - ✅ `makeRequest()` - Base request method for all trading operations
 
 #### Market Data API Class (`src/alpaca-market-data-api.ts`)
+
 - ✅ `makeRequest()` - Base request method for all market data operations
 
 #### SDK Client (`src/alpaca/client.ts`)
+
 - ✅ `request()` - Base request method for SDK operations
 
 #### Options API (`src/alpaca/options/data.ts`)
+
 - ✅ `makeOptionsDataRequest()` - Options chain and data requests
 
 ### Alpha Vantage API (2 endpoints)
 
 #### Stock Data (`src/alphavantage.ts`)
+
 - ✅ `fetchQuote()` - Real-time stock quotes
 - ✅ `fetchTickerNews()` - News sentiment for ticker
 
 ### Adaptic Backend API (1 endpoint)
 
 #### Asset Data (`src/adaptic.ts`)
+
 - ✅ `fetchAssetOverview()` - Asset overview from Adaptic backend
 
 ### Internal APIs (1 endpoint)
 
 #### Performance Metrics (`src/performance-metrics.ts`)
+
 - ✅ `fetchPerformanceMetrics()` - Historical benchmark price data
 
 ## Timeout Configuration
 
 All endpoints use appropriate timeout values:
 
-| API Provider      | Default Timeout | Environment Variable        |
-|-------------------|-----------------|----------------------------|
-| Alpaca Markets    | 30 seconds      | `ALPACA_API_TIMEOUT`       |
-| Polygon.io        | 30 seconds      | `POLYGON_API_TIMEOUT`      |
-| Alpha Vantage     | 30 seconds      | `ALPHA_VANTAGE_API_TIMEOUT`|
-| General/Internal  | 30 seconds      | `HTTP_TIMEOUT`             |
+| API Provider     | Default Timeout | Environment Variable        |
+| ---------------- | --------------- | --------------------------- |
+| Alpaca Markets   | 30 seconds      | `ALPACA_API_TIMEOUT`        |
+| Polygon.io       | 30 seconds      | `POLYGON_API_TIMEOUT`       |
+| Alpha Vantage    | 30 seconds      | `ALPHA_VANTAGE_API_TIMEOUT` |
+| General/Internal | 30 seconds      | `HTTP_TIMEOUT`              |
 
 ## Implementation Method
 
@@ -115,5 +125,6 @@ grep -r "createTimeoutSignal" src --include="*.ts" | \
 ```
 
 ---
+
 Last Updated: 2026-02-06
 Coverage: 100%

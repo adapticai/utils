@@ -13,19 +13,28 @@
  * @module oto-orders
  */
 
-import { AlpacaClient } from '../client';
-import { AlpacaOrder, OrderSide, OrderType, TimeInForce } from '../../types/alpaca-types';
-import { log as baseLog } from '../../logging';
-import { LogOptions } from '../../types/logging-types';
+import { AlpacaClient } from "../client";
+import {
+  AlpacaOrder,
+  OrderSide,
+  OrderType,
+  TimeInForce,
+} from "../../types/alpaca-types";
+import { log as baseLog } from "../../logging";
+import { LogOptions } from "../../types/logging-types";
 
-const log = (message: string, options: LogOptions = { type: 'info' }) => {
-  baseLog(message, { ...options, source: 'OTOOrders' });
+const log = (message: string, options: LogOptions = { type: "info" }) => {
+  baseLog(message, { ...options, source: "OTOOrders" });
 };
 
 /**
  * Dependent order type options for OTO orders
  */
-export type DependentOrderType = 'limit' | 'stop' | 'stop_limit' | 'trailing_stop';
+export type DependentOrderType =
+  | "limit"
+  | "stop"
+  | "stop_limit"
+  | "trailing_stop";
 
 /**
  * Configuration for the dependent order in an OTO
@@ -107,7 +116,9 @@ export interface OTOOrderResult {
  * or 4 decimal places for prices less than $1
  */
 function roundPriceForAlpaca(price: number): number {
-  return price >= 1 ? Math.round(price * 100) / 100 : Math.round(price * 10000) / 10000;
+  return price >= 1
+    ? Math.round(price * 100) / 100
+    : Math.round(price * 10000) / 10000;
 }
 
 /**
@@ -115,63 +126,78 @@ function roundPriceForAlpaca(price: number): number {
  * @throws Error if parameters are invalid
  */
 function validateOTOParams(params: OTOOrderParams): void {
-  if (!params.symbol || params.symbol.trim() === '') {
-    throw new Error('OTO order requires a valid symbol');
+  if (!params.symbol || params.symbol.trim() === "") {
+    throw new Error("OTO order requires a valid symbol");
   }
 
   if (!params.qty || params.qty <= 0) {
-    throw new Error('OTO order requires a positive quantity');
+    throw new Error("OTO order requires a positive quantity");
   }
 
   if (!Number.isInteger(params.qty)) {
-    throw new Error('OTO order quantity must be a whole number');
+    throw new Error("OTO order quantity must be a whole number");
   }
 
   // Validate primary order type requirements
-  if (params.type === 'limit' || params.type === 'stop_limit') {
+  if (params.type === "limit" || params.type === "stop_limit") {
     if (!params.limitPrice || params.limitPrice <= 0) {
-      throw new Error(`Primary ${params.type} order requires a positive limitPrice`);
+      throw new Error(
+        `Primary ${params.type} order requires a positive limitPrice`,
+      );
     }
   }
 
-  if (params.type === 'stop' || params.type === 'stop_limit') {
+  if (params.type === "stop" || params.type === "stop_limit") {
     if (!params.stopPrice || params.stopPrice <= 0) {
-      throw new Error(`Primary ${params.type} order requires a positive stopPrice`);
+      throw new Error(
+        `Primary ${params.type} order requires a positive stopPrice`,
+      );
     }
   }
 
   // Validate dependent order
   if (!params.dependent) {
-    throw new Error('OTO order requires a dependent order configuration');
+    throw new Error("OTO order requires a dependent order configuration");
   }
 
   const { dependent } = params;
 
   // Validate dependent order type requirements
-  if (dependent.type === 'limit' || dependent.type === 'stop_limit') {
+  if (dependent.type === "limit" || dependent.type === "stop_limit") {
     if (!dependent.limitPrice || dependent.limitPrice <= 0) {
-      throw new Error(`Dependent ${dependent.type} order requires a positive limitPrice`);
+      throw new Error(
+        `Dependent ${dependent.type} order requires a positive limitPrice`,
+      );
     }
   }
 
-  if (dependent.type === 'stop' || dependent.type === 'stop_limit') {
+  if (dependent.type === "stop" || dependent.type === "stop_limit") {
     if (!dependent.stopPrice || dependent.stopPrice <= 0) {
-      throw new Error(`Dependent ${dependent.type} order requires a positive stopPrice`);
+      throw new Error(
+        `Dependent ${dependent.type} order requires a positive stopPrice`,
+      );
     }
   }
 
-  if (dependent.type === 'trailing_stop') {
+  if (dependent.type === "trailing_stop") {
     if (!dependent.trailPercent && !dependent.trailPrice) {
-      throw new Error('Trailing stop requires either trailPercent or trailPrice');
+      throw new Error(
+        "Trailing stop requires either trailPercent or trailPrice",
+      );
     }
     if (dependent.trailPercent && dependent.trailPrice) {
-      throw new Error('Trailing stop cannot have both trailPercent and trailPrice');
+      throw new Error(
+        "Trailing stop cannot have both trailPercent and trailPrice",
+      );
     }
-    if (dependent.trailPercent && (dependent.trailPercent <= 0 || dependent.trailPercent > 100)) {
-      throw new Error('trailPercent must be between 0 and 100');
+    if (
+      dependent.trailPercent &&
+      (dependent.trailPercent <= 0 || dependent.trailPercent > 100)
+    ) {
+      throw new Error("trailPercent must be between 0 and 100");
     }
     if (dependent.trailPrice && dependent.trailPrice <= 0) {
-      throw new Error('trailPrice must be positive');
+      throw new Error("trailPrice must be positive");
     }
   }
 
@@ -180,8 +206,8 @@ function validateOTOParams(params: OTOOrderParams): void {
   if (params.side === dependent.side) {
     log(
       `Warning: Primary and dependent orders have the same side (${params.side}). ` +
-      'This is unusual - typically entry and exit are opposite sides.',
-      { symbol: params.symbol, type: 'warn' }
+        "This is unusual - typically entry and exit are opposite sides.",
+      { symbol: params.symbol, type: "warn" },
     );
   }
 }
@@ -261,7 +287,7 @@ function validateOTOParams(params: OTOOrderParams): void {
  */
 export async function createOTOOrder(
   client: AlpacaClient,
-  params: OTOOrderParams
+  params: OTOOrderParams,
 ): Promise<OTOOrderResult> {
   // Validate parameters
   validateOTOParams(params);
@@ -274,7 +300,7 @@ export async function createOTOOrder(
     limitPrice,
     stopPrice,
     dependent,
-    timeInForce = 'day',
+    timeInForce = "day",
     extendedHours,
     clientOrderId,
   } = params;
@@ -285,14 +311,18 @@ export async function createOTOOrder(
   if (stopPrice) primaryDescription += ` stop $${stopPrice.toFixed(2)}`;
 
   let dependentDescription = `${dependent.type} ${dependent.side}`;
-  if (dependent.limitPrice) dependentDescription += ` at $${dependent.limitPrice.toFixed(2)}`;
-  if (dependent.stopPrice) dependentDescription += ` stop $${dependent.stopPrice.toFixed(2)}`;
-  if (dependent.trailPercent) dependentDescription += ` trail ${dependent.trailPercent}%`;
-  if (dependent.trailPrice) dependentDescription += ` trail $${dependent.trailPrice.toFixed(2)}`;
+  if (dependent.limitPrice)
+    dependentDescription += ` at $${dependent.limitPrice.toFixed(2)}`;
+  if (dependent.stopPrice)
+    dependentDescription += ` stop $${dependent.stopPrice.toFixed(2)}`;
+  if (dependent.trailPercent)
+    dependentDescription += ` trail ${dependent.trailPercent}%`;
+  if (dependent.trailPrice)
+    dependentDescription += ` trail $${dependent.trailPrice.toFixed(2)}`;
 
   log(
     `Creating OTO order for ${symbol}: Primary [${primaryDescription}] -> Dependent [${dependentDescription}]`,
-    { symbol, type: 'info' }
+    { symbol, type: "info" },
   );
 
   const sdk = client.getSDK();
@@ -305,7 +335,7 @@ export async function createOTOOrder(
       side,
       type,
       time_in_force: timeInForce,
-      order_class: 'oto',
+      order_class: "oto",
     };
 
     // Add primary order prices
@@ -329,40 +359,43 @@ export async function createOTOOrder(
     // Build dependent order based on type
     // For OTO orders, Alpaca uses take_profit or stop_loss object
     // We need to determine which one based on the dependent order configuration
-    if (dependent.type === 'limit') {
+    if (dependent.type === "limit") {
       // Take profit order
       orderRequest.take_profit = {
         limit_price: roundPriceForAlpaca(dependent.limitPrice!).toString(),
       };
-    } else if (dependent.type === 'stop') {
+    } else if (dependent.type === "stop") {
       // Stop loss order (market)
       orderRequest.stop_loss = {
         stop_price: roundPriceForAlpaca(dependent.stopPrice!).toString(),
       };
-    } else if (dependent.type === 'stop_limit') {
+    } else if (dependent.type === "stop_limit") {
       // Stop loss order with limit
       orderRequest.stop_loss = {
         stop_price: roundPriceForAlpaca(dependent.stopPrice!).toString(),
         limit_price: roundPriceForAlpaca(dependent.limitPrice!).toString(),
       };
-    } else if (dependent.type === 'trailing_stop') {
+    } else if (dependent.type === "trailing_stop") {
       // Trailing stop order
       orderRequest.stop_loss = {};
       if (dependent.trailPercent !== undefined) {
-        orderRequest.stop_loss.trail_percent = dependent.trailPercent.toString();
+        (orderRequest.stop_loss as any).trail_percent =
+          dependent.trailPercent.toString();
       }
       if (dependent.trailPrice !== undefined) {
-        orderRequest.stop_loss.trail_price = roundPriceForAlpaca(dependent.trailPrice).toString();
+        (orderRequest.stop_loss as any).trail_price = roundPriceForAlpaca(
+          dependent.trailPrice,
+        ).toString();
       }
     }
 
-    log(
-      `Submitting OTO order request: ${JSON.stringify(orderRequest)}`,
-      { symbol, type: 'debug' }
-    );
+    log(`Submitting OTO order request: ${JSON.stringify(orderRequest)}`, {
+      symbol,
+      type: "debug",
+    });
 
     // Submit the order
-    const order = await sdk.createOrder(orderRequest) as AlpacaOrder;
+    const order = (await sdk.createOrder(orderRequest)) as AlpacaOrder;
 
     // Extract leg orders from the response
     const legs = order.legs || [];
@@ -373,8 +406,8 @@ export async function createOTOOrder(
 
     log(
       `OTO order created successfully | Parent ID: ${order.id} | Status: ${order.status}` +
-      (dependentOrder ? ` | Dependent ID: ${dependentOrder.id}` : ''),
-      { symbol, type: 'info' }
+        (dependentOrder ? ` | Dependent ID: ${dependentOrder.id}` : ""),
+      { symbol, type: "info" },
     );
 
     return {
@@ -384,11 +417,12 @@ export async function createOTOOrder(
       parentOrderId: order.id,
     };
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    log(
-      `Failed to create OTO order for ${symbol}: ${errorMessage}`,
-      { symbol, type: 'error' }
-    );
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    log(`Failed to create OTO order for ${symbol}: ${errorMessage}`, {
+      symbol,
+      type: "error",
+    });
     throw error;
   }
 }
@@ -407,18 +441,23 @@ export async function createOTOOrder(
  */
 export async function cancelOTOOrder(
   client: AlpacaClient,
-  parentOrderId: string
+  parentOrderId: string,
 ): Promise<void> {
-  log(`Canceling OTO order group: ${parentOrderId}`, { type: 'info' });
+  log(`Canceling OTO order group: ${parentOrderId}`, { type: "info" });
 
   const sdk = client.getSDK();
 
   try {
     await sdk.cancelOrder(parentOrderId);
-    log(`OTO order group canceled successfully: ${parentOrderId}`, { type: 'info' });
+    log(`OTO order group canceled successfully: ${parentOrderId}`, {
+      type: "info",
+    });
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    log(`Failed to cancel OTO order ${parentOrderId}: ${errorMessage}`, { type: 'error' });
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    log(`Failed to cancel OTO order ${parentOrderId}: ${errorMessage}`, {
+      type: "error",
+    });
     throw error;
   }
 }
@@ -440,23 +479,26 @@ export async function cancelOTOOrder(
  */
 export async function getOTOOrderStatus(
   client: AlpacaClient,
-  parentOrderId: string
+  parentOrderId: string,
 ): Promise<AlpacaOrder> {
-  log(`Getting OTO order status: ${parentOrderId}`, { type: 'debug' });
+  log(`Getting OTO order status: ${parentOrderId}`, { type: "debug" });
 
   const sdk = client.getSDK();
 
   try {
-    const order = await sdk.getOrder(parentOrderId) as AlpacaOrder;
+    const order = (await sdk.getOrder(parentOrderId)) as AlpacaOrder;
     log(
       `OTO order ${parentOrderId} status: ${order.status} | ` +
-      `Legs: ${order.legs?.length || 0}`,
-      { type: 'debug' }
+        `Legs: ${order.legs?.length || 0}`,
+      { type: "debug" },
     );
     return order;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    log(`Failed to get OTO order status ${parentOrderId}: ${errorMessage}`, { type: 'error' });
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    log(`Failed to get OTO order status ${parentOrderId}: ${errorMessage}`, {
+      type: "error",
+    });
     throw error;
   }
 }
@@ -480,20 +522,20 @@ export async function buyWithStopLoss(
   symbol: string,
   qty: number,
   stopLossPrice: number,
-  stopLimitPrice?: number
+  stopLimitPrice?: number,
 ): Promise<OTOOrderResult> {
   return createOTOOrder(client, {
     symbol,
     qty,
-    side: 'buy',
-    type: 'market',
+    side: "buy",
+    type: "market",
     dependent: {
-      side: 'sell',
-      type: stopLimitPrice ? 'stop_limit' : 'stop',
+      side: "sell",
+      type: stopLimitPrice ? "stop_limit" : "stop",
       stopPrice: stopLossPrice,
       limitPrice: stopLimitPrice,
     },
-    timeInForce: 'day',
+    timeInForce: "day",
   });
 }
 
@@ -514,19 +556,19 @@ export async function buyWithTrailingStop(
   client: AlpacaClient,
   symbol: string,
   qty: number,
-  trailPercent: number
+  trailPercent: number,
 ): Promise<OTOOrderResult> {
   return createOTOOrder(client, {
     symbol,
     qty,
-    side: 'buy',
-    type: 'market',
+    side: "buy",
+    type: "market",
     dependent: {
-      side: 'sell',
-      type: 'trailing_stop',
+      side: "sell",
+      type: "trailing_stop",
       trailPercent,
     },
-    timeInForce: 'day',
+    timeInForce: "day",
   });
 }
 
@@ -549,20 +591,20 @@ export async function limitBuyWithTakeProfit(
   symbol: string,
   qty: number,
   entryPrice: number,
-  takeProfitPrice: number
+  takeProfitPrice: number,
 ): Promise<OTOOrderResult> {
   return createOTOOrder(client, {
     symbol,
     qty,
-    side: 'buy',
-    type: 'limit',
+    side: "buy",
+    type: "limit",
     limitPrice: entryPrice,
     dependent: {
-      side: 'sell',
-      type: 'limit',
+      side: "sell",
+      type: "limit",
       limitPrice: takeProfitPrice,
     },
-    timeInForce: 'gtc',
+    timeInForce: "gtc",
   });
 }
 
@@ -585,20 +627,20 @@ export async function shortWithStopLoss(
   symbol: string,
   qty: number,
   entryPrice: number,
-  stopLossPrice: number
+  stopLossPrice: number,
 ): Promise<OTOOrderResult> {
   return createOTOOrder(client, {
     symbol,
     qty,
-    side: 'sell',
-    type: 'limit',
+    side: "sell",
+    type: "limit",
     limitPrice: entryPrice,
     dependent: {
-      side: 'buy',
-      type: 'stop',
+      side: "buy",
+      type: "stop",
       stopPrice: stopLossPrice,
     },
-    timeInForce: 'gtc',
+    timeInForce: "gtc",
   });
 }
 
@@ -623,37 +665,40 @@ export async function entryWithPercentStopLoss(
   qty: number,
   entryPrice: number | null,
   stopLossPercent: number,
-  side: OrderSide = 'buy'
+  side: OrderSide = "buy",
 ): Promise<OTOOrderResult> {
   if (stopLossPercent <= 0 || stopLossPercent >= 100) {
-    throw new Error('stopLossPercent must be between 0 and 100');
+    throw new Error("stopLossPercent must be between 0 and 100");
   }
 
   // For market orders without entry price, we cannot calculate stop
   if (entryPrice === null) {
-    throw new Error('Entry price required to calculate percentage-based stop loss. Use buyWithStopLoss for market orders.');
+    throw new Error(
+      "Entry price required to calculate percentage-based stop loss. Use buyWithStopLoss for market orders.",
+    );
   }
 
   // Calculate stop price based on side
-  const stopMultiplier = side === 'buy'
-    ? (1 - stopLossPercent / 100)  // Below entry for longs
-    : (1 + stopLossPercent / 100); // Above entry for shorts
+  const stopMultiplier =
+    side === "buy"
+      ? 1 - stopLossPercent / 100 // Below entry for longs
+      : 1 + stopLossPercent / 100; // Above entry for shorts
   const stopPrice = roundPriceForAlpaca(entryPrice * stopMultiplier);
 
-  const exitSide: OrderSide = side === 'buy' ? 'sell' : 'buy';
+  const exitSide: OrderSide = side === "buy" ? "sell" : "buy";
 
   return createOTOOrder(client, {
     symbol,
     qty,
     side,
-    type: 'limit',
+    type: "limit",
     limitPrice: entryPrice,
     dependent: {
       side: exitSide,
-      type: 'stop',
+      type: "stop",
       stopPrice,
     },
-    timeInForce: 'gtc',
+    timeInForce: "gtc",
   });
 }
 

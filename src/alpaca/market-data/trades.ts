@@ -2,13 +2,18 @@
  * Trades Module
  * Real-time and historical trade data using Alpaca SDK
  */
-import { AlpacaClient } from '../client';
-import { AlpacaTrade, LatestTradesResponse, DataFeed, SDKMarketDataOptions } from '../../types/alpaca-types';
-import { log as baseLog } from '../../logging';
-import { LogOptions } from '../../types/logging-types';
+import { AlpacaClient } from "../client";
+import {
+  AlpacaTrade,
+  LatestTradesResponse,
+  DataFeed,
+  SDKMarketDataOptions,
+} from "../../types/alpaca-types";
+import { log as baseLog } from "../../logging";
+import { LogOptions } from "../../types/logging-types";
 
-const log = (message: string, options: LogOptions = { type: 'info' }) => {
-  baseLog(message, { ...options, source: 'AlpacaTrades' });
+const log = (message: string, options: LogOptions = { type: "info" }) => {
+  baseLog(message, { ...options, source: "AlpacaTrades" });
 };
 
 /**
@@ -19,10 +24,10 @@ export class TradeError extends Error {
     message: string,
     public code: string,
     public symbol?: string,
-    public details?: unknown
+    public details?: unknown,
   ) {
     super(message);
-    this.name = 'TradeError';
+    this.name = "TradeError";
   }
 }
 
@@ -46,7 +51,7 @@ export interface GetHistoricalTradesParams {
  * Convert date to RFC-3339 format string
  */
 function toRFC3339(date: Date | string): string {
-  if (typeof date === 'string') {
+  if (typeof date === "string") {
     return date;
   }
   return date.toISOString();
@@ -63,34 +68,39 @@ function toRFC3339(date: Date | string): string {
 export async function getLatestTrade(
   client: AlpacaClient,
   symbol: string,
-  feed?: DataFeed
+  feed?: DataFeed,
 ): Promise<AlpacaTrade> {
   const normalizedSymbol = symbol.toUpperCase().trim();
 
   if (!normalizedSymbol) {
-    throw new TradeError('Symbol is required', 'INVALID_SYMBOL');
+    throw new TradeError("Symbol is required", "INVALID_SYMBOL");
   }
 
-  log(`Fetching latest trade for ${normalizedSymbol}`, { type: 'debug' });
+  log(`Fetching latest trade for ${normalizedSymbol}`, { type: "debug" });
 
   try {
     const sdk = client.getSDK();
     const config = client.getConfig();
-    const dataFeed = feed || config.dataFeed || 'iex';
+    const dataFeed = feed || config.dataFeed || "iex";
 
     // Use SDK's getLatestTrade method
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const response = await sdk.getLatestTrade(normalizedSymbol, { feed: dataFeed } as SDKMarketDataOptions);
+    const response = await sdk.getLatestTrade(normalizedSymbol, {
+      feed: dataFeed,
+    } as any);
 
     if (!response) {
       throw new TradeError(
         `No trade data returned for ${normalizedSymbol}`,
-        'NO_DATA',
-        normalizedSymbol
+        "NO_DATA",
+        normalizedSymbol,
       );
     }
 
-    log(`Successfully fetched trade for ${normalizedSymbol}: price=${response.Price}, size=${response.Size}`, { type: 'debug' });
+    log(
+      `Successfully fetched trade for ${normalizedSymbol}: price=${response.Price}, size=${response.Size}`,
+      { type: "debug" },
+    );
 
     // Map SDK response to our AlpacaTrade type
     return {
@@ -99,7 +109,7 @@ export async function getLatestTrade(
       s: response.Size,
       x: response.Exchange,
       i: response.ID,
-      z: response.Tape || '',
+      z: response.Tape || "",
       c: response.Conditions || [],
     };
   } catch (error) {
@@ -108,13 +118,15 @@ export async function getLatestTrade(
     }
 
     const errorMessage = error instanceof Error ? error.message : String(error);
-    log(`Failed to fetch trade for ${normalizedSymbol}: ${errorMessage}`, { type: 'error' });
+    log(`Failed to fetch trade for ${normalizedSymbol}: ${errorMessage}`, {
+      type: "error",
+    });
 
     throw new TradeError(
       `Failed to fetch trade for ${normalizedSymbol}: ${errorMessage}`,
-      'FETCH_ERROR',
+      "FETCH_ERROR",
       normalizedSymbol,
-      error
+      error,
     );
   }
 }
@@ -130,34 +142,37 @@ export async function getLatestTrade(
 export async function getLatestTrades(
   client: AlpacaClient,
   symbols: string[],
-  feed?: DataFeed
+  feed?: DataFeed,
 ): Promise<LatestTradesResponse> {
   if (!symbols || symbols.length === 0) {
-    throw new TradeError('At least one symbol is required', 'INVALID_SYMBOLS');
+    throw new TradeError("At least one symbol is required", "INVALID_SYMBOLS");
   }
 
-  const normalizedSymbols = symbols.map((s) => s.toUpperCase().trim()).filter(Boolean);
+  const normalizedSymbols = symbols
+    .map((s) => s.toUpperCase().trim())
+    .filter(Boolean);
 
   if (normalizedSymbols.length === 0) {
-    throw new TradeError('No valid symbols provided', 'INVALID_SYMBOLS');
+    throw new TradeError("No valid symbols provided", "INVALID_SYMBOLS");
   }
 
-  log(`Fetching latest trades for ${normalizedSymbols.length} symbols`, { type: 'debug' });
+  log(`Fetching latest trades for ${normalizedSymbols.length} symbols`, {
+    type: "debug",
+  });
 
   try {
     const sdk = client.getSDK();
     const config = client.getConfig();
-    const dataFeed = feed || config.dataFeed || 'iex';
+    const dataFeed = feed || config.dataFeed || "iex";
 
     // Use SDK's getLatestTrades method
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const response = await sdk.getLatestTrades(normalizedSymbols, { feed: dataFeed } as SDKMarketDataOptions);
+    const response = await sdk.getLatestTrades(normalizedSymbols, {
+      feed: dataFeed,
+    } as any);
 
     if (!response) {
-      throw new TradeError(
-        'No trade data returned',
-        'NO_DATA'
-      );
+      throw new TradeError("No trade data returned", "NO_DATA");
     }
 
     // Map SDK response to our LatestTradesResponse type
@@ -180,16 +195,19 @@ export async function getLatestTrades(
         s: t.Size,
         x: t.Exchange,
         i: t.ID,
-        z: t.Tape || '',
+        z: t.Tape || "",
         c: t.Conditions || [],
       };
     }
 
-    log(`Successfully fetched trades for ${Object.keys(trades).length} symbols`, { type: 'debug' });
+    log(
+      `Successfully fetched trades for ${Object.keys(trades).length} symbols`,
+      { type: "debug" },
+    );
 
     return {
       trades,
-      currency: 'USD',
+      currency: "USD",
     };
   } catch (error) {
     if (error instanceof TradeError) {
@@ -197,13 +215,13 @@ export async function getLatestTrades(
     }
 
     const errorMessage = error instanceof Error ? error.message : String(error);
-    log(`Failed to fetch trades: ${errorMessage}`, { type: 'error' });
+    log(`Failed to fetch trades: ${errorMessage}`, { type: "error" });
 
     throw new TradeError(
       `Failed to fetch trades: ${errorMessage}`,
-      'FETCH_ERROR',
+      "FETCH_ERROR",
       undefined,
-      error
+      error,
     );
   }
 }
@@ -217,21 +235,21 @@ export async function getLatestTrades(
  */
 export async function getHistoricalTrades(
   client: AlpacaClient,
-  params: GetHistoricalTradesParams
+  params: GetHistoricalTradesParams,
 ): Promise<AlpacaTrade[]> {
   const { symbol, start, end, limit, feed } = params;
   const normalizedSymbol = symbol.toUpperCase().trim();
 
   if (!normalizedSymbol) {
-    throw new TradeError('Symbol is required', 'INVALID_SYMBOL');
+    throw new TradeError("Symbol is required", "INVALID_SYMBOL");
   }
 
-  log(`Fetching historical trades for ${normalizedSymbol}`, { type: 'debug' });
+  log(`Fetching historical trades for ${normalizedSymbol}`, { type: "debug" });
 
   try {
     const sdk = client.getSDK();
     const config = client.getConfig();
-    const dataFeed = feed || config.dataFeed || 'iex';
+    const dataFeed = feed || config.dataFeed || "iex";
 
     const options: {
       start: string;
@@ -262,7 +280,7 @@ export async function getHistoricalTrades(
         s: trade.Size,
         x: trade.Exchange,
         i: trade.ID,
-        z: trade.Tape || '',
+        z: trade.Tape || "",
         c: trade.Conditions || [],
       });
 
@@ -272,7 +290,10 @@ export async function getHistoricalTrades(
       }
     }
 
-    log(`Successfully fetched ${trades.length} historical trades for ${normalizedSymbol}`, { type: 'debug' });
+    log(
+      `Successfully fetched ${trades.length} historical trades for ${normalizedSymbol}`,
+      { type: "debug" },
+    );
 
     return trades;
   } catch (error) {
@@ -281,13 +302,16 @@ export async function getHistoricalTrades(
     }
 
     const errorMessage = error instanceof Error ? error.message : String(error);
-    log(`Failed to fetch historical trades for ${normalizedSymbol}: ${errorMessage}`, { type: 'error' });
+    log(
+      `Failed to fetch historical trades for ${normalizedSymbol}: ${errorMessage}`,
+      { type: "error" },
+    );
 
     throw new TradeError(
       `Failed to fetch historical trades: ${errorMessage}`,
-      'FETCH_ERROR',
+      "FETCH_ERROR",
       normalizedSymbol,
-      error
+      error,
     );
   }
 }
@@ -304,33 +328,40 @@ export async function getHistoricalTrades(
 export async function getCurrentPrice(
   client: AlpacaClient,
   symbol: string,
-  feed?: DataFeed
+  feed?: DataFeed,
 ): Promise<number> {
   const normalizedSymbol = symbol.toUpperCase().trim();
 
   if (!normalizedSymbol) {
-    throw new TradeError('Symbol is required', 'INVALID_SYMBOL');
+    throw new TradeError("Symbol is required", "INVALID_SYMBOL");
   }
 
-  log(`Fetching current price for ${normalizedSymbol}`, { type: 'debug' });
+  log(`Fetching current price for ${normalizedSymbol}`, { type: "debug" });
 
   try {
     const sdk = client.getSDK();
     const config = client.getConfig();
-    const dataFeed = feed || config.dataFeed || 'iex';
+    const dataFeed = feed || config.dataFeed || "iex";
 
     // Try to get quote first for mid-point price
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const quote = await sdk.getLatestQuote(normalizedSymbol, { feed: dataFeed } as SDKMarketDataOptions);
+      const quote = await sdk.getLatestQuote(normalizedSymbol, {
+        feed: dataFeed,
+      } as any);
 
       if (quote && quote.BidPrice > 0 && quote.AskPrice > 0) {
         const midPrice = (quote.BidPrice + quote.AskPrice) / 2;
-        log(`Current price for ${normalizedSymbol} (mid-point): ${midPrice}`, { type: 'debug' });
+        log(`Current price for ${normalizedSymbol} (mid-point): ${midPrice}`, {
+          type: "debug",
+        });
         return midPrice;
       }
     } catch (quoteError) {
-      log(`Could not get quote for ${normalizedSymbol}, falling back to trade: ${(quoteError as Error).message}`, { type: 'debug' });
+      log(
+        `Could not get quote for ${normalizedSymbol}, falling back to trade: ${(quoteError as Error).message}`,
+        { type: "debug" },
+      );
     }
 
     // Fall back to last trade price
@@ -339,12 +370,14 @@ export async function getCurrentPrice(
     if (!trade || trade.p <= 0) {
       throw new TradeError(
         `No valid price available for ${normalizedSymbol}`,
-        'NO_PRICE',
-        normalizedSymbol
+        "NO_PRICE",
+        normalizedSymbol,
       );
     }
 
-    log(`Current price for ${normalizedSymbol} (last trade): ${trade.p}`, { type: 'debug' });
+    log(`Current price for ${normalizedSymbol} (last trade): ${trade.p}`, {
+      type: "debug",
+    });
     return trade.p;
   } catch (error) {
     if (error instanceof TradeError) {
@@ -352,13 +385,16 @@ export async function getCurrentPrice(
     }
 
     const errorMessage = error instanceof Error ? error.message : String(error);
-    log(`Failed to get current price for ${normalizedSymbol}: ${errorMessage}`, { type: 'error' });
+    log(
+      `Failed to get current price for ${normalizedSymbol}: ${errorMessage}`,
+      { type: "error" },
+    );
 
     throw new TradeError(
       `Failed to get current price for ${normalizedSymbol}: ${errorMessage}`,
-      'FETCH_ERROR',
+      "FETCH_ERROR",
       normalizedSymbol,
-      error
+      error,
     );
   }
 }
@@ -374,39 +410,50 @@ export async function getCurrentPrice(
 export async function getCurrentPrices(
   client: AlpacaClient,
   symbols: string[],
-  feed?: DataFeed
+  feed?: DataFeed,
 ): Promise<Map<string, number>> {
   if (!symbols || symbols.length === 0) {
-    throw new TradeError('At least one symbol is required', 'INVALID_SYMBOLS');
+    throw new TradeError("At least one symbol is required", "INVALID_SYMBOLS");
   }
 
-  const normalizedSymbols = symbols.map((s) => s.toUpperCase().trim()).filter(Boolean);
+  const normalizedSymbols = symbols
+    .map((s) => s.toUpperCase().trim())
+    .filter(Boolean);
 
   if (normalizedSymbols.length === 0) {
-    throw new TradeError('No valid symbols provided', 'INVALID_SYMBOLS');
+    throw new TradeError("No valid symbols provided", "INVALID_SYMBOLS");
   }
 
-  log(`Fetching current prices for ${normalizedSymbols.length} symbols`, { type: 'debug' });
+  log(`Fetching current prices for ${normalizedSymbols.length} symbols`, {
+    type: "debug",
+  });
 
   const prices = new Map<string, number>();
 
   try {
     const sdk = client.getSDK();
     const config = client.getConfig();
-    const dataFeed = feed || config.dataFeed || 'iex';
+    const dataFeed = feed || config.dataFeed || "iex";
 
     // First try to get quotes for mid-point prices
     const symbolsNeedingTrades: string[] = [];
 
     try {
-      const quotes = await sdk.getLatestQuotes(normalizedSymbols, { feed: dataFeed } as SDKMarketDataOptions) as Map<string, { BidPrice: number; AskPrice: number }> | Record<string, { BidPrice: number; AskPrice: number }>;
+      const quotes = (await sdk.getLatestQuotes(normalizedSymbols, {
+        feed: dataFeed,
+      } as any)) as
+        | Map<string, { BidPrice: number; AskPrice: number }>
+        | Record<string, { BidPrice: number; AskPrice: number }>;
 
       for (const symbol of normalizedSymbols) {
-        const rawQuote = quotes instanceof Map ? quotes.get(symbol) : quotes[symbol];
-        const quote = rawQuote as {
-          BidPrice: number;
-          AskPrice: number;
-        } | undefined;
+        const rawQuote =
+          quotes instanceof Map ? quotes.get(symbol) : quotes[symbol];
+        const quote = rawQuote as
+          | {
+              BidPrice: number;
+              AskPrice: number;
+            }
+          | undefined;
 
         if (quote && quote.BidPrice > 0 && quote.AskPrice > 0) {
           const midPrice = (quote.BidPrice + quote.AskPrice) / 2;
@@ -416,14 +463,23 @@ export async function getCurrentPrices(
         }
       }
     } catch (quoteError) {
-      log(`Could not get quotes, falling back to trades: ${(quoteError as Error).message}`, { type: 'debug' });
-      symbolsNeedingTrades.push(...normalizedSymbols.filter((s) => !prices.has(s)));
+      log(
+        `Could not get quotes, falling back to trades: ${(quoteError as Error).message}`,
+        { type: "debug" },
+      );
+      symbolsNeedingTrades.push(
+        ...normalizedSymbols.filter((s) => !prices.has(s)),
+      );
     }
 
     // Fall back to trades for symbols without valid quotes
     if (symbolsNeedingTrades.length > 0) {
       try {
-        const tradesResponse = await getLatestTrades(client, symbolsNeedingTrades, feed);
+        const tradesResponse = await getLatestTrades(
+          client,
+          symbolsNeedingTrades,
+          feed,
+        );
 
         for (const [symbol, trade] of Object.entries(tradesResponse.trades)) {
           if (trade && trade.p > 0) {
@@ -431,11 +487,17 @@ export async function getCurrentPrices(
           }
         }
       } catch (tradeError) {
-        log(`Failed to get trades for some symbols: ${(tradeError as Error).message}`, { type: 'warn' });
+        log(
+          `Failed to get trades for some symbols: ${(tradeError as Error).message}`,
+          { type: "warn" },
+        );
       }
     }
 
-    log(`Successfully fetched prices for ${prices.size} of ${normalizedSymbols.length} symbols`, { type: 'debug' });
+    log(
+      `Successfully fetched prices for ${prices.size} of ${normalizedSymbols.length} symbols`,
+      { type: "debug" },
+    );
 
     return prices;
   } catch (error) {
@@ -444,13 +506,13 @@ export async function getCurrentPrices(
     }
 
     const errorMessage = error instanceof Error ? error.message : String(error);
-    log(`Failed to get current prices: ${errorMessage}`, { type: 'error' });
+    log(`Failed to get current prices: ${errorMessage}`, { type: "error" });
 
     throw new TradeError(
       `Failed to get current prices: ${errorMessage}`,
-      'FETCH_ERROR',
+      "FETCH_ERROR",
       undefined,
-      error
+      error,
     );
   }
 }
@@ -467,7 +529,7 @@ export async function getTradeVolume(
   client: AlpacaClient,
   symbol: string,
   start: Date,
-  end?: Date
+  end?: Date,
 ): Promise<{ totalVolume: number; tradeCount: number; avgTradeSize: number }> {
   const trades = await getHistoricalTrades(client, {
     symbol,
@@ -487,7 +549,10 @@ export async function getTradeVolume(
   const tradeCount = trades.length;
   const avgTradeSize = totalVolume / tradeCount;
 
-  log(`Trade volume for ${symbol}: ${totalVolume} shares across ${tradeCount} trades`, { type: 'debug' });
+  log(
+    `Trade volume for ${symbol}: ${totalVolume} shares across ${tradeCount} trades`,
+    { type: "debug" },
+  );
 
   return {
     totalVolume,

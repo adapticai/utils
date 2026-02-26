@@ -47,47 +47,47 @@ Modular SDK-based Alpaca client, organized by domain:
 
 ### Core Modules
 
-| File | Lines | Description |
-|------|-------|-------------|
-| `src/alpaca/legacy/` | ~600 | Legacy Alpaca REST API wrapper (AlpacaAuth pattern), migrated from alpaca-functions.ts into 6 modular files |
-| `src/performance-metrics.ts` | 1,113 | Trade PnL, alpha, beta, drawdown, info ratio |
-| `src/technical-analysis.ts` | 535 | EMA, MACD, RSI, Stochastic, Bollinger, S&R, Fibonacci |
-| `src/market-time.ts` | - | MarketTimeTracker class with timezone-aware market hours |
-| `src/market-hours.ts` | - | US holiday calendar, market schedule data |
-| `src/polygon.ts` | - | Polygon.io REST API |
-| `src/polygon-indices.ts` | - | Polygon.io index data |
-| `src/alphavantage.ts` | - | Alpha Vantage integration |
-| `src/crypto.ts` | - | Cryptocurrency data via Alpaca v1beta3 |
-| `src/asset-allocation-algorithm.ts` | - | Portfolio allocation engine |
+| File                                | Lines | Description                                                                                                 |
+| ----------------------------------- | ----- | ----------------------------------------------------------------------------------------------------------- |
+| `src/alpaca/legacy/`                | ~600  | Legacy Alpaca REST API wrapper (AlpacaAuth pattern), migrated from alpaca-functions.ts into 6 modular files |
+| `src/performance-metrics.ts`        | 1,113 | Trade PnL, alpha, beta, drawdown, info ratio                                                                |
+| `src/technical-analysis.ts`         | 535   | EMA, MACD, RSI, Stochastic, Bollinger, S&R, Fibonacci                                                       |
+| `src/market-time.ts`                | -     | MarketTimeTracker class with timezone-aware market hours                                                    |
+| `src/market-hours.ts`               | -     | US holiday calendar, market schedule data                                                                   |
+| `src/polygon.ts`                    | -     | Polygon.io REST API                                                                                         |
+| `src/polygon-indices.ts`            | -     | Polygon.io index data                                                                                       |
+| `src/alphavantage.ts`               | -     | Alpha Vantage integration                                                                                   |
+| `src/crypto.ts`                     | -     | Cryptocurrency data via Alpaca v1beta3                                                                      |
+| `src/asset-allocation-algorithm.ts` | -     | Portfolio allocation engine                                                                                 |
 
 ### Infrastructure
 
-| File | Description |
-|------|-------------|
-| `src/cache/stampede-protected-cache.ts` | LRU cache with stale-while-revalidate |
-| `src/rate-limiter.ts` | Token bucket rate limiter |
-| `src/http-timeout.ts` | Timeout utilities and configuration |
-| `src/errors/index.ts` | 13 error classes (AlpacaApiError, PolygonApiError, TimeoutError, RateLimitError, etc.) |
-| `src/utils/retry.ts` | Exponential backoff retry wrapper |
-| `src/utils/auth-validator.ts` | API credential validation |
-| `src/logger.ts` | Configurable Pino-compatible logger |
-| `src/logging.ts` | Logger configuration and setup |
-| `src/adaptic.ts` | Shared Apollo Client management |
-| `src/misc-utils.ts` | Debug logging helpers |
+| File                                    | Description                                                                            |
+| --------------------------------------- | -------------------------------------------------------------------------------------- |
+| `src/cache/stampede-protected-cache.ts` | LRU cache with stale-while-revalidate                                                  |
+| `src/rate-limiter.ts`                   | Token bucket rate limiter                                                              |
+| `src/http-timeout.ts`                   | Timeout utilities and configuration                                                    |
+| `src/errors/index.ts`                   | 13 error classes (AlpacaApiError, PolygonApiError, TimeoutError, RateLimitError, etc.) |
+| `src/utils/retry.ts`                    | Exponential backoff retry wrapper                                                      |
+| `src/utils/auth-validator.ts`           | API credential validation                                                              |
+| `src/logger.ts`                         | Configurable Pino-compatible logger                                                    |
+| `src/logging.ts`                        | Logger configuration and setup                                                         |
+| `src/adaptic.ts`                        | Shared Apollo Client management                                                        |
+| `src/misc-utils.ts`                     | Debug logging helpers                                                                  |
 
 ## Type System
 
-| File | Lines | Description |
-|------|-------|-------------|
-| `src/types/alpaca-types.ts` | 1,465 | Comprehensive Alpaca API types |
-| `src/types/market-time-types.ts` | - | Market time and hours types |
-| `src/types/polygon-types.ts` | - | Polygon.io response types |
-| `src/types/alphavantage-types.ts` | - | Alpha Vantage response types |
-| `src/types/ta-types.ts` | - | Technical analysis parameter/result types |
-| `src/types/metrics-types.ts` | - | Performance metrics types |
-| `src/types/asset-allocation-types.ts` | - | Allocation algorithm types |
-| `src/types/adaptic-types.ts` | - | Shared Adaptic platform types |
-| `src/types/logging-types.ts` | - | Logger interface types |
+| File                                  | Lines | Description                               |
+| ------------------------------------- | ----- | ----------------------------------------- |
+| `src/types/alpaca-types.ts`           | 1,465 | Comprehensive Alpaca API types            |
+| `src/types/market-time-types.ts`      | -     | Market time and hours types               |
+| `src/types/polygon-types.ts`          | -     | Polygon.io response types                 |
+| `src/types/alphavantage-types.ts`     | -     | Alpha Vantage response types              |
+| `src/types/ta-types.ts`               | -     | Technical analysis parameter/result types |
+| `src/types/metrics-types.ts`          | -     | Performance metrics types                 |
+| `src/types/asset-allocation-types.ts` | -     | Allocation algorithm types                |
+| `src/types/adaptic-types.ts`          | -     | Shared Adaptic platform types             |
+| `src/types/logging-types.ts`          | -     | Logger interface types                    |
 
 **Type ownership:** `@adaptic/backend-legacy` owns all Prisma-generated canonical types (Trade, Position, Order, etc.). `@adaptic/utils` owns broker/API types (AlpacaPosition, AlpacaOrder, etc.). Types in `src/types/` are limited to external API response/request shapes.
 

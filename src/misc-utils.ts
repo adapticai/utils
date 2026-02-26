@@ -1,11 +1,11 @@
 // Utility function for debug logging
-import { getLogger } from './logger';
-import { withRetry } from './utils/retry';
+import { getLogger } from "./logger";
+import { withRetry } from "./utils/retry";
 
 // Define the possible log types as a const array for better type inference
-const LOG_TYPES = ['info', 'warn', 'error', 'debug', 'trace'] as const;
+const LOG_TYPES = ["info", "warn", "error", "debug", "trace"] as const;
 // Create a union type from the array
-type LogType = typeof LOG_TYPES[number];
+type LogType = (typeof LOG_TYPES)[number];
 
 /**
  * Debug logging utility that respects environment debug flags.
@@ -23,33 +23,41 @@ type LogType = typeof LOG_TYPES[number];
 export const logIfDebug = (
   message: string,
   data?: unknown,
-  type: LogType = 'info'
+  type: LogType = "info",
 ) => {
-  const debugMode = process.env.LUMIC_DEBUG === 'true' || process.env.lumic_debug === 'true' || false;
+  const debugMode =
+    process.env.LUMIC_DEBUG === "true" ||
+    process.env.lumic_debug === "true" ||
+    false;
 
   if (!debugMode) return;
 
   const prefix = `[DEBUG][${type.toUpperCase()}]`;
   const logger = getLogger();
-  const context = data !== undefined ? (typeof data === 'object' && data !== null ? data as Record<string, unknown> : { data }) : undefined;
+  const context =
+    data !== undefined
+      ? typeof data === "object" && data !== null
+        ? (data as Record<string, unknown>)
+        : { data }
+      : undefined;
 
-  const fullMessage = prefix + ' ' + message;
+  const fullMessage = prefix + " " + message;
 
   switch (type) {
-    case 'error':
+    case "error":
       logger.error(fullMessage, context);
       break;
-    case 'warn':
+    case "warn":
       logger.warn(fullMessage, context);
       break;
-    case 'debug':
+    case "debug":
       logger.debug(fullMessage, context);
       break;
-    case 'trace':
+    case "trace":
       // trace maps to debug in our logger interface
       logger.debug(fullMessage, context);
       break;
-    case 'info':
+    case "info":
     default:
       logger.info(fullMessage, context);
   }
@@ -91,7 +99,7 @@ export function hideApiKeyFromurl(url: string): string {
 
     // We iterate over all search params and look for one named 'apikey' (case-insensitive)
     for (const [key, value] of parsedUrl.searchParams.entries()) {
-      if (key.toLowerCase() === 'apikey') {
+      if (key.toLowerCase() === "apikey") {
         const masked = maskApiKey(value);
         parsedUrl.searchParams.set(key, masked);
       }
@@ -123,7 +131,7 @@ export async function fetchWithRetry(
   url: string,
   options: RequestInit = {},
   retries: number = 3,
-  initialBackoff: number = 1000
+  initialBackoff: number = 1000,
 ): Promise<Response> {
   return withRetry(
     async () => {
@@ -133,10 +141,14 @@ export async function fetchWithRetry(
         // Enhanced HTTP error handling with specific error types
         if (response.status === 429) {
           // Check for Retry-After header
-          const retryAfter = response.headers.get('Retry-After');
-          const retryDelay = retryAfter ? parseInt(retryAfter, 10) * 1000 : null;
+          const retryAfter = response.headers.get("Retry-After");
+          const retryDelay = retryAfter
+            ? parseInt(retryAfter, 10) * 1000
+            : null;
 
-          const error = new Error(`RATE_LIMIT: ${response.status}${retryDelay ? `:${retryDelay}` : ''}`);
+          const error = new Error(
+            `RATE_LIMIT: ${response.status}${retryDelay ? `:${retryDelay}` : ""}`,
+          );
           (error as Error & { response?: Response }).response = response;
           throw error;
         }
@@ -170,7 +182,7 @@ export async function fetchWithRetry(
       retryableStatusCodes: [429, 500, 502, 503, 504],
       retryOnNetworkError: true,
     },
-    `fetchWithRetry: ${hideApiKeyFromurl(url)}`
+    `fetchWithRetry: ${hideApiKeyFromurl(url)}`,
   );
 }
 
@@ -181,17 +193,22 @@ export async function fetchWithRetry(
  */
 export async function validatePolygonApiKey(apiKey: string): Promise<boolean> {
   try {
-    const response = await fetch(`https://api.polygon.io/v1/meta/symbols?apikey=${apiKey}&limit=1`);
+    const response = await fetch(
+      `https://api.polygon.io/v1/meta/symbols?apikey=${apiKey}&limit=1`,
+    );
     if (response.status === 401) {
-      throw new Error('Invalid or expired Polygon.io API key');
+      throw new Error("Invalid or expired Polygon.io API key");
     }
     if (response.status === 403) {
-      throw new Error('Polygon.io API key lacks required permissions');
+      throw new Error("Polygon.io API key lacks required permissions");
     }
     return response.ok;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-    getLogger().error('Polygon.io API key validation failed:', { errorMessage });
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error occurred";
+    getLogger().error("Polygon.io API key validation failed:", {
+      errorMessage,
+    });
     return false;
   }
 }

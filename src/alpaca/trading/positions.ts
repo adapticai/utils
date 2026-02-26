@@ -2,12 +2,21 @@
  * Position Management Module
  * Handles all position-related operations using Alpaca SDK
  */
-import { AlpacaClient } from '../client';
-import { log as baseLog } from '../../logging';
-import { AlpacaPosition, AssetClass, AlpacaOrder } from '../../types/alpaca-types';
+import { AlpacaClient } from "../client";
+import { log as baseLog } from "../../logging";
+import {
+  AlpacaPosition,
+  AssetClass,
+  AlpacaOrder,
+} from "../../types/alpaca-types";
 
-const log = (message: string, options: { type?: 'info' | 'warn' | 'error' | 'debug'; symbol?: string } = { type: 'info' }) => {
-  baseLog(message, { ...options, source: 'Positions' });
+const log = (
+  message: string,
+  options: { type?: "info" | "warn" | "error" | "debug"; symbol?: string } = {
+    type: "info",
+  },
+) => {
+  baseLog(message, { ...options, source: "Positions" });
 };
 
 // ============================================================================
@@ -103,7 +112,9 @@ export interface ClosePositionsAfterHoursOptions {
  * roundPriceForAlpaca(0.12345) // Returns 0.1235
  */
 function roundPriceForAlpaca(price: number): number {
-  return price >= 1 ? Math.round(price * 100) / 100 : Math.round(price * 10000) / 10000;
+  return price >= 1
+    ? Math.round(price * 100) / 100
+    : Math.round(price * 10000) / 10000;
 }
 
 /**
@@ -113,7 +124,10 @@ function roundPriceForAlpaca(price: number): number {
  * @param defaultValue - Default value if parsing fails (default: 0)
  * @returns The parsed number or default value
  */
-function parseNumericString(value: string | null | undefined, defaultValue: number = 0): number {
+function parseNumericString(
+  value: string | null | undefined,
+  defaultValue: number = 0,
+): number {
   if (value === null || value === undefined) {
     return defaultValue;
   }
@@ -136,17 +150,19 @@ function parseNumericString(value: string | null | undefined, defaultValue: numb
  * const positions = await getPositions(client);
  * console.log(`Found ${positions.length} open positions`);
  */
-export async function getPositions(client: AlpacaClient): Promise<AlpacaPosition[]> {
-  log('Fetching all open positions', { type: 'debug' });
+export async function getPositions(
+  client: AlpacaClient,
+): Promise<AlpacaPosition[]> {
+  log("Fetching all open positions", { type: "debug" });
 
   try {
     const sdk = client.getSDK();
-    const positions = await sdk.getPositions() as AlpacaPosition[];
-    log(`Retrieved ${positions.length} positions`, { type: 'info' });
+    const positions = (await sdk.getPositions()) as AlpacaPosition[];
+    log(`Retrieved ${positions.length} positions`, { type: "info" });
     return positions;
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    log(`Failed to fetch positions: ${message}`, { type: 'error' });
+    const message = error instanceof Error ? error.message : "Unknown error";
+    log(`Failed to fetch positions: ${message}`, { type: "error" });
     throw error;
   }
 }
@@ -164,18 +180,22 @@ export async function getPositions(client: AlpacaClient): Promise<AlpacaPosition
  */
 export async function getPositionsByAssetClass(
   client: AlpacaClient,
-  assetClass: AssetClass
+  assetClass: AssetClass,
 ): Promise<AlpacaPosition[]> {
-  log(`Fetching positions for asset class: ${assetClass}`, { type: 'debug' });
+  log(`Fetching positions for asset class: ${assetClass}`, { type: "debug" });
 
   try {
     const positions = await getPositions(client);
-    const filtered = positions.filter((position) => position.asset_class === assetClass);
-    log(`Found ${filtered.length} ${assetClass} positions`, { type: 'info' });
+    const filtered = positions.filter(
+      (position) => position.asset_class === assetClass,
+    );
+    log(`Found ${filtered.length} ${assetClass} positions`, { type: "info" });
     return filtered;
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    log(`Failed to fetch ${assetClass} positions: ${message}`, { type: 'error' });
+    const message = error instanceof Error ? error.message : "Unknown error";
+    log(`Failed to fetch ${assetClass} positions: ${message}`, {
+      type: "error",
+    });
     throw error;
   }
 }
@@ -195,23 +215,29 @@ export async function getPositionsByAssetClass(
  */
 export async function getPosition(
   client: AlpacaClient,
-  symbol: string
+  symbol: string,
 ): Promise<AlpacaPosition | null> {
-  log(`Fetching position for symbol: ${symbol}`, { type: 'debug', symbol });
+  log(`Fetching position for symbol: ${symbol}`, { type: "debug", symbol });
 
   try {
     const sdk = client.getSDK();
-    const position = await sdk.getPosition(symbol) as AlpacaPosition;
-    log(`Found position for ${symbol}: ${position.qty} shares`, { type: 'info', symbol });
+    const position = (await sdk.getPosition(symbol)) as AlpacaPosition;
+    log(`Found position for ${symbol}: ${position.qty} shares`, {
+      type: "info",
+      symbol,
+    });
     return position;
   } catch (error) {
     // Alpaca returns 404 if no position exists
-    if (error instanceof Error && error.message.includes('404')) {
-      log(`No position found for ${symbol}`, { type: 'debug', symbol });
+    if (error instanceof Error && error.message.includes("404")) {
+      log(`No position found for ${symbol}`, { type: "debug", symbol });
       return null;
     }
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    log(`Failed to fetch position for ${symbol}: ${message}`, { type: 'error', symbol });
+    const message = error instanceof Error ? error.message : "Unknown error";
+    log(`Failed to fetch position for ${symbol}: ${message}`, {
+      type: "error",
+      symbol,
+    });
     throw error;
   }
 }
@@ -228,7 +254,10 @@ export async function getPosition(
  *   console.log('Already have AAPL position');
  * }
  */
-export async function hasPosition(client: AlpacaClient, symbol: string): Promise<boolean> {
+export async function hasPosition(
+  client: AlpacaClient,
+  symbol: string,
+): Promise<boolean> {
   const position = await getPosition(client, symbol);
   return position !== null;
 }
@@ -244,13 +273,16 @@ export async function hasPosition(client: AlpacaClient, symbol: string): Promise
  * const qty = await getPositionQty(client, 'AAPL');
  * console.log(`Holding ${qty} shares of AAPL`);
  */
-export async function getPositionQty(client: AlpacaClient, symbol: string): Promise<number> {
+export async function getPositionQty(
+  client: AlpacaClient,
+  symbol: string,
+): Promise<number> {
   const position = await getPosition(client, symbol);
   if (!position) {
     return 0;
   }
   const qty = parseNumericString(position.qty);
-  return position.side === 'short' ? -Math.abs(qty) : qty;
+  return position.side === "short" ? -Math.abs(qty) : qty;
 }
 
 /**
@@ -264,7 +296,10 @@ export async function getPositionQty(client: AlpacaClient, symbol: string): Prom
  * const value = await getPositionValue(client, 'AAPL');
  * console.log(`AAPL position worth $${value.toFixed(2)}`);
  */
-export async function getPositionValue(client: AlpacaClient, symbol: string): Promise<number> {
+export async function getPositionValue(
+  client: AlpacaClient,
+  symbol: string,
+): Promise<number> {
   const position = await getPosition(client, symbol);
   if (!position) {
     return 0;
@@ -287,8 +322,8 @@ export async function getPositionValue(client: AlpacaClient, symbol: string): Pr
  */
 export async function getPositionSide(
   client: AlpacaClient,
-  symbol: string
-): Promise<'long' | 'short' | null> {
+  symbol: string,
+): Promise<"long" | "short" | null> {
   const position = await getPosition(client, symbol);
   return position?.side ?? null;
 }
@@ -319,9 +354,9 @@ export async function getPositionSide(
 export async function closePosition(
   client: AlpacaClient,
   symbol: string,
-  options?: ClosePositionOptions
+  options?: ClosePositionOptions,
 ): Promise<AlpacaOrder> {
-  log(`Closing position for ${symbol}`, { type: 'info', symbol });
+  log(`Closing position for ${symbol}`, { type: "info", symbol });
 
   try {
     const sdk = client.getSDK();
@@ -331,33 +366,45 @@ export async function closePosition(
 
     if (options?.qty !== undefined) {
       queryParams.qty = options.qty.toString();
-      log(`Closing ${options.qty} shares of ${symbol}`, { type: 'info', symbol });
+      log(`Closing ${options.qty} shares of ${symbol}`, {
+        type: "info",
+        symbol,
+      });
     } else if (options?.percentage !== undefined) {
       queryParams.percentage = options.percentage.toString();
-      log(`Closing ${options.percentage}% of ${symbol} position`, { type: 'info', symbol });
+      log(`Closing ${options.percentage}% of ${symbol} position`, {
+        type: "info",
+        symbol,
+      });
     } else {
-      log(`Closing entire position for ${symbol}`, { type: 'info', symbol });
+      log(`Closing entire position for ${symbol}`, { type: "info", symbol });
     }
 
     // Use sendRequest for parameterized close, closePosition for full close
     let order: AlpacaOrder;
     if (Object.keys(queryParams).length > 0) {
       // SDK doesn't support params, use sendRequest directly
-      order = await sdk.sendRequest(
+      order = (await sdk.sendRequest(
         `/positions/${encodeURIComponent(symbol)}`,
         queryParams,
         null,
-        'DELETE'
-      ) as AlpacaOrder;
+        "DELETE",
+      )) as AlpacaOrder;
     } else {
-      order = await sdk.closePosition(symbol) as AlpacaOrder;
+      order = (await sdk.closePosition(symbol)) as AlpacaOrder;
     }
 
-    log(`Position close order created for ${symbol}: ${order.id}`, { type: 'info', symbol });
+    log(`Position close order created for ${symbol}: ${order.id}`, {
+      type: "info",
+      symbol,
+    });
     return order;
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    log(`Failed to close position for ${symbol}: ${message}`, { type: 'error', symbol });
+    const message = error instanceof Error ? error.message : "Unknown error";
+    log(`Failed to close position for ${symbol}: ${message}`, {
+      type: "error",
+      symbol,
+    });
     throw error;
   }
 }
@@ -378,11 +425,14 @@ export async function closePosition(
  */
 export async function closeAllPositions(
   client: AlpacaClient,
-  options?: CloseAllPositionsOptions
+  options?: CloseAllPositionsOptions,
 ): Promise<AlpacaOrder[]> {
   const cancelOrders = options?.cancelOrders ?? true;
 
-  log(`Closing all positions${cancelOrders ? ' and canceling open orders' : ''}`, { type: 'info' });
+  log(
+    `Closing all positions${cancelOrders ? " and canceling open orders" : ""}`,
+    { type: "info" },
+  );
 
   try {
     const sdk = client.getSDK();
@@ -393,15 +443,20 @@ export async function closeAllPositions(
     };
 
     // Use sendRequest to pass the cancel_orders parameter
-    const response = await sdk.sendRequest('/positions', queryParams, null, 'DELETE');
+    const response = await sdk.sendRequest(
+      "/positions",
+      queryParams,
+      null,
+      "DELETE",
+    );
 
     // The SDK returns an array of objects with order info
-    const orders = Array.isArray(response) ? response as AlpacaOrder[] : [];
-    log(`Closed ${orders.length} positions`, { type: 'info' });
+    const orders = Array.isArray(response) ? (response as AlpacaOrder[]) : [];
+    log(`Closed ${orders.length} positions`, { type: "info" });
     return orders;
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    log(`Failed to close all positions: ${message}`, { type: 'error' });
+    const message = error instanceof Error ? error.message : "Unknown error";
+    log(`Failed to close all positions: ${message}`, { type: "error" });
     throw error;
   }
 }
@@ -420,24 +475,27 @@ export async function closeAllPositions(
  */
 export async function closeAllPositionsAfterHours(
   client: AlpacaClient,
-  options?: ClosePositionsAfterHoursOptions
+  options?: ClosePositionsAfterHoursOptions,
 ): Promise<AlpacaOrder[]> {
   const limitPriceOffset = options?.limitPriceOffset ?? 0.5;
 
-  log(`Closing all positions with limit orders (${limitPriceOffset}% offset) for after-hours`, { type: 'info' });
+  log(
+    `Closing all positions with limit orders (${limitPriceOffset}% offset) for after-hours`,
+    { type: "info" },
+  );
 
   try {
     const sdk = client.getSDK();
     const positions = await getPositions(client);
 
     if (positions.length === 0) {
-      log('No positions to close', { type: 'info' });
+      log("No positions to close", { type: "info" });
       return [];
     }
 
     // First cancel all open orders
     await sdk.cancelAllOrders();
-    log('Cancelled all open orders', { type: 'info' });
+    log("Cancelled all open orders", { type: "info" });
 
     const orders: AlpacaOrder[] = [];
     const offsetMultiplier = limitPriceOffset / 100;
@@ -445,46 +503,56 @@ export async function closeAllPositionsAfterHours(
     for (const position of positions) {
       const qty = Math.abs(parseNumericString(position.qty));
       const currentPrice = parseNumericString(position.current_price);
-      const side = position.side === 'long' ? 'sell' : 'buy';
+      const side = position.side === "long" ? "sell" : "buy";
 
       if (qty === 0 || currentPrice === 0) {
-        log(`Skipping ${position.symbol}: invalid qty or price`, { type: 'warn', symbol: position.symbol });
+        log(`Skipping ${position.symbol}: invalid qty or price`, {
+          type: "warn",
+          symbol: position.symbol,
+        });
         continue;
       }
 
       // Calculate limit price with offset
-      const limitPrice = side === 'sell'
-        ? roundPriceForAlpaca(currentPrice * (1 - offsetMultiplier))
-        : roundPriceForAlpaca(currentPrice * (1 + offsetMultiplier));
+      const limitPrice =
+        side === "sell"
+          ? roundPriceForAlpaca(currentPrice * (1 - offsetMultiplier))
+          : roundPriceForAlpaca(currentPrice * (1 + offsetMultiplier));
 
       log(
         `Creating limit order to close ${position.symbol}: ${side} ${qty} shares at $${limitPrice.toFixed(2)}`,
-        { type: 'info', symbol: position.symbol }
+        { type: "info", symbol: position.symbol },
       );
 
       try {
-        const order = await sdk.createOrder({
+        const order = (await sdk.createOrder({
           symbol: position.symbol,
           qty: qty,
           side: side,
-          type: 'limit',
-          time_in_force: 'day',
+          type: "limit",
+          time_in_force: "day",
           limit_price: limitPrice,
           extended_hours: true,
-        }) as AlpacaOrder;
+        })) as AlpacaOrder;
 
         orders.push(order);
       } catch (orderError) {
-        const message = orderError instanceof Error ? orderError.message : 'Unknown error';
-        log(`Failed to create close order for ${position.symbol}: ${message}`, { type: 'error', symbol: position.symbol });
+        const message =
+          orderError instanceof Error ? orderError.message : "Unknown error";
+        log(`Failed to create close order for ${position.symbol}: ${message}`, {
+          type: "error",
+          symbol: position.symbol,
+        });
       }
     }
 
-    log(`Created ${orders.length} limit orders to close positions`, { type: 'info' });
+    log(`Created ${orders.length} limit orders to close positions`, {
+      type: "info",
+    });
     return orders;
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    log(`Failed to close positions after hours: ${message}`, { type: 'error' });
+    const message = error instanceof Error ? error.message : "Unknown error";
+    log(`Failed to close positions after hours: ${message}`, { type: "error" });
     throw error;
   }
 }
@@ -508,13 +576,13 @@ export async function closeAllPositionsAfterHours(
  */
 export async function getPositionPnL(
   client: AlpacaClient,
-  symbol: string
+  symbol: string,
 ): Promise<PositionPnLSummary | null> {
-  log(`Calculating P&L for ${symbol}`, { type: 'debug', symbol });
+  log(`Calculating P&L for ${symbol}`, { type: "debug", symbol });
 
   const position = await getPosition(client, symbol);
   if (!position) {
-    log(`No position found for ${symbol}`, { type: 'debug', symbol });
+    log(`No position found for ${symbol}`, { type: "debug", symbol });
     return null;
   }
 
@@ -524,9 +592,11 @@ export async function getPositionPnL(
   const marketValue = parseNumericString(position.market_value);
   const costBasis = parseNumericString(position.cost_basis);
   const unrealizedPL = parseNumericString(position.unrealized_pl);
-  const unrealizedPLPercent = parseNumericString(position.unrealized_plpc) * 100;
+  const unrealizedPLPercent =
+    parseNumericString(position.unrealized_plpc) * 100;
   const todayPL = parseNumericString(position.unrealized_intraday_pl);
-  const todayPLPercent = parseNumericString(position.unrealized_intraday_plpc) * 100;
+  const todayPLPercent =
+    parseNumericString(position.unrealized_intraday_plpc) * 100;
 
   const summary: PositionPnLSummary = {
     symbol: position.symbol,
@@ -543,7 +613,7 @@ export async function getPositionPnL(
 
   log(
     `${symbol} P&L: $${unrealizedPL.toFixed(2)} (${unrealizedPLPercent.toFixed(2)}%)`,
-    { type: 'info', symbol }
+    { type: "info", symbol },
   );
 
   return summary;
@@ -560,8 +630,10 @@ export async function getPositionPnL(
  * console.log(`Total unrealized P&L: $${portfolio.totalUnrealizedPL.toFixed(2)}`);
  * console.log(`Today's P&L: $${portfolio.todayPL.toFixed(2)}`);
  */
-export async function getPortfolioPnL(client: AlpacaClient): Promise<PortfolioPnLSummary> {
-  log('Calculating portfolio P&L', { type: 'debug' });
+export async function getPortfolioPnL(
+  client: AlpacaClient,
+): Promise<PortfolioPnLSummary> {
+  log("Calculating portfolio P&L", { type: "debug" });
 
   const positions = await getPositions(client);
 
@@ -572,9 +644,11 @@ export async function getPortfolioPnL(client: AlpacaClient): Promise<PortfolioPn
     const marketValue = parseNumericString(position.market_value);
     const costBasis = parseNumericString(position.cost_basis);
     const unrealizedPL = parseNumericString(position.unrealized_pl);
-    const unrealizedPLPercent = parseNumericString(position.unrealized_plpc) * 100;
+    const unrealizedPLPercent =
+      parseNumericString(position.unrealized_plpc) * 100;
     const todayPL = parseNumericString(position.unrealized_intraday_pl);
-    const todayPLPercent = parseNumericString(position.unrealized_intraday_plpc) * 100;
+    const todayPLPercent =
+      parseNumericString(position.unrealized_intraday_plpc) * 100;
 
     return {
       symbol: position.symbol,
@@ -591,21 +665,28 @@ export async function getPortfolioPnL(client: AlpacaClient): Promise<PortfolioPn
   });
 
   // Calculate totals
-  const totalMarketValue = positionSummaries.reduce((sum, p) => sum + p.marketValue, 0);
-  const totalCostBasis = positionSummaries.reduce((sum, p) => sum + p.costBasis, 0);
-  const totalUnrealizedPL = positionSummaries.reduce((sum, p) => sum + p.unrealizedPL, 0);
+  const totalMarketValue = positionSummaries.reduce(
+    (sum, p) => sum + p.marketValue,
+    0,
+  );
+  const totalCostBasis = positionSummaries.reduce(
+    (sum, p) => sum + p.costBasis,
+    0,
+  );
+  const totalUnrealizedPL = positionSummaries.reduce(
+    (sum, p) => sum + p.unrealizedPL,
+    0,
+  );
   const todayPL = positionSummaries.reduce((sum, p) => sum + p.todayPL, 0);
 
   // Calculate percentage returns
-  const totalUnrealizedPLPercent = totalCostBasis !== 0
-    ? (totalUnrealizedPL / totalCostBasis) * 100
-    : 0;
+  const totalUnrealizedPLPercent =
+    totalCostBasis !== 0 ? (totalUnrealizedPL / totalCostBasis) * 100 : 0;
 
   // Today's P&L percent is calculated based on previous day's market value
   const previousDayValue = totalMarketValue - todayPL;
-  const todayPLPercent = previousDayValue !== 0
-    ? (todayPL / previousDayValue) * 100
-    : 0;
+  const todayPLPercent =
+    previousDayValue !== 0 ? (todayPL / previousDayValue) * 100 : 0;
 
   const summary: PortfolioPnLSummary = {
     totalMarketValue,
@@ -619,8 +700,8 @@ export async function getPortfolioPnL(client: AlpacaClient): Promise<PortfolioPn
 
   log(
     `Portfolio P&L: $${totalUnrealizedPL.toFixed(2)} (${totalUnrealizedPLPercent.toFixed(2)}%), ` +
-    `Today: $${todayPL.toFixed(2)} (${todayPLPercent.toFixed(2)}%)`,
-    { type: 'info' }
+      `Today: $${todayPL.toFixed(2)} (${todayPLPercent.toFixed(2)}%)`,
+    { type: "info" },
   );
 
   return summary;
@@ -639,8 +720,10 @@ export async function getPortfolioPnL(client: AlpacaClient): Promise<PortfolioPn
  * @example
  * const equities = await getEquityPositions(client);
  */
-export async function getEquityPositions(client: AlpacaClient): Promise<AlpacaPosition[]> {
-  return getPositionsByAssetClass(client, 'us_equity');
+export async function getEquityPositions(
+  client: AlpacaClient,
+): Promise<AlpacaPosition[]> {
+  return getPositionsByAssetClass(client, "us_equity");
 }
 
 /**
@@ -652,8 +735,10 @@ export async function getEquityPositions(client: AlpacaClient): Promise<AlpacaPo
  * @example
  * const options = await getOptionPositions(client);
  */
-export async function getOptionPositions(client: AlpacaClient): Promise<AlpacaPosition[]> {
-  return getPositionsByAssetClass(client, 'us_option');
+export async function getOptionPositions(
+  client: AlpacaClient,
+): Promise<AlpacaPosition[]> {
+  return getPositionsByAssetClass(client, "us_option");
 }
 
 /**
@@ -665,8 +750,10 @@ export async function getOptionPositions(client: AlpacaClient): Promise<AlpacaPo
  * @example
  * const crypto = await getCryptoPositions(client);
  */
-export async function getCryptoPositions(client: AlpacaClient): Promise<AlpacaPosition[]> {
-  return getPositionsByAssetClass(client, 'crypto');
+export async function getCryptoPositions(
+  client: AlpacaClient,
+): Promise<AlpacaPosition[]> {
+  return getPositionsByAssetClass(client, "crypto");
 }
 
 /**
@@ -682,7 +769,7 @@ export async function getCryptoPositions(client: AlpacaClient): Promise<AlpacaPo
  */
 export async function getPositionCount(
   client: AlpacaClient,
-  assetClass?: AssetClass
+  assetClass?: AssetClass,
 ): Promise<number> {
   const positions = assetClass
     ? await getPositionsByAssetClass(client, assetClass)
@@ -703,7 +790,7 @@ export async function getPositionCount(
  */
 export async function getPositionSymbols(
   client: AlpacaClient,
-  assetClass?: AssetClass
+  assetClass?: AssetClass,
 ): Promise<string[]> {
   const positions = assetClass
     ? await getPositionsByAssetClass(client, assetClass)
@@ -724,13 +811,16 @@ export async function getPositionSymbols(
  */
 export async function getTotalMarketValue(
   client: AlpacaClient,
-  assetClass?: AssetClass
+  assetClass?: AssetClass,
 ): Promise<number> {
   const positions = assetClass
     ? await getPositionsByAssetClass(client, assetClass)
     : await getPositions(client);
 
-  return positions.reduce((total, p) => total + parseNumericString(p.market_value), 0);
+  return positions.reduce(
+    (total, p) => total + parseNumericString(p.market_value),
+    0,
+  );
 }
 
 /**
@@ -747,7 +837,7 @@ export async function getTotalMarketValue(
  */
 export async function hasAnyPositions(
   client: AlpacaClient,
-  assetClass?: AssetClass
+  assetClass?: AssetClass,
 ): Promise<boolean> {
   const count = await getPositionCount(client, assetClass);
   return count > 0;
@@ -766,7 +856,7 @@ export async function hasAnyPositions(
  */
 export async function getPositionsByValue(
   client: AlpacaClient,
-  assetClass?: AssetClass
+  assetClass?: AssetClass,
 ): Promise<AlpacaPosition[]> {
   const positions = assetClass
     ? await getPositionsByAssetClass(client, assetClass)
@@ -793,7 +883,7 @@ export async function getPositionsByValue(
  */
 export async function getPositionsByPnL(
   client: AlpacaClient,
-  assetClass?: AssetClass
+  assetClass?: AssetClass,
 ): Promise<AlpacaPosition[]> {
   const positions = assetClass
     ? await getPositionsByAssetClass(client, assetClass)
@@ -818,7 +908,7 @@ export async function getPositionsByPnL(
  */
 export async function getWinningPositions(
   client: AlpacaClient,
-  assetClass?: AssetClass
+  assetClass?: AssetClass,
 ): Promise<AlpacaPosition[]> {
   const positions = assetClass
     ? await getPositionsByAssetClass(client, assetClass)
@@ -839,7 +929,7 @@ export async function getWinningPositions(
  */
 export async function getLosingPositions(
   client: AlpacaClient,
-  assetClass?: AssetClass
+  assetClass?: AssetClass,
 ): Promise<AlpacaPosition[]> {
   const positions = assetClass
     ? await getPositionsByAssetClass(client, assetClass)

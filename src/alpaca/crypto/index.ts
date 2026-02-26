@@ -19,7 +19,7 @@ export {
   getOpenCryptoOrders,
   cancelAllCryptoOrders,
   isCryptoPair,
-} from './orders';
+} from "./orders";
 
 // Data
 export {
@@ -45,11 +45,11 @@ export {
   USDT_PAIRS,
   USDC_PAIRS,
   USD_PAIRS,
-} from './data';
+} from "./data";
 
 // Default exports as namespaces
-import cryptoOrders from './orders';
-import cryptoData from './data';
+import cryptoOrders from "./orders";
+import cryptoData from "./data";
 
 export const orders = cryptoOrders;
 export const data = cryptoData;

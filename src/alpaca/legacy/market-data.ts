@@ -2,25 +2,25 @@
  * Legacy Alpaca Market Data Functions
  * Quotes and news retrieval using AlpacaAuth pattern with direct fetch calls.
  */
-import { types } from '@adaptic/backend-legacy';
-import adaptic from '@adaptic/backend-legacy';
-import { getSharedApolloClient } from '../../adaptic';
+import { types } from "@adaptic/backend-legacy";
+import adaptic from "@adaptic/backend-legacy";
+import { getSharedApolloClient } from "../../adaptic";
 import {
   AlpacaAuth,
   DataFeed,
   LatestQuotesResponse,
   NewsResponse,
   SimpleNews,
-} from '../../types/alpaca-types';
-import { makeRequest } from './orders';
-import { cleanContent } from './utils';
-import { MARKET_DATA_API } from '../../config/api-endpoints';
-import { getLogger } from '../../logger';
-import { logIfDebug } from '../../misc-utils.js';
-import { createTimeoutSignal, DEFAULT_TIMEOUTS } from '../../http-timeout';
+} from "../../types/alpaca-types";
+import { makeRequest } from "./orders";
+import { cleanContent } from "./utils";
+import { MARKET_DATA_API } from "../../config/api-endpoints";
+import { getLogger } from "../../logger";
+import { logIfDebug } from "../../misc-utils.js";
+import { createTimeoutSignal, DEFAULT_TIMEOUTS } from "../../http-timeout";
 
-const DEFAULT_CURRENCY = 'USD';
-const DEFAULT_FEED: DataFeed = 'sip';
+const DEFAULT_CURRENCY = "USD";
+const DEFAULT_FEED: DataFeed = "sip";
 
 /**
  * Get the most recent quotes for requested symbols.
@@ -29,30 +29,36 @@ const DEFAULT_FEED: DataFeed = 'sip';
  * @returns Latest quote data for each symbol
  * @throws Error if request fails or rate limit exceeded
  */
-export async function getLatestQuotes(auth: AlpacaAuth, params: { symbols: string[]; feed?: DataFeed; currency?: string }): Promise<LatestQuotesResponse> {
+export async function getLatestQuotes(
+  auth: AlpacaAuth,
+  params: { symbols: string[]; feed?: DataFeed; currency?: string },
+): Promise<LatestQuotesResponse> {
   const { symbols, feed, currency } = params;
 
   // Return empty response if symbols array is empty to avoid API error
   if (!symbols || symbols.length === 0) {
-    getLogger().warn('No symbols provided to getLatestQuotes, returning empty response', {
-      type: 'warn'
-    });
+    getLogger().warn(
+      "No symbols provided to getLatestQuotes, returning empty response",
+      {
+        type: "warn",
+      },
+    );
     return {
       quotes: {},
-      currency: currency || DEFAULT_CURRENCY
+      currency: currency || DEFAULT_CURRENCY,
     };
   }
 
   const queryParams = new URLSearchParams();
-  queryParams.append('symbols', symbols.join(','));
-  queryParams.append('feed', feed || DEFAULT_FEED);
-  queryParams.append('currency', currency || DEFAULT_CURRENCY);
+  queryParams.append("symbols", symbols.join(","));
+  queryParams.append("feed", feed || DEFAULT_FEED);
+  queryParams.append("currency", currency || DEFAULT_CURRENCY);
 
   return makeRequest(auth, {
-    endpoint: '/v2/stocks/quotes/latest',
-    method: 'GET',
+    endpoint: "/v2/stocks/quotes/latest",
+    method: "GET",
     queryString: `?${queryParams.toString()}`,
-    apiBaseUrl: MARKET_DATA_API.STOCKS.replace('/v2', '')
+    apiBaseUrl: MARKET_DATA_API.STOCKS.replace("/v2", ""),
   });
 }
 
@@ -69,7 +75,7 @@ export async function fetchNews(
     start?: Date | string;
     end?: Date | string;
     limit?: number;
-    sort?: 'asc' | 'desc';
+    sort?: "asc" | "desc";
     page_token?: string;
     include_content?: boolean;
   },
@@ -78,7 +84,7 @@ export async function fetchNews(
     start: new Date(Date.now() - 24 * 60 * 60 * 1000),
     end: new Date(),
     limit: 10,
-    sort: 'desc' as const,
+    sort: "desc" as const,
     page_token: null,
     include_content: true,
   };
@@ -95,12 +101,15 @@ export async function fetchNews(
     } else if (mergedParams.auth.adapticAccountId) {
       const client = await getSharedApolloClient();
 
-      const alpacaAccount = (await adaptic.alpacaAccount.get({
-        id: mergedParams.auth.adapticAccountId,
-      } as types.AlpacaAccount, client)) as types.AlpacaAccount;
+      const alpacaAccount = (await adaptic.alpacaAccount.get(
+        {
+          id: mergedParams.auth.adapticAccountId,
+        } as types.AlpacaAccount,
+        client,
+      )) as types.AlpacaAccount;
 
       if (!alpacaAccount || !alpacaAccount.APIKey || !alpacaAccount.APISecret) {
-        throw new Error('Alpaca account not found or incomplete');
+        throw new Error("Alpaca account not found or incomplete");
       }
 
       APIKey = alpacaAccount.APIKey;
@@ -112,7 +121,9 @@ export async function fetchNews(
   }
 
   if (!APIKey || !APISecret) {
-    throw new Error('No valid Alpaca authentication found. Please provide either auth object or set ALPACA_API_KEY and ALPACA_API_SECRET environment variables.');
+    throw new Error(
+      "No valid Alpaca authentication found. Please provide either auth object or set ALPACA_API_KEY and ALPACA_API_SECRET environment variables.",
+    );
   }
 
   try {
@@ -122,12 +133,18 @@ export async function fetchNews(
 
     while (hasMorePages) {
       const queryParams = new URLSearchParams({
-        ...(mergedParams.start && { start: new Date(mergedParams.start).toISOString() }),
-        ...(mergedParams.end && { end: new Date(mergedParams.end).toISOString() }),
+        ...(mergedParams.start && {
+          start: new Date(mergedParams.start).toISOString(),
+        }),
+        ...(mergedParams.end && {
+          end: new Date(mergedParams.end).toISOString(),
+        }),
         ...(symbols && { symbols: symbols }),
         ...(mergedParams.limit && { limit: mergedParams.limit.toString() }),
         ...(mergedParams.sort && { sort: mergedParams.sort }),
-        ...(mergedParams.include_content !== undefined ? { include_content: mergedParams.include_content.toString() } : {}),
+        ...(mergedParams.include_content !== undefined
+          ? { include_content: mergedParams.include_content.toString() }
+          : {}),
         ...(pageToken && { page_token: pageToken }),
       });
 
@@ -135,11 +152,11 @@ export async function fetchNews(
       logIfDebug(`Fetching news from: ${url}`);
 
       const response = await fetch(url, {
-        method: 'GET',
+        method: "GET",
         headers: {
-          'APCA-API-KEY-ID': APIKey,
-          'APCA-API-SECRET-KEY': APISecret,
-          'accept': 'application/json',
+          "APCA-API-KEY-ID": APIKey,
+          "APCA-API-SECRET-KEY": APISecret,
+          accept: "application/json",
         },
         signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
       });
@@ -169,19 +186,21 @@ export async function fetchNews(
       pageToken = data.next_page_token || null;
       hasMorePages = !!pageToken;
 
-      logIfDebug(`Received ${data.news.length} news articles. More pages: ${hasMorePages}`);
+      logIfDebug(
+        `Received ${data.news.length} news articles. More pages: ${hasMorePages}`,
+      );
     }
 
     // Trim results to respect the limit parameter based on sort order
     if (mergedParams.limit && newsArticles.length > mergedParams.limit) {
-      if (mergedParams.sort === 'asc') {
+      if (mergedParams.sort === "asc") {
         newsArticles = newsArticles.slice(-mergedParams.limit);
       } else {
         newsArticles = newsArticles.slice(0, mergedParams.limit);
       }
     }
 
-    if (mergedParams.sort === 'asc' && mergedParams.limit) {
+    if (mergedParams.sort === "asc" && mergedParams.limit) {
       newsArticles = newsArticles.slice(-mergedParams.limit);
     }
 
@@ -190,7 +209,7 @@ export async function fetchNews(
       nextPageToken: pageToken || undefined,
     };
   } catch (error) {
-    getLogger().error('Error in fetchNews:', error);
+    getLogger().error("Error in fetchNews:", error);
     throw error;
   }
 }

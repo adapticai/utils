@@ -2,11 +2,11 @@
  * Legacy Alpaca Authentication
  * Validates and resolves AlpacaAuth credentials for API calls.
  */
-import { types } from '@adaptic/backend-legacy';
-import adaptic from '@adaptic/backend-legacy';
-import { getSharedApolloClient } from '../../adaptic';
-import { AlpacaAuth } from '../../types/alpaca-types';
-import { validateAlpacaCredentials } from '../../utils/auth-validator';
+import { types } from "@adaptic/backend-legacy";
+import adaptic from "@adaptic/backend-legacy";
+import { getSharedApolloClient } from "../../adaptic";
+import { AlpacaAuth } from "../../types/alpaca-types";
+import { validateAlpacaCredentials } from "../../utils/auth-validator";
 
 /**
  * Validated authentication credentials ready for API calls.
@@ -28,18 +28,21 @@ export async function validateAuth(auth: AlpacaAuth): Promise<ValidatedAuth> {
   if (auth.adapticAccountId) {
     const client = await getSharedApolloClient();
 
-    const alpacaAccount = (await adaptic.alpacaAccount.get({
-      id: auth.adapticAccountId,
-    } as types.AlpacaAccount, client)) as types.AlpacaAccount;
+    const alpacaAccount = (await adaptic.alpacaAccount.get(
+      {
+        id: auth.adapticAccountId,
+      } as types.AlpacaAccount,
+      client,
+    )) as types.AlpacaAccount;
 
     if (!alpacaAccount || !alpacaAccount.APIKey || !alpacaAccount.APISecret) {
-      throw new Error('Alpaca account not found or incomplete');
+      throw new Error("Alpaca account not found or incomplete");
     }
 
     validateAlpacaCredentials({
       apiKey: alpacaAccount.APIKey,
       apiSecret: alpacaAccount.APISecret,
-      isPaper: alpacaAccount.type === 'PAPER',
+      isPaper: alpacaAccount.type === "PAPER",
     });
 
     return {
@@ -48,12 +51,12 @@ export async function validateAuth(auth: AlpacaAuth): Promise<ValidatedAuth> {
       type: alpacaAccount.type,
     };
   } else if (auth.alpacaApiKey && auth.alpacaApiSecret) {
-    const accountType = auth.type || 'PAPER';
+    const accountType = auth.type || "PAPER";
 
     validateAlpacaCredentials({
       apiKey: auth.alpacaApiKey,
       apiSecret: auth.alpacaApiSecret,
-      isPaper: accountType === 'PAPER',
+      isPaper: accountType === "PAPER",
     });
 
     return {
@@ -63,5 +66,7 @@ export async function validateAuth(auth: AlpacaAuth): Promise<ValidatedAuth> {
     };
   }
 
-  throw new Error('Either adapticAccountId or both alpacaApiKey and alpacaApiSecret must be provided');
+  throw new Error(
+    "Either adapticAccountId or both alpacaApiKey and alpacaApiSecret must be provided",
+  );
 }

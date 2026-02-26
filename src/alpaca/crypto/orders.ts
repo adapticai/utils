@@ -3,23 +3,23 @@
  * Create and manage cryptocurrency orders
  * Crypto trading is available 24/7 on Alpaca
  */
-import { AlpacaClient } from '../client';
-import { log as baseLog } from '../../logging';
-import { LogOptions } from '../../types/logging-types';
+import { AlpacaClient } from "../client";
+import { log as baseLog } from "../../logging";
+import { LogOptions } from "../../types/logging-types";
 import {
   AlpacaOrder,
   OrderSide,
   OrderType,
   TimeInForce,
   CryptoPair,
-} from '../../types/alpaca-types';
+} from "../../types/alpaca-types";
 
-const LOG_SOURCE = 'CryptoOrders';
+const LOG_SOURCE = "CryptoOrders";
 
 /**
  * Internal logging helper with consistent source
  */
-const log = (message: string, options: LogOptions = { type: 'info' }) => {
+const log = (message: string, options: LogOptions = { type: "info" }) => {
   baseLog(message, { ...options, source: LOG_SOURCE });
 };
 
@@ -31,10 +31,10 @@ export class CryptoOrderError extends Error {
     message: string,
     public code: string,
     public symbol?: string,
-    public details?: unknown
+    public details?: unknown,
   ) {
     super(message);
-    this.name = 'CryptoOrderError';
+    this.name = "CryptoOrderError";
   }
 }
 
@@ -69,7 +69,7 @@ export interface CryptoOrderParams {
  */
 function normalizeCryptoSymbol(symbol: string): string {
   // If already in format 'XXX/YYY', return as is
-  if (symbol.includes('/')) {
+  if (symbol.includes("/")) {
     return symbol.toUpperCase();
   }
 
@@ -77,7 +77,7 @@ function normalizeCryptoSymbol(symbol: string): string {
   const upperSymbol = symbol.toUpperCase();
 
   // Check for common quote currencies
-  const quoteCurrencies = ['USD', 'USDT', 'USDC', 'BTC'];
+  const quoteCurrencies = ["USD", "USDT", "USDC", "BTC"];
 
   for (const quote of quoteCurrencies) {
     if (upperSymbol.endsWith(quote)) {
@@ -97,54 +97,60 @@ function normalizeCryptoSymbol(symbol: string): string {
  */
 function validateCryptoOrderParams(params: CryptoOrderParams): void {
   if (!params.symbol) {
-    throw new CryptoOrderError('Symbol is required', 'MISSING_SYMBOL');
+    throw new CryptoOrderError("Symbol is required", "MISSING_SYMBOL");
   }
 
   if (params.qty === undefined && params.notional === undefined) {
     throw new CryptoOrderError(
-      'Either qty or notional is required',
-      'MISSING_QUANTITY',
-      params.symbol
+      "Either qty or notional is required",
+      "MISSING_QUANTITY",
+      params.symbol,
     );
   }
 
   if (params.qty !== undefined && params.notional !== undefined) {
     throw new CryptoOrderError(
-      'Cannot specify both qty and notional',
-      'INVALID_QUANTITY',
-      params.symbol
+      "Cannot specify both qty and notional",
+      "INVALID_QUANTITY",
+      params.symbol,
     );
   }
 
   if (params.qty !== undefined && params.qty <= 0) {
     throw new CryptoOrderError(
-      'Quantity must be positive',
-      'INVALID_QUANTITY',
-      params.symbol
+      "Quantity must be positive",
+      "INVALID_QUANTITY",
+      params.symbol,
     );
   }
 
   if (params.notional !== undefined && params.notional <= 0) {
     throw new CryptoOrderError(
-      'Notional must be positive',
-      'INVALID_NOTIONAL',
-      params.symbol
+      "Notional must be positive",
+      "INVALID_NOTIONAL",
+      params.symbol,
     );
   }
 
-  if ((params.type === 'limit' || params.type === 'stop_limit') && !params.limitPrice) {
+  if (
+    (params.type === "limit" || params.type === "stop_limit") &&
+    !params.limitPrice
+  ) {
     throw new CryptoOrderError(
-      'Limit price required for limit orders',
-      'MISSING_LIMIT_PRICE',
-      params.symbol
+      "Limit price required for limit orders",
+      "MISSING_LIMIT_PRICE",
+      params.symbol,
     );
   }
 
-  if ((params.type === 'stop' || params.type === 'stop_limit') && !params.stopPrice) {
+  if (
+    (params.type === "stop" || params.type === "stop_limit") &&
+    !params.stopPrice
+  ) {
     throw new CryptoOrderError(
-      'Stop price required for stop orders',
-      'MISSING_STOP_PRICE',
-      params.symbol
+      "Stop price required for stop orders",
+      "MISSING_STOP_PRICE",
+      params.symbol,
     );
   }
 }
@@ -178,18 +184,30 @@ function validateCryptoOrderParams(params: CryptoOrderParams): void {
  */
 export async function createCryptoOrder(
   client: AlpacaClient,
-  params: CryptoOrderParams
+  params: CryptoOrderParams,
 ): Promise<AlpacaOrder> {
   validateCryptoOrderParams(params);
 
   const normalizedSymbol = normalizeCryptoSymbol(params.symbol);
-  const { qty, notional, side, type, limitPrice, stopPrice, timeInForce, clientOrderId } = params;
+  const {
+    qty,
+    notional,
+    side,
+    type,
+    limitPrice,
+    stopPrice,
+    timeInForce,
+    clientOrderId,
+  } = params;
 
   const qtyDescription = qty !== undefined ? `${qty}` : `$${notional}`;
-  log(`Creating crypto ${type} order: ${side} ${qtyDescription} ${normalizedSymbol}`, {
-    type: 'info',
-    symbol: normalizedSymbol,
-  });
+  log(
+    `Creating crypto ${type} order: ${side} ${qtyDescription} ${normalizedSymbol}`,
+    {
+      type: "info",
+      symbol: normalizedSymbol,
+    },
+  );
 
   try {
     const sdk = client.getSDK();
@@ -199,7 +217,7 @@ export async function createCryptoOrder(
       symbol: normalizedSymbol,
       side,
       type,
-      time_in_force: timeInForce || 'gtc', // GTC is typical for crypto
+      time_in_force: timeInForce || "gtc", // GTC is typical for crypto
     };
 
     if (qty !== undefined) {
@@ -225,7 +243,7 @@ export async function createCryptoOrder(
     const order = await sdk.createOrder(orderRequest);
 
     log(`Crypto order created successfully: ${order.id}`, {
-      type: 'info',
+      type: "info",
       symbol: normalizedSymbol,
       metadata: {
         orderId: order.id,
@@ -237,17 +255,21 @@ export async function createCryptoOrder(
 
     return order as AlpacaOrder;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    log(`Failed to create crypto order for ${normalizedSymbol}: ${errorMessage}`, {
-      type: 'error',
-      symbol: normalizedSymbol,
-      metadata: { params },
-    });
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    log(
+      `Failed to create crypto order for ${normalizedSymbol}: ${errorMessage}`,
+      {
+        type: "error",
+        symbol: normalizedSymbol,
+        metadata: { params },
+      },
+    );
     throw new CryptoOrderError(
       `Failed to create crypto ${type} order for ${normalizedSymbol}: ${errorMessage}`,
-      'ORDER_CREATION_FAILED',
+      "ORDER_CREATION_FAILED",
       normalizedSymbol,
-      error
+      error,
     );
   }
 }
@@ -269,13 +291,13 @@ export async function createCryptoMarketOrder(
   client: AlpacaClient,
   symbol: string,
   side: OrderSide,
-  qty: number
+  qty: number,
 ): Promise<AlpacaOrder> {
   return createCryptoOrder(client, {
     symbol,
     qty,
     side,
-    type: 'market',
+    type: "market",
   });
 }
 
@@ -299,13 +321,13 @@ export async function createCryptoLimitOrder(
   symbol: string,
   side: OrderSide,
   qty: number,
-  limitPrice: number
+  limitPrice: number,
 ): Promise<AlpacaOrder> {
   return createCryptoOrder(client, {
     symbol,
     qty,
     side,
-    type: 'limit',
+    type: "limit",
     limitPrice,
   });
 }
@@ -330,13 +352,13 @@ export async function createCryptoStopOrder(
   symbol: string,
   side: OrderSide,
   qty: number,
-  stopPrice: number
+  stopPrice: number,
 ): Promise<AlpacaOrder> {
   return createCryptoOrder(client, {
     symbol,
     qty,
     side,
-    type: 'stop',
+    type: "stop",
     stopPrice,
   });
 }
@@ -363,13 +385,13 @@ export async function createCryptoStopLimitOrder(
   side: OrderSide,
   qty: number,
   stopPrice: number,
-  limitPrice: number
+  limitPrice: number,
 ): Promise<AlpacaOrder> {
   return createCryptoOrder(client, {
     symbol,
     qty,
     side,
-    type: 'stop_limit',
+    type: "stop_limit",
     stopPrice,
     limitPrice,
   });
@@ -391,21 +413,21 @@ export async function createCryptoStopLimitOrder(
 export async function buyCryptoNotional(
   client: AlpacaClient,
   symbol: string,
-  dollarAmount: number
+  dollarAmount: number,
 ): Promise<AlpacaOrder> {
   if (dollarAmount <= 0) {
     throw new CryptoOrderError(
-      'Dollar amount must be positive',
-      'INVALID_AMOUNT',
-      symbol
+      "Dollar amount must be positive",
+      "INVALID_AMOUNT",
+      symbol,
     );
   }
 
   return createCryptoOrder(client, {
     symbol,
     notional: dollarAmount,
-    side: 'buy',
-    type: 'market',
+    side: "buy",
+    type: "market",
   });
 }
 
@@ -425,21 +447,21 @@ export async function buyCryptoNotional(
 export async function sellCryptoNotional(
   client: AlpacaClient,
   symbol: string,
-  dollarAmount: number
+  dollarAmount: number,
 ): Promise<AlpacaOrder> {
   if (dollarAmount <= 0) {
     throw new CryptoOrderError(
-      'Dollar amount must be positive',
-      'INVALID_AMOUNT',
-      symbol
+      "Dollar amount must be positive",
+      "INVALID_AMOUNT",
+      symbol,
     );
   }
 
   return createCryptoOrder(client, {
     symbol,
     notional: dollarAmount,
-    side: 'sell',
-    type: 'market',
+    side: "sell",
+    type: "market",
   });
 }
 
@@ -457,12 +479,12 @@ export async function sellCryptoNotional(
  */
 export async function sellAllCrypto(
   client: AlpacaClient,
-  symbol: string
+  symbol: string,
 ): Promise<AlpacaOrder> {
   const normalizedSymbol = normalizeCryptoSymbol(symbol);
 
   log(`Closing entire crypto position for ${normalizedSymbol}`, {
-    type: 'info',
+    type: "info",
     symbol: normalizedSymbol,
   });
 
@@ -475,8 +497,8 @@ export async function sellAllCrypto(
     if (!position) {
       throw new CryptoOrderError(
         `No position found for ${normalizedSymbol}`,
-        'NO_POSITION',
-        normalizedSymbol
+        "NO_POSITION",
+        normalizedSymbol,
       );
     }
 
@@ -485,16 +507,16 @@ export async function sellAllCrypto(
     if (qty === 0) {
       throw new CryptoOrderError(
         `Position for ${normalizedSymbol} has zero quantity`,
-        'ZERO_POSITION',
-        normalizedSymbol
+        "ZERO_POSITION",
+        normalizedSymbol,
       );
     }
 
     // Determine side based on position
-    const side: OrderSide = position.side === 'long' ? 'sell' : 'buy';
+    const side: OrderSide = position.side === "long" ? "sell" : "buy";
 
     log(`Selling ${qty} of ${normalizedSymbol}`, {
-      type: 'info',
+      type: "info",
       symbol: normalizedSymbol,
     });
 
@@ -503,11 +525,11 @@ export async function sellAllCrypto(
       symbol: normalizedSymbol,
       qty,
       side,
-      type: 'market',
+      type: "market",
     });
 
     log(`Crypto position close order created: ${order.id}`, {
-      type: 'info',
+      type: "info",
       symbol: normalizedSymbol,
       metadata: { orderId: order.id },
     });
@@ -518,27 +540,31 @@ export async function sellAllCrypto(
       throw error;
     }
 
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
 
     // Check for 404 (no position)
-    if (errorMessage.includes('404')) {
+    if (errorMessage.includes("404")) {
       throw new CryptoOrderError(
         `No position found for ${normalizedSymbol}`,
-        'NO_POSITION',
-        normalizedSymbol
+        "NO_POSITION",
+        normalizedSymbol,
       );
     }
 
-    log(`Failed to close crypto position for ${normalizedSymbol}: ${errorMessage}`, {
-      type: 'error',
-      symbol: normalizedSymbol,
-    });
+    log(
+      `Failed to close crypto position for ${normalizedSymbol}: ${errorMessage}`,
+      {
+        type: "error",
+        symbol: normalizedSymbol,
+      },
+    );
 
     throw new CryptoOrderError(
       `Failed to close crypto position for ${normalizedSymbol}: ${errorMessage}`,
-      'CLOSE_FAILED',
+      "CLOSE_FAILED",
       normalizedSymbol,
-      error
+      error,
     );
   }
 }
@@ -556,39 +582,47 @@ export async function sellAllCrypto(
  */
 export async function getOpenCryptoOrders(
   client: AlpacaClient,
-  symbols?: string[]
+  symbols?: string[],
 ): Promise<AlpacaOrder[]> {
-  log('Fetching open crypto orders', { type: 'debug' });
+  log("Fetching open crypto orders", { type: "debug" });
 
   try {
     const sdk = client.getSDK();
 
     // Build query params with proper typing
     const queryParams = {
-      status: 'open' as const,
-      symbols: symbols && symbols.length > 0 ? symbols.map(normalizeCryptoSymbol).join(',') : undefined,
+      status: "open" as const,
+      symbols:
+        symbols && symbols.length > 0
+          ? symbols.map(normalizeCryptoSymbol).join(",")
+          : undefined,
     };
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const orders = (await sdk.getOrders(queryParams)) as AlpacaOrder[];
+    const orders = (await sdk.getOrders(queryParams as any)) as AlpacaOrder[];
 
     // Filter to only crypto orders (asset_class === 'crypto')
-    const cryptoOrders = orders.filter((order) => order.asset_class === 'crypto');
+    const cryptoOrders = orders.filter(
+      (order) => order.asset_class === "crypto",
+    );
 
     log(`Found ${cryptoOrders.length} open crypto orders`, {
-      type: 'debug',
+      type: "debug",
       metadata: { count: cryptoOrders.length },
     });
 
     return cryptoOrders;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    log(`Failed to fetch open crypto orders: ${errorMessage}`, { type: 'error' });
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    log(`Failed to fetch open crypto orders: ${errorMessage}`, {
+      type: "error",
+    });
     throw new CryptoOrderError(
       `Failed to fetch open crypto orders: ${errorMessage}`,
-      'FETCH_ORDERS_FAILED',
+      "FETCH_ORDERS_FAILED",
       undefined,
-      error
+      error,
     );
   }
 }
@@ -609,9 +643,9 @@ export async function getOpenCryptoOrders(
  */
 export async function cancelAllCryptoOrders(
   client: AlpacaClient,
-  symbol?: string
+  symbol?: string,
 ): Promise<number> {
-  log(`Canceling ${symbol ? `${symbol} ` : ''}crypto orders`, { type: 'info' });
+  log(`Canceling ${symbol ? `${symbol} ` : ""}crypto orders`, { type: "info" });
 
   try {
     const sdk = client.getSDK();
@@ -621,7 +655,7 @@ export async function cancelAllCryptoOrders(
     const orders = await getOpenCryptoOrders(client, symbols);
 
     if (orders.length === 0) {
-      log('No open crypto orders to cancel', { type: 'info' });
+      log("No open crypto orders to cancel", { type: "info" });
       return 0;
     }
 
@@ -632,21 +666,23 @@ export async function cancelAllCryptoOrders(
         await sdk.cancelOrder(order.id);
         canceledCount++;
       } catch (cancelError) {
-        const msg = cancelError instanceof Error ? cancelError.message : 'Unknown error';
-        log(`Failed to cancel order ${order.id}: ${msg}`, { type: 'warn' });
+        const msg =
+          cancelError instanceof Error ? cancelError.message : "Unknown error";
+        log(`Failed to cancel order ${order.id}: ${msg}`, { type: "warn" });
       }
     }
 
-    log(`Canceled ${canceledCount} crypto orders`, { type: 'info' });
+    log(`Canceled ${canceledCount} crypto orders`, { type: "info" });
     return canceledCount;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    log(`Failed to cancel crypto orders: ${errorMessage}`, { type: 'error' });
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    log(`Failed to cancel crypto orders: ${errorMessage}`, { type: "error" });
     throw new CryptoOrderError(
       `Failed to cancel crypto orders: ${errorMessage}`,
-      'CANCEL_FAILED',
+      "CANCEL_FAILED",
       symbol,
-      error
+      error,
     );
   }
 }
@@ -659,7 +695,7 @@ export async function cancelAllCryptoOrders(
  */
 export function isCryptoPair(symbol: string): boolean {
   const normalized = normalizeCryptoSymbol(symbol);
-  return normalized.includes('/');
+  return normalized.includes("/");
 }
 
 export default {

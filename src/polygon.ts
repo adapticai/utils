@@ -2,8 +2,8 @@
  * Polygon.io calls
  **********************************************************************************/
 
-import { getLogger } from './logger';
-import { fetchWithRetry, hideApiKeyFromurl } from './misc-utils';
+import { getLogger } from "./logger";
+import { fetchWithRetry, hideApiKeyFromurl } from "./misc-utils";
 import {
   PolygonQuote,
   PolygonPriceData,
@@ -13,9 +13,9 @@ import {
   PolygonDailyOpenClose,
   PolygonTradesResponse,
   PolygonErrorResponse,
-} from './types';
-import pLimit from 'p-limit';
-import { validatePolygonApiKey } from './utils/auth-validator';
+} from "./types";
+import pLimit from "p-limit";
+import { validatePolygonApiKey } from "./utils/auth-validator";
 
 // Constants from environment variables
 const POLYGON_API_KEY = process.env.POLYGON_API_KEY;
@@ -36,10 +36,10 @@ const polygonLimit = pLimit(POLYGON_CONCURRENCY_LIMIT);
 
 export const fetchTickerInfo = async (
   symbol: string,
-  options?: { apiKey?: string }
+  options?: { apiKey?: string },
 ): Promise<PolygonTickerInfo | null> => {
   if (!options?.apiKey && !POLYGON_API_KEY) {
-    throw new Error('Polygon API key is missing');
+    throw new Error("Polygon API key is missing");
   }
 
   const apiKey = options?.apiKey || POLYGON_API_KEY!;
@@ -52,11 +52,16 @@ export const fetchTickerInfo = async (
 
   return polygonLimit(async () => {
     try {
-      const response = await fetchWithRetry(`${baseUrl}?${params.toString()}`, {}, 3, 1000);
+      const response = await fetchWithRetry(
+        `${baseUrl}?${params.toString()}`,
+        {},
+        3,
+        1000,
+      );
       const data = await response.json();
 
       // Check for "NOT_FOUND" status and return null
-      if (data.status === 'NOT_FOUND') {
+      if (data.status === "NOT_FOUND") {
         getLogger().warn(`Ticker not found: ${symbol}`);
         return null;
       }
@@ -64,24 +69,26 @@ export const fetchTickerInfo = async (
       // Map the results to the required structure
       const results = data.results;
       if (!results) {
-        throw new Error('No results in Polygon API response');
+        throw new Error("No results in Polygon API response");
       }
 
       // Validate required fields
       const requiredFields = [
-        'active',
-        'currency_name',
-        'locale',
-        'market',
-        'name',
-        'primary_exchange',
-        'ticker',
-        'type'
+        "active",
+        "currency_name",
+        "locale",
+        "market",
+        "name",
+        "primary_exchange",
+        "ticker",
+        "type",
       ];
 
       for (const field of requiredFields) {
         if (results[field] === undefined) {
-          throw new Error(`Missing required field in Polygon API response: ${field}`);
+          throw new Error(
+            `Missing required field in Polygon API response: ${field}`,
+          );
         }
       }
 
@@ -95,28 +102,35 @@ export const fetchTickerInfo = async (
         type: results.type,
         active: results.active,
         currency_name: results.currency_name,
-        description: results.description ?? 'No description available',
+        description: results.description ?? "No description available",
         locale: results.locale,
         market: results.market,
         market_cap: results.market_cap ?? 0,
         name: results.name,
         primary_exchange: results.primary_exchange,
-        share_class_shares_outstanding: results.share_class_shares_outstanding
+        share_class_shares_outstanding: results.share_class_shares_outstanding,
       } as PolygonTickerInfo;
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error occurred";
       const contextualMessage = `Error fetching ticker info for ${symbol}`;
-      
+
       getLogger().error(`${contextualMessage}: ${errorMessage}`, {
         symbol,
-        errorType: error instanceof Error && error.message.includes('AUTH_ERROR') ? 'AUTH_ERROR' : 
-                   error instanceof Error && error.message.includes('RATE_LIMIT') ? 'RATE_LIMIT' : 
-                   error instanceof Error && error.message.includes('NETWORK_ERROR') ? 'NETWORK_ERROR' : 'UNKNOWN',
+        errorType:
+          error instanceof Error && error.message.includes("AUTH_ERROR")
+            ? "AUTH_ERROR"
+            : error instanceof Error && error.message.includes("RATE_LIMIT")
+              ? "RATE_LIMIT"
+              : error instanceof Error &&
+                  error.message.includes("NETWORK_ERROR")
+                ? "NETWORK_ERROR"
+                : "UNKNOWN",
         url: hideApiKeyFromurl(`${baseUrl}?${params.toString()}`),
-        source: 'PolygonAPI.fetchTickerInfo',
-        timestamp: new Date().toISOString()
+        source: "PolygonAPI.fetchTickerInfo",
+        timestamp: new Date().toISOString(),
       });
-      
+
       throw new Error(`${contextualMessage}: ${errorMessage}`);
     }
   });
@@ -131,9 +145,12 @@ export const fetchTickerInfo = async (
  * @returns {Promise<PolygonQuote>} The last trade information.
  */
 
-export const fetchLastTrade = async (symbol: string, options?: { apiKey?: string }): Promise<PolygonQuote> => {
+export const fetchLastTrade = async (
+  symbol: string,
+  options?: { apiKey?: string },
+): Promise<PolygonQuote> => {
   if (!options?.apiKey && !POLYGON_API_KEY) {
-    throw new Error('Polygon API key is missing');
+    throw new Error("Polygon API key is missing");
   }
 
   const apiKey = options?.apiKey || POLYGON_API_KEY!;
@@ -146,16 +163,27 @@ export const fetchLastTrade = async (symbol: string, options?: { apiKey?: string
 
   return polygonLimit(async () => {
     try {
-      const response = await fetchWithRetry(`${baseUrl}?${params.toString()}`, {}, 3, 1000);
+      const response = await fetchWithRetry(
+        `${baseUrl}?${params.toString()}`,
+        {},
+        3,
+        1000,
+      );
       const data = await response.json();
 
-      if (data.status !== 'OK' || !data.results) {
-        throw new Error(`Polygon.io API error: ${data.status || 'No results'} ${data.error || ''}`);
+      if (data.status !== "OK" || !data.results) {
+        throw new Error(
+          `Polygon.io API error: ${data.status || "No results"} ${data.error || ""}`,
+        );
       }
 
       const { p: price, s: vol, t: timestamp } = data.results;
-      if (typeof price !== 'number' || typeof vol !== 'number' || typeof timestamp !== 'number') {
-        throw new Error('Invalid trade data received from Polygon.io API');
+      if (
+        typeof price !== "number" ||
+        typeof vol !== "number" ||
+        typeof timestamp !== "number"
+      ) {
+        throw new Error("Invalid trade data received from Polygon.io API");
       }
 
       return {
@@ -164,19 +192,26 @@ export const fetchLastTrade = async (symbol: string, options?: { apiKey?: string
         time: new Date(Math.floor(timestamp / 1000000)), // Convert nanoseconds to milliseconds
       } as PolygonQuote;
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error occurred";
       const contextualMessage = `Error fetching last trade for ${symbol}`;
-      
+
       getLogger().error(`${contextualMessage}: ${errorMessage}`, {
         symbol,
-        errorType: error instanceof Error && error.message.includes('AUTH_ERROR') ? 'AUTH_ERROR' : 
-                   error instanceof Error && error.message.includes('RATE_LIMIT') ? 'RATE_LIMIT' : 
-                   error instanceof Error && error.message.includes('NETWORK_ERROR') ? 'NETWORK_ERROR' : 'UNKNOWN',
+        errorType:
+          error instanceof Error && error.message.includes("AUTH_ERROR")
+            ? "AUTH_ERROR"
+            : error instanceof Error && error.message.includes("RATE_LIMIT")
+              ? "RATE_LIMIT"
+              : error instanceof Error &&
+                  error.message.includes("NETWORK_ERROR")
+                ? "NETWORK_ERROR"
+                : "UNKNOWN",
         url: hideApiKeyFromurl(`${baseUrl}?${params.toString()}`),
-        source: 'PolygonAPI.fetchLastTrade',
-        timestamp: new Date().toISOString()
+        source: "PolygonAPI.fetchLastTrade",
+        timestamp: new Date().toISOString(),
       });
-      
+
       throw new Error(`${contextualMessage}: ${errorMessage}`);
     }
   });
@@ -206,25 +241,32 @@ export const fetchPrices = async (
     timespan: string;
     limit?: number;
   },
-  options?: { apiKey?: string }
+  options?: { apiKey?: string },
 ): Promise<PolygonPriceData[]> => {
   if (!options?.apiKey && !POLYGON_API_KEY) {
-    throw new Error('Polygon API key is missing');
+    throw new Error("Polygon API key is missing");
   }
 
   const apiKey = options?.apiKey || POLYGON_API_KEY!;
   validatePolygonApiKey(apiKey);
 
-  const { ticker, start, end = Date.now().valueOf(), multiplier, timespan, limit = 1000 } = params;
+  const {
+    ticker,
+    start,
+    end = Date.now().valueOf(),
+    multiplier,
+    timespan,
+    limit = 1000,
+  } = params;
 
   const baseUrl = `https://api.polygon.io/v2/aggs/ticker/${encodeURIComponent(
-    ticker
+    ticker,
   )}/range/${multiplier}/${timespan}/${start}/${end}`;
 
   const urlParams = new URLSearchParams({
     apiKey,
-    adjusted: 'true',
-    sort: 'asc',
+    adjusted: "true",
+    sort: "asc",
     limit: limit.toString(),
   });
 
@@ -238,8 +280,10 @@ export const fetchPrices = async (
         const response = await fetchWithRetry(nextUrl, {}, 3, 1000);
         const data = await response.json();
 
-        if (data.status !== 'OK') {
-          throw new Error(`Polygon.io API responded with status: ${data.status}`);
+        if (data.status !== "OK") {
+          throw new Error(
+            `Polygon.io API responded with status: ${data.status}`,
+          );
         }
 
         if (data.results) {
@@ -247,20 +291,20 @@ export const fetchPrices = async (
         }
 
         // Check if there's a next page and append API key
-        nextUrl = data.next_url ? `${data.next_url}&apiKey=${apiKey}` : '';
+        nextUrl = data.next_url ? `${data.next_url}&apiKey=${apiKey}` : "";
       }
 
       return allResults.map((entry: RawPolygonPriceData) => ({
-        date: new Date(entry.t).toLocaleString('en-US', {
-          year: 'numeric',
-          month: 'short',
-          day: '2-digit',
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-          timeZone: 'America/New_York',
-          timeZoneName: 'short',
-          hourCycle: 'h23',
+        date: new Date(entry.t).toLocaleString("en-US", {
+          year: "numeric",
+          month: "short",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          timeZone: "America/New_York",
+          timeZoneName: "short",
+          hourCycle: "h23",
         }),
         timeStamp: entry.t,
         open: entry.o,
@@ -272,18 +316,25 @@ export const fetchPrices = async (
         trades: entry.n,
       })) as PolygonPriceData[];
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error occurred";
       const contextualMessage = `Error fetching price data for ${ticker}`;
-      
+
       getLogger().error(`${contextualMessage}: ${errorMessage}`, {
         ticker,
-        errorType: error instanceof Error && error.message.includes('AUTH_ERROR') ? 'AUTH_ERROR' : 
-                   error instanceof Error && error.message.includes('RATE_LIMIT') ? 'RATE_LIMIT' : 
-                   error instanceof Error && error.message.includes('NETWORK_ERROR') ? 'NETWORK_ERROR' : 'UNKNOWN',
-        source: 'PolygonAPI.fetchPrices',
-        timestamp: new Date().toISOString()
+        errorType:
+          error instanceof Error && error.message.includes("AUTH_ERROR")
+            ? "AUTH_ERROR"
+            : error instanceof Error && error.message.includes("RATE_LIMIT")
+              ? "RATE_LIMIT"
+              : error instanceof Error &&
+                  error.message.includes("NETWORK_ERROR")
+                ? "NETWORK_ERROR"
+                : "UNKNOWN",
+        source: "PolygonAPI.fetchPrices",
+        timestamp: new Date().toISOString(),
       });
-      
+
       throw new Error(`${contextualMessage}: ${errorMessage}`);
     }
   });
@@ -297,7 +348,7 @@ export const fetchPrices = async (
 
 export function analysePolygonPriceData(priceData: PolygonPriceData[]): string {
   if (!priceData || priceData.length === 0) {
-    return 'No price data available for analysis.';
+    return "No price data available for analysis.";
   }
 
   // Parse the dates into Date objects
@@ -314,20 +365,28 @@ export function analysePolygonPriceData(priceData: PolygonPriceData[]): string {
   const endTime = parsedData[parsedData.length - 1].date;
 
   // Calculate the total time in hours
-  const totalTimeInHours = (endTime.getTime() - startTime.getTime()) / (1000 * 60 * 60);
+  const totalTimeInHours =
+    (endTime.getTime() - startTime.getTime()) / (1000 * 60 * 60);
 
   // Calculate the interval between data points
   const intervals = parsedData
     .slice(1)
-    .map((_, i) => (parsedData[i + 1].date.getTime() - parsedData[i].date.getTime()) / 1000); // in seconds
+    .map(
+      (_, i) =>
+        (parsedData[i + 1].date.getTime() - parsedData[i].date.getTime()) /
+        1000,
+    ); // in seconds
   const avgInterval =
-    intervals.length > 0 ? intervals.reduce((sum, interval) => sum + interval, 0) / intervals.length : 0;
+    intervals.length > 0
+      ? intervals.reduce((sum, interval) => sum + interval, 0) /
+        intervals.length
+      : 0;
 
   // Format the report
   const report = `
 Report:
-* Start time of data (US Eastern): ${startTime.toLocaleString('en-US', { timeZone: 'America/New_York' })}
-* End time of data (US Eastern): ${endTime.toLocaleString('en-US', { timeZone: 'America/New_York' })}
+* Start time of data (US Eastern): ${startTime.toLocaleString("en-US", { timeZone: "America/New_York" })}
+* End time of data (US Eastern): ${endTime.toLocaleString("en-US", { timeZone: "America/New_York" })}
 * Number of data points: ${priceData.length}
 * Average interval between data points (seconds): ${avgInterval.toFixed(2)}
   `;
@@ -335,7 +394,7 @@ Report:
   return report.trim();
 }
 
-import { formatCurrency } from './format-tools';
+import { formatCurrency } from "./format-tools";
 
 /**
  * Fetches grouped daily price data for a specific date.
@@ -353,25 +412,30 @@ export const fetchGroupedDaily = async (
     apiKey?: string;
     adjusted?: boolean;
     includeOTC?: boolean;
-  }
+  },
 ): Promise<PolygonGroupedDailyResponse> => {
   if (!options?.apiKey && !POLYGON_API_KEY) {
-    throw new Error('Polygon API key is missing');
+    throw new Error("Polygon API key is missing");
   }
 
   const baseUrl = `https://api.polygon.io/v2/aggs/grouped/locale/us/market/stocks/${date}`;
   const params = new URLSearchParams({
     apiKey: options?.apiKey || POLYGON_API_KEY!,
-    adjusted: options?.adjusted !== false ? 'true' : 'false',
-    include_otc: options?.includeOTC ? 'true' : 'false',
+    adjusted: options?.adjusted !== false ? "true" : "false",
+    include_otc: options?.includeOTC ? "true" : "false",
   });
 
   return polygonLimit(async () => {
     try {
-      const response = await fetchWithRetry(`${baseUrl}?${params.toString()}`, {}, 3, 1000);
+      const response = await fetchWithRetry(
+        `${baseUrl}?${params.toString()}`,
+        {},
+        3,
+        1000,
+      );
       const data = await response.json();
 
-      if (data.status !== 'OK') {
+      if (data.status !== "OK") {
         throw new Error(`Polygon.io API responded with status: ${data.status}`);
       }
 
@@ -394,19 +458,26 @@ export const fetchGroupedDaily = async (
         })),
       } as PolygonGroupedDailyResponse;
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error occurred";
       const contextualMessage = `Error fetching grouped daily data for ${date}`;
-      
+
       getLogger().error(`${contextualMessage}: ${errorMessage}`, {
         date,
-        errorType: error instanceof Error && error.message.includes('AUTH_ERROR') ? 'AUTH_ERROR' : 
-                   error instanceof Error && error.message.includes('RATE_LIMIT') ? 'RATE_LIMIT' : 
-                   error instanceof Error && error.message.includes('NETWORK_ERROR') ? 'NETWORK_ERROR' : 'UNKNOWN',
+        errorType:
+          error instanceof Error && error.message.includes("AUTH_ERROR")
+            ? "AUTH_ERROR"
+            : error instanceof Error && error.message.includes("RATE_LIMIT")
+              ? "RATE_LIMIT"
+              : error instanceof Error &&
+                  error.message.includes("NETWORK_ERROR")
+                ? "NETWORK_ERROR"
+                : "UNKNOWN",
         url: hideApiKeyFromurl(`${baseUrl}?${params.toString()}`),
-        source: 'PolygonAPI.fetchGroupedDaily',
-        timestamp: new Date().toISOString()
+        source: "PolygonAPI.fetchGroupedDaily",
+        timestamp: new Date().toISOString(),
       });
-      
+
       throw new Error(`${contextualMessage}: ${errorMessage}`);
     }
   });
@@ -419,12 +490,14 @@ export const fetchGroupedDaily = async (
  */
 
 export function formatPriceData(priceData: PolygonPriceData[]): string {
-  if (!priceData || priceData.length === 0) return 'No price data available';
+  if (!priceData || priceData.length === 0) return "No price data available";
 
   return priceData
     .map((d) => {
       // For daily data, remove the time portion if it's all zeros
-      const dateStr = d.date.includes(', 00:00:00') ? d.date.split(', 00:00:00')[0] : d.date;
+      const dateStr = d.date.includes(", 00:00:00")
+        ? d.date.split(", 00:00:00")[0]
+        : d.date;
 
       return [
         dateStr,
@@ -433,34 +506,34 @@ export function formatPriceData(priceData: PolygonPriceData[]): string {
         `L: ${formatCurrency(d.low)}`,
         `C: ${formatCurrency(d.close)}`,
         `Vol: ${d.vol}`,
-      ].join(' | ');
+      ].join(" | ");
     })
-    .join('\n');
+    .join("\n");
 }
 
 export const fetchDailyOpenClose = async (
-/**
- * Fetches the daily open and close data for a given stock ticker.
- * @param {string} symbol - The stock ticker symbol to fetch data for.
- * @param {Date} [date=new Date()] - The date to fetch data for.
- * @param {Object} [options] - Optional parameters.
- * @param {string} [options.apiKey] - The API key to use for the request.
- * @param {boolean} [options.adjusted] - Whether to adjust the data.
- * @returns {Promise<PolygonDailyOpenClose>} The daily open and close data.
- */
+  /**
+   * Fetches the daily open and close data for a given stock ticker.
+   * @param {string} symbol - The stock ticker symbol to fetch data for.
+   * @param {Date} [date=new Date()] - The date to fetch data for.
+   * @param {Object} [options] - Optional parameters.
+   * @param {string} [options.apiKey] - The API key to use for the request.
+   * @param {boolean} [options.adjusted] - Whether to adjust the data.
+   * @returns {Promise<PolygonDailyOpenClose>} The daily open and close data.
+   */
 
   symbol: string,
   date: Date = new Date(),
   options?: {
     apiKey?: string;
     adjusted?: boolean;
-  }
+  },
 ): Promise<PolygonDailyOpenClose> => {
   if (!options?.apiKey && !POLYGON_API_KEY) {
-    throw new Error('Polygon API key is missing');
+    throw new Error("Polygon API key is missing");
   }
 
-  const formattedDate = date.toISOString().split('T')[0]; // Format as YYYY-MM-DD
+  const formattedDate = date.toISOString().split("T")[0]; // Format as YYYY-MM-DD
   const baseUrl = `https://api.polygon.io/v1/open-close/${encodeURIComponent(symbol)}/${formattedDate}`;
   const params = new URLSearchParams({
     apiKey: options?.apiKey || POLYGON_API_KEY!,
@@ -468,18 +541,25 @@ export const fetchDailyOpenClose = async (
   });
 
   return polygonLimit(async () => {
-    const response = await fetchWithRetry(`${baseUrl}?${params.toString()}`, {}, 3, 1000);
+    const response = await fetchWithRetry(
+      `${baseUrl}?${params.toString()}`,
+      {},
+      3,
+      1000,
+    );
     const data = await response.json();
 
-    if (data.status !== 'OK') {
-      throw new Error(`Failed to fetch daily open/close data for ${symbol}: ${data.status}`);
+    if (data.status !== "OK") {
+      throw new Error(
+        `Failed to fetch daily open/close data for ${symbol}: ${data.status}`,
+      );
     }
 
     return data;
   });
 };
 
-import { getLastFullTradingDate } from './market-time';
+import { getLastFullTradingDate } from "./market-time";
 
 /**
  * Gets the previous close price for a given stock ticker.
@@ -488,9 +568,17 @@ import { getLastFullTradingDate } from './market-time';
  * @returns {Promise<{ close: number; date: Date }>} The previous close price and date.
  */
 
-export async function getPreviousClose(symbol: string, referenceDate?: Date, options?: { apiKey?: string }): Promise<{ close: number; date: Date }> {
+export async function getPreviousClose(
+  symbol: string,
+  referenceDate?: Date,
+  options?: { apiKey?: string },
+): Promise<{ close: number; date: Date }> {
   const previousDate = getLastFullTradingDate(referenceDate).date;
-  const lastOpenClose = await fetchDailyOpenClose(symbol, previousDate, options);
+  const lastOpenClose = await fetchDailyOpenClose(
+    symbol,
+    previousDate,
+    options,
+  );
   if (!lastOpenClose) {
     throw new Error(`Could not fetch last trade price for ${symbol}`);
   }
@@ -525,13 +613,13 @@ export const fetchTrades = async (
     timestampgte?: string | number;
     timestamplt?: string | number;
     timestamplte?: string | number;
-    order?: 'asc' | 'desc';
+    order?: "asc" | "desc";
     limit?: number;
     sort?: string;
-  }
+  },
 ): Promise<PolygonTradesResponse> => {
   if (!options?.apiKey && !POLYGON_API_KEY) {
-    throw new Error('Polygon API key is missing');
+    throw new Error("Polygon API key is missing");
   }
 
   const baseUrl = `https://api.polygon.io/v3/trades/${encodeURIComponent(symbol)}`;
@@ -540,42 +628,56 @@ export const fetchTrades = async (
   });
 
   // Add optional parameters if they exist
-  if (options?.timestamp) params.append('timestamp', options.timestamp.toString());
-  if (options?.timestampgt) params.append('timestamp.gt', options.timestampgt.toString());
-  if (options?.timestampgte) params.append('timestamp.gte', options.timestampgte.toString());
-  if (options?.timestamplt) params.append('timestamp.lt', options.timestamplt.toString());
-  if (options?.timestamplte) params.append('timestamp.lte', options.timestamplte.toString());
-  if (options?.order) params.append('order', options.order);
-  if (options?.limit) params.append('limit', options.limit.toString());
-  if (options?.sort) params.append('sort', options.sort);
+  if (options?.timestamp)
+    params.append("timestamp", options.timestamp.toString());
+  if (options?.timestampgt)
+    params.append("timestamp.gt", options.timestampgt.toString());
+  if (options?.timestampgte)
+    params.append("timestamp.gte", options.timestampgte.toString());
+  if (options?.timestamplt)
+    params.append("timestamp.lt", options.timestamplt.toString());
+  if (options?.timestamplte)
+    params.append("timestamp.lte", options.timestamplte.toString());
+  if (options?.order) params.append("order", options.order);
+  if (options?.limit) params.append("limit", options.limit.toString());
+  if (options?.sort) params.append("sort", options.sort);
 
   return polygonLimit(async () => {
     const url = `${baseUrl}?${params.toString()}`;
     try {
       getLogger().info(`[DEBUG] Fetching trades for ${symbol} from ${url}`);
       const response = await fetchWithRetry(url, {}, 3, 1000);
-      const data = await response.json() as PolygonTradesResponse | PolygonErrorResponse;
+      const data = (await response.json()) as
+        | PolygonTradesResponse
+        | PolygonErrorResponse;
 
-      if ('message' in data) {
+      if ("message" in data) {
         // This is an error response
         throw new Error(`Polygon API Error: ${data.message}`);
       }
 
       return data;
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error occurred";
       const contextualMessage = `Error fetching trades for ${symbol}`;
-      
+
       getLogger().error(`${contextualMessage}: ${errorMessage}`, {
         symbol,
-        errorType: error instanceof Error && error.message.includes('AUTH_ERROR') ? 'AUTH_ERROR' : 
-                   error instanceof Error && error.message.includes('RATE_LIMIT') ? 'RATE_LIMIT' : 
-                   error instanceof Error && error.message.includes('NETWORK_ERROR') ? 'NETWORK_ERROR' : 'UNKNOWN',
+        errorType:
+          error instanceof Error && error.message.includes("AUTH_ERROR")
+            ? "AUTH_ERROR"
+            : error instanceof Error && error.message.includes("RATE_LIMIT")
+              ? "RATE_LIMIT"
+              : error instanceof Error &&
+                  error.message.includes("NETWORK_ERROR")
+                ? "NETWORK_ERROR"
+                : "UNKNOWN",
         url: hideApiKeyFromurl(url),
-        source: 'PolygonAPI.fetchTrades',
-        timestamp: new Date().toISOString()
+        source: "PolygonAPI.fetchTrades",
+        timestamp: new Date().toISOString(),
       });
-      
+
       throw new Error(`${contextualMessage}: ${errorMessage}`);
     }
   });

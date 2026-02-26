@@ -2,7 +2,7 @@
  * Zod schemas for Polygon.io API response validation.
  * Validates API responses against expected shapes to catch breaking API changes early.
  */
-import { z } from 'zod';
+import { z } from "zod";
 
 // ===== Raw Price Data Schemas =====
 
@@ -26,9 +26,9 @@ export const PolygonTickerInfoSchema = z.object({
   active: z.boolean(),
   currency_name: z.string(),
   delisted_utc: z.string().optional(),
-  description: z.string().optional().default('No description available'),
+  description: z.string().optional().default("No description available"),
   locale: z.string(),
-  market: z.enum(['stocks', 'crypto', 'indices', 'fx', 'otc']),
+  market: z.enum(["stocks", "crypto", "indices", "fx", "otc"]),
   market_cap: z.number().optional().default(0),
   name: z.string(),
   primary_exchange: z.string(),
@@ -92,7 +92,7 @@ export const PolygonTradeSchema = z.object({
 
 /** Schema for Polygon trades response */
 export const PolygonTradesResponseSchema = z.object({
-  status: z.literal('OK'),
+  status: z.literal("OK"),
   request_id: z.string(),
   next_url: z.string().optional(),
   results: z.array(PolygonTradeSchema),

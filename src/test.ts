@@ -1,10 +1,12 @@
-import { createAlpacaTradingAPI } from './index';
-import { TradeUpdate, AlpacaCredentials } from './types/alpaca-types';
-import { marketDataAPI, AlpacaMarketDataAPI } from './alpaca-market-data-api';
-import { formatCurrency, formatNumber } from './format-tools';
+import { createAlpacaTradingAPI } from "./index";
+import { TradeUpdate, AlpacaCredentials } from "./types/alpaca-types";
+import { marketDataAPI, AlpacaMarketDataAPI } from "./alpaca-market-data-api";
+import { formatCurrency, formatNumber } from "./format-tools";
 
 const log = (message: string) => {
-  console.log(`[${new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })}] ${message}`);
+  console.log(
+    `[${new Date().toLocaleString("en-US", { timeZone: "America/New_York" })}] ${message}`,
+  );
 };
 
 // async function testCreateEquitiesTrade() {
@@ -27,7 +29,7 @@ const log = (message: string) => {
 
 //     // Create a new instance of the trading API
 //     const alpacaAPI = createAlpacaTradingAPI(credentials);
-    
+
 //     // Get current account details
 //     const accountDetails = await alpacaAPI.getAccountDetails();
 //     log(`Account equity: $${parseFloat(accountDetails.equity).toFixed(2)}`);
@@ -185,7 +187,7 @@ const log = (message: string) => {
 //     log('\n=== Checking created orders ===');
 //     const orders = await alpacaAPI.getOrders({ status: 'open', limit: 20 });
 //     log(`Found ${orders.length} open orders`);
-    
+
 //     orders.forEach((order, index) => {
 //       log(`Order ${index + 1}: ${order.order_class} ${order.type} ${order.side} ${order.qty} ${order.symbol} @ $${order.limit_price || 'market'}`);
 //       if (order.legs && order.legs.length > 0) {
@@ -261,42 +263,50 @@ const log = (message: string) => {
 
 async function testPreMarketData() {
   try {
-    log('Starting pre-market data test for SPY (9:00am-9:30am, July 1, 2025)...');
+    log(
+      "Starting pre-market data test for SPY (9:00am-9:30am, July 1, 2025)...",
+    );
     // Set up the time range in America/New_York, convert to UTC ISO strings
-    const symbol = 'SPY';
-    const nyTimeZone = 'America/New_York';
+    const symbol = "SPY";
+    const nyTimeZone = "America/New_York";
     // 9:00am and 9:30am in NY time
-    const startNY = new Date('2025-07-01T09:00:00-04:00');
-    const endNY = new Date('2025-07-01T09:30:00-04:00');
+    const startNY = new Date("2025-07-01T09:00:00-04:00");
+    const endNY = new Date("2025-07-01T09:30:00-04:00");
     const startUTC = startNY.toISOString();
     const endUTC = endNY.toISOString();
 
     const barsResponse = await marketDataAPI.getHistoricalBars({
       symbols: [symbol],
-      timeframe: '1Min',
+      timeframe: "1Min",
       start: startUTC,
       end: endUTC,
       limit: 1000,
     });
     const bars = barsResponse.bars[symbol] || [];
-    log(`Fetched ${bars.length} 1-min bars for SPY from 9:00am to 9:30am (NY) on 2025-07-01.`);
+    log(
+      `Fetched ${bars.length} 1-min bars for SPY from 9:00am to 9:30am (NY) on 2025-07-01.`,
+    );
     if (bars.length === 0) {
-      log('No pre-market bars returned.');
+      log("No pre-market bars returned.");
       return;
     }
     // Print each bar
     bars.forEach((bar, i) => {
-      const barTime = new Date(bar.t).toLocaleString('en-US', { timeZone: nyTimeZone });
+      const barTime = new Date(bar.t).toLocaleString("en-US", {
+        timeZone: nyTimeZone,
+      });
       log(
-        `Bar ${i + 1}: ${barTime} | O: ${formatCurrency(bar.o)} H: ${formatCurrency(bar.h)} L: ${formatCurrency(bar.l)} C: ${formatCurrency(bar.c)} V: ${formatNumber(bar.v)} VWAP: ${formatCurrency(bar.vw)} N: ${bar.n}`
+        `Bar ${i + 1}: ${barTime} | O: ${formatCurrency(bar.o)} H: ${formatCurrency(bar.h)} L: ${formatCurrency(bar.l)} C: ${formatCurrency(bar.c)} V: ${formatNumber(bar.v)} VWAP: ${formatCurrency(bar.vw)} N: ${bar.n}`,
       );
     });
     // Print summary
     const summary = AlpacaMarketDataAPI.analyzeBars(bars);
     if (summary) log(`Summary: ${summary}`);
-    log('Pre-market data test complete.');
+    log("Pre-market data test complete.");
   } catch (error) {
-    log(`❌ Error in testPreMarketData: ${error instanceof Error ? error.message : error}`);
+    log(
+      `❌ Error in testPreMarketData: ${error instanceof Error ? error.message : error}`,
+    );
   }
 }
 

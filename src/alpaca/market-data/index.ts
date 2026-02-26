@@ -11,9 +11,9 @@ export {
   getSpreads,
   hasGoodLiquidity,
   QuoteError,
-} from './quotes';
+} from "./quotes";
 
-export type { SpreadInfo } from './quotes';
+export type { SpreadInfo } from "./quotes";
 
 // Bars exports
 export {
@@ -27,9 +27,9 @@ export {
   getAverageDailyVolume,
   hasSufficientVolume,
   BarError,
-} from './bars';
+} from "./bars";
 
-export type { GetBarsParams, BarAnalysis } from './bars';
+export type { GetBarsParams, BarAnalysis } from "./bars";
 
 // Trades exports
 export {
@@ -40,9 +40,9 @@ export {
   getCurrentPrices,
   getTradeVolume,
   TradeError,
-} from './trades';
+} from "./trades";
 
-export type { GetHistoricalTradesParams } from './trades';
+export type { GetHistoricalTradesParams } from "./trades";
 
 // News exports
 export {
@@ -52,6 +52,6 @@ export {
   getNewsForSymbols,
   getSymbolSentiment,
   NewsError,
-} from './news';
+} from "./news";
 
-export type { GetNewsParams } from './news';
+export type { GetNewsParams } from "./news";

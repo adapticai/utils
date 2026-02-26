@@ -38,8 +38,8 @@
  * | WebSocket (Market Data) | ws | Persistent | Long-lived |
  */
 
-import http from 'http';
-import https from 'https';
+import http from "http";
+import https from "https";
 
 /**
  * Default keep-alive configuration values.
@@ -116,7 +116,7 @@ export interface ConnectionPoolStatus {
  */
 export function getAgentPoolStatus(
   agent: http.Agent | https.Agent,
-  name: string = 'default'
+  name: string = "default",
 ): ConnectionPoolStatus {
   const sockets = agent.sockets || {};
   const freeSockets = agent.freeSockets || {};
@@ -124,20 +124,21 @@ export function getAgentPoolStatus(
 
   const activeSockets = Object.values(sockets).reduce(
     (sum, arr) => sum + (arr ? arr.length : 0),
-    0
+    0,
   );
   const freeSocketCount = Object.values(freeSockets).reduce(
     (sum, arr) => sum + (arr ? arr.length : 0),
-    0
+    0,
   );
   const pendingRequests = Object.values(requests).reduce(
     (sum, arr) => sum + (arr ? arr.length : 0),
-    0
+    0,
   );
 
   return {
     name,
-    keepAlive: (agent as http.Agent & { keepAlive?: boolean }).keepAlive ?? false,
+    keepAlive:
+      (agent as http.Agent & { keepAlive?: boolean }).keepAlive ?? false,
     activeSockets,
     freeSockets: freeSocketCount,
     pendingRequests,
@@ -159,7 +160,7 @@ export function verifyFetchKeepAlive(): {
   keepAliveExpected: boolean;
 } {
   const nodeVersion = process.version;
-  const majorVersion = parseInt(nodeVersion.slice(1).split('.')[0], 10);
+  const majorVersion = parseInt(nodeVersion.slice(1).split(".")[0], 10);
 
   // Node.js >= 18 has built-in fetch via undici
   // Node.js >= 20 has mature undici with connection pooling

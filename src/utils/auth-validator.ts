@@ -13,17 +13,25 @@ export function validateAlpacaCredentials(auth: {
   apiSecret: string;
   isPaper?: boolean;
 }): void {
-  if (!auth.apiKey || typeof auth.apiKey !== 'string' || auth.apiKey.trim().length === 0) {
-    throw new Error('Invalid Alpaca API key: must be a non-empty string');
+  if (
+    !auth.apiKey ||
+    typeof auth.apiKey !== "string" ||
+    auth.apiKey.trim().length === 0
+  ) {
+    throw new Error("Invalid Alpaca API key: must be a non-empty string");
   }
 
-  if (!auth.apiSecret || typeof auth.apiSecret !== 'string' || auth.apiSecret.trim().length === 0) {
-    throw new Error('Invalid Alpaca API secret: must be a non-empty string');
+  if (
+    !auth.apiSecret ||
+    typeof auth.apiSecret !== "string" ||
+    auth.apiSecret.trim().length === 0
+  ) {
+    throw new Error("Invalid Alpaca API secret: must be a non-empty string");
   }
 
   // Alpaca keys are typically 20+ characters
   if (auth.apiKey.length < 10) {
-    throw new Error('Alpaca API key appears to be too short');
+    throw new Error("Alpaca API key appears to be too short");
   }
 }
 
@@ -33,8 +41,8 @@ export function validateAlpacaCredentials(auth: {
  * @throws {Error} If API key is invalid or missing
  */
 export function validatePolygonApiKey(apiKey: string): void {
-  if (!apiKey || typeof apiKey !== 'string' || apiKey.trim().length === 0) {
-    throw new Error('Invalid Polygon API key: must be a non-empty string');
+  if (!apiKey || typeof apiKey !== "string" || apiKey.trim().length === 0) {
+    throw new Error("Invalid Polygon API key: must be a non-empty string");
   }
 }
 
@@ -44,7 +52,9 @@ export function validatePolygonApiKey(apiKey: string): void {
  * @throws {Error} If API key is invalid or missing
  */
 export function validateAlphaVantageApiKey(apiKey: string): void {
-  if (!apiKey || typeof apiKey !== 'string' || apiKey.trim().length === 0) {
-    throw new Error('Invalid Alpha Vantage API key: must be a non-empty string');
+  if (!apiKey || typeof apiKey !== "string" || apiKey.trim().length === 0) {
+    throw new Error(
+      "Invalid Alpha Vantage API key: must be a non-empty string",
+    );
   }
 }

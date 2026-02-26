@@ -2,16 +2,21 @@
  * Base Stream Module
  * Abstract base class for all Alpaca WebSocket streams
  */
-import { EventEmitter } from 'events';
-import WebSocket from 'ws';
-import { log as baseLog } from '../../logging';
-import { LogOptions } from '../../types/logging-types';
-import { AlpacaClient } from '../client';
+import { EventEmitter } from "events";
+import WebSocket from "ws";
+import { log as baseLog } from "../../logging";
+import { LogOptions } from "../../types/logging-types";
+import { AlpacaClient } from "../client";
 
 /**
  * Stream connection state
  */
-export type StreamState = 'disconnected' | 'connecting' | 'connected' | 'authenticated' | 'error';
+export type StreamState =
+  | "disconnected"
+  | "connecting"
+  | "connected"
+  | "authenticated"
+  | "error";
 
 /**
  * Stream configuration options
@@ -58,13 +63,17 @@ export interface SubscriptionRequest {
 export abstract class BaseStream extends EventEmitter {
   protected client: AlpacaClient;
   protected ws: WebSocket | null = null;
-  protected state: StreamState = 'disconnected';
+  protected state: StreamState = "disconnected";
   protected config: StreamConfig;
   protected reconnectAttempts: number = 0;
   protected reconnectTimer: NodeJS.Timeout | null = null;
   protected heartbeatTimer: NodeJS.Timeout | null = null;
   protected connectionTimer: NodeJS.Timeout | null = null;
-  protected subscriptions: SubscriptionRequest = { trades: [], quotes: [], bars: [] };
+  protected subscriptions: SubscriptionRequest = {
+    trades: [],
+    quotes: [],
+    bars: [],
+  };
   protected pendingSubscriptions: SubscriptionRequest | null = null;
 
   /** Name of the stream for logging */
@@ -82,7 +91,7 @@ export abstract class BaseStream extends EventEmitter {
   /**
    * Log a message with stream context
    */
-  protected log(message: string, options: LogOptions = { type: 'info' }): void {
+  protected log(message: string, options: LogOptions = { type: "info" }): void {
     baseLog(message, { ...options, source: this.streamName });
   }
 
@@ -97,7 +106,9 @@ export abstract class BaseStream extends EventEmitter {
    * Check if stream is connected and authenticated
    */
   isStreamConnected(): boolean {
-    return this.state === 'authenticated' && this.ws?.readyState === WebSocket.OPEN;
+    return (
+      this.state === "authenticated" && this.ws?.readyState === WebSocket.OPEN
+    );
   }
 
   /**
@@ -111,32 +122,32 @@ export abstract class BaseStream extends EventEmitter {
    * Connect to the WebSocket stream
    */
   async connect(): Promise<void> {
-    if (this.state === 'connecting' || this.state === 'authenticated') {
-      this.log('Already connected or connecting', { type: 'debug' });
+    if (this.state === "connecting" || this.state === "authenticated") {
+      this.log("Already connected or connecting", { type: "debug" });
       return;
     }
 
     return new Promise((resolve, reject) => {
-      this.state = 'connecting';
-      this.log('Connecting to stream...');
+      this.state = "connecting";
+      this.log("Connecting to stream...");
 
       const url = this.getStreamUrl();
       this.ws = new WebSocket(url);
 
       // Set connection timeout
       this.connectionTimer = setTimeout(() => {
-        if (this.state === 'connecting') {
-          this.log('Connection timeout', { type: 'error' });
+        if (this.state === "connecting") {
+          this.log("Connection timeout", { type: "error" });
           this.ws?.terminate();
-          this.state = 'error';
-          reject(new Error('Connection timeout'));
+          this.state = "error";
+          reject(new Error("Connection timeout"));
         }
       }, this.config.connectionTimeout);
 
-      this.ws.on('open', () => {
+      this.ws.on("open", () => {
         this.clearConnectionTimer();
-        this.state = 'connected';
-        this.log('WebSocket connected');
+        this.state = "connected";
+        this.log("WebSocket connected");
         this.authenticate()
           .then(() => {
             this.startHeartbeat();
@@ -144,23 +155,25 @@ export abstract class BaseStream extends EventEmitter {
             resolve();
           })
           .catch((error) => {
-            this.log(`Authentication failed: ${error.message}`, { type: 'error' });
+            this.log(`Authentication failed: ${error.message}`, {
+              type: "error",
+            });
             this.ws?.close();
             reject(error);
           });
       });
 
-      this.ws.on('message', (data: WebSocket.Data) => {
+      this.ws.on("message", (data: WebSocket.Data) => {
         this.handleMessage(data);
       });
 
-      this.ws.on('close', (code, reason) => {
+      this.ws.on("close", (code, reason) => {
         this.handleClose(code, reason.toString());
       });
 
-      this.ws.on('error', (error) => {
+      this.ws.on("error", (error) => {
         this.handleError(error);
-        if (this.state === 'connecting') {
+        if (this.state === "connecting") {
           reject(error);
         }
       });
@@ -171,20 +184,23 @@ export abstract class BaseStream extends EventEmitter {
    * Disconnect from the WebSocket stream
    */
   disconnect(): void {
-    this.log('Disconnecting from stream');
+    this.log("Disconnecting from stream");
     this.clearAllTimers();
     this.config.autoReconnect = false;
 
     if (this.ws) {
       this.ws.removeAllListeners();
-      if (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING) {
+      if (
+        this.ws.readyState === WebSocket.OPEN ||
+        this.ws.readyState === WebSocket.CONNECTING
+      ) {
         this.ws.close();
       }
       this.ws = null;
     }
 
-    this.state = 'disconnected';
-    this.emit('disconnected');
+    this.state = "disconnected";
+    this.emit("disconnected");
   }
 
   /**
@@ -193,13 +209,19 @@ export abstract class BaseStream extends EventEmitter {
   subscribe(request: SubscriptionRequest): void {
     // Merge with existing subscriptions
     if (request.trades) {
-      this.subscriptions.trades = Array.from(new Set([...(this.subscriptions.trades || []), ...request.trades]));
+      this.subscriptions.trades = Array.from(
+        new Set([...(this.subscriptions.trades || []), ...request.trades]),
+      );
     }
     if (request.quotes) {
-      this.subscriptions.quotes = Array.from(new Set([...(this.subscriptions.quotes || []), ...request.quotes]));
+      this.subscriptions.quotes = Array.from(
+        new Set([...(this.subscriptions.quotes || []), ...request.quotes]),
+      );
     }
     if (request.bars) {
-      this.subscriptions.bars = Array.from(new Set([...(this.subscriptions.bars || []), ...request.bars]));
+      this.subscriptions.bars = Array.from(
+        new Set([...(this.subscriptions.bars || []), ...request.bars]),
+      );
     }
 
     if (this.isStreamConnected()) {
@@ -216,17 +238,17 @@ export abstract class BaseStream extends EventEmitter {
     // Remove from existing subscriptions
     if (request.trades) {
       this.subscriptions.trades = (this.subscriptions.trades || []).filter(
-        (s) => !request.trades!.includes(s)
+        (s) => !request.trades!.includes(s),
       );
     }
     if (request.quotes) {
       this.subscriptions.quotes = (this.subscriptions.quotes || []).filter(
-        (s) => !request.quotes!.includes(s)
+        (s) => !request.quotes!.includes(s),
       );
     }
     if (request.bars) {
       this.subscriptions.bars = (this.subscriptions.bars || []).filter(
-        (s) => !request.bars!.includes(s)
+        (s) => !request.bars!.includes(s),
       );
     }
 
@@ -241,31 +263,33 @@ export abstract class BaseStream extends EventEmitter {
   protected authenticate(): Promise<void> {
     return new Promise((resolve, reject) => {
       if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-        reject(new Error('WebSocket not ready for authentication'));
+        reject(new Error("WebSocket not ready for authentication"));
         return;
       }
 
       const config = this.client.getConfig();
       const authMessage = {
-        action: 'auth',
+        action: "auth",
         key: config.apiKey,
         secret: config.apiSecret,
       };
 
       const authTimeout = setTimeout(() => {
-        reject(new Error('Authentication timeout'));
+        reject(new Error("Authentication timeout"));
       }, this.config.authTimeout);
 
       const handleAuthResponse = (data: WebSocket.Data) => {
         try {
           const messages = JSON.parse(data.toString());
-          for (const message of Array.isArray(messages) ? messages : [messages]) {
-            if (message.T === 'success' && message.msg === 'authenticated') {
+          for (const message of Array.isArray(messages)
+            ? messages
+            : [messages]) {
+            if (message.T === "success" && message.msg === "authenticated") {
               clearTimeout(authTimeout);
-              this.ws?.removeListener('message', handleAuthResponse);
-              this.state = 'authenticated';
-              this.log('Stream authenticated');
-              this.emit('authenticated');
+              this.ws?.removeListener("message", handleAuthResponse);
+              this.state = "authenticated";
+              this.log("Stream authenticated");
+              this.emit("authenticated");
 
               // Send pending subscriptions
               if (this.pendingSubscriptions) {
@@ -275,10 +299,10 @@ export abstract class BaseStream extends EventEmitter {
 
               resolve();
               return;
-            } else if (message.T === 'error') {
+            } else if (message.T === "error") {
               clearTimeout(authTimeout);
-              this.ws?.removeListener('message', handleAuthResponse);
-              reject(new Error(message.msg || 'Authentication failed'));
+              this.ws?.removeListener("message", handleAuthResponse);
+              reject(new Error(message.msg || "Authentication failed"));
               return;
             }
           }
@@ -287,7 +311,7 @@ export abstract class BaseStream extends EventEmitter {
         }
       };
 
-      this.ws.on('message', handleAuthResponse);
+      this.ws.on("message", handleAuthResponse);
       this.ws.send(JSON.stringify(authMessage));
     });
   }
@@ -297,11 +321,13 @@ export abstract class BaseStream extends EventEmitter {
    */
   protected sendSubscription(): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      this.log('Cannot send subscription: WebSocket not ready', { type: 'warn' });
+      this.log("Cannot send subscription: WebSocket not ready", {
+        type: "warn",
+      });
       return;
     }
 
-    const subMessage: Record<string, unknown> = { action: 'subscribe' };
+    const subMessage: Record<string, unknown> = { action: "subscribe" };
 
     if (this.subscriptions.trades && this.subscriptions.trades.length > 0) {
       subMessage.trades = this.subscriptions.trades;
@@ -314,7 +340,10 @@ export abstract class BaseStream extends EventEmitter {
     }
 
     if (Object.keys(subMessage).length > 1) {
-      this.log(`Subscribing to: trades=${this.subscriptions.trades?.length || 0}, quotes=${this.subscriptions.quotes?.length || 0}, bars=${this.subscriptions.bars?.length || 0}`, { type: 'debug' });
+      this.log(
+        `Subscribing to: trades=${this.subscriptions.trades?.length || 0}, quotes=${this.subscriptions.quotes?.length || 0}, bars=${this.subscriptions.bars?.length || 0}`,
+        { type: "debug" },
+      );
       this.ws.send(JSON.stringify(subMessage));
     }
   }
@@ -324,11 +353,13 @@ export abstract class BaseStream extends EventEmitter {
    */
   protected sendUnsubscription(request: SubscriptionRequest): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      this.log('Cannot send unsubscription: WebSocket not ready', { type: 'warn' });
+      this.log("Cannot send unsubscription: WebSocket not ready", {
+        type: "warn",
+      });
       return;
     }
 
-    const unsubMessage: Record<string, unknown> = { action: 'unsubscribe' };
+    const unsubMessage: Record<string, unknown> = { action: "unsubscribe" };
 
     if (request.trades && request.trades.length > 0) {
       unsubMessage.trades = request.trades;
@@ -341,7 +372,10 @@ export abstract class BaseStream extends EventEmitter {
     }
 
     if (Object.keys(unsubMessage).length > 1) {
-      this.log(`Unsubscribing from: trades=${request.trades?.length || 0}, quotes=${request.quotes?.length || 0}, bars=${request.bars?.length || 0}`, { type: 'debug' });
+      this.log(
+        `Unsubscribing from: trades=${request.trades?.length || 0}, quotes=${request.quotes?.length || 0}, bars=${request.bars?.length || 0}`,
+        { type: "debug" },
+      );
       this.ws.send(JSON.stringify(unsubMessage));
     }
   }
@@ -358,7 +392,9 @@ export abstract class BaseStream extends EventEmitter {
         this.processMessage(message);
       }
     } catch (error) {
-      this.log(`Failed to parse message: ${(error as Error).message}`, { type: 'error' });
+      this.log(`Failed to parse message: ${(error as Error).message}`, {
+        type: "error",
+      });
     }
   }
 
@@ -371,10 +407,12 @@ export abstract class BaseStream extends EventEmitter {
    * Handle WebSocket close event
    */
   protected handleClose(code: number, reason: string): void {
-    this.log(`WebSocket closed: code=${code}, reason=${reason}`, { type: 'warn' });
+    this.log(`WebSocket closed: code=${code}, reason=${reason}`, {
+      type: "warn",
+    });
     this.clearAllTimers();
-    this.state = 'disconnected';
-    this.emit('disconnected', { code, reason });
+    this.state = "disconnected";
+    this.emit("disconnected", { code, reason });
 
     if (this.config.autoReconnect) {
       this.scheduleReconnect();
@@ -385,31 +423,42 @@ export abstract class BaseStream extends EventEmitter {
    * Handle WebSocket error event
    */
   protected handleError(error: Error): void {
-    this.log(`WebSocket error: ${error.message}`, { type: 'error' });
-    this.state = 'error';
-    this.emit('error', error);
+    this.log(`WebSocket error: ${error.message}`, { type: "error" });
+    this.state = "error";
+    this.emit("error", error);
   }
 
   /**
    * Schedule a reconnection attempt
    */
   protected scheduleReconnect(): void {
-    if (this.config.maxReconnectAttempts > 0 && this.reconnectAttempts >= this.config.maxReconnectAttempts) {
-      this.log(`Max reconnection attempts (${this.config.maxReconnectAttempts}) reached`, { type: 'error' });
+    if (
+      this.config.maxReconnectAttempts > 0 &&
+      this.reconnectAttempts >= this.config.maxReconnectAttempts
+    ) {
+      this.log(
+        `Max reconnection attempts (${this.config.maxReconnectAttempts}) reached`,
+        { type: "error" },
+      );
       return;
     }
 
     this.reconnectAttempts++;
-    const delay = this.config.reconnectDelay * Math.min(this.reconnectAttempts, 5); // Exponential backoff capped at 5x
+    const delay =
+      this.config.reconnectDelay * Math.min(this.reconnectAttempts, 5); // Exponential backoff capped at 5x
 
-    this.log(`Scheduling reconnection attempt ${this.reconnectAttempts} in ${delay}ms`);
+    this.log(
+      `Scheduling reconnection attempt ${this.reconnectAttempts} in ${delay}ms`,
+    );
 
     this.reconnectTimer = setTimeout(async () => {
       try {
         await this.connect();
-        this.log('Reconnection successful');
+        this.log("Reconnection successful");
       } catch (error) {
-        this.log(`Reconnection failed: ${(error as Error).message}`, { type: 'error' });
+        this.log(`Reconnection failed: ${(error as Error).message}`, {
+          type: "error",
+        });
       }
     }, delay);
   }

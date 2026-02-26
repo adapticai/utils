@@ -1,11 +1,13 @@
 # Logger Migration Summary
 
 ## Overview
+
 Successfully replaced all `console.error`, `console.log`, `console.warn`, `console.info`, and `console.debug` calls in the utils package source files with a configurable logger interface compatible with Pino.
 
 ## Changes Made
 
 ### 1. Created Logger Interface (`src/logger.ts`)
+
 - Defined `Logger` interface with `error`, `warn`, `info`, and `debug` methods
 - Implemented default logger that uses console for backward compatibility
 - Added `setLogger()` function to configure custom logger (e.g., Pino)
@@ -14,10 +16,12 @@ Successfully replaced all `console.error`, `console.log`, `console.warn`, `conso
 - Includes context normalization to handle various types (Error, primitives, objects)
 
 ### 2. Updated Exports (`src/index.ts`)
+
 - Exported `Logger` type
 - Exported `setLogger`, `getLogger`, and `resetLogger` functions
 
 ### 3. Modified Source Files
+
 The following files were updated to use `getLogger()` instead of console:
 
 - `src/misc-utils.ts` - Updated `logIfDebug` and `fetchWithRetry` functions
@@ -31,6 +35,7 @@ The following files were updated to use `getLogger()` instead of console:
 - `src/utils/retry.ts` - Replaced console calls in retry utility
 
 ### 4. Files NOT Modified (as per constraints)
+
 - `src/cache/` directory - Excluded from changes
 - `src/types/` directory - Excluded from changes
 - Test files - Excluded from changes
@@ -39,27 +44,29 @@ The following files were updated to use `getLogger()` instead of console:
 ## Usage
 
 ### Default Usage (No Changes Required)
+
 The logger defaults to console, so existing code continues to work:
 
 ```typescript
-import { getLogger } from '@adaptic/utils';
+import { getLogger } from "@adaptic/utils";
 
 const logger = getLogger();
-logger.error('Operation failed', { userId: 123, operation: 'createOrder' });
-logger.warn('Rate limit approaching', { remaining: 10 });
-logger.info('Order created', { orderId: 'abc123', symbol: 'AAPL' });
-logger.debug('Cache hit', { key: 'user:123' });
+logger.error("Operation failed", { userId: 123, operation: "createOrder" });
+logger.warn("Rate limit approaching", { remaining: 10 });
+logger.info("Order created", { orderId: "abc123", symbol: "AAPL" });
+logger.debug("Cache hit", { key: "user:123" });
 ```
 
 ### Integration with Pino (Engine Package)
+
 In the engine package, configure Pino integration:
 
 ```typescript
-import pino from 'pino';
-import { setLogger } from '@adaptic/utils';
+import pino from "pino";
+import { setLogger } from "@adaptic/utils";
 
 const pinoLogger = pino({
-  level: process.env.LOG_LEVEL || 'info',
+  level: process.env.LOG_LEVEL || "info",
   // ... other Pino config
 });
 
@@ -82,12 +89,14 @@ setLogger({
 6. **Testable**: Can inject mock logger for testing
 
 ## Build Status
+
 ✅ Build successful with no errors
 ✅ All TypeScript types properly defined
 ✅ No `any` types used
 ✅ Backward compatibility maintained
 
 ## Migration Statistics
+
 - Files modified: 10
 - Console calls replaced: ~100+
 - New files created: 1 (`src/logger.ts`)

@@ -2,22 +2,22 @@
  * Options Contracts Module
  * Query and analyze option contracts
  */
-import { AlpacaClient } from '../client';
-import { log as baseLog } from '../../logging';
-import { LogOptions } from '../../types/logging-types';
+import { AlpacaClient } from "../client";
+import { log as baseLog } from "../../logging";
+import { LogOptions } from "../../types/logging-types";
 import {
   OptionContract,
   OptionType,
   GetOptionContractsParams,
   OptionContractsResponse,
-} from '../../types/alpaca-types';
+} from "../../types/alpaca-types";
 
-const LOG_SOURCE = 'OptionsContracts';
+const LOG_SOURCE = "OptionsContracts";
 
 /**
  * Internal logging helper with consistent source
  */
-const log = (message: string, options: LogOptions = { type: 'info' }) => {
+const log = (message: string, options: LogOptions = { type: "info" }) => {
   baseLog(message, { ...options, source: LOG_SOURCE });
 };
 
@@ -106,11 +106,11 @@ export interface GroupedOptionChain {
  */
 export async function getOptionContracts(
   client: AlpacaClient,
-  params: GetOptionContractsParams
+  params: GetOptionContractsParams,
 ): Promise<OptionContract[]> {
-  const symbols = params.underlying_symbols.join(', ');
+  const symbols = params.underlying_symbols.join(", ");
   log(`Fetching option contracts for: ${symbols}`, {
-    type: 'debug',
+    type: "debug",
     metadata: { params },
   });
 
@@ -121,22 +121,30 @@ export async function getOptionContracts(
     // Handle pagination
     do {
       const queryParts: string[] = [
-        `underlying_symbols=${params.underlying_symbols.join(',')}`,
+        `underlying_symbols=${params.underlying_symbols.join(",")}`,
       ];
 
-      if (params.expiration_date_gte) queryParts.push(`expiration_date_gte=${params.expiration_date_gte}`);
-      if (params.expiration_date_lte) queryParts.push(`expiration_date_lte=${params.expiration_date_lte}`);
-      if (params.strike_price_gte) queryParts.push(`strike_price_gte=${params.strike_price_gte}`);
-      if (params.strike_price_lte) queryParts.push(`strike_price_lte=${params.strike_price_lte}`);
+      if (params.expiration_date_gte)
+        queryParts.push(`expiration_date_gte=${params.expiration_date_gte}`);
+      if (params.expiration_date_lte)
+        queryParts.push(`expiration_date_lte=${params.expiration_date_lte}`);
+      if (params.strike_price_gte)
+        queryParts.push(`strike_price_gte=${params.strike_price_gte}`);
+      if (params.strike_price_lte)
+        queryParts.push(`strike_price_lte=${params.strike_price_lte}`);
       if (params.type) queryParts.push(`type=${params.type}`);
       if (params.status) queryParts.push(`status=${params.status}`);
       if (params.limit) queryParts.push(`limit=${params.limit}`);
       if (pageToken) queryParts.push(`page_token=${pageToken}`);
 
-      const endpoint = `/options/contracts?${queryParts.join('&')}`;
-      const response = await client.makeRequest<OptionContractsResponse>(endpoint);
+      const endpoint = `/options/contracts?${queryParts.join("&")}`;
+      const response =
+        await client.makeRequest<OptionContractsResponse>(endpoint);
 
-      if (response.option_contracts && Array.isArray(response.option_contracts)) {
+      if (
+        response.option_contracts &&
+        Array.isArray(response.option_contracts)
+      ) {
         allContracts.push(...response.option_contracts);
       }
 
@@ -149,15 +157,16 @@ export async function getOptionContracts(
     } while (pageToken);
 
     log(`Retrieved ${allContracts.length} option contracts for ${symbols}`, {
-      type: 'info',
+      type: "info",
       metadata: { count: allContracts.length },
     });
 
     return allContracts;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
     log(`Failed to fetch option contracts for ${symbols}: ${errorMessage}`, {
-      type: 'error',
+      type: "error",
       metadata: { params },
     });
     throw new Error(`Failed to fetch option contracts: ${errorMessage}`);
@@ -182,16 +191,16 @@ export async function getOptionContracts(
  */
 export async function getOptionContract(
   client: AlpacaClient,
-  symbolOrId: string
+  symbolOrId: string,
 ): Promise<OptionContract> {
-  log(`Fetching option contract: ${symbolOrId}`, { type: 'debug' });
+  log(`Fetching option contract: ${symbolOrId}`, { type: "debug" });
 
   try {
     const endpoint = `/options/contracts/${encodeURIComponent(symbolOrId)}`;
     const contract = await client.makeRequest<OptionContract>(endpoint);
 
     log(`Retrieved option contract: ${contract.symbol}`, {
-      type: 'info',
+      type: "info",
       symbol: contract.underlying_symbol,
       metadata: {
         type: contract.type,
@@ -202,14 +211,17 @@ export async function getOptionContract(
 
     return contract;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
 
-    if (errorMessage.includes('404') || errorMessage.includes('not found')) {
-      log(`Option contract not found: ${symbolOrId}`, { type: 'warn' });
+    if (errorMessage.includes("404") || errorMessage.includes("not found")) {
+      log(`Option contract not found: ${symbolOrId}`, { type: "warn" });
       throw new Error(`Option contract not found: ${symbolOrId}`);
     }
 
-    log(`Failed to fetch option contract ${symbolOrId}: ${errorMessage}`, { type: 'error' });
+    log(`Failed to fetch option contract ${symbolOrId}: ${errorMessage}`, {
+      type: "error",
+    });
     throw new Error(`Failed to fetch option contract: ${errorMessage}`);
   }
 }
@@ -236,17 +248,17 @@ export async function getOptionContract(
 export async function getOptionChain(
   client: AlpacaClient,
   underlying: string,
-  params?: GetOptionChainParams
+  params?: GetOptionChainParams,
 ): Promise<OptionContract[]> {
   log(`Fetching option chain for ${underlying}`, {
-    type: 'debug',
+    type: "debug",
     symbol: underlying,
     metadata: { params },
   });
 
   const queryParams: GetOptionContractsParams = {
     underlying_symbols: [underlying],
-    status: 'active',
+    status: "active",
   };
 
   // Apply filters
@@ -270,10 +282,13 @@ export async function getOptionChain(
 
   const contracts = await getOptionContracts(client, queryParams);
 
-  log(`Retrieved ${contracts.length} contracts in option chain for ${underlying}`, {
-    type: 'info',
-    symbol: underlying,
-  });
+  log(
+    `Retrieved ${contracts.length} contracts in option chain for ${underlying}`,
+    {
+      type: "info",
+      symbol: underlying,
+    },
+  );
 
   return contracts;
 }
@@ -291,10 +306,10 @@ export async function getOptionChain(
  */
 export async function getExpirationDates(
   client: AlpacaClient,
-  underlying: string
+  underlying: string,
 ): Promise<string[]> {
   log(`Fetching expiration dates for ${underlying}`, {
-    type: 'debug',
+    type: "debug",
     symbol: underlying,
   });
 
@@ -302,7 +317,7 @@ export async function getExpirationDates(
     // Get all active contracts for the underlying
     const contracts = await getOptionContracts(client, {
       underlying_symbols: [underlying],
-      status: 'active',
+      status: "active",
     });
 
     // Extract unique expiration dates
@@ -313,20 +328,21 @@ export async function getExpirationDates(
 
     // Sort dates chronologically
     const expirations = Array.from(expirationSet).sort(
-      (a, b) => new Date(a).getTime() - new Date(b).getTime()
+      (a, b) => new Date(a).getTime() - new Date(b).getTime(),
     );
 
     log(`Found ${expirations.length} expiration dates for ${underlying}`, {
-      type: 'info',
+      type: "info",
       symbol: underlying,
       metadata: { count: expirations.length, nearest: expirations[0] },
     });
 
     return expirations;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
     log(`Failed to fetch expiration dates for ${underlying}: ${errorMessage}`, {
-      type: 'error',
+      type: "error",
       symbol: underlying,
     });
     throw new Error(`Failed to fetch expiration dates: ${errorMessage}`);
@@ -347,15 +363,17 @@ export async function getExpirationDates(
 export async function getStrikePrices(
   client: AlpacaClient,
   underlying: string,
-  expirationDate: string
+  expirationDate: string,
 ): Promise<number[]> {
   log(`Fetching strike prices for ${underlying} expiring ${expirationDate}`, {
-    type: 'debug',
+    type: "debug",
     symbol: underlying,
   });
 
   try {
-    const contracts = await getOptionChain(client, underlying, { expirationDate });
+    const contracts = await getOptionChain(client, underlying, {
+      expirationDate,
+    });
 
     // Extract unique strikes
     const strikeSet = new Set<number>();
@@ -369,17 +387,21 @@ export async function getStrikePrices(
     // Sort strikes numerically
     const strikes = Array.from(strikeSet).sort((a, b) => a - b);
 
-    log(`Found ${strikes.length} strike prices for ${underlying} at ${expirationDate}`, {
-      type: 'info',
-      symbol: underlying,
-      metadata: { count: strikes.length },
-    });
+    log(
+      `Found ${strikes.length} strike prices for ${underlying} at ${expirationDate}`,
+      {
+        type: "info",
+        symbol: underlying,
+        metadata: { count: strikes.length },
+      },
+    );
 
     return strikes;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
     log(`Failed to fetch strike prices: ${errorMessage}`, {
-      type: 'error',
+      type: "error",
       symbol: underlying,
     });
     throw new Error(`Failed to fetch strike prices: ${errorMessage}`);
@@ -412,10 +434,10 @@ export async function findATMOptions(
   underlying: string,
   expirationDate: string,
   currentPrice: number,
-  type?: OptionType
+  type?: OptionType,
 ): Promise<ATMOptionsResult> {
   log(`Finding ATM options for ${underlying} at $${currentPrice.toFixed(2)}`, {
-    type: 'debug',
+    type: "debug",
     symbol: underlying,
     metadata: { expirationDate, currentPrice, type },
   });
@@ -429,7 +451,7 @@ export async function findATMOptions(
 
     if (contracts.length === 0) {
       log(`No contracts found for ${underlying} at ${expirationDate}`, {
-        type: 'warn',
+        type: "warn",
         symbol: underlying,
       });
       return {
@@ -468,16 +490,16 @@ export async function findATMOptions(
     for (const contract of contracts) {
       const strike = parseFloat(contract.strike_price);
       if (strike === atmStrike) {
-        if (contract.type === 'call') {
+        if (contract.type === "call") {
           call = contract;
-        } else if (contract.type === 'put') {
+        } else if (contract.type === "put") {
           put = contract;
         }
       }
     }
 
     log(`Found ATM options at strike $${atmStrike.toFixed(2)}`, {
-      type: 'info',
+      type: "info",
       symbol: underlying,
       metadata: {
         atmStrike,
@@ -494,9 +516,10 @@ export async function findATMOptions(
       underlyingPrice: currentPrice,
     };
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
     log(`Failed to find ATM options for ${underlying}: ${errorMessage}`, {
-      type: 'error',
+      type: "error",
       symbol: underlying,
     });
     throw new Error(`Failed to find ATM options: ${errorMessage}`);
@@ -519,10 +542,10 @@ export async function findATMOptions(
 export async function getGroupedOptionChain(
   client: AlpacaClient,
   underlying: string,
-  expirationDates?: string[]
+  expirationDates?: string[],
 ): Promise<GroupedOptionChain> {
   log(`Fetching grouped option chain for ${underlying}`, {
-    type: 'debug',
+    type: "debug",
     symbol: underlying,
   });
 
@@ -530,7 +553,7 @@ export async function getGroupedOptionChain(
     // Get all active contracts
     const contracts = await getOptionContracts(client, {
       underlying_symbols: [underlying],
-      status: 'active',
+      status: "active",
     });
 
     // Initialize result structure
@@ -570,31 +593,38 @@ export async function getGroupedOptionChain(
 
       // Add to appropriate bucket
       const strikeKey = strike.toString();
-      if (contract.type === 'call') {
+      if (contract.type === "call") {
         result.byExpiration[expiration].calls[strikeKey] = contract;
-      } else if (contract.type === 'put') {
+      } else if (contract.type === "put") {
         result.byExpiration[expiration].puts[strikeKey] = contract;
       }
     }
 
     // Sort and assign arrays
     result.expirations = Array.from(expirationSet).sort(
-      (a, b) => new Date(a).getTime() - new Date(b).getTime()
+      (a, b) => new Date(a).getTime() - new Date(b).getTime(),
     );
     result.strikes = Array.from(strikeSet).sort((a, b) => a - b);
 
-    log(`Grouped ${contracts.length} contracts: ${result.expirations.length} expirations, ${result.strikes.length} strikes`, {
-      type: 'info',
-      symbol: underlying,
-    });
+    log(
+      `Grouped ${contracts.length} contracts: ${result.expirations.length} expirations, ${result.strikes.length} strikes`,
+      {
+        type: "info",
+        symbol: underlying,
+      },
+    );
 
     return result;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    log(`Failed to get grouped option chain for ${underlying}: ${errorMessage}`, {
-      type: 'error',
-      symbol: underlying,
-    });
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    log(
+      `Failed to get grouped option chain for ${underlying}: ${errorMessage}`,
+      {
+        type: "error",
+        symbol: underlying,
+      },
+    );
     throw new Error(`Failed to get grouped option chain: ${errorMessage}`);
   }
 }
@@ -620,12 +650,15 @@ export async function findOptionsByDelta(
   expirationDate: string,
   currentPrice: number,
   targetDeltaPercent: number,
-  type: OptionType
+  type: OptionType,
 ): Promise<OptionContract[]> {
-  log(`Finding ${type} options for ${underlying} at ~${targetDeltaPercent}% OTM`, {
-    type: 'debug',
-    symbol: underlying,
-  });
+  log(
+    `Finding ${type} options for ${underlying} at ~${targetDeltaPercent}% OTM`,
+    {
+      type: "debug",
+      symbol: underlying,
+    },
+  );
 
   try {
     const contracts = await getOptionChain(client, underlying, {
@@ -637,9 +670,8 @@ export async function findOptionsByDelta(
     // For calls: OTM is above current price
     // For puts: OTM is below current price
     const deltaOffset = (targetDeltaPercent / 100) * currentPrice;
-    const targetStrike = type === 'call'
-      ? currentPrice + deltaOffset
-      : currentPrice - deltaOffset;
+    const targetStrike =
+      type === "call" ? currentPrice + deltaOffset : currentPrice - deltaOffset;
 
     // Find contracts near the target strike (within 2.5% tolerance)
     const tolerance = currentPrice * 0.025;
@@ -656,16 +688,20 @@ export async function findOptionsByDelta(
     });
 
     log(`Found ${filtered.length} ${type} options near target delta`, {
-      type: 'info',
+      type: "info",
       symbol: underlying,
-      metadata: { targetStrike: targetStrike.toFixed(2), contracts: filtered.length },
+      metadata: {
+        targetStrike: targetStrike.toFixed(2),
+        contracts: filtered.length,
+      },
     });
 
     return filtered;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
     log(`Failed to find options by delta: ${errorMessage}`, {
-      type: 'error',
+      type: "error",
       symbol: underlying,
     });
     throw new Error(`Failed to find options by delta: ${errorMessage}`);
@@ -687,10 +723,10 @@ export async function findOptionsByDelta(
 export async function findNearestExpiration(
   client: AlpacaClient,
   underlying: string,
-  targetDays: number
+  targetDays: number,
 ): Promise<string> {
   log(`Finding expiration nearest to ${targetDays} days for ${underlying}`, {
-    type: 'debug',
+    type: "debug",
     symbol: underlying,
   });
 
@@ -702,7 +738,9 @@ export async function findNearestExpiration(
     }
 
     const now = new Date();
-    const targetDate = new Date(now.getTime() + targetDays * 24 * 60 * 60 * 1000);
+    const targetDate = new Date(
+      now.getTime() + targetDays * 24 * 60 * 60 * 1000,
+    );
     const targetTime = targetDate.getTime();
 
     let nearestExpiration = expirations[0];
@@ -717,19 +755,23 @@ export async function findNearestExpiration(
       }
     }
 
-    const actualDays = Math.round((new Date(nearestExpiration).getTime() - now.getTime()) / (24 * 60 * 60 * 1000));
+    const actualDays = Math.round(
+      (new Date(nearestExpiration).getTime() - now.getTime()) /
+        (24 * 60 * 60 * 1000),
+    );
 
     log(`Found nearest expiration: ${nearestExpiration} (${actualDays} days)`, {
-      type: 'info',
+      type: "info",
       symbol: underlying,
       metadata: { targetDays, actualDays, expiration: nearestExpiration },
     });
 
     return nearestExpiration;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
     log(`Failed to find nearest expiration: ${errorMessage}`, {
-      type: 'error',
+      type: "error",
       symbol: underlying,
     });
     throw new Error(`Failed to find nearest expiration: ${errorMessage}`);
@@ -761,7 +803,7 @@ export function parseOCCSymbol(occSymbol: string): {
 
   // Find where the date portion starts (last 15 characters are date+type+strike)
   if (occSymbol.length < 15) {
-    log(`Invalid OCC symbol format: ${occSymbol}`, { type: 'warn' });
+    log(`Invalid OCC symbol format: ${occSymbol}`, { type: "warn" });
     return null;
   }
 
@@ -770,14 +812,14 @@ export function parseOCCSymbol(occSymbol: string): {
   const suffix = occSymbol.substring(suffixStart);
 
   // Parse date (YYMMDD)
-  const year = '20' + suffix.substring(0, 2);
+  const year = "20" + suffix.substring(0, 2);
   const month = suffix.substring(2, 4);
   const day = suffix.substring(4, 6);
   const expiration = `${year}-${month}-${day}`;
 
   // Parse type
   const typeChar = suffix.charAt(6);
-  const type: OptionType = typeChar === 'C' ? 'call' : 'put';
+  const type: OptionType = typeChar === "C" ? "call" : "put";
 
   // Parse strike (8 digits, last 3 are decimal)
   const strikeStr = suffix.substring(7);
@@ -803,18 +845,18 @@ export function buildOCCSymbol(
   underlying: string,
   expiration: string,
   type: OptionType,
-  strike: number
+  strike: number,
 ): string {
   // Parse date
-  const [year, month, day] = expiration.split('-');
+  const [year, month, day] = expiration.split("-");
   const dateStr = year.slice(2) + month + day;
 
   // Type character
-  const typeChar = type === 'call' ? 'C' : 'P';
+  const typeChar = type === "call" ? "C" : "P";
 
   // Strike (multiply by 1000 and pad to 8 digits)
   const strikeInt = Math.round(strike * 1000);
-  const strikeStr = strikeInt.toString().padStart(8, '0');
+  const strikeStr = strikeInt.toString().padStart(8, "0");
 
   return `${underlying}${dateStr}${typeChar}${strikeStr}`;
 }
@@ -826,7 +868,7 @@ export function buildOCCSymbol(
  * @returns True if the contract is active and tradable
  */
 export function isContractTradable(contract: OptionContract): boolean {
-  return contract.status === 'active' && contract.tradable === true;
+  return contract.status === "active" && contract.tradable === true;
 }
 
 /**
@@ -849,7 +891,10 @@ export function getDaysToExpiration(contract: OptionContract): number {
  * @param days - Number of days threshold
  * @returns True if contract expires within the specified days
  */
-export function isExpiringWithin(contract: OptionContract, days: number): boolean {
+export function isExpiringWithin(
+  contract: OptionContract,
+  days: number,
+): boolean {
   return getDaysToExpiration(contract) <= days;
 }
 

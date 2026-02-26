@@ -99,32 +99,32 @@ import {
 
   // Namespace
   alpaca,
-} from './index';
+} from "./index";
 
 // Verify types compile
 const testTypes = async () => {
   // Test client creation
   const client = createAlpacaClient({
-    apiKey: 'test-key',
-    apiSecret: 'test-secret',
-    accountType: 'PAPER',
+    apiKey: "test-key",
+    apiSecret: "test-secret",
+    accountType: "PAPER",
   });
 
-  console.log('Client created:', client.isPaper());
+  console.log("Client created:", client.isPaper());
 
   // Test that namespace is available
-  console.log('Alpaca namespace available:', typeof alpaca);
-  console.log('Alpaca orders available:', typeof alpaca.orders);
-  console.log('Alpaca smartOrders available:', typeof alpaca.smartOrders);
-  console.log('Alpaca quotes available:', typeof alpaca.quotes);
-  console.log('Alpaca options available:', typeof alpaca.options);
-  console.log('Alpaca crypto available:', typeof alpaca.crypto);
-  console.log('Alpaca streams available:', typeof alpaca.streams);
+  console.log("Alpaca namespace available:", typeof alpaca);
+  console.log("Alpaca orders available:", typeof alpaca.orders);
+  console.log("Alpaca smartOrders available:", typeof alpaca.smartOrders);
+  console.log("Alpaca quotes available:", typeof alpaca.quotes);
+  console.log("Alpaca options available:", typeof alpaca.options);
+  console.log("Alpaca crypto available:", typeof alpaca.crypto);
+  console.log("Alpaca streams available:", typeof alpaca.streams);
 
   // Test stream factory is available
-  console.log('createStreamManager available:', typeof createStreamManager);
+  console.log("createStreamManager available:", typeof createStreamManager);
 
-  console.log('\nImport verification passed');
+  console.log("\nImport verification passed");
 };
 
 // Export for testing

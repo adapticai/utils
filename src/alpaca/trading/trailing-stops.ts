@@ -11,17 +11,22 @@
  * - Automatic high water mark (HWM) tracking by Alpaca
  * - Support for both percentage-based and dollar-based trailing
  */
-import { AlpacaClient } from '../client';
-import { log as baseLog } from '../../logging';
-import { LogOptions } from '../../types/logging-types';
-import { AlpacaOrder, OrderSide, TimeInForce, AlpacaPosition } from '../../types/alpaca-types';
+import { AlpacaClient } from "../client";
+import { log as baseLog } from "../../logging";
+import { LogOptions } from "../../types/logging-types";
+import {
+  AlpacaOrder,
+  OrderSide,
+  TimeInForce,
+  AlpacaPosition,
+} from "../../types/alpaca-types";
 
-const LOG_SOURCE = 'TrailingStops';
+const LOG_SOURCE = "TrailingStops";
 
 /**
  * Internal logging helper with consistent source
  */
-const log = (message: string, options: LogOptions = { type: 'info' }) => {
+const log = (message: string, options: LogOptions = { type: "info" }) => {
   baseLog(message, { ...options, source: LOG_SOURCE });
 };
 
@@ -75,7 +80,7 @@ export interface PortfolioTrailingStopParams {
 export class TrailingStopValidationError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = 'TrailingStopValidationError';
+    this.name = "TrailingStopValidationError";
   }
 }
 
@@ -86,38 +91,46 @@ export class TrailingStopValidationError extends Error {
 function validateTrailingStopParams(params: TrailingStopParams): void {
   // Must have either trailPercent or trailPrice, not both
   if (params.trailPercent === undefined && params.trailPrice === undefined) {
-    throw new TrailingStopValidationError('Must specify either trailPercent or trailPrice');
+    throw new TrailingStopValidationError(
+      "Must specify either trailPercent or trailPrice",
+    );
   }
 
   if (params.trailPercent !== undefined && params.trailPrice !== undefined) {
-    throw new TrailingStopValidationError('Cannot specify both trailPercent and trailPrice');
+    throw new TrailingStopValidationError(
+      "Cannot specify both trailPercent and trailPrice",
+    );
   }
 
   // Validate trailPercent range
   if (params.trailPercent !== undefined) {
     if (params.trailPercent <= 0) {
-      throw new TrailingStopValidationError('trailPercent must be greater than 0');
+      throw new TrailingStopValidationError(
+        "trailPercent must be greater than 0",
+      );
     }
     if (params.trailPercent > 100) {
-      throw new TrailingStopValidationError('trailPercent cannot exceed 100');
+      throw new TrailingStopValidationError("trailPercent cannot exceed 100");
     }
   }
 
   // Validate trailPrice
   if (params.trailPrice !== undefined) {
     if (params.trailPrice <= 0) {
-      throw new TrailingStopValidationError('trailPrice must be greater than 0');
+      throw new TrailingStopValidationError(
+        "trailPrice must be greater than 0",
+      );
     }
   }
 
   // Validate quantity
   if (params.qty <= 0) {
-    throw new TrailingStopValidationError('qty must be greater than 0');
+    throw new TrailingStopValidationError("qty must be greater than 0");
   }
 
   // Validate symbol
-  if (!params.symbol || params.symbol.trim() === '') {
-    throw new TrailingStopValidationError('symbol is required');
+  if (!params.symbol || params.symbol.trim() === "") {
+    throw new TrailingStopValidationError("symbol is required");
   }
 }
 
@@ -157,7 +170,7 @@ function validateTrailingStopParams(params: TrailingStopParams): void {
  */
 export async function createTrailingStop(
   client: AlpacaClient,
-  params: TrailingStopParams
+  params: TrailingStopParams,
 ): Promise<AlpacaOrder> {
   // Validate parameters
   validateTrailingStopParams(params);
@@ -167,17 +180,20 @@ export async function createTrailingStop(
     ? `${params.trailPercent}%`
     : `$${params.trailPrice?.toFixed(2)}`;
 
-  log(`Creating trailing stop: ${params.side} ${params.qty} ${params.symbol} (trail: ${trailDescription})`, {
-    type: 'info',
-  });
+  log(
+    `Creating trailing stop: ${params.side} ${params.qty} ${params.symbol} (trail: ${trailDescription})`,
+    {
+      type: "info",
+    },
+  );
 
   try {
     const orderParams: Record<string, unknown> = {
       symbol: params.symbol,
       qty: params.qty,
       side: params.side,
-      type: 'trailing_stop',
-      time_in_force: params.timeInForce || 'gtc',
+      type: "trailing_stop",
+      time_in_force: params.timeInForce || "gtc",
     };
 
     if (params.trailPercent !== undefined) {
@@ -197,15 +213,19 @@ export async function createTrailingStop(
     const order = await sdk.createOrder(orderParams);
 
     log(
-      `Trailing stop created: orderId=${order.id}, HWM=${order.hwm || 'pending'}, status=${order.status}`,
-      { type: 'info' }
+      `Trailing stop created: orderId=${order.id}, HWM=${order.hwm || "pending"}, status=${order.status}`,
+      { type: "info" },
     );
 
     return order as AlpacaOrder;
   } catch (error) {
     const err = error as Error;
-    log(`Trailing stop creation failed for ${params.symbol}: ${err.message}`, { type: 'error' });
-    throw new Error(`Failed to create trailing stop for ${params.symbol}: ${err.message}`);
+    log(`Trailing stop creation failed for ${params.symbol}: ${err.message}`, {
+      type: "error",
+    });
+    throw new Error(
+      `Failed to create trailing stop for ${params.symbol}: ${err.message}`,
+    );
   }
 }
 
@@ -236,24 +256,28 @@ export async function updateTrailingStop(
   updates: {
     trailPercent?: number;
     trailPrice?: number;
-  }
+  },
 ): Promise<AlpacaOrder> {
   // Validate that at least one update is provided
   if (updates.trailPercent === undefined && updates.trailPrice === undefined) {
-    throw new Error('Must specify either trailPercent or trailPrice for update');
+    throw new Error(
+      "Must specify either trailPercent or trailPrice for update",
+    );
   }
 
   if (updates.trailPercent !== undefined && updates.trailPrice !== undefined) {
-    throw new Error('Cannot specify both trailPercent and trailPrice for update');
+    throw new Error(
+      "Cannot specify both trailPercent and trailPrice for update",
+    );
   }
 
   // Validate values
   if (updates.trailPercent !== undefined && updates.trailPercent <= 0) {
-    throw new Error('trailPercent must be greater than 0');
+    throw new Error("trailPercent must be greater than 0");
   }
 
   if (updates.trailPrice !== undefined && updates.trailPrice <= 0) {
-    throw new Error('trailPrice must be greater than 0');
+    throw new Error("trailPrice must be greater than 0");
   }
 
   const sdk = client.getSDK();
@@ -261,7 +285,9 @@ export async function updateTrailingStop(
     ? `${updates.trailPercent}%`
     : `$${updates.trailPrice?.toFixed(2)}`;
 
-  log(`Updating trailing stop ${orderId} to trail: ${updateDescription}`, { type: 'info' });
+  log(`Updating trailing stop ${orderId} to trail: ${updateDescription}`, {
+    type: "info",
+  });
 
   try {
     const replaceParams: Record<string, string> = {};
@@ -275,13 +301,19 @@ export async function updateTrailingStop(
 
     const order = await sdk.replaceOrder(orderId, replaceParams);
 
-    log(`Trailing stop updated: orderId=${order.id}, new replacement created`, { type: 'info' });
+    log(`Trailing stop updated: orderId=${order.id}, new replacement created`, {
+      type: "info",
+    });
 
     return order as AlpacaOrder;
   } catch (error) {
     const err = error as Error;
-    log(`Trailing stop update failed for ${orderId}: ${err.message}`, { type: 'error' });
-    throw new Error(`Failed to update trailing stop ${orderId}: ${err.message}`);
+    log(`Trailing stop update failed for ${orderId}: ${err.message}`, {
+      type: "error",
+    });
+    throw new Error(
+      `Failed to update trailing stop ${orderId}: ${err.message}`,
+    );
   }
 }
 
@@ -305,7 +337,7 @@ export async function updateTrailingStop(
  */
 export async function getTrailingStopHWM(
   client: AlpacaClient,
-  orderId: string
+  orderId: string,
 ): Promise<TrailingStopHWMResult> {
   const sdk = client.getSDK();
 
@@ -313,8 +345,11 @@ export async function getTrailingStopHWM(
     const order = await sdk.getOrder(orderId);
 
     // Validate this is actually a trailing stop order
-    if (order.type !== 'trailing_stop') {
-      log(`Order ${orderId} is not a trailing stop order (type: ${order.type})`, { type: 'warn' });
+    if (order.type !== "trailing_stop") {
+      log(
+        `Order ${orderId} is not a trailing stop order (type: ${order.type})`,
+        { type: "warn" },
+      );
     }
 
     const result: TrailingStopHWMResult = {
@@ -323,15 +358,19 @@ export async function getTrailingStopHWM(
     };
 
     log(
-      `Retrieved HWM for ${orderId}: HWM=${result.hwm ?? 'N/A'}, currentStop=${result.currentStop ?? 'N/A'}`,
-      { type: 'debug' }
+      `Retrieved HWM for ${orderId}: HWM=${result.hwm ?? "N/A"}, currentStop=${result.currentStop ?? "N/A"}`,
+      { type: "debug" },
     );
 
     return result;
   } catch (error) {
     const err = error as Error;
-    log(`Failed to get trailing stop HWM for ${orderId}: ${err.message}`, { type: 'error' });
-    throw new Error(`Failed to get trailing stop HWM for ${orderId}: ${err.message}`);
+    log(`Failed to get trailing stop HWM for ${orderId}: ${err.message}`, {
+      type: "error",
+    });
+    throw new Error(
+      `Failed to get trailing stop HWM for ${orderId}: ${err.message}`,
+    );
   }
 }
 
@@ -349,28 +388,37 @@ export async function getTrailingStopHWM(
  */
 export async function cancelTrailingStop(
   client: AlpacaClient,
-  orderId: string
+  orderId: string,
 ): Promise<void> {
   const sdk = client.getSDK();
 
-  log(`Canceling trailing stop order: ${orderId}`, { type: 'info' });
+  log(`Canceling trailing stop order: ${orderId}`, { type: "info" });
 
   try {
     await sdk.cancelOrder(orderId);
-    log(`Trailing stop order canceled: ${orderId}`, { type: 'info' });
+    log(`Trailing stop order canceled: ${orderId}`, { type: "info" });
   } catch (error) {
     const err = error as Error;
 
     // Check if the order was already filled or canceled
-    if (err.message.includes('order is not cancelable')) {
-      log(`Trailing stop ${orderId} is not cancelable (may already be filled or canceled)`, {
-        type: 'warn',
-      });
-      throw new Error(`Trailing stop ${orderId} is not cancelable: order may already be filled or canceled`);
+    if (err.message.includes("order is not cancelable")) {
+      log(
+        `Trailing stop ${orderId} is not cancelable (may already be filled or canceled)`,
+        {
+          type: "warn",
+        },
+      );
+      throw new Error(
+        `Trailing stop ${orderId} is not cancelable: order may already be filled or canceled`,
+      );
     }
 
-    log(`Failed to cancel trailing stop ${orderId}: ${err.message}`, { type: 'error' });
-    throw new Error(`Failed to cancel trailing stop ${orderId}: ${err.message}`);
+    log(`Failed to cancel trailing stop ${orderId}: ${err.message}`, {
+      type: "error",
+    });
+    throw new Error(
+      `Failed to cancel trailing stop ${orderId}: ${err.message}`,
+    );
   }
 }
 
@@ -400,32 +448,39 @@ export async function cancelTrailingStop(
  */
 export async function createPortfolioTrailingStops(
   client: AlpacaClient,
-  params: PortfolioTrailingStopParams
+  params: PortfolioTrailingStopParams,
 ): Promise<Map<string, AlpacaOrder>> {
   // Validate trail percent
   if (params.trailPercent <= 0) {
-    throw new Error('trailPercent must be greater than 0');
+    throw new Error("trailPercent must be greater than 0");
   }
 
   if (params.trailPercent > 100) {
-    throw new Error('trailPercent cannot exceed 100');
+    throw new Error("trailPercent cannot exceed 100");
   }
 
   const sdk = client.getSDK();
   const results = new Map<string, AlpacaOrder>();
-  const excludeSet = new Set(params.excludeSymbols?.map((s) => s.toUpperCase()) || []);
+  const excludeSet = new Set(
+    params.excludeSymbols?.map((s) => s.toUpperCase()) || [],
+  );
 
-  log(`Creating portfolio trailing stops at ${params.trailPercent}%`, { type: 'info' });
+  log(`Creating portfolio trailing stops at ${params.trailPercent}%`, {
+    type: "info",
+  });
 
   try {
     const positions: AlpacaPosition[] = await sdk.getPositions();
 
     if (positions.length === 0) {
-      log('No positions found in portfolio', { type: 'info' });
+      log("No positions found in portfolio", { type: "info" });
       return results;
     }
 
-    log(`Found ${positions.length} positions, checking for eligible trailing stops`, { type: 'debug' });
+    log(
+      `Found ${positions.length} positions, checking for eligible trailing stops`,
+      { type: "debug" },
+    );
 
     const errors: Array<{ symbol: string; error: string }> = [];
 
@@ -434,14 +489,16 @@ export async function createPortfolioTrailingStops(
 
       // Skip excluded symbols
       if (excludeSet.has(symbol)) {
-        log(`Skipping ${symbol} (excluded)`, { type: 'debug' });
+        log(`Skipping ${symbol} (excluded)`, { type: "debug" });
         continue;
       }
 
       // Only create trailing stops for long positions
       const qty = parseFloat(position.qty);
       if (qty <= 0) {
-        log(`Skipping ${symbol} (not a long position, qty: ${qty})`, { type: 'debug' });
+        log(`Skipping ${symbol} (not a long position, qty: ${qty})`, {
+          type: "debug",
+        });
         continue;
       }
 
@@ -449,15 +506,17 @@ export async function createPortfolioTrailingStops(
         const order = await createTrailingStop(client, {
           symbol,
           qty: Math.abs(qty),
-          side: 'sell',
+          side: "sell",
           trailPercent: params.trailPercent,
-          timeInForce: params.timeInForce || 'gtc',
+          timeInForce: params.timeInForce || "gtc",
         });
         results.set(symbol, order);
       } catch (err) {
         const errorMessage = (err as Error).message;
         errors.push({ symbol, error: errorMessage });
-        log(`Failed to create trailing stop for ${symbol}: ${errorMessage}`, { type: 'error' });
+        log(`Failed to create trailing stop for ${symbol}: ${errorMessage}`, {
+          type: "error",
+        });
       }
     }
 
@@ -468,20 +527,27 @@ export async function createPortfolioTrailingStops(
 
     log(
       `Portfolio trailing stops complete: ${successCount} created, ${failureCount} failed, ${skippedCount} skipped`,
-      { type: 'info' }
+      { type: "info" },
     );
 
     if (errors.length > 0) {
-      log(`Failed symbols: ${errors.map((e) => `${e.symbol} (${e.error})`).join(', ')}`, {
-        type: 'warn',
-      });
+      log(
+        `Failed symbols: ${errors.map((e) => `${e.symbol} (${e.error})`).join(", ")}`,
+        {
+          type: "warn",
+        },
+      );
     }
 
     return results;
   } catch (error) {
     const err = error as Error;
-    log(`Failed to create portfolio trailing stops: ${err.message}`, { type: 'error' });
-    throw new Error(`Failed to create portfolio trailing stops: ${err.message}`);
+    log(`Failed to create portfolio trailing stops: ${err.message}`, {
+      type: "error",
+    });
+    throw new Error(
+      `Failed to create portfolio trailing stops: ${err.message}`,
+    );
   }
 }
 
@@ -503,13 +569,13 @@ export async function createPortfolioTrailingStops(
  */
 export async function getOpenTrailingStops(
   client: AlpacaClient,
-  symbol?: string
+  symbol?: string,
 ): Promise<AlpacaOrder[]> {
   const sdk = client.getSDK();
 
   try {
     const queryParams: Record<string, unknown> = {
-      status: 'open',
+      status: "open",
     };
 
     if (symbol) {
@@ -517,19 +583,24 @@ export async function getOpenTrailingStops(
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const orders = (await sdk.getOrders(queryParams)) as AlpacaOrder[];
+    const orders = (await sdk.getOrders(queryParams as any)) as AlpacaOrder[];
 
     // Filter to only trailing stop orders
-    const trailingStops = orders.filter((order) => order.type === 'trailing_stop');
+    const trailingStops = orders.filter(
+      (order) => order.type === "trailing_stop",
+    );
 
-    log(`Found ${trailingStops.length} open trailing stop orders${symbol ? ` for ${symbol}` : ''}`, {
-      type: 'debug',
-    });
+    log(
+      `Found ${trailingStops.length} open trailing stop orders${symbol ? ` for ${symbol}` : ""}`,
+      {
+        type: "debug",
+      },
+    );
 
     return trailingStops;
   } catch (error) {
     const err = error as Error;
-    log(`Failed to get open trailing stops: ${err.message}`, { type: 'error' });
+    log(`Failed to get open trailing stops: ${err.message}`, { type: "error" });
     throw new Error(`Failed to get open trailing stops: ${err.message}`);
   }
 }
@@ -550,7 +621,7 @@ export async function getOpenTrailingStops(
  */
 export async function hasActiveTrailingStop(
   client: AlpacaClient,
-  symbol: string
+  symbol: string,
 ): Promise<boolean> {
   const trailingStops = await getOpenTrailingStops(client, symbol);
   return trailingStops.length > 0;
@@ -571,12 +642,12 @@ export async function hasActiveTrailingStop(
  */
 export async function cancelTrailingStopsForSymbol(
   client: AlpacaClient,
-  symbol: string
+  symbol: string,
 ): Promise<number> {
   const trailingStops = await getOpenTrailingStops(client, symbol);
 
   if (trailingStops.length === 0) {
-    log(`No trailing stops to cancel for ${symbol}`, { type: 'debug' });
+    log(`No trailing stops to cancel for ${symbol}`, { type: "debug" });
     return 0;
   }
 
@@ -593,10 +664,16 @@ export async function cancelTrailingStopsForSymbol(
   }
 
   if (errors.length > 0) {
-    log(`Some trailing stops failed to cancel for ${symbol}: ${errors.join(', ')}`, { type: 'warn' });
+    log(
+      `Some trailing stops failed to cancel for ${symbol}: ${errors.join(", ")}`,
+      { type: "warn" },
+    );
   }
 
-  log(`Canceled ${canceledCount}/${trailingStops.length} trailing stops for ${symbol}`, { type: 'info' });
+  log(
+    `Canceled ${canceledCount}/${trailingStops.length} trailing stops for ${symbol}`,
+    { type: "info" },
+  );
 
   return canceledCount;
 }

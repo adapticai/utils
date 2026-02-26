@@ -1,17 +1,22 @@
 // src/alpaca/trading/bracket-orders.ts
 // Bracket Orders Module - Combines entry, take profit, and stop loss orders
 
-import { log as baseLog } from '../../logging';
-import { AlpacaOrder, OrderSide, TimeInForce, CreateOrderParams } from '../../types/alpaca-types';
-import { LogOptions } from '../../types/logging-types';
+import { log as baseLog } from "../../logging";
+import {
+  AlpacaOrder,
+  OrderSide,
+  TimeInForce,
+  CreateOrderParams,
+} from "../../types/alpaca-types";
+import { LogOptions } from "../../types/logging-types";
 
 /**
  * Logs a message with the BracketOrders source.
  * @param message - The message to log.
  * @param options - Optional logging options.
  */
-const log = (message: string, options: LogOptions = { type: 'info' }): void => {
-  baseLog(message, { ...options, source: 'BracketOrders' });
+const log = (message: string, options: LogOptions = { type: "info" }): void => {
+  baseLog(message, { ...options, source: "BracketOrders" });
 };
 
 /**
@@ -34,7 +39,7 @@ export interface BracketOrderParams {
   /** Order side: buy or sell */
   side: OrderSide;
   /** Entry order type: market for immediate, limit for price-specific */
-  type: 'market' | 'limit';
+  type: "market" | "limit";
   /** Limit price for entry (required if type is 'limit') */
   limitPrice?: number;
   /** Take profit configuration */
@@ -77,37 +82,48 @@ export interface BracketOrderResult {
  * @throws Error if validation fails.
  */
 function validateBracketOrderParams(params: BracketOrderParams): void {
-  if (!params.symbol || params.symbol.trim() === '') {
-    throw new Error('Symbol is required for bracket order');
+  if (!params.symbol || params.symbol.trim() === "") {
+    throw new Error("Symbol is required for bracket order");
   }
 
   if (!params.qty || params.qty <= 0) {
-    throw new Error('Quantity must be a positive number');
+    throw new Error("Quantity must be a positive number");
   }
 
-  if (params.type === 'limit' && (params.limitPrice === undefined || params.limitPrice <= 0)) {
-    throw new Error('Limit price is required and must be positive for limit orders');
+  if (
+    params.type === "limit" &&
+    (params.limitPrice === undefined || params.limitPrice <= 0)
+  ) {
+    throw new Error(
+      "Limit price is required and must be positive for limit orders",
+    );
   }
 
   if (!params.takeProfit?.limitPrice || params.takeProfit.limitPrice <= 0) {
-    throw new Error('Take profit limit price is required and must be positive');
+    throw new Error("Take profit limit price is required and must be positive");
   }
 
   if (!params.stopLoss?.stopPrice || params.stopLoss.stopPrice <= 0) {
-    throw new Error('Stop loss stop price is required and must be positive');
+    throw new Error("Stop loss stop price is required and must be positive");
   }
 
   // Validate price levels make sense based on side
-  if (params.side === 'buy') {
+  if (params.side === "buy") {
     // For a buy order, take profit should be higher than entry, stop loss lower
     const entryPrice = params.limitPrice || params.takeProfit.limitPrice; // Use a reference price
     if (params.takeProfit.limitPrice <= params.stopLoss.stopPrice) {
-      log('Warning: Take profit price should typically be higher than stop loss price for buy orders', { type: 'warn' });
+      log(
+        "Warning: Take profit price should typically be higher than stop loss price for buy orders",
+        { type: "warn" },
+      );
     }
   } else {
     // For a sell order, take profit should be lower than entry, stop loss higher
     if (params.takeProfit.limitPrice >= params.stopLoss.stopPrice) {
-      log('Warning: Take profit price should typically be lower than stop loss price for sell orders', { type: 'warn' });
+      log(
+        "Warning: Take profit price should typically be lower than stop loss price for sell orders",
+        { type: "warn" },
+      );
     }
   }
 }
@@ -119,9 +135,10 @@ function validateBracketOrderParams(params: BracketOrderParams): void {
  * @returns The rounded price as a string.
  */
 function roundPriceForAlpaca(price: number): string {
-  const rounded = price >= 1
-    ? Math.round(price * 100) / 100
-    : Math.round(price * 10000) / 10000;
+  const rounded =
+    price >= 1
+      ? Math.round(price * 100) / 100
+      : Math.round(price * 10000) / 10000;
   return rounded.toString();
 }
 
@@ -157,12 +174,20 @@ function roundPriceForAlpaca(price: number): string {
  */
 export async function createBracketOrder(
   executor: BracketOrderExecutor,
-  params: BracketOrderParams
+  params: BracketOrderParams,
 ): Promise<BracketOrderResult> {
-  log(`Creating bracket order: ${params.side} ${params.qty} ${params.symbol}`, { type: 'info' });
-  log(`  Entry: ${params.type}${params.limitPrice ? ` @ $${params.limitPrice}` : ''}`, { type: 'debug' });
-  log(`  Take Profit: $${params.takeProfit.limitPrice}`, { type: 'debug' });
-  log(`  Stop Loss: $${params.stopLoss.stopPrice}${params.stopLoss.limitPrice ? ` (limit $${params.stopLoss.limitPrice})` : ''}`, { type: 'debug' });
+  log(`Creating bracket order: ${params.side} ${params.qty} ${params.symbol}`, {
+    type: "info",
+  });
+  log(
+    `  Entry: ${params.type}${params.limitPrice ? ` @ $${params.limitPrice}` : ""}`,
+    { type: "debug" },
+  );
+  log(`  Take Profit: $${params.takeProfit.limitPrice}`, { type: "debug" });
+  log(
+    `  Stop Loss: $${params.stopLoss.stopPrice}${params.stopLoss.limitPrice ? ` (limit $${params.stopLoss.limitPrice})` : ""}`,
+    { type: "debug" },
+  );
 
   // Validate parameters
   validateBracketOrderParams(params);
@@ -174,8 +199,8 @@ export async function createBracketOrder(
       qty: params.qty.toString(),
       side: params.side,
       type: params.type,
-      time_in_force: params.timeInForce || 'day',
-      order_class: 'bracket',
+      time_in_force: params.timeInForce || "day",
+      order_class: "bracket",
       take_profit: {
         limit_price: roundPriceForAlpaca(params.takeProfit.limitPrice),
       },
@@ -188,7 +213,7 @@ export async function createBracketOrder(
     };
 
     // Add limit price for entry if it's a limit order
-    if (params.type === 'limit' && params.limitPrice) {
+    if (params.type === "limit" && params.limitPrice) {
       orderParams.limit_price = roundPriceForAlpaca(params.limitPrice);
     }
 
@@ -205,28 +230,31 @@ export async function createBracketOrder(
     // Execute the order
     const order = await executor.createOrder(orderParams);
 
-    log(`Bracket order created successfully: ${order.id}`, { type: 'info' });
-    log(`  Order status: ${order.status}`, { type: 'debug' });
+    log(`Bracket order created successfully: ${order.id}`, { type: "info" });
+    log(`  Order status: ${order.status}`, { type: "debug" });
 
     // Parse the legs from the response
     const legs = order.legs || [];
 
     // Find take profit leg - it's a limit order at the take profit price
-    const takeProfitLeg = legs.find((leg: AlpacaOrder) =>
-      leg.type === 'limit' &&
-      parseFloat(leg.limit_price || '0') === params.takeProfit.limitPrice
-    ) || null;
+    const takeProfitLeg =
+      legs.find(
+        (leg: AlpacaOrder) =>
+          leg.type === "limit" &&
+          parseFloat(leg.limit_price || "0") === params.takeProfit.limitPrice,
+      ) || null;
 
     // Find stop loss leg - it's a stop or stop_limit order
-    const stopLossLeg = legs.find((leg: AlpacaOrder) =>
-      leg.type === 'stop' || leg.type === 'stop_limit'
-    ) || null;
+    const stopLossLeg =
+      legs.find(
+        (leg: AlpacaOrder) => leg.type === "stop" || leg.type === "stop_limit",
+      ) || null;
 
     if (takeProfitLeg) {
-      log(`  Take profit leg ID: ${takeProfitLeg.id}`, { type: 'debug' });
+      log(`  Take profit leg ID: ${takeProfitLeg.id}`, { type: "debug" });
     }
     if (stopLossLeg) {
-      log(`  Stop loss leg ID: ${stopLossLeg.id}`, { type: 'debug' });
+      log(`  Stop loss leg ID: ${stopLossLeg.id}`, { type: "debug" });
     }
 
     return {
@@ -237,8 +265,10 @@ export async function createBracketOrder(
     };
   } catch (error) {
     const err = error as Error;
-    log(`Bracket order failed: ${err.message}`, { type: 'error' });
-    throw new Error(`Failed to create bracket order for ${params.symbol}: ${err.message}`);
+    log(`Bracket order failed: ${err.message}`, { type: "error" });
+    throw new Error(
+      `Failed to create bracket order for ${params.symbol}: ${err.message}`,
+    );
   }
 }
 
@@ -251,7 +281,7 @@ export interface ProtectiveBracketParams {
   /** Number of shares to protect */
   qty: number;
   /** Side is always 'sell' to close a long position */
-  side: 'sell';
+  side: "sell";
   /** Take profit configuration */
   takeProfit: {
     /** Price at which to take profit */
@@ -297,32 +327,41 @@ export interface ProtectiveBracketParams {
  */
 export async function createProtectiveBracket(
   executor: BracketOrderExecutor,
-  params: ProtectiveBracketParams
+  params: ProtectiveBracketParams,
 ): Promise<BracketOrderResult> {
-  log(`Creating protective bracket for ${params.symbol}: ${params.qty} shares`, { type: 'info' });
-  log(`  Take Profit: $${params.takeProfit.limitPrice}`, { type: 'debug' });
-  log(`  Stop Loss: $${params.stopLoss.stopPrice}${params.stopLoss.limitPrice ? ` (limit $${params.stopLoss.limitPrice})` : ''}`, { type: 'debug' });
+  log(
+    `Creating protective bracket for ${params.symbol}: ${params.qty} shares`,
+    { type: "info" },
+  );
+  log(`  Take Profit: $${params.takeProfit.limitPrice}`, { type: "debug" });
+  log(
+    `  Stop Loss: $${params.stopLoss.stopPrice}${params.stopLoss.limitPrice ? ` (limit $${params.stopLoss.limitPrice})` : ""}`,
+    { type: "debug" },
+  );
 
   // Validate parameters
-  if (!params.symbol || params.symbol.trim() === '') {
-    throw new Error('Symbol is required for protective bracket');
+  if (!params.symbol || params.symbol.trim() === "") {
+    throw new Error("Symbol is required for protective bracket");
   }
 
   if (!params.qty || params.qty <= 0) {
-    throw new Error('Quantity must be a positive number');
+    throw new Error("Quantity must be a positive number");
   }
 
   if (!params.takeProfit?.limitPrice || params.takeProfit.limitPrice <= 0) {
-    throw new Error('Take profit limit price is required and must be positive');
+    throw new Error("Take profit limit price is required and must be positive");
   }
 
   if (!params.stopLoss?.stopPrice || params.stopLoss.stopPrice <= 0) {
-    throw new Error('Stop loss stop price is required and must be positive');
+    throw new Error("Stop loss stop price is required and must be positive");
   }
 
   // For a protective sell bracket, take profit should be higher than stop loss
   if (params.takeProfit.limitPrice <= params.stopLoss.stopPrice) {
-    log('Warning: Take profit price should be higher than stop loss price for protective sell bracket', { type: 'warn' });
+    log(
+      "Warning: Take profit price should be higher than stop loss price for protective sell bracket",
+      { type: "warn" },
+    );
   }
 
   try {
@@ -331,9 +370,9 @@ export async function createProtectiveBracket(
       symbol: params.symbol,
       qty: params.qty.toString(),
       side: params.side,
-      type: 'limit', // Primary leg is a limit order (take profit)
-      time_in_force: params.timeInForce || 'gtc',
-      order_class: 'oco',
+      type: "limit", // Primary leg is a limit order (take profit)
+      time_in_force: params.timeInForce || "gtc",
+      order_class: "oco",
       limit_price: roundPriceForAlpaca(params.takeProfit.limitPrice),
       stop_loss: {
         stop_price: roundPriceForAlpaca(params.stopLoss.stopPrice),
@@ -346,7 +385,9 @@ export async function createProtectiveBracket(
     // Execute the order
     const order = await executor.createOrder(orderParams);
 
-    log(`Protective bracket created successfully: ${order.id}`, { type: 'info' });
+    log(`Protective bracket created successfully: ${order.id}`, {
+      type: "info",
+    });
 
     // Parse the legs from the response
     const legs = order.legs || [];
@@ -355,9 +396,10 @@ export async function createProtectiveBracket(
     const takeProfitLeg = order;
 
     // Find stop loss leg
-    const stopLossLeg = legs.find((leg: AlpacaOrder) =>
-      leg.type === 'stop' || leg.type === 'stop_limit'
-    ) || null;
+    const stopLossLeg =
+      legs.find(
+        (leg: AlpacaOrder) => leg.type === "stop" || leg.type === "stop_limit",
+      ) || null;
 
     return {
       entryOrder: order,
@@ -367,8 +409,10 @@ export async function createProtectiveBracket(
     };
   } catch (error) {
     const err = error as Error;
-    log(`Protective bracket failed: ${err.message}`, { type: 'error' });
-    throw new Error(`Failed to create protective bracket for ${params.symbol}: ${err.message}`);
+    log(`Protective bracket failed: ${err.message}`, { type: "error" });
+    throw new Error(
+      `Failed to create protective bracket for ${params.symbol}: ${err.message}`,
+    );
   }
 }
 
@@ -386,11 +430,15 @@ export async function createProtectiveBracket(
  * ```
  */
 export function createExecutorFromTradingAPI(api: {
-  makeRequest: (endpoint: string, method: string, body?: unknown) => Promise<AlpacaOrder>;
+  makeRequest: (
+    endpoint: string,
+    method: string,
+    body?: unknown,
+  ) => Promise<AlpacaOrder>;
 }): BracketOrderExecutor {
   return {
     createOrder: async (params: CreateOrderParams): Promise<AlpacaOrder> => {
-      return api.makeRequest('/orders', 'POST', params);
+      return api.makeRequest("/orders", "POST", params);
     },
   };
 }

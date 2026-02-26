@@ -2,9 +2,11 @@
  * Options Market Data Module
  * Quotes, bars, and analytics for options using Alpaca SDK
  */
-import { AlpacaClient } from '../client';
-import { log as baseLog } from '../../logging';
-import { LogOptions } from '../../types/logging-types';
+import { AlpacaClient } from "../client";
+import { log as baseLog } from "../../logging";
+import { LogOptions } from "../../types/logging-types";
+import { MARKET_DATA_API } from "../../config/api-endpoints";
+import { createTimeoutSignal, DEFAULT_TIMEOUTS } from "../../http-timeout";
 import {
   OptionQuote,
   OptionTrade,
@@ -14,14 +16,14 @@ import {
   OptionsChainParams,
   OptionsChainResponse,
   TimeFrame,
-} from '../../types/alpaca-types';
+} from "../../types/alpaca-types";
 
-const LOG_SOURCE = 'OptionsData';
+const LOG_SOURCE = "OptionsData";
 
 /**
  * Internal logging helper with consistent source
  */
-const log = (message: string, options: LogOptions = { type: 'info' }) => {
+const log = (message: string, options: LogOptions = { type: "info" }) => {
   baseLog(message, { ...options, source: LOG_SOURCE });
 };
 
@@ -33,17 +35,17 @@ export class OptionsDataError extends Error {
     message: string,
     public code: string,
     public symbol?: string,
-    public details?: unknown
+    public details?: unknown,
   ) {
     super(message);
-    this.name = 'OptionsDataError';
+    this.name = "OptionsDataError";
   }
 }
 
 /**
  * Options data feed type
  */
-export type OptionsFeed = 'opra' | 'indicative';
+export type OptionsFeed = "opra" | "indicative";
 
 /**
  * Base URL for Alpaca options market data API
@@ -56,7 +58,7 @@ const OPTIONS_DATA_BASE_URL = `${MARKET_DATA_API.OPTIONS}/options`;
 async function makeOptionsDataRequest<T>(
   client: AlpacaClient,
   endpoint: string,
-  params: Record<string, string | number | boolean | undefined> = {}
+  params: Record<string, string | number | boolean | undefined> = {},
 ): Promise<T> {
   const config = client.getConfig();
   const url = new URL(`${OPTIONS_DATA_BASE_URL}${endpoint}`);
@@ -69,11 +71,11 @@ async function makeOptionsDataRequest<T>(
   });
 
   const response = await fetch(url.toString(), {
-    method: 'GET',
+    method: "GET",
     headers: {
-      'APCA-API-KEY-ID': config.apiKey,
-      'APCA-API-SECRET-KEY': config.apiSecret,
-      'Content-Type': 'application/json',
+      "APCA-API-KEY-ID": config.apiKey,
+      "APCA-API-SECRET-KEY": config.apiSecret,
+      "Content-Type": "application/json",
     },
     signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
   });
@@ -82,9 +84,9 @@ async function makeOptionsDataRequest<T>(
     const errorText = await response.text();
     throw new OptionsDataError(
       `Options data request failed: ${response.status} ${response.statusText}`,
-      'API_ERROR',
+      "API_ERROR",
       undefined,
-      { status: response.status, body: errorText }
+      { status: response.status, body: errorText },
     );
   }
 
@@ -97,19 +99,19 @@ async function makeOptionsDataRequest<T>(
  */
 export async function getOptionsChain(
   client: AlpacaClient,
-  params: OptionsChainParams
+  params: OptionsChainParams,
 ): Promise<OptionsChainResponse> {
   const { underlying_symbol, ...queryParams } = params;
 
   if (!underlying_symbol) {
     throw new OptionsDataError(
-      'Underlying symbol is required',
-      'INVALID_PARAMS'
+      "Underlying symbol is required",
+      "INVALID_PARAMS",
     );
   }
 
   log(`Fetching options chain for ${underlying_symbol}`, {
-    type: 'debug',
+    type: "debug",
     symbol: underlying_symbol,
   });
 
@@ -121,28 +123,38 @@ export async function getOptionsChain(
 
     if (queryParams.feed) apiParams.feed = queryParams.feed;
     if (queryParams.limit) apiParams.limit = queryParams.limit;
-    if (queryParams.updated_since) apiParams.updated_since = queryParams.updated_since;
+    if (queryParams.updated_since)
+      apiParams.updated_since = queryParams.updated_since;
     if (queryParams.page_token) apiParams.page_token = queryParams.page_token;
     if (queryParams.type) apiParams.type = queryParams.type;
-    if (queryParams.strike_price_gte) apiParams.strike_price_gte = queryParams.strike_price_gte;
-    if (queryParams.strike_price_lte) apiParams.strike_price_lte = queryParams.strike_price_lte;
-    if (queryParams.expiration_date) apiParams.expiration_date = queryParams.expiration_date;
-    if (queryParams.expiration_date_gte) apiParams.expiration_date_gte = queryParams.expiration_date_gte;
-    if (queryParams.expiration_date_lte) apiParams.expiration_date_lte = queryParams.expiration_date_lte;
-    if (queryParams.root_symbol) apiParams.root_symbol = queryParams.root_symbol;
+    if (queryParams.strike_price_gte)
+      apiParams.strike_price_gte = queryParams.strike_price_gte;
+    if (queryParams.strike_price_lte)
+      apiParams.strike_price_lte = queryParams.strike_price_lte;
+    if (queryParams.expiration_date)
+      apiParams.expiration_date = queryParams.expiration_date;
+    if (queryParams.expiration_date_gte)
+      apiParams.expiration_date_gte = queryParams.expiration_date_gte;
+    if (queryParams.expiration_date_lte)
+      apiParams.expiration_date_lte = queryParams.expiration_date_lte;
+    if (queryParams.root_symbol)
+      apiParams.root_symbol = queryParams.root_symbol;
 
     const response = await makeOptionsDataRequest<OptionsChainResponse>(
       client,
-      '/snapshots',
-      apiParams
+      "/snapshots",
+      apiParams,
     );
 
     const snapshotCount = Object.keys(response.snapshots || {}).length;
-    log(`Retrieved options chain for ${underlying_symbol}: ${snapshotCount} contracts`, {
-      type: 'debug',
-      symbol: underlying_symbol,
-      metadata: { count: snapshotCount },
-    });
+    log(
+      `Retrieved options chain for ${underlying_symbol}: ${snapshotCount} contracts`,
+      {
+        type: "debug",
+        symbol: underlying_symbol,
+        metadata: { count: snapshotCount },
+      },
+    );
 
     return response;
   } catch (error) {
@@ -151,16 +163,19 @@ export async function getOptionsChain(
     }
 
     const errorMessage = error instanceof Error ? error.message : String(error);
-    log(`Failed to fetch options chain for ${underlying_symbol}: ${errorMessage}`, {
-      type: 'error',
-      symbol: underlying_symbol,
-    });
+    log(
+      `Failed to fetch options chain for ${underlying_symbol}: ${errorMessage}`,
+      {
+        type: "error",
+        symbol: underlying_symbol,
+      },
+    );
 
     throw new OptionsDataError(
       `Failed to fetch options chain: ${errorMessage}`,
-      'FETCH_ERROR',
+      "FETCH_ERROR",
       underlying_symbol,
-      error
+      error,
     );
   }
 }
@@ -170,25 +185,27 @@ export async function getOptionsChain(
  */
 export async function getLatestOptionsQuotes(
   client: AlpacaClient,
-  symbols: string[]
+  symbols: string[],
 ): Promise<Map<string, OptionQuote>> {
   if (!symbols || symbols.length === 0) {
     throw new OptionsDataError(
-      'At least one symbol is required',
-      'INVALID_PARAMS'
+      "At least one symbol is required",
+      "INVALID_PARAMS",
     );
   }
 
-  const normalizedSymbols = symbols.map((s) => s.toUpperCase().trim()).filter(Boolean);
+  const normalizedSymbols = symbols
+    .map((s) => s.toUpperCase().trim())
+    .filter(Boolean);
 
-  log(`Fetching latest option quotes for ${normalizedSymbols.length} symbols`, { type: 'debug' });
+  log(`Fetching latest option quotes for ${normalizedSymbols.length} symbols`, {
+    type: "debug",
+  });
 
   try {
-    const response = await makeOptionsDataRequest<{ quotes: Record<string, OptionQuote> }>(
-      client,
-      '/quotes/latest',
-      { symbols: normalizedSymbols.join(',') }
-    );
+    const response = await makeOptionsDataRequest<{
+      quotes: Record<string, OptionQuote>;
+    }>(client, "/quotes/latest", { symbols: normalizedSymbols.join(",") });
 
     const quotes = new Map<string, OptionQuote>();
 
@@ -199,7 +216,7 @@ export async function getLatestOptionsQuotes(
     }
 
     log(`Retrieved ${quotes.size} option quotes`, {
-      type: 'debug',
+      type: "debug",
       metadata: { count: quotes.size },
     });
 
@@ -210,13 +227,13 @@ export async function getLatestOptionsQuotes(
     }
 
     const errorMessage = error instanceof Error ? error.message : String(error);
-    log(`Failed to fetch option quotes: ${errorMessage}`, { type: 'error' });
+    log(`Failed to fetch option quotes: ${errorMessage}`, { type: "error" });
 
     throw new OptionsDataError(
       `Failed to fetch option quotes: ${errorMessage}`,
-      'FETCH_ERROR',
+      "FETCH_ERROR",
       undefined,
-      error
+      error,
     );
   }
 }
@@ -226,25 +243,27 @@ export async function getLatestOptionsQuotes(
  */
 export async function getLatestOptionsTrades(
   client: AlpacaClient,
-  symbols: string[]
+  symbols: string[],
 ): Promise<Map<string, OptionTrade>> {
   if (!symbols || symbols.length === 0) {
     throw new OptionsDataError(
-      'At least one symbol is required',
-      'INVALID_PARAMS'
+      "At least one symbol is required",
+      "INVALID_PARAMS",
     );
   }
 
-  const normalizedSymbols = symbols.map((s) => s.toUpperCase().trim()).filter(Boolean);
+  const normalizedSymbols = symbols
+    .map((s) => s.toUpperCase().trim())
+    .filter(Boolean);
 
-  log(`Fetching latest option trades for ${normalizedSymbols.length} symbols`, { type: 'debug' });
+  log(`Fetching latest option trades for ${normalizedSymbols.length} symbols`, {
+    type: "debug",
+  });
 
   try {
-    const response = await makeOptionsDataRequest<{ trades: Record<string, OptionTrade> }>(
-      client,
-      '/trades/latest',
-      { symbols: normalizedSymbols.join(',') }
-    );
+    const response = await makeOptionsDataRequest<{
+      trades: Record<string, OptionTrade>;
+    }>(client, "/trades/latest", { symbols: normalizedSymbols.join(",") });
 
     const trades = new Map<string, OptionTrade>();
 
@@ -255,7 +274,7 @@ export async function getLatestOptionsTrades(
     }
 
     log(`Retrieved ${trades.size} option trades`, {
-      type: 'debug',
+      type: "debug",
       metadata: { count: trades.size },
     });
 
@@ -266,13 +285,13 @@ export async function getLatestOptionsTrades(
     }
 
     const errorMessage = error instanceof Error ? error.message : String(error);
-    log(`Failed to fetch option trades: ${errorMessage}`, { type: 'error' });
+    log(`Failed to fetch option trades: ${errorMessage}`, { type: "error" });
 
     throw new OptionsDataError(
       `Failed to fetch option trades: ${errorMessage}`,
-      'FETCH_ERROR',
+      "FETCH_ERROR",
       undefined,
-      error
+      error,
     );
   }
 }
@@ -282,25 +301,27 @@ export async function getLatestOptionsTrades(
  */
 export async function getOptionsSnapshots(
   client: AlpacaClient,
-  symbols: string[]
+  symbols: string[],
 ): Promise<Map<string, OptionSnapshot>> {
   if (!symbols || symbols.length === 0) {
     throw new OptionsDataError(
-      'At least one symbol is required',
-      'INVALID_PARAMS'
+      "At least one symbol is required",
+      "INVALID_PARAMS",
     );
   }
 
-  const normalizedSymbols = symbols.map((s) => s.toUpperCase().trim()).filter(Boolean);
+  const normalizedSymbols = symbols
+    .map((s) => s.toUpperCase().trim())
+    .filter(Boolean);
 
-  log(`Fetching option snapshots for ${normalizedSymbols.length} symbols`, { type: 'debug' });
+  log(`Fetching option snapshots for ${normalizedSymbols.length} symbols`, {
+    type: "debug",
+  });
 
   try {
-    const response = await makeOptionsDataRequest<{ snapshots: Record<string, OptionSnapshot> }>(
-      client,
-      '/snapshots',
-      { symbols: normalizedSymbols.join(',') }
-    );
+    const response = await makeOptionsDataRequest<{
+      snapshots: Record<string, OptionSnapshot>;
+    }>(client, "/snapshots", { symbols: normalizedSymbols.join(",") });
 
     const snapshots = new Map<string, OptionSnapshot>();
 
@@ -311,7 +332,7 @@ export async function getOptionsSnapshots(
     }
 
     log(`Retrieved ${snapshots.size} option snapshots`, {
-      type: 'debug',
+      type: "debug",
       metadata: { count: snapshots.size },
     });
 
@@ -322,13 +343,13 @@ export async function getOptionsSnapshots(
     }
 
     const errorMessage = error instanceof Error ? error.message : String(error);
-    log(`Failed to fetch option snapshots: ${errorMessage}`, { type: 'error' });
+    log(`Failed to fetch option snapshots: ${errorMessage}`, { type: "error" });
 
     throw new OptionsDataError(
       `Failed to fetch option snapshots: ${errorMessage}`,
-      'FETCH_ERROR',
+      "FETCH_ERROR",
       undefined,
-      error
+      error,
     );
   }
 }
@@ -354,26 +375,31 @@ export interface GetHistoricalOptionsBarsParams {
  */
 export async function getHistoricalOptionsBars(
   client: AlpacaClient,
-  params: GetHistoricalOptionsBarsParams
+  params: GetHistoricalOptionsBarsParams,
 ): Promise<Map<string, OptionBar[]>> {
   const { symbols, timeframe, start, end, limit } = params;
 
   if (!symbols || symbols.length === 0) {
     throw new OptionsDataError(
-      'At least one symbol is required',
-      'INVALID_PARAMS'
+      "At least one symbol is required",
+      "INVALID_PARAMS",
     );
   }
 
-  const normalizedSymbols = symbols.map((s) => s.toUpperCase().trim()).filter(Boolean);
+  const normalizedSymbols = symbols
+    .map((s) => s.toUpperCase().trim())
+    .filter(Boolean);
 
-  log(`Fetching historical option bars for ${normalizedSymbols.length} symbols (${timeframe})`, {
-    type: 'debug',
-  });
+  log(
+    `Fetching historical option bars for ${normalizedSymbols.length} symbols (${timeframe})`,
+    {
+      type: "debug",
+    },
+  );
 
   try {
     const apiParams: Record<string, string | number | boolean | undefined> = {
-      symbols: normalizedSymbols.join(','),
+      symbols: normalizedSymbols.join(","),
       timeframe,
     };
 
@@ -381,11 +407,9 @@ export async function getHistoricalOptionsBars(
     if (end) apiParams.end = end.toISOString();
     if (limit) apiParams.limit = limit;
 
-    const response = await makeOptionsDataRequest<{ bars: Record<string, OptionBar[]> }>(
-      client,
-      '/bars',
-      apiParams
-    );
+    const response = await makeOptionsDataRequest<{
+      bars: Record<string, OptionBar[]>;
+    }>(client, "/bars", apiParams);
 
     const bars = new Map<string, OptionBar[]>();
 
@@ -395,9 +419,12 @@ export async function getHistoricalOptionsBars(
       });
     }
 
-    const totalBars = Array.from(bars.values()).reduce((sum, b) => sum + b.length, 0);
+    const totalBars = Array.from(bars.values()).reduce(
+      (sum, b) => sum + b.length,
+      0,
+    );
     log(`Retrieved ${totalBars} option bars for ${bars.size} symbols`, {
-      type: 'debug',
+      type: "debug",
       metadata: { symbolCount: bars.size, barCount: totalBars },
     });
 
@@ -408,13 +435,15 @@ export async function getHistoricalOptionsBars(
     }
 
     const errorMessage = error instanceof Error ? error.message : String(error);
-    log(`Failed to fetch historical option bars: ${errorMessage}`, { type: 'error' });
+    log(`Failed to fetch historical option bars: ${errorMessage}`, {
+      type: "error",
+    });
 
     throw new OptionsDataError(
       `Failed to fetch historical option bars: ${errorMessage}`,
-      'FETCH_ERROR',
+      "FETCH_ERROR",
       undefined,
-      error
+      error,
     );
   }
 }
@@ -429,7 +458,7 @@ export function approximateImpliedVolatility(
   strike: number,
   daysToExpiration: number,
   riskFreeRate: number = 0.05,
-  isCall: boolean = true
+  isCall: boolean = true,
 ): number {
   // Simplified IV approximation using Brenner-Subrahmanyam formula
   // IV ~ (optionPrice / underlyingPrice) * sqrt(2 * pi / T)
@@ -459,20 +488,20 @@ export function approximateImpliedVolatility(
 export function calculateMoneyness(
   underlyingPrice: number,
   strike: number,
-  isCall: boolean
-): 'ITM' | 'ATM' | 'OTM' {
+  isCall: boolean,
+): "ITM" | "ATM" | "OTM" {
   const threshold = 0.02; // 2% threshold for ATM
 
   const ratio = underlyingPrice / strike;
 
   if (Math.abs(ratio - 1) <= threshold) {
-    return 'ATM';
+    return "ATM";
   }
 
   if (isCall) {
-    return ratio > 1 ? 'ITM' : 'OTM';
+    return ratio > 1 ? "ITM" : "OTM";
   } else {
-    return ratio < 1 ? 'ITM' : 'OTM';
+    return ratio < 1 ? "ITM" : "OTM";
   }
 }
 
@@ -481,7 +510,7 @@ export function calculateMoneyness(
  */
 export function findATMStrikes(
   snapshots: Map<string, OptionSnapshot>,
-  underlyingPrice: number
+  underlyingPrice: number,
 ): { callSymbol: string | null; putSymbol: string | null; strike: number } {
   let closestStrike = 0;
   let minDiff = Infinity;
@@ -508,9 +537,9 @@ export function findATMStrikes(
     if (strikeMatch) {
       const strike = parseInt(strikeMatch[1], 10) / 1000;
       if (Math.abs(strike - closestStrike) < 0.01) {
-        if (symbol.includes('C')) {
+        if (symbol.includes("C")) {
           callSymbol = symbol;
-        } else if (symbol.includes('P')) {
+        } else if (symbol.includes("P")) {
           putSymbol = symbol;
         }
       }
@@ -523,16 +552,17 @@ export function findATMStrikes(
 /**
  * Calculate put/call ratio from options chain
  */
-export function calculatePutCallRatio(
-  snapshots: Map<string, OptionSnapshot>
-): { volumeRatio: number; openInterestRatio: number } {
+export function calculatePutCallRatio(snapshots: Map<string, OptionSnapshot>): {
+  volumeRatio: number;
+  openInterestRatio: number;
+} {
   let callVolume = 0;
   let putVolume = 0;
   let callOI = 0;
   let putOI = 0;
 
   for (const [symbol, snapshot] of snapshots) {
-    const isCall = symbol.includes('C');
+    const isCall = symbol.includes("C");
     const volume = snapshot.latestTrade?.s || 0;
     const oi = snapshot.openInterest || 0;
 
@@ -574,7 +604,7 @@ export function extractGreeks(snapshot: OptionSnapshot): OptionGreeks | null {
 export function filterByExpiration(
   snapshots: Map<string, OptionSnapshot>,
   minDays: number,
-  maxDays: number
+  maxDays: number,
 ): Map<string, OptionSnapshot> {
   const now = new Date();
   const filtered = new Map<string, OptionSnapshot>();
@@ -589,7 +619,9 @@ export function filterByExpiration(
       const day = parseInt(dateStr.substring(4, 6), 10);
 
       const expDate = new Date(year, month, day);
-      const daysToExp = Math.ceil((expDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+      const daysToExp = Math.ceil(
+        (expDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
+      );
 
       if (daysToExp >= minDays && daysToExp <= maxDays) {
         filtered.set(symbol, snapshot);
@@ -606,7 +638,7 @@ export function filterByExpiration(
 export function filterByStrike(
   snapshots: Map<string, OptionSnapshot>,
   minStrike: number,
-  maxStrike: number
+  maxStrike: number,
 ): Map<string, OptionSnapshot> {
   const filtered = new Map<string, OptionSnapshot>();
 
@@ -630,10 +662,10 @@ export function filterByStrike(
  */
 export function filterByType(
   snapshots: Map<string, OptionSnapshot>,
-  type: 'call' | 'put'
+  type: "call" | "put",
 ): Map<string, OptionSnapshot> {
   const filtered = new Map<string, OptionSnapshot>();
-  const typeChar = type === 'call' ? 'C' : 'P';
+  const typeChar = type === "call" ? "C" : "P";
 
   for (const [symbol, snapshot] of snapshots) {
     if (symbol.includes(typeChar)) {
@@ -665,7 +697,7 @@ export function getOptionSpread(quote: OptionQuote): {
 export function hasGoodLiquidity(
   snapshot: OptionSnapshot,
   maxSpreadPercent: number = 10,
-  minOpenInterest: number = 100
+  minOpenInterest: number = 100,
 ): boolean {
   // Check open interest
   if ((snapshot.openInterest || 0) < minOpenInterest) {

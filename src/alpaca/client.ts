@@ -2,12 +2,14 @@
  * Alpaca SDK Client Factory
  * Provides unified access to Alpaca Trading API using official SDK
  */
-import Alpaca from '@alpacahq/alpaca-trade-api';
-import { log as baseLog } from '../logging';
-import { LogOptions } from '../types/logging-types';
+import Alpaca from "@alpacahq/alpaca-trade-api";
+import { getTradingApiUrl } from "../config/api-endpoints";
+import { createTimeoutSignal, DEFAULT_TIMEOUTS } from "../http-timeout";
+import { log as baseLog } from "../logging";
+import { LogOptions } from "../types/logging-types";
 
-const log = (message: string, options: LogOptions = { type: 'info' }) => {
-  baseLog(message, { ...options, source: 'AlpacaClient' });
+const log = (message: string, options: LogOptions = { type: "info" }) => {
+  baseLog(message, { ...options, source: "AlpacaClient" });
 };
 
 /**
@@ -19,9 +21,9 @@ export interface AlpacaClientConfig {
   /** Alpaca API Secret */
   apiSecret: string;
   /** Account type: PAPER for testing, LIVE for production */
-  accountType: 'PAPER' | 'LIVE';
+  accountType: "PAPER" | "LIVE";
   /** Optional data feed: 'sip' for premium, 'iex' for free tier */
-  dataFeed?: 'sip' | 'iex';
+  dataFeed?: "sip" | "iex";
 }
 
 /**
@@ -53,7 +55,7 @@ export class AlpacaClient {
     this.sdk = new Alpaca({
       keyId: config.apiKey,
       secretKey: config.apiSecret,
-      paper: config.accountType === 'PAPER',
+      paper: config.accountType === "PAPER",
       usePolygon: false,
     });
 
@@ -61,12 +63,14 @@ export class AlpacaClient {
     this.apiBaseUrl = getTradingApiUrl(config.accountType);
 
     this.headers = {
-      'APCA-API-KEY-ID': config.apiKey,
-      'APCA-API-SECRET-KEY': config.apiSecret,
-      'Content-Type': 'application/json',
+      "APCA-API-KEY-ID": config.apiKey,
+      "APCA-API-SECRET-KEY": config.apiSecret,
+      "Content-Type": "application/json",
     };
 
-    log(`AlpacaClient initialized (${config.accountType} mode)`, { type: 'info' });
+    log(`AlpacaClient initialized (${config.accountType} mode)`, {
+      type: "info",
+    });
   }
 
   /**
@@ -87,7 +91,7 @@ export class AlpacaClient {
    * Check if using paper trading
    */
   isPaper(): boolean {
-    return this.config.accountType === 'PAPER';
+    return this.config.accountType === "PAPER";
   }
 
   /**
@@ -105,7 +109,9 @@ export class AlpacaClient {
       };
     } catch (error) {
       this.isConnected = false;
-      log(`Credential validation failed: ${(error as Error).message}`, { type: 'error' });
+      log(`Credential validation failed: ${(error as Error).message}`, {
+        type: "error",
+      });
       throw error;
     }
   }
@@ -142,8 +148,8 @@ export class AlpacaClient {
    */
   async makeRequest<T>(
     endpoint: string,
-    method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET',
-    body?: Record<string, unknown>
+    method: "GET" | "POST" | "PUT" | "DELETE" = "GET",
+    body?: Record<string, unknown>,
   ): Promise<T> {
     const url = `${this.apiBaseUrl}${endpoint}`;
 
@@ -152,31 +158,36 @@ export class AlpacaClient {
       headers: this.headers,
     };
 
-    if (body && (method === 'POST' || method === 'PUT')) {
+    if (body && (method === "POST" || method === "PUT")) {
       options.body = JSON.stringify(body);
     }
 
     try {
       const response = await fetch(url, {
-      ...options,
-      signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
-    });
+        ...options,
+        signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
+      });
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`API request failed (${response.status}): ${errorText}`);
+        throw new Error(
+          `API request failed (${response.status}): ${errorText}`,
+        );
       }
 
       // Handle empty responses (e.g., DELETE requests)
-      const contentType = response.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
+      const contentType = response.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
         return {} as T;
       }
 
-      return await response.json() as T;
+      return (await response.json()) as T;
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      log(`API request to ${endpoint} failed: ${errorMessage}`, { type: 'error' });
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      log(`API request to ${endpoint} failed: ${errorMessage}`, {
+        type: "error",
+      });
       throw error;
     }
   }
@@ -193,7 +204,7 @@ export function createAlpacaClient(config: AlpacaClientConfig): AlpacaClient {
   const cacheKey = `${config.apiKey}-${config.accountType}`;
 
   if (clientCache.has(cacheKey)) {
-    log(`Returning cached client for ${config.accountType}`, { type: 'debug' });
+    log(`Returning cached client for ${config.accountType}`, { type: "debug" });
     return clientCache.get(cacheKey)!;
   }
 
@@ -208,10 +219,13 @@ export function createAlpacaClient(config: AlpacaClientConfig): AlpacaClient {
 export function createClientFromEnv(): AlpacaClient {
   const apiKey = process.env.ALPACA_API_KEY;
   const apiSecret = process.env.ALPACA_SECRET_KEY;
-  const accountType = (process.env.ALPACA_ACCOUNT_TYPE as 'PAPER' | 'LIVE') || 'PAPER';
+  const accountType =
+    (process.env.ALPACA_ACCOUNT_TYPE as "PAPER" | "LIVE") || "PAPER";
 
   if (!apiKey || !apiSecret) {
-    throw new Error('ALPACA_API_KEY and ALPACA_SECRET_KEY environment variables are required');
+    throw new Error(
+      "ALPACA_API_KEY and ALPACA_SECRET_KEY environment variables are required",
+    );
   }
 
   return createAlpacaClient({
@@ -226,7 +240,7 @@ export function createClientFromEnv(): AlpacaClient {
  */
 export function clearClientCache(): void {
   clientCache.clear();
-  log('Client cache cleared', { type: 'info' });
+  log("Client cache cleared", { type: "info" });
 }
 
 export default AlpacaClient;

@@ -4,19 +4,19 @@ import type {
   CryptoBar,
   AlpacaNewsArticle,
   LatestTradesResponse,
-  LatestQuotesResponse
-} from './types/alpaca-types.js';
-import { logIfDebug } from './misc-utils.js';
-import { createTimeoutSignal, DEFAULT_TIMEOUTS } from './http-timeout.js';
-import { MARKET_DATA_API } from './config/api-endpoints';
-import { withRetry, API_RETRY_CONFIGS } from './utils/retry';
+  LatestQuotesResponse,
+} from "./types/alpaca-types.js";
+import { logIfDebug } from "./misc-utils.js";
+import { createTimeoutSignal, DEFAULT_TIMEOUTS } from "./http-timeout.js";
+import { MARKET_DATA_API } from "./config/api-endpoints";
+import { withRetry, API_RETRY_CONFIGS } from "./utils/retry";
 
 const ALPACA_API_BASE = MARKET_DATA_API.CRYPTO;
 
 /**
  * Fetches cryptocurrency bars for the specified parameters.
  * This function retrieves historical price data for multiple cryptocurrencies.
- * 
+ *
  * @param params - The parameters for fetching crypto bars.
  * @param params.symbols - An array of cryptocurrency symbols to fetch data for.
  * @param params.timeframe - The timeframe for the bars (e.g., '1Min', '5Min', '1H', '1D').
@@ -27,9 +27,11 @@ const ALPACA_API_BASE = MARKET_DATA_API.CRYPTO;
  * @param params.sort - The sorting order for the results (optional).
  * @returns A promise that resolves to an object containing arrays of CryptoBar objects for each symbol.
  */
-export async function fetchBars(params: CryptoBarsParams): Promise<{ [symbol: string]: CryptoBar[] }> {
+export async function fetchBars(
+  params: CryptoBarsParams,
+): Promise<{ [symbol: string]: CryptoBar[] }> {
   // Convert symbols array to comma-separated string
-  const symbolsParam = params.symbols.join(',');
+  const symbolsParam = params.symbols.join(",");
 
   // Initialize result object to store all bars
   const allBars: { [symbol: string]: CryptoBar[] } = {};
@@ -65,11 +67,15 @@ export async function fetchBars(params: CryptoBarsParams): Promise<{ [symbol: st
 
           if (!response.ok) {
             const errorText = await response.text();
-            throw new Error(`Alpaca API error (${response.status}): ${errorText}`);
+            throw new Error(
+              `Alpaca API error (${response.status}): ${errorText}`,
+            );
           }
 
-          const data: Omit<CryptoBarsResponse, 'bars'> & {
-            bars: { [symbol: string]: Array<Omit<CryptoBar, 't'> & { t: string }> };
+          const data: Omit<CryptoBarsResponse, "bars"> & {
+            bars: {
+              [symbol: string]: Array<Omit<CryptoBar, "t"> & { t: string }>;
+            };
           } = await response.json();
 
           // Convert timestamp strings to Date objects and merge bars
@@ -87,10 +93,12 @@ export async function fetchBars(params: CryptoBarsParams): Promise<{ [symbol: st
           pageToken = data.next_page_token;
           hasMorePages = !!pageToken;
 
-          logIfDebug(`Received ${Object.values(data.bars).flat().length} bars. More pages: ${hasMorePages}`);
+          logIfDebug(
+            `Received ${Object.values(data.bars).flat().length} bars. More pages: ${hasMorePages}`,
+          );
         },
         API_RETRY_CONFIGS.CRYPTO,
-        `Crypto.fetchBars(${symbolsParam})`
+        `Crypto.fetchBars(${symbolsParam})`,
       );
     } catch (error) {
       logIfDebug(`Error fetching crypto bars: ${error}`);
@@ -104,13 +112,13 @@ export async function fetchBars(params: CryptoBarsParams): Promise<{ [symbol: st
 type AlpacaAuth = {
   APIKey: string;
   APISecret: string;
-  type?: 'PAPER' | 'LIVE';
+  type?: "PAPER" | "LIVE";
 };
 
 /**
  * Fetches news articles related to a specific cryptocurrency symbol.
  * This function retrieves news articles from the Alpaca API.
- * 
+ *
  * @param params - The parameters for fetching news articles.
  * @param params.symbol - The cryptocurrency symbol to fetch news for.
  * @param params.start - The start date for fetching news (optional).
@@ -129,22 +137,22 @@ export async function fetchNews(
     includeContent?: boolean;
     limit?: number;
   },
-  auth: AlpacaAuth
+  auth: AlpacaAuth,
 ): Promise<AlpacaNewsArticle[]> {
   const {
     symbol,
     start = new Date(Date.now() - 24 * 60 * 60 * 1000),
-    sort = 'desc',
+    sort = "desc",
     includeContent = false,
     limit = 1000,
   } = params;
   if (!auth.APIKey || !auth.APISecret) {
-    throw new Error('Alpaca API key and secret are required');
+    throw new Error("Alpaca API key and secret are required");
   }
   if (!symbol) {
-    throw new Error('Symbol is required');
+    throw new Error("Symbol is required");
   }
-  
+
   const queryParams = new URLSearchParams({
     start: start.toISOString(),
     sort,
@@ -168,7 +176,7 @@ export async function fetchNews(
     url: string;
     content: string;
     symbols: string[];
-    images: Array<{ size: 'large' | 'small' | 'thumb'; url: string }>;
+    images: Array<{ size: "large" | "small" | "thumb"; url: string }>;
   }
 
   let newsArticles: AlpacaNewsArticle[] = [];
@@ -177,7 +185,7 @@ export async function fetchNews(
 
   while (hasMorePages) {
     if (pageToken) {
-      queryParams.append('page_token', pageToken);
+      queryParams.append("page_token", pageToken);
     }
 
     await withRetry(
@@ -188,38 +196,45 @@ export async function fetchNews(
 
         if (!response.ok) {
           const errorText = await response.text();
-          throw new Error(`Alpaca API error (${response.status}): ${errorText}`);
+          throw new Error(
+            `Alpaca API error (${response.status}): ${errorText}`,
+          );
         }
 
-        const data: { news: RawNewsArticle[]; next_page_token?: string } = await response.json();
+        const data: { news: RawNewsArticle[]; next_page_token?: string } =
+          await response.json();
         newsArticles = newsArticles.concat(
-          data.news.map((article): AlpacaNewsArticle => ({
-            id: article.id,
-            author: article.author,
-            content: article.content,
-            created_at: article.created_at,
-            updated_at: article.updated_at,
-            headline: article.headline,
-            source: article.source,
-            summary: article.summary,
-            url: article.url,
-            symbols: article.symbols,
-            images: article.images,
-          }))
+          data.news.map(
+            (article): AlpacaNewsArticle => ({
+              id: article.id,
+              author: article.author,
+              content: article.content,
+              created_at: article.created_at,
+              updated_at: article.updated_at,
+              headline: article.headline,
+              source: article.source,
+              summary: article.summary,
+              url: article.url,
+              symbols: article.symbols,
+              images: article.images,
+            }),
+          ),
         );
 
-        pageToken = data.next_page_token;
+        pageToken = data.next_page_token ?? null;
         hasMorePages = !!pageToken;
 
-        logIfDebug(`Received ${data.news.length} news articles. More pages: ${hasMorePages}`);
+        logIfDebug(
+          `Received ${data.news.length} news articles. More pages: ${hasMorePages}`,
+        );
       },
       API_RETRY_CONFIGS.CRYPTO,
-      `Crypto.fetchNews(${symbol})`
+      `Crypto.fetchNews(${symbol})`,
     );
   }
 
   // If sort is "asc" and limit is 10, return only the 10 most recent articles
-  if (sort === 'asc' && limit === 10) {
+  if (sort === "asc" && limit === 10) {
     return newsArticles.slice(-10);
   }
 
@@ -242,19 +257,19 @@ export async function fetchLatestTrades(
     symbols: string[];
     loc?: string;
   },
-  auth: AlpacaAuth
+  auth: AlpacaAuth,
 ): Promise<LatestTradesResponse> {
-  const { symbols, loc = 'us' } = params;
+  const { symbols, loc = "us" } = params;
 
   if (!auth.APIKey || !auth.APISecret) {
-    throw new Error('Alpaca API key and secret are required');
+    throw new Error("Alpaca API key and secret are required");
   }
   if (!symbols || symbols.length === 0) {
-    throw new Error('At least one symbol is required');
+    throw new Error("At least one symbol is required");
   }
 
   // Convert symbols array to comma-separated string
-  const symbolsParam = symbols.join(',');
+  const symbolsParam = symbols.join(",");
 
   const queryParams = new URLSearchParams({
     symbols: symbolsParam,
@@ -268,8 +283,8 @@ export async function fetchLatestTrades(
     async () => {
       const response = await fetch(url, {
         headers: {
-          'APCA-API-KEY-ID': auth.APIKey,
-          'APCA-API-SECRET-KEY': auth.APISecret,
+          "APCA-API-KEY-ID": auth.APIKey,
+          "APCA-API-SECRET-KEY": auth.APISecret,
         },
         signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
       });
@@ -281,12 +296,14 @@ export async function fetchLatestTrades(
 
       const data: LatestTradesResponse = await response.json();
 
-      logIfDebug(`Received latest trades for ${Object.keys(data.trades).length} symbols`);
+      logIfDebug(
+        `Received latest trades for ${Object.keys(data.trades).length} symbols`,
+      );
 
       return data;
     },
     API_RETRY_CONFIGS.CRYPTO,
-    `Crypto.fetchLatestTrades(${symbolsParam})`
+    `Crypto.fetchLatestTrades(${symbolsParam})`,
   );
 }
 
@@ -306,19 +323,19 @@ export async function fetchLatestQuotes(
     symbols: string[];
     loc?: string;
   },
-  auth: AlpacaAuth
+  auth: AlpacaAuth,
 ): Promise<LatestQuotesResponse> {
-  const { symbols, loc = 'us' } = params;
+  const { symbols, loc = "us" } = params;
 
   if (!auth.APIKey || !auth.APISecret) {
-    throw new Error('Alpaca API key and secret are required');
+    throw new Error("Alpaca API key and secret are required");
   }
   if (!symbols || symbols.length === 0) {
-    throw new Error('At least one symbol is required');
+    throw new Error("At least one symbol is required");
   }
 
   // Convert symbols array to comma-separated string
-  const symbolsParam = symbols.join(',');
+  const symbolsParam = symbols.join(",");
 
   const queryParams = new URLSearchParams({
     symbols: symbolsParam,
@@ -332,8 +349,8 @@ export async function fetchLatestQuotes(
     async () => {
       const response = await fetch(url, {
         headers: {
-          'APCA-API-KEY-ID': auth.APIKey,
-          'APCA-API-SECRET-KEY': auth.APISecret,
+          "APCA-API-KEY-ID": auth.APIKey,
+          "APCA-API-SECRET-KEY": auth.APISecret,
         },
         signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
       });
@@ -345,11 +362,13 @@ export async function fetchLatestQuotes(
 
       const data: LatestQuotesResponse = await response.json();
 
-      logIfDebug(`Received latest quotes for ${Object.keys(data.quotes).length} symbols`);
+      logIfDebug(
+        `Received latest quotes for ${Object.keys(data.quotes).length} symbols`,
+      );
 
       return data;
     },
     API_RETRY_CONFIGS.CRYPTO,
-    `Crypto.fetchLatestQuotes(${symbolsParam})`
+    `Crypto.fetchLatestQuotes(${symbolsParam})`,
   );
 }

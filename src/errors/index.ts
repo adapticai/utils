@@ -17,7 +17,7 @@ export class AdapticUtilsError extends Error {
     public readonly code: string,
     public readonly service: string,
     public readonly isRetryable: boolean = false,
-    public readonly cause?: unknown
+    public readonly cause?: unknown,
   ) {
     super(message);
     this.name = this.constructor.name;
@@ -38,11 +38,12 @@ export class AlpacaApiError extends AdapticUtilsError {
     message: string,
     code: string,
     public readonly statusCode?: number,
-    cause?: unknown
+    cause?: unknown,
   ) {
     // Rate limit (429) and server errors (5xx) are retryable
-    const isRetryable = statusCode === 429 || (statusCode !== undefined && statusCode >= 500);
-    super(message, code, 'alpaca', isRetryable, cause);
+    const isRetryable =
+      statusCode === 429 || (statusCode !== undefined && statusCode >= 500);
+    super(message, code, "alpaca", isRetryable, cause);
   }
 }
 
@@ -55,11 +56,12 @@ export class PolygonApiError extends AdapticUtilsError {
     message: string,
     code: string,
     public readonly statusCode?: number,
-    cause?: unknown
+    cause?: unknown,
   ) {
     // Rate limit (429) and server errors (5xx) are retryable
-    const isRetryable = statusCode === 429 || (statusCode !== undefined && statusCode >= 500);
-    super(message, code, 'polygon', isRetryable, cause);
+    const isRetryable =
+      statusCode === 429 || (statusCode !== undefined && statusCode >= 500);
+    super(message, code, "polygon", isRetryable, cause);
   }
 }
 
@@ -72,11 +74,12 @@ export class AlphaVantageError extends AdapticUtilsError {
     message: string,
     code: string,
     public readonly statusCode?: number,
-    cause?: unknown
+    cause?: unknown,
   ) {
     // Rate limit (429) and server errors (5xx) are retryable
-    const isRetryable = statusCode === 429 || (statusCode !== undefined && statusCode >= 500);
-    super(message, code, 'alphavantage', isRetryable, cause);
+    const isRetryable =
+      statusCode === 429 || (statusCode !== undefined && statusCode >= 500);
+    super(message, code, "alphavantage", isRetryable, cause);
   }
 }
 
@@ -90,14 +93,14 @@ export class TimeoutError extends AdapticUtilsError {
     message: string,
     public readonly service: string,
     public readonly timeoutMs: number,
-    cause?: unknown
+    cause?: unknown,
   ) {
     super(
       message,
-      'TIMEOUT',
+      "TIMEOUT",
       service,
       true, // Timeouts are always retryable
-      cause
+      cause,
     );
   }
 }
@@ -112,14 +115,14 @@ export class ValidationError extends AdapticUtilsError {
     message: string,
     public readonly service: string,
     public readonly invalidField?: string,
-    cause?: unknown
+    cause?: unknown,
   ) {
     super(
       message,
-      'VALIDATION_ERROR',
+      "VALIDATION_ERROR",
       service,
       false, // Validation errors are never retryable
-      cause
+      cause,
     );
   }
 }
@@ -134,14 +137,14 @@ export class AuthenticationError extends AdapticUtilsError {
     message: string,
     public readonly service: string,
     public readonly statusCode?: number,
-    cause?: unknown
+    cause?: unknown,
   ) {
     super(
       message,
-      'AUTH_ERROR',
+      "AUTH_ERROR",
       service,
       false, // Auth errors are never retryable
-      cause
+      cause,
     );
   }
 }
@@ -156,14 +159,14 @@ export class HttpClientError extends AdapticUtilsError {
     message: string,
     public readonly service: string,
     public readonly statusCode: number,
-    cause?: unknown
+    cause?: unknown,
   ) {
     super(
       message,
-      'CLIENT_ERROR',
+      "CLIENT_ERROR",
       service,
       false, // Client errors are generally not retryable
-      cause
+      cause,
     );
   }
 }
@@ -178,14 +181,14 @@ export class HttpServerError extends AdapticUtilsError {
     message: string,
     public readonly service: string,
     public readonly statusCode: number,
-    cause?: unknown
+    cause?: unknown,
   ) {
     super(
       message,
-      'SERVER_ERROR',
+      "SERVER_ERROR",
       service,
       true, // Server errors are always retryable
-      cause
+      cause,
     );
   }
 }
@@ -200,14 +203,14 @@ export class RateLimitError extends AdapticUtilsError {
     message: string,
     public readonly service: string,
     public readonly retryAfterMs?: number,
-    cause?: unknown
+    cause?: unknown,
   ) {
     super(
       message,
-      'RATE_LIMIT',
+      "RATE_LIMIT",
       service,
       true, // Rate limit errors are always retryable
-      cause
+      cause,
     );
   }
 }
@@ -222,15 +225,9 @@ export class WebSocketError extends AdapticUtilsError {
     message: string,
     public readonly service: string,
     isRetryable: boolean = true,
-    cause?: unknown
+    cause?: unknown,
   ) {
-    super(
-      message,
-      'WEBSOCKET_ERROR',
-      service,
-      isRetryable,
-      cause
-    );
+    super(message, "WEBSOCKET_ERROR", service, isRetryable, cause);
   }
 }
 
@@ -243,14 +240,14 @@ export class NetworkError extends AdapticUtilsError {
   constructor(
     message: string,
     public readonly service: string,
-    cause?: unknown
+    cause?: unknown,
   ) {
     super(
       message,
-      'NETWORK_ERROR',
+      "NETWORK_ERROR",
       service,
       true, // Network errors are always retryable
-      cause
+      cause,
     );
   }
 }
@@ -264,14 +261,14 @@ export class DataFormatError extends AdapticUtilsError {
   constructor(
     message: string,
     public readonly service: string,
-    cause?: unknown
+    cause?: unknown,
   ) {
     super(
       message,
-      'DATA_FORMAT_ERROR',
+      "DATA_FORMAT_ERROR",
       service,
       false, // Data format errors are not retryable
-      cause
+      cause,
     );
   }
 }

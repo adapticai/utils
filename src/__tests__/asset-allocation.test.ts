@@ -1,26 +1,31 @@
-import { describe, it, expect } from 'vitest';
-import { AssetAllocationEngine, getDefaultRiskProfile } from '../asset-allocation-algorithm';
+import { describe, it, expect } from "vitest";
+import {
+  AssetAllocationEngine,
+  getDefaultRiskProfile,
+} from "../asset-allocation-algorithm";
 import type {
   RiskProfile,
   AllocationInput,
   MarketMetrics,
   AssetClassCharacteristics,
   AllocationAssetClass,
-} from '../types/asset-allocation-types';
+} from "../types/asset-allocation-types";
 
 /**
  * Creates a standard MarketMetrics object for testing
  */
-function createMarketMetrics(overrides: Partial<MarketMetrics> = {}): MarketMetrics {
+function createMarketMetrics(
+  overrides: Partial<MarketMetrics> = {},
+): MarketMetrics {
   return {
     volatilityIndex: 18,
-    trendDirection: 'NEUTRAL',
+    trendDirection: "NEUTRAL",
     marketStrength: 50,
     sentimentScore: 50,
-    interestRateLevel: 'MEDIUM',
+    interestRateLevel: "MEDIUM",
     inflationRate: 2.5,
     creditSpread: 150,
-    economicPhase: 'EXPANSION',
+    economicPhase: "EXPANSION",
     ...overrides,
   };
 }
@@ -31,108 +36,108 @@ function createMarketMetrics(overrides: Partial<MarketMetrics> = {}): MarketMetr
 function createAssetCharacteristics(): AssetClassCharacteristics[] {
   return [
     {
-      assetClass: 'EQUITIES',
+      assetClass: "EQUITIES",
       volatility: 18,
       expectedReturn: 10,
       sharpeRatio: 0.55,
       maxDrawdown: 35,
       liquidityScore: 95,
       correlations: new Map<AllocationAssetClass, number>([
-        ['OPTIONS', 0.65],
-        ['FUTURES', 0.5],
-        ['ETF', 0.85],
-        ['FOREX', 0.2],
-        ['CRYPTO', 0.3],
+        ["OPTIONS", 0.65],
+        ["FUTURES", 0.5],
+        ["ETF", 0.85],
+        ["FOREX", 0.2],
+        ["CRYPTO", 0.3],
       ]),
       marketSize: 50000000000000,
       transactionCost: 0.001,
       minimumInvestment: 1,
     },
     {
-      assetClass: 'OPTIONS',
+      assetClass: "OPTIONS",
       volatility: 30,
       expectedReturn: 15,
       sharpeRatio: 0.5,
       maxDrawdown: 50,
       liquidityScore: 70,
       correlations: new Map<AllocationAssetClass, number>([
-        ['EQUITIES', 0.65],
-        ['FUTURES', 0.4],
-        ['ETF', 0.55],
-        ['FOREX', 0.1],
-        ['CRYPTO', 0.2],
+        ["EQUITIES", 0.65],
+        ["FUTURES", 0.4],
+        ["ETF", 0.55],
+        ["FOREX", 0.1],
+        ["CRYPTO", 0.2],
       ]),
       marketSize: 10000000000000,
       transactionCost: 0.005,
       minimumInvestment: 100,
     },
     {
-      assetClass: 'FUTURES',
+      assetClass: "FUTURES",
       volatility: 25,
       expectedReturn: 12,
       sharpeRatio: 0.48,
       maxDrawdown: 40,
       liquidityScore: 80,
       correlations: new Map<AllocationAssetClass, number>([
-        ['EQUITIES', 0.5],
-        ['OPTIONS', 0.4],
-        ['ETF', 0.6],
-        ['FOREX', 0.3],
-        ['CRYPTO', 0.15],
+        ["EQUITIES", 0.5],
+        ["OPTIONS", 0.4],
+        ["ETF", 0.6],
+        ["FOREX", 0.3],
+        ["CRYPTO", 0.15],
       ]),
       marketSize: 15000000000000,
       transactionCost: 0.002,
       minimumInvestment: 1000,
     },
     {
-      assetClass: 'ETF',
+      assetClass: "ETF",
       volatility: 12,
       expectedReturn: 7,
       sharpeRatio: 0.58,
       maxDrawdown: 20,
       liquidityScore: 98,
       correlations: new Map<AllocationAssetClass, number>([
-        ['EQUITIES', 0.85],
-        ['OPTIONS', 0.55],
-        ['FUTURES', 0.6],
-        ['FOREX', 0.15],
-        ['CRYPTO', 0.25],
+        ["EQUITIES", 0.85],
+        ["OPTIONS", 0.55],
+        ["FUTURES", 0.6],
+        ["FOREX", 0.15],
+        ["CRYPTO", 0.25],
       ]),
       marketSize: 8000000000000,
       transactionCost: 0.001,
       minimumInvestment: 1,
     },
     {
-      assetClass: 'FOREX',
+      assetClass: "FOREX",
       volatility: 10,
       expectedReturn: 4,
       sharpeRatio: 0.4,
       maxDrawdown: 15,
       liquidityScore: 99,
       correlations: new Map<AllocationAssetClass, number>([
-        ['EQUITIES', 0.2],
-        ['OPTIONS', 0.1],
-        ['FUTURES', 0.3],
-        ['ETF', 0.15],
-        ['CRYPTO', 0.1],
+        ["EQUITIES", 0.2],
+        ["OPTIONS", 0.1],
+        ["FUTURES", 0.3],
+        ["ETF", 0.15],
+        ["CRYPTO", 0.1],
       ]),
       marketSize: 7000000000000000,
       transactionCost: 0.0005,
       minimumInvestment: 100,
     },
     {
-      assetClass: 'CRYPTO',
+      assetClass: "CRYPTO",
       volatility: 60,
       expectedReturn: 25,
       sharpeRatio: 0.42,
       maxDrawdown: 80,
       liquidityScore: 60,
       correlations: new Map<AllocationAssetClass, number>([
-        ['EQUITIES', 0.3],
-        ['OPTIONS', 0.2],
-        ['FUTURES', 0.15],
-        ['ETF', 0.25],
-        ['FOREX', 0.1],
+        ["EQUITIES", 0.3],
+        ["OPTIONS", 0.2],
+        ["FUTURES", 0.15],
+        ["ETF", 0.25],
+        ["FOREX", 0.1],
       ]),
       marketSize: 2000000000000,
       transactionCost: 0.01,
@@ -141,16 +146,16 @@ function createAssetCharacteristics(): AssetClassCharacteristics[] {
   ];
 }
 
-describe('getDefaultRiskProfile', () => {
+describe("getDefaultRiskProfile", () => {
   const riskProfiles: RiskProfile[] = [
-    'CONSERVATIVE',
-    'MODERATE_CONSERVATIVE',
-    'MODERATE',
-    'MODERATE_AGGRESSIVE',
-    'AGGRESSIVE',
+    "CONSERVATIVE",
+    "MODERATE_CONSERVATIVE",
+    "MODERATE",
+    "MODERATE_AGGRESSIVE",
+    "AGGRESSIVE",
   ];
 
-  it('should return profile for each valid risk level', () => {
+  it("should return profile for each valid risk level", () => {
     riskProfiles.forEach((profile) => {
       const result = getDefaultRiskProfile(profile);
       expect(result).toBeDefined();
@@ -158,13 +163,13 @@ describe('getDefaultRiskProfile', () => {
     });
   });
 
-  it('should return undefined for invalid risk profile', () => {
+  it("should return undefined for invalid risk profile", () => {
     // @ts-expect-error Testing invalid input
-    const result = getDefaultRiskProfile('INVALID');
+    const result = getDefaultRiskProfile("INVALID");
     expect(result).toBeUndefined();
   });
 
-  it('should have allocations summing to at most 1.0 for each profile', () => {
+  it("should have allocations summing to at most 1.0 for each profile", () => {
     riskProfiles.forEach((profile) => {
       const result = getDefaultRiskProfile(profile);
       expect(result).toBeDefined();
@@ -181,33 +186,34 @@ describe('getDefaultRiskProfile', () => {
     });
   });
 
-  it('should have CONSERVATIVE profile with higher ETF allocation', () => {
-    const conservative = getDefaultRiskProfile('CONSERVATIVE');
-    const aggressive = getDefaultRiskProfile('AGGRESSIVE');
+  it("should have CONSERVATIVE profile with higher ETF allocation", () => {
+    const conservative = getDefaultRiskProfile("CONSERVATIVE");
+    const aggressive = getDefaultRiskProfile("AGGRESSIVE");
 
     expect(conservative).toBeDefined();
     expect(aggressive).toBeDefined();
 
-    const conservativeETF = conservative!.baseAllocations.get('ETF') ?? 0;
-    const aggressiveETF = aggressive!.baseAllocations.get('ETF') ?? 0;
+    const conservativeETF = conservative!.baseAllocations.get("ETF") ?? 0;
+    const aggressiveETF = aggressive!.baseAllocations.get("ETF") ?? 0;
 
     expect(conservativeETF).toBeGreaterThan(aggressiveETF);
   });
 
-  it('should have AGGRESSIVE profile with higher equities allocation', () => {
-    const conservative = getDefaultRiskProfile('CONSERVATIVE');
-    const aggressive = getDefaultRiskProfile('AGGRESSIVE');
+  it("should have AGGRESSIVE profile with higher equities allocation", () => {
+    const conservative = getDefaultRiskProfile("CONSERVATIVE");
+    const aggressive = getDefaultRiskProfile("AGGRESSIVE");
 
     expect(conservative).toBeDefined();
     expect(aggressive).toBeDefined();
 
-    const conservativeEquities = conservative!.baseAllocations.get('EQUITIES') ?? 0;
-    const aggressiveEquities = aggressive!.baseAllocations.get('EQUITIES') ?? 0;
+    const conservativeEquities =
+      conservative!.baseAllocations.get("EQUITIES") ?? 0;
+    const aggressiveEquities = aggressive!.baseAllocations.get("EQUITIES") ?? 0;
 
     expect(aggressiveEquities).toBeGreaterThan(conservativeEquities);
   });
 
-  it('should have increasing risk scores from conservative to aggressive', () => {
+  it("should have increasing risk scores from conservative to aggressive", () => {
     const scores = riskProfiles.map((profile) => {
       const result = getDefaultRiskProfile(profile);
       return result?.riskScore ?? 0;
@@ -218,7 +224,7 @@ describe('getDefaultRiskProfile', () => {
     }
   });
 
-  it('should have increasing target returns from conservative to aggressive', () => {
+  it("should have increasing target returns from conservative to aggressive", () => {
     const returns = riskProfiles.map((profile) => {
       const result = getDefaultRiskProfile(profile);
       return result?.targetReturn ?? 0;
@@ -229,7 +235,7 @@ describe('getDefaultRiskProfile', () => {
     }
   });
 
-  it('should have increasing max volatility from conservative to aggressive', () => {
+  it("should have increasing max volatility from conservative to aggressive", () => {
     const volatilities = riskProfiles.map((profile) => {
       const result = getDefaultRiskProfile(profile);
       return result?.maxVolatility ?? 0;
@@ -240,37 +246,37 @@ describe('getDefaultRiskProfile', () => {
     }
   });
 
-  it('should have descriptions for all profiles', () => {
+  it("should have descriptions for all profiles", () => {
     riskProfiles.forEach((profile) => {
       const result = getDefaultRiskProfile(profile);
       expect(result?.description).toBeTruthy();
-      expect(typeof result?.description).toBe('string');
+      expect(typeof result?.description).toBe("string");
       expect(result!.description.length).toBeGreaterThan(10);
     });
   });
 
-  it('should have CONSERVATIVE profile with zero CRYPTO and FUTURES allocation', () => {
-    const conservative = getDefaultRiskProfile('CONSERVATIVE');
+  it("should have CONSERVATIVE profile with zero CRYPTO and FUTURES allocation", () => {
+    const conservative = getDefaultRiskProfile("CONSERVATIVE");
     expect(conservative).toBeDefined();
 
-    expect(conservative!.baseAllocations.get('CRYPTO')).toBe(0);
-    expect(conservative!.baseAllocations.get('FUTURES')).toBe(0);
+    expect(conservative!.baseAllocations.get("CRYPTO")).toBe(0);
+    expect(conservative!.baseAllocations.get("FUTURES")).toBe(0);
   });
 });
 
-describe('AssetAllocationEngine', () => {
-  describe('constructor', () => {
-    it('should create engine with default config', () => {
+describe("AssetAllocationEngine", () => {
+  describe("constructor", () => {
+    it("should create engine with default config", () => {
       const engine = new AssetAllocationEngine();
       expect(engine).toBeDefined();
     });
 
-    it('should create engine with custom config', () => {
+    it("should create engine with custom config", () => {
       const engine = new AssetAllocationEngine({
-        objective: 'MIN_RISK',
+        objective: "MIN_RISK",
         riskFreeRate: 0.05,
         rebalancingThreshold: 10,
-        transactionCostModel: 'FIXED',
+        transactionCostModel: "FIXED",
         timeHorizon: 10,
         allowLeverage: false,
         includeAlternatives: false,
@@ -279,12 +285,12 @@ describe('AssetAllocationEngine', () => {
     });
   });
 
-  describe('generateAllocation', () => {
-    it('should generate allocation for MODERATE profile', async () => {
+  describe("generateAllocation", () => {
+    it("should generate allocation for MODERATE profile", async () => {
       const engine = new AssetAllocationEngine();
 
       const input: AllocationInput = {
-        riskProfile: 'MODERATE',
+        riskProfile: "MODERATE",
         marketConditions: createMarketMetrics(),
         accountSize: 100000,
         assetCharacteristics: createAssetCharacteristics(),
@@ -300,11 +306,11 @@ describe('AssetAllocationEngine', () => {
       expect(result.methodology).toBeTruthy();
     });
 
-    it('should have allocations summing close to 1.0', async () => {
+    it("should have allocations summing close to 1.0", async () => {
       const engine = new AssetAllocationEngine();
 
       const input: AllocationInput = {
-        riskProfile: 'MODERATE',
+        riskProfile: "MODERATE",
         marketConditions: createMarketMetrics(),
         accountSize: 100000,
         assetCharacteristics: createAssetCharacteristics(),
@@ -314,17 +320,17 @@ describe('AssetAllocationEngine', () => {
 
       const totalAllocation = result.allocations.reduce(
         (sum, alloc) => sum + alloc.allocation,
-        0
+        0,
       );
       expect(totalAllocation).toBeCloseTo(1.0, 1);
     });
 
-    it('should have amounts summing close to account size', async () => {
+    it("should have amounts summing close to account size", async () => {
       const engine = new AssetAllocationEngine();
       const accountSize = 100000;
 
       const input: AllocationInput = {
-        riskProfile: 'MODERATE',
+        riskProfile: "MODERATE",
         marketConditions: createMarketMetrics(),
         accountSize,
         assetCharacteristics: createAssetCharacteristics(),
@@ -332,15 +338,18 @@ describe('AssetAllocationEngine', () => {
 
       const result = await engine.generateAllocation(input);
 
-      const totalAmount = result.allocations.reduce((sum, alloc) => sum + alloc.amount, 0);
+      const totalAmount = result.allocations.reduce(
+        (sum, alloc) => sum + alloc.amount,
+        0,
+      );
       expect(totalAmount).toBeCloseTo(accountSize, -2); // Within $100
     });
 
-    it('should include portfolio metrics', async () => {
+    it("should include portfolio metrics", async () => {
       const engine = new AssetAllocationEngine();
 
       const input: AllocationInput = {
-        riskProfile: 'MODERATE',
+        riskProfile: "MODERATE",
         marketConditions: createMarketMetrics(),
         accountSize: 100000,
         assetCharacteristics: createAssetCharacteristics(),
@@ -349,16 +358,16 @@ describe('AssetAllocationEngine', () => {
       const result = await engine.generateAllocation(input);
 
       expect(result.portfolioMetrics).toBeDefined();
-      expect(typeof result.portfolioMetrics.expectedReturn).toBe('number');
-      expect(typeof result.portfolioMetrics.expectedVolatility).toBe('number');
-      expect(typeof result.portfolioMetrics.sharpeRatio).toBe('number');
+      expect(typeof result.portfolioMetrics.expectedReturn).toBe("number");
+      expect(typeof result.portfolioMetrics.expectedVolatility).toBe("number");
+      expect(typeof result.portfolioMetrics.sharpeRatio).toBe("number");
     });
 
-    it('should include risk analysis', async () => {
+    it("should include risk analysis", async () => {
       const engine = new AssetAllocationEngine();
 
       const input: AllocationInput = {
-        riskProfile: 'MODERATE',
+        riskProfile: "MODERATE",
         marketConditions: createMarketMetrics(),
         accountSize: 100000,
         assetCharacteristics: createAssetCharacteristics(),
@@ -369,14 +378,16 @@ describe('AssetAllocationEngine', () => {
       expect(result.riskAnalysis).toBeDefined();
       expect(result.riskAnalysis.riskScore).toBeGreaterThanOrEqual(0);
       expect(result.riskAnalysis.riskScore).toBeLessThanOrEqual(100);
-      expect(['LOW', 'MEDIUM', 'HIGH', 'EXTREME']).toContain(result.riskAnalysis.riskLevel);
+      expect(["LOW", "MEDIUM", "HIGH", "EXTREME"]).toContain(
+        result.riskAnalysis.riskLevel,
+      );
     });
 
-    it('should include diversification metrics', async () => {
+    it("should include diversification metrics", async () => {
       const engine = new AssetAllocationEngine();
 
       const input: AllocationInput = {
-        riskProfile: 'MODERATE',
+        riskProfile: "MODERATE",
         marketConditions: createMarketMetrics(),
         accountSize: 100000,
         assetCharacteristics: createAssetCharacteristics(),
@@ -389,7 +400,7 @@ describe('AssetAllocationEngine', () => {
       expect(result.diversification.effectiveNumberOfAssets).toBeGreaterThan(0);
     });
 
-    it('should infer risk profile when not provided', async () => {
+    it("should infer risk profile when not provided", async () => {
       const engine = new AssetAllocationEngine();
 
       const input: AllocationInput = {
@@ -405,11 +416,11 @@ describe('AssetAllocationEngine', () => {
       expect(result.allocations.length).toBeGreaterThan(0);
     });
 
-    it('should reduce allocations for excluded asset classes', async () => {
+    it("should reduce allocations for excluded asset classes", async () => {
       const engine = new AssetAllocationEngine();
 
       const baseInput: AllocationInput = {
-        riskProfile: 'MODERATE',
+        riskProfile: "MODERATE",
         marketConditions: createMarketMetrics(),
         accountSize: 100000,
         assetCharacteristics: createAssetCharacteristics(),
@@ -418,15 +429,19 @@ describe('AssetAllocationEngine', () => {
       const excludedInput: AllocationInput = {
         ...baseInput,
         preferences: {
-          excludedAssetClasses: ['CRYPTO', 'FUTURES'],
+          excludedAssetClasses: ["CRYPTO", "FUTURES"],
         },
       };
 
       const baseResult = await engine.generateAllocation(baseInput);
       const excludedResult = await engine.generateAllocation(excludedInput);
 
-      const baseCrypto = baseResult.allocations.find((a) => a.assetClass === 'CRYPTO');
-      const excludedCrypto = excludedResult.allocations.find((a) => a.assetClass === 'CRYPTO');
+      const baseCrypto = baseResult.allocations.find(
+        (a) => a.assetClass === "CRYPTO",
+      );
+      const excludedCrypto = excludedResult.allocations.find(
+        (a) => a.assetClass === "CRYPTO",
+      );
 
       // Excluded classes should have substantially lower allocation than baseline
       if (baseCrypto && excludedCrypto) {
@@ -434,11 +449,11 @@ describe('AssetAllocationEngine', () => {
       }
     });
 
-    it('should generate warnings for small accounts', async () => {
+    it("should generate warnings for small accounts", async () => {
       const engine = new AssetAllocationEngine();
 
       const input: AllocationInput = {
-        riskProfile: 'MODERATE',
+        riskProfile: "MODERATE",
         marketConditions: createMarketMetrics(),
         accountSize: 1000, // Very small account
         assetCharacteristics: createAssetCharacteristics(),
@@ -447,14 +462,16 @@ describe('AssetAllocationEngine', () => {
       const result = await engine.generateAllocation(input);
 
       expect(result.warnings.length).toBeGreaterThan(0);
-      expect(result.warnings.some((w) => w.toLowerCase().includes('small account'))).toBe(true);
+      expect(
+        result.warnings.some((w) => w.toLowerCase().includes("small account")),
+      ).toBe(true);
     });
 
-    it('should generate warnings for high volatility market', async () => {
+    it("should generate warnings for high volatility market", async () => {
       const engine = new AssetAllocationEngine();
 
       const input: AllocationInput = {
-        riskProfile: 'MODERATE',
+        riskProfile: "MODERATE",
         marketConditions: createMarketMetrics({ volatilityIndex: 35 }),
         accountSize: 100000,
         assetCharacteristics: createAssetCharacteristics(),
@@ -463,15 +480,15 @@ describe('AssetAllocationEngine', () => {
       const result = await engine.generateAllocation(input);
 
       expect(
-        result.warnings.some((w) => w.toLowerCase().includes('volatility'))
+        result.warnings.some((w) => w.toLowerCase().includes("volatility")),
       ).toBe(true);
     });
 
-    it('should have each allocation include rationale and confidence', async () => {
+    it("should have each allocation include rationale and confidence", async () => {
       const engine = new AssetAllocationEngine();
 
       const input: AllocationInput = {
-        riskProfile: 'MODERATE',
+        riskProfile: "MODERATE",
         marketConditions: createMarketMetrics(),
         accountSize: 100000,
         assetCharacteristics: createAssetCharacteristics(),
@@ -481,26 +498,26 @@ describe('AssetAllocationEngine', () => {
 
       result.allocations.forEach((alloc) => {
         expect(alloc.rationale).toBeTruthy();
-        expect(typeof alloc.rationale).toBe('string');
+        expect(typeof alloc.rationale).toBe("string");
         expect(alloc.confidence).toBeGreaterThan(0);
         expect(alloc.confidence).toBeLessThanOrEqual(1);
       });
     });
 
-    it('should generate rebalancing actions when current positions provided', async () => {
+    it("should generate rebalancing actions when current positions provided", async () => {
       const engine = new AssetAllocationEngine();
 
       const currentPositions = new Map<AllocationAssetClass, number>([
-        ['EQUITIES', 80000],
-        ['ETF', 10000],
-        ['OPTIONS', 5000],
-        ['FUTURES', 3000],
-        ['FOREX', 1000],
-        ['CRYPTO', 1000],
+        ["EQUITIES", 80000],
+        ["ETF", 10000],
+        ["OPTIONS", 5000],
+        ["FUTURES", 3000],
+        ["FOREX", 1000],
+        ["CRYPTO", 1000],
       ]);
 
       const input: AllocationInput = {
-        riskProfile: 'MODERATE',
+        riskProfile: "MODERATE",
         marketConditions: createMarketMetrics(),
         accountSize: 100000,
         currentPositions,
@@ -513,7 +530,7 @@ describe('AssetAllocationEngine', () => {
       expect(result.rebalancing).toBeDefined();
       if (result.rebalancing && result.rebalancing.length > 0) {
         result.rebalancing.forEach((action) => {
-          expect(['BUY', 'SELL', 'HOLD']).toContain(action.action);
+          expect(["BUY", "SELL", "HOLD"]).toContain(action.action);
           expect(action.tradeAmount).toBeGreaterThanOrEqual(0);
           expect(action.priority).toBeGreaterThanOrEqual(1);
           expect(action.reason).toBeTruthy();
@@ -522,12 +539,12 @@ describe('AssetAllocationEngine', () => {
     });
   });
 
-  describe('market condition adjustments', () => {
-    it('should adjust allocations for crisis conditions', async () => {
+  describe("market condition adjustments", () => {
+    it("should adjust allocations for crisis conditions", async () => {
       const engine = new AssetAllocationEngine();
 
       const crisisInput: AllocationInput = {
-        riskProfile: 'MODERATE',
+        riskProfile: "MODERATE",
         marketConditions: createMarketMetrics({
           volatilityIndex: 45,
           sentimentScore: 15,
@@ -538,7 +555,7 @@ describe('AssetAllocationEngine', () => {
       };
 
       const normalInput: AllocationInput = {
-        riskProfile: 'MODERATE',
+        riskProfile: "MODERATE",
         marketConditions: createMarketMetrics(),
         accountSize: 100000,
         assetCharacteristics: createAssetCharacteristics(),
@@ -548,26 +565,30 @@ describe('AssetAllocationEngine', () => {
       const normalResult = await engine.generateAllocation(normalInput);
 
       // In crisis, ETF allocation should be higher than normal
-      const crisisETF = crisisResult.allocations.find((a) => a.assetClass === 'ETF');
-      const normalETF = normalResult.allocations.find((a) => a.assetClass === 'ETF');
+      const crisisETF = crisisResult.allocations.find(
+        (a) => a.assetClass === "ETF",
+      );
+      const normalETF = normalResult.allocations.find(
+        (a) => a.assetClass === "ETF",
+      );
 
       if (crisisETF && normalETF) {
         expect(crisisETF.allocation).toBeGreaterThan(normalETF.allocation);
       }
     });
 
-    it('should reduce crypto in high volatility', async () => {
+    it("should reduce crypto in high volatility", async () => {
       const engine = new AssetAllocationEngine();
 
       const highVolInput: AllocationInput = {
-        riskProfile: 'MODERATE',
+        riskProfile: "MODERATE",
         marketConditions: createMarketMetrics({ volatilityIndex: 35 }),
         accountSize: 100000,
         assetCharacteristics: createAssetCharacteristics(),
       };
 
       const lowVolInput: AllocationInput = {
-        riskProfile: 'MODERATE',
+        riskProfile: "MODERATE",
         marketConditions: createMarketMetrics({ volatilityIndex: 10 }),
         accountSize: 100000,
         assetCharacteristics: createAssetCharacteristics(),
@@ -576,30 +597,36 @@ describe('AssetAllocationEngine', () => {
       const highVolResult = await engine.generateAllocation(highVolInput);
       const lowVolResult = await engine.generateAllocation(lowVolInput);
 
-      const highVolCrypto = highVolResult.allocations.find((a) => a.assetClass === 'CRYPTO');
-      const lowVolCrypto = lowVolResult.allocations.find((a) => a.assetClass === 'CRYPTO');
+      const highVolCrypto = highVolResult.allocations.find(
+        (a) => a.assetClass === "CRYPTO",
+      );
+      const lowVolCrypto = lowVolResult.allocations.find(
+        (a) => a.assetClass === "CRYPTO",
+      );
 
       // In high volatility, crypto should be lower than in low volatility
       if (highVolCrypto && lowVolCrypto) {
-        expect(highVolCrypto.allocation).toBeLessThanOrEqual(lowVolCrypto.allocation);
+        expect(highVolCrypto.allocation).toBeLessThanOrEqual(
+          lowVolCrypto.allocation,
+        );
       }
     });
   });
 
-  describe('optimization objectives', () => {
-    it('should produce valid allocations with MIN_RISK objective', async () => {
+  describe("optimization objectives", () => {
+    it("should produce valid allocations with MIN_RISK objective", async () => {
       const engine = new AssetAllocationEngine({
-        objective: 'MIN_RISK',
+        objective: "MIN_RISK",
         riskFreeRate: 0.04,
         rebalancingThreshold: 5,
-        transactionCostModel: 'PERCENTAGE',
+        transactionCostModel: "PERCENTAGE",
         timeHorizon: 5,
         allowLeverage: false,
         includeAlternatives: true,
       });
 
       const input: AllocationInput = {
-        riskProfile: 'MODERATE',
+        riskProfile: "MODERATE",
         marketConditions: createMarketMetrics(),
         accountSize: 100000,
         assetCharacteristics: createAssetCharacteristics(),
@@ -608,23 +635,26 @@ describe('AssetAllocationEngine', () => {
       const result = await engine.generateAllocation(input);
 
       expect(result.allocations.length).toBeGreaterThan(0);
-      const totalAlloc = result.allocations.reduce((sum, a) => sum + a.allocation, 0);
+      const totalAlloc = result.allocations.reduce(
+        (sum, a) => sum + a.allocation,
+        0,
+      );
       expect(totalAlloc).toBeCloseTo(1.0, 1);
     });
 
-    it('should produce valid allocations with MAX_DIVERSIFICATION objective', async () => {
+    it("should produce valid allocations with MAX_DIVERSIFICATION objective", async () => {
       const engine = new AssetAllocationEngine({
-        objective: 'MAX_DIVERSIFICATION',
+        objective: "MAX_DIVERSIFICATION",
         riskFreeRate: 0.04,
         rebalancingThreshold: 5,
-        transactionCostModel: 'PERCENTAGE',
+        transactionCostModel: "PERCENTAGE",
         timeHorizon: 5,
         allowLeverage: false,
         includeAlternatives: true,
       });
 
       const input: AllocationInput = {
-        riskProfile: 'MODERATE',
+        riskProfile: "MODERATE",
         marketConditions: createMarketMetrics(),
         accountSize: 100000,
         assetCharacteristics: createAssetCharacteristics(),
@@ -633,7 +663,10 @@ describe('AssetAllocationEngine', () => {
       const result = await engine.generateAllocation(input);
 
       expect(result.allocations.length).toBeGreaterThan(0);
-      const totalAlloc = result.allocations.reduce((sum, a) => sum + a.allocation, 0);
+      const totalAlloc = result.allocations.reduce(
+        (sum, a) => sum + a.allocation,
+        0,
+      );
       expect(totalAlloc).toBeCloseTo(1.0, 1);
     });
   });

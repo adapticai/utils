@@ -1,21 +1,21 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi } from "vitest";
 
 // Mock @adaptic/backend-legacy before importing the module under test.
 // performance-metrics.ts has a top-level import of @adaptic/backend-legacy,
 // which transitively requires graphql-fields (not installed in utils).
-vi.mock('@adaptic/backend-legacy', () => ({
+vi.mock("@adaptic/backend-legacy", () => ({
   default: {
     alpacaAccount: { get: vi.fn() },
   },
   types: {},
 }));
 
-vi.mock('../alpaca/legacy', () => ({
+vi.mock("../alpaca/legacy", () => ({
   fetchAccountDetails: vi.fn(),
   fetchPortfolioHistory: vi.fn(),
 }));
 
-vi.mock('../adaptic', () => ({
+vi.mock("../adaptic", () => ({
   getSharedApolloClient: vi.fn(),
 }));
 
@@ -25,10 +25,10 @@ import {
   calculateDailyReturns,
   calculateBetaFromReturns,
   alignReturnsByDate,
-} from '../performance-metrics';
+} from "../performance-metrics";
 
-describe('calculateDailyReturns', () => {
-  it('should calculate log returns for simple price series', () => {
+describe("calculateDailyReturns", () => {
+  it("should calculate log returns for simple price series", () => {
     const prices = [100, 110, 105, 115, 120];
     const returns = calculateDailyReturns(prices);
 
@@ -43,17 +43,17 @@ describe('calculateDailyReturns', () => {
     expect(returns[3]).toBeCloseTo(Math.log(120 / 115), 6);
   });
 
-  it('should return empty array for single element', () => {
+  it("should return empty array for single element", () => {
     const returns = calculateDailyReturns([100]);
     expect(returns).toEqual([]);
   });
 
-  it('should return empty array for empty input', () => {
+  it("should return empty array for empty input", () => {
     const returns = calculateDailyReturns([]);
     expect(returns).toEqual([]);
   });
 
-  it('should skip entries with zero previous price', () => {
+  it("should skip entries with zero previous price", () => {
     const prices = [0, 100, 110];
     const returns = calculateDailyReturns(prices);
     // First return (0 -> 100) should be skipped because prev is 0
@@ -61,7 +61,7 @@ describe('calculateDailyReturns', () => {
     expect(returns[0]).toBeCloseTo(Math.log(110 / 100), 6);
   });
 
-  it('should skip entries with negative previous price', () => {
+  it("should skip entries with negative previous price", () => {
     const prices = [-5, 100, 110];
     const returns = calculateDailyReturns(prices);
     // -5 is invalid, should be skipped
@@ -69,7 +69,7 @@ describe('calculateDailyReturns', () => {
     expect(returns[0]).toBeCloseTo(Math.log(110 / 100), 6);
   });
 
-  it('should skip NaN and Infinity values', () => {
+  it("should skip NaN and Infinity values", () => {
     const prices = [100, NaN, 110, Infinity, 120];
     const returns = calculateDailyReturns(prices);
     // NaN and Infinity should be filtered out
@@ -80,7 +80,7 @@ describe('calculateDailyReturns', () => {
     expect(returns).toHaveLength(0);
   });
 
-  it('should handle all equal prices (returns of 0)', () => {
+  it("should handle all equal prices (returns of 0)", () => {
     const prices = [100, 100, 100, 100];
     const returns = calculateDailyReturns(prices);
 
@@ -90,7 +90,7 @@ describe('calculateDailyReturns', () => {
     });
   });
 
-  it('should handle large price swings', () => {
+  it("should handle large price swings", () => {
     const prices = [100, 200, 50, 300];
     const returns = calculateDailyReturns(prices);
 
@@ -100,7 +100,7 @@ describe('calculateDailyReturns', () => {
     expect(returns[2]).toBeCloseTo(Math.log(6), 6); // 50 -> 300 = ln(6)
   });
 
-  it('should produce small values for small price changes', () => {
+  it("should produce small values for small price changes", () => {
     const prices = [100, 100.01, 100.02];
     const returns = calculateDailyReturns(prices);
 
@@ -109,72 +109,74 @@ describe('calculateDailyReturns', () => {
   });
 });
 
-describe('calculateMaxDrawdown', () => {
-  it('should return 0% for monotonically increasing equity', () => {
+describe("calculateMaxDrawdown", () => {
+  it("should return 0% for monotonically increasing equity", () => {
     const equity = [100, 110, 120, 130, 140];
     const result = calculateMaxDrawdown(equity);
-    expect(result).toBe('0%');
+    expect(result).toBe("0%");
   });
 
-  it('should calculate drawdown for simple decline', () => {
+  it("should calculate drawdown for simple decline", () => {
     // Peak at 100, drops to 80, so drawdown = (100-80)/100 = 20%
     const equity = [100, 80];
     const result = calculateMaxDrawdown(equity);
-    expect(result).toBe('20%');
+    expect(result).toBe("20%");
   });
 
-  it('should calculate drawdown correctly with recovery', () => {
+  it("should calculate drawdown correctly with recovery", () => {
     // Peak at 200, drops to 150, then recovers to 250
     const equity = [100, 150, 200, 150, 250];
     const result = calculateMaxDrawdown(equity);
-    expect(result).toBe('25%'); // (200-150)/200 = 25%
+    expect(result).toBe("25%"); // (200-150)/200 = 25%
   });
 
-  it('should find the maximum drawdown among multiple drawdowns', () => {
+  it("should find the maximum drawdown among multiple drawdowns", () => {
     // First drawdown: 100 -> 90 = 10%
     // Second drawdown: 120 -> 84 = 30%
     const equity = [100, 90, 100, 120, 84, 130];
     const result = calculateMaxDrawdown(equity);
-    expect(result).toBe('30%'); // 30% is the larger drawdown
+    expect(result).toBe("30%"); // 30% is the larger drawdown
   });
 
-  it('should handle constant equity (no drawdown)', () => {
+  it("should handle constant equity (no drawdown)", () => {
     const equity = [100, 100, 100, 100];
     const result = calculateMaxDrawdown(equity);
-    expect(result).toBe('0%');
+    expect(result).toBe("0%");
   });
 
-  it('should handle single element equity', () => {
+  it("should handle single element equity", () => {
     const equity = [100];
     const result = calculateMaxDrawdown(equity);
-    expect(result).toBe('0%');
+    expect(result).toBe("0%");
   });
 
-  it('should throw for empty array', () => {
-    expect(() => calculateMaxDrawdown([])).toThrow('Equity data must be a non-empty array');
+  it("should throw for empty array", () => {
+    expect(() => calculateMaxDrawdown([])).toThrow(
+      "Equity data must be a non-empty array",
+    );
   });
 
-  it('should respect custom decimal places', () => {
+  it("should respect custom decimal places", () => {
     const equity = [100, 66.67];
     const result = calculateMaxDrawdown(equity, 4);
     // (100 - 66.67) / 100 = 0.3333
     expect(result).toMatch(/^\d+\.\d{1,4}%$/);
   });
 
-  it('should handle equity starting at zero', () => {
+  it("should handle equity starting at zero", () => {
     const equity = [0, 100, 90];
     const result = calculateMaxDrawdown(equity);
     // Peak at 100, trough at 90, drawdown = 10%
-    expect(result).toBe('10%');
+    expect(result).toBe("10%");
   });
 });
 
-describe('calculateDrawdownMetrics', () => {
-  it('should return detailed metrics for a drawdown', () => {
+describe("calculateDrawdownMetrics", () => {
+  it("should return detailed metrics for a drawdown", () => {
     const equity = [100, 150, 200, 150, 250];
     const result = calculateDrawdownMetrics(equity);
 
-    expect(result.maxDrawdownPercentage).toBe('25%');
+    expect(result.maxDrawdownPercentage).toBe("25%");
     expect(result.peakValue).toBe(200);
     expect(result.troughValue).toBe(150);
     expect(result.maxDrawdownValue).toBe(50);
@@ -183,7 +185,7 @@ describe('calculateDrawdownMetrics', () => {
     expect(result.drawdownPeriod).toBe(1);
   });
 
-  it('should detect recovery', () => {
+  it("should detect recovery", () => {
     // Use a series where recovery happens in the drawdown (else) branch,
     // not the peak-update branch. Peak=200 at index 2, trough=150 at index 3,
     // recovery at index 5 where value (210) >= equity[maxPeakIndex] (200)
@@ -191,59 +193,59 @@ describe('calculateDrawdownMetrics', () => {
     const equity = [100, 150, 200, 150, 220, 210, 250];
     const result = calculateDrawdownMetrics(equity);
 
-    expect(result.maxDrawdownPercentage).toBe('25%');
+    expect(result.maxDrawdownPercentage).toBe("25%");
     // Recovery happens when value >= peak at maxPeakIndex AND we are in the else branch.
     // At index 4 (220), currentValue >= peakValue so peak updates to 220. No recovery check.
     // At index 5 (210), 210 < 220, enters else branch. 210 >= equity[2]=200? Yes -> recovery.
     expect(result.recoveryIndex).toBe(5);
   });
 
-  it('should calculate current drawdown', () => {
+  it("should calculate current drawdown", () => {
     // Last value is below the peak
     const equity = [100, 200, 180];
     const result = calculateDrawdownMetrics(equity);
 
-    expect(result.currentDrawdownPercentage).toBe('10%'); // (200-180)/200 = 10%
+    expect(result.currentDrawdownPercentage).toBe("10%"); // (200-180)/200 = 10%
   });
 
-  it('should return 0% current drawdown when at new high', () => {
+  it("should return 0% current drawdown when at new high", () => {
     const equity = [100, 200, 250];
     const result = calculateDrawdownMetrics(equity);
 
-    expect(result.currentDrawdownPercentage).toBe('0%');
+    expect(result.currentDrawdownPercentage).toBe("0%");
   });
 
-  it('should throw for non-array input', () => {
+  it("should throw for non-array input", () => {
     // @ts-expect-error Testing invalid input
-    expect(() => calculateDrawdownMetrics('not an array')).toThrow(
-      'Equity data must be a non-empty array'
+    expect(() => calculateDrawdownMetrics("not an array")).toThrow(
+      "Equity data must be a non-empty array",
     );
   });
 
-  it('should throw for empty array', () => {
+  it("should throw for empty array", () => {
     expect(() => calculateDrawdownMetrics([])).toThrow(
-      'Equity data must be a non-empty array'
+      "Equity data must be a non-empty array",
     );
   });
 
-  it('should handle NaN values by replacing with 0', () => {
+  it("should handle NaN values by replacing with 0", () => {
     const equity = [100, NaN, 80];
     const result = calculateDrawdownMetrics(equity);
 
     // NaN replaced with 0, so drawdown is 100%
     expect(result).toBeDefined();
-    expect(result.maxDrawdownPercentage).not.toBe('0%');
+    expect(result.maxDrawdownPercentage).not.toBe("0%");
   });
 
-  it('should respect minimumDrawdown option', () => {
+  it("should respect minimumDrawdown option", () => {
     const equity = [100, 99, 100];
     const result = calculateDrawdownMetrics(equity, { minimumDrawdown: 0.05 });
 
     // Drawdown is only 1%, which is below 5% threshold
-    expect(result.maxDrawdownPercentage).toBe('0%');
+    expect(result.maxDrawdownPercentage).toBe("0%");
   });
 
-  it('should respect custom decimals option', () => {
+  it("should respect custom decimals option", () => {
     const equity = [100, 66.666];
     const result = calculateDrawdownMetrics(equity, { decimals: 3 });
 
@@ -251,8 +253,8 @@ describe('calculateDrawdownMetrics', () => {
   });
 });
 
-describe('calculateBetaFromReturns', () => {
-  it('should return beta of 1 when portfolio matches benchmark', () => {
+describe("calculateBetaFromReturns", () => {
+  it("should return beta of 1 when portfolio matches benchmark", () => {
     const returns = [0.01, -0.02, 0.03, -0.01, 0.02];
     const result = calculateBetaFromReturns(returns, returns);
 
@@ -260,7 +262,7 @@ describe('calculateBetaFromReturns', () => {
     expect(result.covariance).toBeCloseTo(result.variance, 6);
   });
 
-  it('should return beta of 0 for uncorrelated returns', () => {
+  it("should return beta of 0 for uncorrelated returns", () => {
     // Perfectly uncorrelated: portfolio is constant, benchmark varies
     const portfolioReturns = [0, 0, 0, 0, 0];
     const benchmarkReturns = [0.01, -0.02, 0.03, -0.01, 0.02];
@@ -269,7 +271,7 @@ describe('calculateBetaFromReturns', () => {
     expect(result.beta).toBe(0);
   });
 
-  it('should return beta > 1 for amplified returns', () => {
+  it("should return beta > 1 for amplified returns", () => {
     const benchmarkReturns = [0.01, -0.02, 0.03, -0.01, 0.02];
     const portfolioReturns = benchmarkReturns.map((r) => r * 2); // 2x amplified
     const result = calculateBetaFromReturns(portfolioReturns, benchmarkReturns);
@@ -277,7 +279,7 @@ describe('calculateBetaFromReturns', () => {
     expect(result.beta).toBeCloseTo(2.0, 1);
   });
 
-  it('should return negative beta for inversely correlated returns', () => {
+  it("should return negative beta for inversely correlated returns", () => {
     const benchmarkReturns = [0.01, -0.02, 0.03, -0.01, 0.02];
     const portfolioReturns = benchmarkReturns.map((r) => -r); // Inverse
     const result = calculateBetaFromReturns(portfolioReturns, benchmarkReturns);
@@ -285,7 +287,7 @@ describe('calculateBetaFromReturns', () => {
     expect(result.beta).toBeCloseTo(-1.0, 1);
   });
 
-  it('should handle empty returns arrays', () => {
+  it("should handle empty returns arrays", () => {
     const result = calculateBetaFromReturns([], []);
 
     expect(result.beta).toBe(0);
@@ -293,7 +295,7 @@ describe('calculateBetaFromReturns', () => {
     expect(result.variance).toBe(0);
   });
 
-  it('should return near-zero beta when benchmark has near-zero variance', () => {
+  it("should return near-zero beta when benchmark has near-zero variance", () => {
     // Note: Due to IEEE 754 floating-point, the sum of [0.05, 0.05, 0.05] / 3
     // is not exactly 0.05, so variance is not exactly 0. The function's
     // zero-variance guard (variance === 0) does not trigger.
@@ -306,16 +308,16 @@ describe('calculateBetaFromReturns', () => {
     expect(result.variance).toBe(0);
   });
 
-  it('should calculate correct average returns', () => {
-    const portfolioReturns = [0.10, 0.20, 0.30];
+  it("should calculate correct average returns", () => {
+    const portfolioReturns = [0.1, 0.2, 0.3];
     const benchmarkReturns = [0.05, 0.15, 0.25];
     const result = calculateBetaFromReturns(portfolioReturns, benchmarkReturns);
 
-    expect(result.averagePortfolioReturn).toBeCloseTo(0.20, 6);
+    expect(result.averagePortfolioReturn).toBeCloseTo(0.2, 6);
     expect(result.averageBenchmarkReturn).toBeCloseTo(0.15, 6);
   });
 
-  it('should calculate covariance correctly', () => {
+  it("should calculate covariance correctly", () => {
     const portfolioReturns = [0.01, 0.02, 0.03];
     const benchmarkReturns = [0.01, 0.02, 0.03];
     const result = calculateBetaFromReturns(portfolioReturns, benchmarkReturns);
@@ -325,8 +327,8 @@ describe('calculateBetaFromReturns', () => {
   });
 });
 
-describe('alignReturnsByDate', () => {
-  it('should align returns with matching timestamps', () => {
+describe("alignReturnsByDate", () => {
+  it("should align returns with matching timestamps", () => {
     const baseTimestamp = 1704067200; // Jan 1, 2024 in seconds
     const dayInSeconds = 86400;
 
@@ -352,11 +354,11 @@ describe('alignReturnsByDate', () => {
     expect(result.alignedPortfolioReturns.length).toBeGreaterThan(0);
     expect(result.alignedBenchmarkReturns.length).toBeGreaterThan(0);
     expect(result.alignedPortfolioReturns.length).toBe(
-      result.alignedBenchmarkReturns.length
+      result.alignedBenchmarkReturns.length,
     );
   });
 
-  it('should return empty arrays when no common dates exist', () => {
+  it("should return empty arrays when no common dates exist", () => {
     const portfolioHistory = {
       equity: [100, 110],
       timestamp: [1000000, 1086400], // Very different timestamps
@@ -373,7 +375,7 @@ describe('alignReturnsByDate', () => {
     expect(result.alignedBenchmarkReturns).toEqual([]);
   });
 
-  it('should handle single data point (no returns possible)', () => {
+  it("should handle single data point (no returns possible)", () => {
     const portfolioHistory = {
       equity: [100],
       timestamp: [1704067200],

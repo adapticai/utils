@@ -1,6 +1,9 @@
-import { ApolloClientType, NormalizedCacheObject } from '@adaptic/backend-legacy';
-import { PortfolioHistoryParams } from './alpaca-types';
-import { types } from '@adaptic/backend-legacy';
+import {
+  ApolloClientType,
+  NormalizedCacheObject,
+} from "@adaptic/backend-legacy";
+import { PortfolioHistoryParams } from "./alpaca-types";
+import { types } from "@adaptic/backend-legacy";
 
 export interface FetchPerformanceMetricsProps {
   params?: PortfolioHistoryParams;
@@ -21,7 +24,6 @@ export interface PerformanceMetrics {
   dividendYield: string;
   maxDrawdown: string;
 }
-
 
 export interface TradeMetrics {
   totalReturnYTD: string;
