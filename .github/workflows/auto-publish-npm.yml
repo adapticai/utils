@@ -5,11 +5,11 @@ on:
     branches:
       - master
     paths:
-      - 'src/**'
-      - '*.json'
-      - '*.mjs'
-      - 'types/**'
-      - '*.ts'
+      - "src/**"
+      - "*.json"
+      - "*.mjs"
+      - "types/**"
+      - "*.ts"
 
 jobs:
   publish-npm-package:
