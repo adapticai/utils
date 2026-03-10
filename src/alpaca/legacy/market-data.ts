@@ -101,19 +101,19 @@ export async function fetchNews(
     } else if (mergedParams.auth.adapticAccountId) {
       const client = await getSharedApolloClient();
 
-      const alpacaAccount = (await adaptic.alpacaAccount.get(
+      const brokerageAccount = (await adaptic.brokerageAccount.get(
         {
           id: mergedParams.auth.adapticAccountId,
-        } as types.AlpacaAccount,
+        } as types.BrokerageAccount,
         client,
-      )) as types.AlpacaAccount;
+      )) as types.BrokerageAccount;
 
-      if (!alpacaAccount || !alpacaAccount.APIKey || !alpacaAccount.APISecret) {
+      if (!brokerageAccount || !brokerageAccount.apiKey || !brokerageAccount.apiSecret) {
         throw new Error("Alpaca account not found or incomplete");
       }
 
-      APIKey = alpacaAccount.APIKey;
-      APISecret = alpacaAccount.APISecret;
+      APIKey = brokerageAccount.apiKey;
+      APISecret = brokerageAccount.apiSecret;
     }
   } else {
     APIKey = process.env.ALPACA_API_KEY;

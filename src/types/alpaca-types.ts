@@ -19,10 +19,10 @@ export interface AlpacaAuth {
 /**
  * Options for fetching Alpaca account details.
  */
-export interface AlpacaAccountGetOptions {
+export interface BrokerageAccountGetOptions {
   accountId?: string; // Optional account ID
   client?: ApolloClientType<NormalizedCacheObject>; // Apollo client instance
-  alpacaAccount?: types.AlpacaAccount; // Optional Alpaca account object
+  brokerageAccount?: types.BrokerageAccount; // Optional Alpaca account object
 }
 
 /**
@@ -537,7 +537,7 @@ export interface FetchPortfolioHistoryProps {
   params: PortfolioHistoryParams; // Parameters for fetching portfolio history
   accountId?: string; // Optional account ID
   client?: ApolloClientType<NormalizedCacheObject>; // Apollo client instance
-  alpacaAccount?: types.AlpacaAccount; // Optional Alpaca account object
+  brokerageAccount?: types.BrokerageAccount; // Optional Alpaca account object
 }
 
 /**
@@ -559,7 +559,7 @@ export interface FetchAccountDetailsProps {
   auth?: AlpacaAuth; // Optional Alpaca authentication details
   accountId?: string; // Optional account ID
   client?: ApolloClientType<NormalizedCacheObject>; // Apollo client instance
-  alpacaAccount?: types.AlpacaAccount; // Optional Alpaca account object
+  brokerageAccount?: types.BrokerageAccount; // Optional Alpaca account object
 }
 
 /**
@@ -1477,9 +1477,9 @@ export interface ExerciseOptionResponse {
 
 /**
  * Account with allocation configuration
- * Extends the base AlpacaAccount from backend-legacy with optional allocation fields
+ * Extends the base BrokerageAccount from backend-legacy with optional allocation fields
  */
-export interface AlpacaAccountWithAllocation {
+export interface BrokerageAccountWithAllocation {
   allocation?: AllocationConfig;
   autoAllocation?: boolean;
   marketOpen?: boolean;

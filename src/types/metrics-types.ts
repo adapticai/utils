@@ -9,7 +9,7 @@ export interface FetchPerformanceMetricsProps {
   params?: PortfolioHistoryParams;
   client?: ApolloClientType<NormalizedCacheObject>;
   accountId?: string;
-  alpacaAccount?: Partial<types.AlpacaAccount>;
+  brokerageAccount?: Partial<types.BrokerageAccount>;
 }
 
 export interface PerformanceMetrics {

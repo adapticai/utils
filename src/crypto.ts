@@ -110,8 +110,8 @@ export async function fetchBars(
 }
 
 type AlpacaAuth = {
-  APIKey: string;
-  APISecret: string;
+  alpacaApiKey: string;
+  alpacaApiSecret: string;
   type?: "PAPER" | "LIVE";
 };
 
@@ -146,7 +146,7 @@ export async function fetchNews(
     includeContent = false,
     limit = 1000,
   } = params;
-  if (!auth.APIKey || !auth.APISecret) {
+  if (!auth.alpacaApiKey || !auth.alpacaApiSecret) {
     throw new Error("Alpaca API key and secret are required");
   }
   if (!symbol) {
@@ -261,7 +261,7 @@ export async function fetchLatestTrades(
 ): Promise<LatestTradesResponse> {
   const { symbols, loc = "us" } = params;
 
-  if (!auth.APIKey || !auth.APISecret) {
+  if (!auth.alpacaApiKey || !auth.alpacaApiSecret) {
     throw new Error("Alpaca API key and secret are required");
   }
   if (!symbols || symbols.length === 0) {
@@ -283,8 +283,8 @@ export async function fetchLatestTrades(
     async () => {
       const response = await fetch(url, {
         headers: {
-          "APCA-API-KEY-ID": auth.APIKey,
-          "APCA-API-SECRET-KEY": auth.APISecret,
+          "APCA-API-KEY-ID": auth.alpacaApiKey,
+          "APCA-API-SECRET-KEY": auth.alpacaApiSecret,
         },
         signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
       });
@@ -327,7 +327,7 @@ export async function fetchLatestQuotes(
 ): Promise<LatestQuotesResponse> {
   const { symbols, loc = "us" } = params;
 
-  if (!auth.APIKey || !auth.APISecret) {
+  if (!auth.alpacaApiKey || !auth.alpacaApiSecret) {
     throw new Error("Alpaca API key and secret are required");
   }
   if (!symbols || symbols.length === 0) {
@@ -349,8 +349,8 @@ export async function fetchLatestQuotes(
     async () => {
       const response = await fetch(url, {
         headers: {
-          "APCA-API-KEY-ID": auth.APIKey,
-          "APCA-API-SECRET-KEY": auth.APISecret,
+          "APCA-API-KEY-ID": auth.alpacaApiKey,
+          "APCA-API-SECRET-KEY": auth.alpacaApiSecret,
         },
         signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
       });

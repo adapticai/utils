@@ -12,8 +12,8 @@ import { validateAlpacaCredentials } from "../../utils/auth-validator";
  * Validated authentication credentials ready for API calls.
  */
 export interface ValidatedAuth {
-  APIKey: string;
-  APISecret: string;
+  apiKey: string;
+  apiSecret: string;
   type: string;
 }
 
@@ -28,27 +28,27 @@ export async function validateAuth(auth: AlpacaAuth): Promise<ValidatedAuth> {
   if (auth.adapticAccountId) {
     const client = await getSharedApolloClient();
 
-    const alpacaAccount = (await adaptic.alpacaAccount.get(
+    const brokerageAccount = (await adaptic.brokerageAccount.get(
       {
         id: auth.adapticAccountId,
-      } as types.AlpacaAccount,
+      } as types.BrokerageAccount,
       client,
-    )) as types.AlpacaAccount;
+    )) as types.BrokerageAccount;
 
-    if (!alpacaAccount || !alpacaAccount.APIKey || !alpacaAccount.APISecret) {
+    if (!brokerageAccount || !brokerageAccount.apiKey || !brokerageAccount.apiSecret) {
       throw new Error("Alpaca account not found or incomplete");
     }
 
     validateAlpacaCredentials({
-      apiKey: alpacaAccount.APIKey,
-      apiSecret: alpacaAccount.APISecret,
-      isPaper: alpacaAccount.type === "PAPER",
+      apiKey: brokerageAccount.apiKey,
+      apiSecret: brokerageAccount.apiSecret,
+      isPaper: brokerageAccount.type === "PAPER",
     });
 
     return {
-      APIKey: alpacaAccount.APIKey,
-      APISecret: alpacaAccount.APISecret,
-      type: alpacaAccount.type,
+      apiKey: brokerageAccount.apiKey,
+      apiSecret: brokerageAccount.apiSecret,
+      type: brokerageAccount.type,
     };
   } else if (auth.alpacaApiKey && auth.alpacaApiSecret) {
     const accountType = auth.type || "PAPER";
@@ -60,8 +60,8 @@ export async function validateAuth(auth: AlpacaAuth): Promise<ValidatedAuth> {
     });
 
     return {
-      APIKey: auth.alpacaApiKey,
-      APISecret: auth.alpacaApiSecret,
+      apiKey: auth.alpacaApiKey,
+      apiSecret: auth.alpacaApiSecret,
       type: accountType,
     };
   }

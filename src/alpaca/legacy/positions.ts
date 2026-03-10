@@ -31,15 +31,15 @@ export async function fetchAllPositions(
   auth: AlpacaAuth,
 ): Promise<AlpacaPosition[]> {
   try {
-    const { APIKey, APISecret, type } = await validateAuth(auth);
+    const { apiKey, apiSecret, type } = await validateAuth(auth);
     const apiBaseUrl = getTradingApiUrl(type as "PAPER" | "LIVE");
     const apiUrl = `${apiBaseUrl}/v2/positions`;
 
     const response = await fetch(apiUrl, {
       method: "GET",
       headers: {
-        "APCA-API-KEY-ID": APIKey,
-        "APCA-API-SECRET-KEY": APISecret,
+        "APCA-API-KEY-ID": apiKey,
+        "APCA-API-SECRET-KEY": apiSecret,
         "Content-Type": "application/json",
       },
       signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
@@ -70,7 +70,7 @@ export async function fetchPosition(
   symbolOrAssetId: string,
 ): Promise<{ position: AlpacaPosition | null; message?: string }> {
   try {
-    const { APIKey, APISecret, type } = await validateAuth(auth);
+    const { apiKey, apiSecret, type } = await validateAuth(auth);
     const apiBaseUrl = getTradingApiUrl(type as "PAPER" | "LIVE");
 
     const response = await fetch(
@@ -78,8 +78,8 @@ export async function fetchPosition(
       {
         method: "GET",
         headers: {
-          "APCA-API-KEY-ID": APIKey,
-          "APCA-API-SECRET-KEY": APISecret,
+          "APCA-API-KEY-ID": apiKey,
+          "APCA-API-SECRET-KEY": apiSecret,
           "Content-Type": "application/json",
         },
         signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
@@ -128,7 +128,7 @@ export async function closePosition(
   },
 ): Promise<AlpacaOrder> {
   try {
-    const { APIKey, APISecret, type } = await validateAuth(auth);
+    const { apiKey, apiSecret, type } = await validateAuth(auth);
     const apiBaseUrl = getTradingApiUrl(type as "PAPER" | "LIVE");
 
     const useLimitOrder = params?.useLimitOrder ?? false;
@@ -233,8 +233,8 @@ export async function closePosition(
       const response = await fetch(url, {
         method: "DELETE",
         headers: {
-          "APCA-API-KEY-ID": APIKey,
-          "APCA-API-SECRET-KEY": APISecret,
+          "APCA-API-KEY-ID": apiKey,
+          "APCA-API-SECRET-KEY": apiSecret,
         },
       });
 

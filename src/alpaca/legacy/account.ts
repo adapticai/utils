@@ -13,7 +13,7 @@ import {
   FetchAccountDetailsProps,
   FetchPortfolioHistoryProps,
   PortfolioHistoryResponse,
-  AlpacaAccountWithAllocation,
+  BrokerageAccountWithAllocation,
 } from "../../types/alpaca-types";
 import { validateAuth } from "./auth";
 import { getTradingApiUrl } from "../../config/api-endpoints";
@@ -28,30 +28,30 @@ import { createTimeoutSignal, DEFAULT_TIMEOUTS } from "../../http-timeout";
 export async function fetchAccountDetails({
   accountId,
   client,
-  alpacaAccount,
+  brokerageAccount,
   auth,
 }: FetchAccountDetailsProps): Promise<AlpacaAccountDetails> {
-  let alpacaAccountObj = alpacaAccount ? alpacaAccount : null;
+  let brokerageAccountObj = brokerageAccount ? brokerageAccount : null;
 
-  if (!alpacaAccountObj && auth) {
+  if (!brokerageAccountObj && auth) {
     const validatedAuth = await validateAuth(auth);
-    alpacaAccountObj = {
-      APIKey: validatedAuth.APIKey,
-      APISecret: validatedAuth.APISecret,
+    brokerageAccountObj = {
+      apiKey: validatedAuth.apiKey,
+      apiSecret: validatedAuth.apiSecret,
       type: validatedAuth.type,
-    } as types.AlpacaAccount;
+    } as types.BrokerageAccount;
   }
 
-  if (!alpacaAccountObj) {
+  if (!brokerageAccountObj) {
     try {
       const apolloClient = client || (await getSharedApolloClient());
 
-      alpacaAccountObj = (await adaptic.alpacaAccount.get(
+      brokerageAccountObj = (await adaptic.brokerageAccount.get(
         {
           id: accountId,
-        } as types.AlpacaAccount,
+        } as types.BrokerageAccount,
         apolloClient,
-      )) as types.AlpacaAccount;
+      )) as types.BrokerageAccount;
     } catch (error) {
       getLogger().error(
         "[fetchAccountDetails] Error fetching Alpaca account:",
@@ -62,24 +62,24 @@ export async function fetchAccountDetails({
   }
 
   if (
-    !alpacaAccountObj ||
-    !alpacaAccountObj.APIKey ||
-    !alpacaAccountObj.APISecret
+    !brokerageAccountObj ||
+    !brokerageAccountObj.apiKey ||
+    !brokerageAccountObj.apiSecret
   ) {
     throw new Error(
       "[fetchAccountDetails] Alpaca account not found or incomplete",
     );
   }
 
-  const { APIKey, APISecret, type } = alpacaAccountObj;
+  const { apiKey, apiSecret, type } = brokerageAccountObj;
   const apiUrl = `${getTradingApiUrl(type as "PAPER" | "LIVE")}/account`;
 
   try {
     const response = await fetch(apiUrl, {
       method: "GET",
       headers: {
-        "APCA-API-KEY-ID": APIKey,
-        "APCA-API-SECRET-KEY": APISecret,
+        "APCA-API-KEY-ID": apiKey,
+        "APCA-API-SECRET-KEY": apiSecret,
         "Content-Type": "application/json",
       },
       signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
@@ -108,20 +108,20 @@ export async function fetchPortfolioHistory({
   params,
   accountId,
   client,
-  alpacaAccount,
+  brokerageAccount,
 }: FetchPortfolioHistoryProps): Promise<PortfolioHistoryResponse> {
-  let alpacaAccountObj = alpacaAccount ? alpacaAccount : null;
+  let brokerageAccountObj = brokerageAccount ? brokerageAccount : null;
 
-  if (!alpacaAccountObj) {
+  if (!brokerageAccountObj) {
     try {
       const apolloClient = client || (await getSharedApolloClient());
 
-      alpacaAccountObj = (await adaptic.alpacaAccount.get(
+      brokerageAccountObj = (await adaptic.brokerageAccount.get(
         {
           id: accountId,
-        } as types.AlpacaAccount,
+        } as types.BrokerageAccount,
         apolloClient,
-      )) as types.AlpacaAccount;
+      )) as types.BrokerageAccount;
     } catch (error) {
       getLogger().error(
         "[fetchPortfolioHistory] Error fetching Alpaca account:",
@@ -132,16 +132,16 @@ export async function fetchPortfolioHistory({
   }
 
   if (
-    !alpacaAccountObj ||
-    !alpacaAccountObj.APIKey ||
-    !alpacaAccountObj.APISecret
+    !brokerageAccountObj ||
+    !brokerageAccountObj.apiKey ||
+    !brokerageAccountObj.apiSecret
   ) {
     throw new Error(
       "[fetchPortfolioHistory] Alpaca account not found or incomplete",
     );
   }
 
-  const { APIKey, APISecret, type } = alpacaAccountObj;
+  const { apiKey, apiSecret, type } = brokerageAccountObj;
   const apiBaseUrl = getTradingApiUrl(type as "PAPER" | "LIVE");
   const apiUrl = `${apiBaseUrl}/v2/account/portfolio/history`;
 
@@ -178,8 +178,8 @@ export async function fetchPortfolioHistory({
     const response = await fetch(fullUrl, {
       method: "GET",
       headers: {
-        "APCA-API-KEY-ID": APIKey,
-        "APCA-API-SECRET-KEY": APISecret,
+        "APCA-API-KEY-ID": apiKey,
+        "APCA-API-SECRET-KEY": apiSecret,
         "Content-Type": "application/json",
       },
       signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
@@ -209,34 +209,34 @@ export async function fetchPortfolioHistory({
  * @returns The account configuration
  */
 export async function getConfiguration(
-  account: types.AlpacaAccount,
+  account: types.BrokerageAccount,
 ): Promise<AccountConfiguration> {
   try {
     if (!account) {
       throw new Error(`Account is missing.`);
     }
 
-    const { APIKey, APISecret } = account;
-    if (!APIKey || !APISecret) {
-      throw new Error("User APIKey or APISecret is missing.");
+    const { apiKey, apiSecret } = account;
+    if (!apiKey || !apiSecret) {
+      throw new Error("Account apiKey or apiSecret is missing.");
     }
 
     const apiUrl = getTradingApiUrl(account.type as "PAPER" | "LIVE");
     const client = await getSharedApolloClient();
 
-    const [alpacaResponse, freshAlpacaAccount] = await Promise.all([
+    const [alpacaResponse, freshBrokerageAccount] = await Promise.all([
       fetch(`${apiUrl}/account/configurations`, {
         method: "GET",
         headers: {
-          "APCA-API-KEY-ID": APIKey,
-          "APCA-API-SECRET-KEY": APISecret,
+          "APCA-API-KEY-ID": apiKey,
+          "APCA-API-SECRET-KEY": apiSecret,
           accept: "application/json",
         },
       }),
-      adaptic.alpacaAccount.get(
-        { id: account.id } as types.AlpacaAccount,
+      adaptic.brokerageAccount.get(
+        { id: account.id } as types.BrokerageAccount,
         client,
-      ) as Promise<types.AlpacaAccount>,
+      ) as Promise<types.BrokerageAccount>,
     ]);
 
     if (!alpacaResponse.ok) {
@@ -244,7 +244,7 @@ export async function getConfiguration(
         `Failed to fetch account configuration: ${alpacaResponse.statusText}`,
       );
     }
-    if (!freshAlpacaAccount) {
+    if (!freshBrokerageAccount) {
       throw new Error(
         "Failed to get Alpaca Account from @adaptic/backend-legacy.",
       );
@@ -253,8 +253,8 @@ export async function getConfiguration(
     const dataFromAlpaca =
       (await alpacaResponse.json()) as AccountConfiguration;
 
-    const accountWithAllocation = freshAlpacaAccount as types.AlpacaAccount &
-      AlpacaAccountWithAllocation;
+    const accountWithAllocation = freshBrokerageAccount as types.BrokerageAccount &
+      BrokerageAccountWithAllocation;
     const allocationData = accountWithAllocation.allocation || {
       stocks: 70,
       options: 0,
@@ -266,39 +266,39 @@ export async function getConfiguration(
 
     const combinedConfig: AccountConfiguration = {
       ...dataFromAlpaca,
-      marketOpen: freshAlpacaAccount.marketOpen,
-      realTime: freshAlpacaAccount.realTime,
-      tradeAllocationPct: freshAlpacaAccount.tradeAllocationPct,
-      minPercentageChange: freshAlpacaAccount.minPercentageChange,
-      volumeThreshold: freshAlpacaAccount.volumeThreshold,
+      marketOpen: freshBrokerageAccount.marketOpen,
+      realTime: freshBrokerageAccount.realTime,
+      tradeAllocationPct: freshBrokerageAccount.tradeAllocationPct,
+      minPercentageChange: freshBrokerageAccount.minPercentageChange,
+      volumeThreshold: freshBrokerageAccount.volumeThreshold,
 
-      cryptoTradingEnabled: freshAlpacaAccount.cryptoTradingEnabled ?? false,
-      cryptoTradingPairs: freshAlpacaAccount.cryptoTradingPairs ?? [],
+      cryptoTradingEnabled: freshBrokerageAccount.cryptoTradingEnabled ?? false,
+      cryptoTradingPairs: freshBrokerageAccount.cryptoTradingPairs ?? [],
       cryptoTradeAllocationPct:
-        freshAlpacaAccount.cryptoTradeAllocationPct ?? 5.0,
+        freshBrokerageAccount.cryptoTradeAllocationPct ?? 5.0,
       autoAllocation: accountWithAllocation.autoAllocation ?? false,
       allocation: allocationData,
 
       enablePortfolioTrailingStop:
-        freshAlpacaAccount.enablePortfolioTrailingStop,
-      portfolioTrailPercent: freshAlpacaAccount.portfolioTrailPercent,
+        freshBrokerageAccount.enablePortfolioTrailingStop,
+      portfolioTrailPercent: freshBrokerageAccount.portfolioTrailPercent,
       portfolioProfitThresholdPercent:
-        freshAlpacaAccount.portfolioProfitThresholdPercent,
+        freshBrokerageAccount.portfolioProfitThresholdPercent,
       reducedPortfolioTrailPercent:
-        freshAlpacaAccount.reducedPortfolioTrailPercent,
+        freshBrokerageAccount.reducedPortfolioTrailPercent,
 
       defaultTrailingStopPercentage100:
-        freshAlpacaAccount.defaultTrailingStopPercentage100 ?? 4.0,
+        freshBrokerageAccount.defaultTrailingStopPercentage100 ?? 4.0,
       firstTrailReductionThreshold100:
-        freshAlpacaAccount.firstTrailReductionThreshold100 ?? 2.0,
+        freshBrokerageAccount.firstTrailReductionThreshold100 ?? 2.0,
       secondTrailReductionThreshold100:
-        freshAlpacaAccount.secondTrailReductionThreshold100 ?? 5.0,
+        freshBrokerageAccount.secondTrailReductionThreshold100 ?? 5.0,
       firstReducedTrailPercentage100:
-        freshAlpacaAccount.firstReducedTrailPercentage100 ?? 1.0,
+        freshBrokerageAccount.firstReducedTrailPercentage100 ?? 1.0,
       secondReducedTrailPercentage100:
-        freshAlpacaAccount.secondReducedTrailPercentage100 ?? 0.5,
+        freshBrokerageAccount.secondReducedTrailPercentage100 ?? 0.5,
       minimumPriceChangePercent100:
-        freshAlpacaAccount.minimumPriceChangePercent100 ?? 0.5,
+        freshBrokerageAccount.minimumPriceChangePercent100 ?? 0.5,
     };
 
     return combinedConfig;
@@ -317,7 +317,7 @@ export async function getConfiguration(
  */
 export async function updateConfiguration(
   user: types.User,
-  account: types.AlpacaAccount,
+  account: types.BrokerageAccount,
   updatedConfig: AccountConfiguration,
 ): Promise<AccountConfiguration> {
   try {
@@ -325,9 +325,9 @@ export async function updateConfiguration(
       throw new Error(`Account is missing.`);
     }
 
-    const { APIKey, APISecret } = account;
-    if (!APIKey || !APISecret) {
-      throw new Error("User APIKey or APISecret is missing.");
+    const { apiKey, apiSecret } = account;
+    if (!apiKey || !apiSecret) {
+      throw new Error("Account apiKey or apiSecret is missing.");
     }
 
     const apiUrl = getTradingApiUrl(account.type as "PAPER" | "LIVE");
@@ -362,8 +362,8 @@ export async function updateConfiguration(
     const alpacaUpdatePromise = fetch(`${apiUrl}/account/configurations`, {
       method: "PATCH",
       headers: {
-        "APCA-API-KEY-ID": APIKey,
-        "APCA-API-SECRET-KEY": APISecret,
+        "APCA-API-KEY-ID": apiKey,
+        "APCA-API-SECRET-KEY": apiSecret,
         "Content-Type": "application/json",
         accept: "application/json",
       },
@@ -393,10 +393,10 @@ export async function updateConfiguration(
         allocUpdatePromise = adaptic.allocation.update(
           {
             id: account.allocation.id,
-            alpacaAccount: {
+            brokerageAccount: {
               id: account.id,
             },
-            alpacaAccountId: account.id,
+            brokerageAccountId: account.id,
             stocks: updatedConfig.allocation.stocks ?? 0,
             options: updatedConfig.allocation.options ?? 0,
             futures: updatedConfig.allocation.futures ?? 0,
@@ -415,17 +415,17 @@ export async function updateConfiguration(
             etfs: updatedConfig.allocation.etfs ?? 0,
             forex: updatedConfig.allocation.forex ?? 0,
             crypto: updatedConfig.allocation.crypto ?? 0,
-            alpacaAccount: {
+            brokerageAccount: {
               id: account.id,
             },
-            alpacaAccountId: account.id,
+            brokerageAccountId: account.id,
           } as any,
           client,
         );
       }
     }
 
-    const adapticUpdatePromise = adaptic.alpacaAccount.update(
+    const adapticUpdatePromise = adaptic.brokerageAccount.update(
       {
         id: account.id,
         user: {
@@ -468,7 +468,7 @@ export async function updateConfiguration(
       client,
     );
 
-    const [alpacaResponse, updatedAlpacaAccount, updatedAllocation] =
+    const [alpacaResponse, updatedBrokerageAccount, updatedAllocation] =
       await Promise.all([
         alpacaUpdatePromise,
         adapticUpdatePromise,
@@ -497,14 +497,14 @@ export async function updateConfiguration(
     }
 
     const alpacaData = (await alpacaResponse.json()) as AccountConfiguration;
-    if (!updatedAlpacaAccount) {
+    if (!updatedBrokerageAccount) {
       throw new Error(
         "Failed to update Alpaca Account in @adaptic/backend-legacy.",
       );
     }
 
     const updatedAccountWithAllocation =
-      updatedAlpacaAccount as types.AlpacaAccount & AlpacaAccountWithAllocation;
+      updatedBrokerageAccount as types.BrokerageAccount & BrokerageAccountWithAllocation;
     const selectedAllocation = (updatedConfig.allocation ||
       updatedAllocation ||
       updatedAccountWithAllocation.allocation) as AllocationConfig | undefined;
@@ -524,38 +524,38 @@ export async function updateConfiguration(
 
     const finalConfig: AccountConfiguration = {
       ...alpacaData,
-      marketOpen: updatedAlpacaAccount.marketOpen,
-      realTime: updatedAlpacaAccount.realTime,
-      tradeAllocationPct: updatedAlpacaAccount.tradeAllocationPct,
-      minPercentageChange: updatedAlpacaAccount.minPercentageChange,
-      volumeThreshold: updatedAlpacaAccount.volumeThreshold,
+      marketOpen: updatedBrokerageAccount.marketOpen,
+      realTime: updatedBrokerageAccount.realTime,
+      tradeAllocationPct: updatedBrokerageAccount.tradeAllocationPct,
+      minPercentageChange: updatedBrokerageAccount.minPercentageChange,
+      volumeThreshold: updatedBrokerageAccount.volumeThreshold,
 
-      cryptoTradingEnabled: updatedAlpacaAccount.cryptoTradingEnabled,
-      cryptoTradingPairs: updatedAlpacaAccount.cryptoTradingPairs,
-      cryptoTradeAllocationPct: updatedAlpacaAccount.cryptoTradeAllocationPct,
+      cryptoTradingEnabled: updatedBrokerageAccount.cryptoTradingEnabled,
+      cryptoTradingPairs: updatedBrokerageAccount.cryptoTradingPairs,
+      cryptoTradeAllocationPct: updatedBrokerageAccount.cryptoTradeAllocationPct,
       autoAllocation: updatedAccountWithAllocation.autoAllocation,
       allocation: selectedAllocation,
 
       enablePortfolioTrailingStop:
-        updatedAlpacaAccount.enablePortfolioTrailingStop,
-      portfolioTrailPercent: updatedAlpacaAccount.portfolioTrailPercent,
+        updatedBrokerageAccount.enablePortfolioTrailingStop,
+      portfolioTrailPercent: updatedBrokerageAccount.portfolioTrailPercent,
       portfolioProfitThresholdPercent:
-        updatedAlpacaAccount.portfolioProfitThresholdPercent,
+        updatedBrokerageAccount.portfolioProfitThresholdPercent,
       reducedPortfolioTrailPercent:
-        updatedAlpacaAccount.reducedPortfolioTrailPercent,
+        updatedBrokerageAccount.reducedPortfolioTrailPercent,
 
       defaultTrailingStopPercentage100:
-        updatedAlpacaAccount.defaultTrailingStopPercentage100,
+        updatedBrokerageAccount.defaultTrailingStopPercentage100,
       firstTrailReductionThreshold100:
-        updatedAlpacaAccount.firstTrailReductionThreshold100,
+        updatedBrokerageAccount.firstTrailReductionThreshold100,
       secondTrailReductionThreshold100:
-        updatedAlpacaAccount.secondTrailReductionThreshold100,
+        updatedBrokerageAccount.secondTrailReductionThreshold100,
       firstReducedTrailPercentage100:
-        updatedAlpacaAccount.firstReducedTrailPercentage100,
+        updatedBrokerageAccount.firstReducedTrailPercentage100,
       secondReducedTrailPercentage100:
-        updatedAlpacaAccount.secondReducedTrailPercentage100,
+        updatedBrokerageAccount.secondReducedTrailPercentage100,
       minimumPriceChangePercent100:
-        updatedAlpacaAccount.minimumPriceChangePercent100,
+        updatedBrokerageAccount.minimumPriceChangePercent100,
     };
 
     return finalConfig;

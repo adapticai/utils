@@ -12,7 +12,7 @@ import {
   Bar,
   AlpacaAccountDetails,
   FetchAccountDetailsProps,
-  AlpacaAccountGetOptions,
+  BrokerageAccountGetOptions,
 } from "./types/alpaca-types";
 import { Period, IntradayReporting } from "./types/market-time-types";
 import { types } from "@adaptic/backend-legacy";
@@ -72,34 +72,34 @@ async function calculateTotalReturnYTD(
  * Calculates the expense ratio for a given Alpaca account.
  * @param accountId - The ID of the Alpaca account.
  * @param client - The Apollo client instance.
- * @param alpacaAccount - The Alpaca account object.
+ * @param brokerageAccount - The Alpaca account object.
  * @returns A promise that resolves to a string representing the expense ratio in percentage format.
  */
 async function calculateExpenseRatio({
   accountId,
   client,
-  alpacaAccount,
-}: AlpacaAccountGetOptions): Promise<string> {
-  if (!accountId && !alpacaAccount && !client) {
+  brokerageAccount,
+}: BrokerageAccountGetOptions): Promise<string> {
+  if (!accountId && !brokerageAccount && !client) {
     getLogger().warn(
       "Missing account ID or client to calculate expense ratio.",
     );
     return "N/A";
   }
 
-  let alpacaAccountId: string =
-    accountId || (alpacaAccount && alpacaAccount.id) || "";
+  let brokerageAccountId: string =
+    accountId || (brokerageAccount && brokerageAccount.id) || "";
   let accountDetails: AlpacaAccountDetails | null;
 
-  if (!alpacaAccountId) {
+  if (!brokerageAccountId) {
     getLogger().warn("Invalid account ID.");
     return "N/A";
   }
 
-  if (alpacaAccount) {
+  if (brokerageAccount) {
     // Use Alpaca account object to get accountDetails
     accountDetails = (await fetchAccountDetails({
-      alpacaAccount: alpacaAccount as types.AlpacaAccount,
+      brokerageAccount: brokerageAccount as types.BrokerageAccount,
     })) as AlpacaAccountDetails;
 
     if (!accountDetails) {
@@ -131,7 +131,7 @@ async function calculateExpenseRatio({
   const equity = parseFloat(accountDetails.equity);
 
   // Fetch portfolio expenses from your system (Assuming you have this data)
-  const expenses = await getPortfolioExpensesFromYourSystem(alpacaAccountId);
+  const expenses = await getPortfolioExpensesFromYourSystem(brokerageAccountId);
 
   // Calculate expense ratio
   const expenseRatio = (expenses / equity) * 100;
@@ -152,34 +152,34 @@ async function getPortfolioExpensesFromYourSystem(
  * Calculates the liquidity ratio for a given Alpaca account.
  * @param accountId - The ID of the Alpaca account.
  * @param client - The Apollo client instance.
- * @param alpacaAccount - The Alpaca account object.
+ * @param brokerageAccount - The Alpaca account object.
  * @returns A promise that resolves to a string representing the liquidity ratio in the format "1:ratio".
  */
 async function calculateLiquidityRatio({
   accountId,
   client,
-  alpacaAccount,
-}: AlpacaAccountGetOptions): Promise<string> {
-  if (!accountId && !alpacaAccount && !client) {
+  brokerageAccount,
+}: BrokerageAccountGetOptions): Promise<string> {
+  if (!accountId && !brokerageAccount && !client) {
     getLogger().warn(
       "Missing account ID or client to calculateLiquidityRatio.",
     );
     return "N/A";
   }
 
-  let alpacaAccountId: string =
-    accountId || (alpacaAccount && alpacaAccount.id) || "";
+  let brokerageAccountId: string =
+    accountId || (brokerageAccount && brokerageAccount.id) || "";
   let accountDetails: AlpacaAccountDetails | null;
 
-  if (!alpacaAccountId) {
+  if (!brokerageAccountId) {
     getLogger().warn("Invalid account ID.");
     return "N/A";
   }
 
-  if (alpacaAccount) {
+  if (brokerageAccount) {
     // Use Alpaca account object to get accountDetails
     accountDetails = (await fetchAccountDetails({
-      alpacaAccount: alpacaAccount as types.AlpacaAccount,
+      brokerageAccount: brokerageAccount as types.BrokerageAccount,
     })) as AlpacaAccountDetails;
 
     if (!accountDetails) {
@@ -1150,7 +1150,7 @@ export async function calculateInformationRatio(
  * @param params - The parameters for fetching performance metrics.
  * @param client - The Apollo client instance.
  * @param accountId - The ID of the Alpaca account.
- * @param alpacaAccount - The Alpaca account object.
+ * @param brokerageAccount - The Alpaca account object.
  * @returns A promise that resolves to an object containing various performance metrics.
  * @throws Will throw an error if required parameters are missing or if fetching fails.
  */
@@ -1158,7 +1158,7 @@ export async function fetchPerformanceMetrics({
   params,
   client,
   accountId,
-  alpacaAccount,
+  brokerageAccount,
 }: FetchPerformanceMetricsProps): Promise<PerformanceMetrics> {
   // Default response for error cases
   const defaultMetrics: PerformanceMetrics = {
@@ -1185,19 +1185,19 @@ export async function fetchPerformanceMetrics({
     }
 
     // Obtain Alpaca account
-    let alpacaAccountObj = alpacaAccount ? alpacaAccount : null;
+    let brokerageAccountObj = brokerageAccount ? brokerageAccount : null;
 
-    if (!alpacaAccountObj && accountId) {
+    if (!brokerageAccountObj && accountId) {
       try {
         // Use provided client or get the shared client
         const apolloClient = client || (await getSharedApolloClient());
 
-        alpacaAccountObj = (await adaptic.alpacaAccount.get(
+        brokerageAccountObj = (await adaptic.brokerageAccount.get(
           {
             id: accountId,
-          } as types.AlpacaAccount,
+          } as types.BrokerageAccount,
           apolloClient,
-        )) as types.AlpacaAccount;
+        )) as types.BrokerageAccount;
       } catch (error) {
         getLogger().error(
           "[fetchPerformanceMetrics] Error fetching Alpaca account:",
@@ -1209,9 +1209,9 @@ export async function fetchPerformanceMetrics({
 
     // Validate Alpaca account
     if (
-      !alpacaAccountObj ||
-      !alpacaAccountObj.APIKey ||
-      !alpacaAccountObj.APISecret
+      !brokerageAccountObj ||
+      !brokerageAccountObj.apiKey ||
+      !brokerageAccountObj.apiSecret
     ) {
       throw new Error("Alpaca account not found or credentials missing");
     }
@@ -1221,7 +1221,7 @@ export async function fetchPerformanceMetrics({
     try {
       portfolioHistory = await fetchPortfolioHistory({
         params: params as PortfolioHistoryParams,
-        alpacaAccount: alpacaAccountObj as types.AlpacaAccount,
+        brokerageAccount: brokerageAccountObj as types.BrokerageAccount,
       });
     } catch (error) {
       getLogger().error(
@@ -1290,10 +1290,10 @@ export async function fetchPerformanceMetrics({
       calculateInformationRatio(portfolioHistory, benchmarkBars as any),
       calculateRiskAdjustedReturn(portfolioHistory),
       calculateLiquidityRatio({
-        alpacaAccount: alpacaAccountObj as types.AlpacaAccount,
+        brokerageAccount: brokerageAccountObj as types.BrokerageAccount,
       }),
       calculateExpenseRatio({
-        alpacaAccount: alpacaAccountObj as types.AlpacaAccount,
+        brokerageAccount: brokerageAccountObj as types.BrokerageAccount,
       }),
       getDividendYield(),
       calculateMaxDrawdown(portfolioHistory.equity),

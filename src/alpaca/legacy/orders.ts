@@ -37,11 +37,11 @@ export async function makeRequest<T = unknown>(
   const { endpoint, method, body, queryString, apiBaseUrl } = params;
 
   try {
-    const { APIKey, APISecret, type } = await validateAuth(auth);
+    const { apiKey, apiSecret, type } = await validateAuth(auth);
     const apiBaseUrlInner = apiBaseUrl
       ? apiBaseUrl
       : getTradingApiUrl(type as "PAPER" | "LIVE");
-    if (!APIKey || !APISecret) {
+    if (!apiKey || !apiSecret) {
       throw new Error(
         "No valid Alpaca authentication found. Please provide either auth object or set ALPACA_API_KEY and ALPACA_API_SECRET environment variables.",
       );
@@ -60,8 +60,8 @@ export async function makeRequest<T = unknown>(
     const fetchOptions: RequestInit = {
       method,
       headers: {
-        "APCA-API-KEY-ID": APIKey,
-        "APCA-API-SECRET-KEY": APISecret,
+        "APCA-API-KEY-ID": apiKey,
+        "APCA-API-SECRET-KEY": apiSecret,
       },
     };
 
@@ -112,14 +112,14 @@ export async function createOrder(
   params: CreateOrderParams,
 ): Promise<AlpacaOrder> {
   try {
-    const { APIKey, APISecret, type } = await validateAuth(auth);
+    const { apiKey, apiSecret, type } = await validateAuth(auth);
     const apiBaseUrl = getTradingApiUrl(type as "PAPER" | "LIVE");
 
     const response = await fetch(`${apiBaseUrl}/v2/orders`, {
       method: "POST",
       headers: {
-        "APCA-API-KEY-ID": APIKey,
-        "APCA-API-SECRET-KEY": APISecret,
+        "APCA-API-KEY-ID": apiKey,
+        "APCA-API-SECRET-KEY": apiSecret,
         "Content-Type": "application/json",
       },
       body: JSON.stringify(params),
@@ -151,7 +151,7 @@ export async function getOrders(
   params: GetOrdersParams = {},
 ): Promise<AlpacaOrder[]> {
   try {
-    const { APIKey, APISecret, type } = await validateAuth(auth);
+    const { apiKey, apiSecret, type } = await validateAuth(auth);
     const apiBaseUrl = getTradingApiUrl(type as "PAPER" | "LIVE");
 
     const allOrders: AlpacaOrder[] = [];
@@ -172,8 +172,8 @@ export async function getOrders(
       const response = await fetch(`${apiBaseUrl}/v2/orders?${queryParams}`, {
         method: "GET",
         headers: {
-          "APCA-API-KEY-ID": APIKey,
-          "APCA-API-SECRET-KEY": APISecret,
+          "APCA-API-KEY-ID": apiKey,
+          "APCA-API-SECRET-KEY": apiSecret,
         },
         signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
       });
@@ -212,14 +212,14 @@ export async function cancelAllOrders(
   auth: AlpacaAuth,
 ): Promise<{ id: string; status: number }[]> {
   try {
-    const { APIKey, APISecret, type } = await validateAuth(auth);
+    const { apiKey, apiSecret, type } = await validateAuth(auth);
     const apiBaseUrl = getTradingApiUrl(type as "PAPER" | "LIVE");
 
     const response = await fetch(`${apiBaseUrl}/v2/orders`, {
       method: "DELETE",
       headers: {
-        "APCA-API-KEY-ID": APIKey,
-        "APCA-API-SECRET-KEY": APISecret,
+        "APCA-API-KEY-ID": apiKey,
+        "APCA-API-SECRET-KEY": apiSecret,
       },
       signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
     });
@@ -251,7 +251,7 @@ export async function getOrder(
   nested?: boolean,
 ): Promise<AlpacaOrder> {
   try {
-    const { APIKey, APISecret, type } = await validateAuth(auth);
+    const { apiKey, apiSecret, type } = await validateAuth(auth);
     const apiBaseUrl = getTradingApiUrl(type as "PAPER" | "LIVE");
 
     const queryParams = new URLSearchParams();
@@ -262,8 +262,8 @@ export async function getOrder(
       {
         method: "GET",
         headers: {
-          "APCA-API-KEY-ID": APIKey,
-          "APCA-API-SECRET-KEY": APISecret,
+          "APCA-API-KEY-ID": apiKey,
+          "APCA-API-SECRET-KEY": apiSecret,
         },
         signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
       },
@@ -296,14 +296,14 @@ export async function replaceOrder(
   params: ReplaceOrderParams,
 ): Promise<AlpacaOrder> {
   try {
-    const { APIKey, APISecret, type } = await validateAuth(auth);
+    const { apiKey, apiSecret, type } = await validateAuth(auth);
     const apiBaseUrl = getTradingApiUrl(type as "PAPER" | "LIVE");
 
     const response = await fetch(`${apiBaseUrl}/v2/orders/${orderId}`, {
       method: "PATCH",
       headers: {
-        "APCA-API-KEY-ID": APIKey,
-        "APCA-API-SECRET-KEY": APISecret,
+        "APCA-API-KEY-ID": apiKey,
+        "APCA-API-SECRET-KEY": apiSecret,
         "Content-Type": "application/json",
         accept: "application/json",
       },
@@ -336,14 +336,14 @@ export async function cancelOrder(
   orderId: string,
 ): Promise<{ success: boolean; message?: string }> {
   try {
-    const { APIKey, APISecret, type } = await validateAuth(auth);
+    const { apiKey, apiSecret, type } = await validateAuth(auth);
     const apiBaseUrl = getTradingApiUrl(type as "PAPER" | "LIVE");
 
     const response = await fetch(`${apiBaseUrl}/v2/orders/${orderId}`, {
       method: "DELETE",
       headers: {
-        "APCA-API-KEY-ID": APIKey,
-        "APCA-API-SECRET-KEY": APISecret,
+        "APCA-API-KEY-ID": apiKey,
+        "APCA-API-SECRET-KEY": apiSecret,
       },
       signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
     });

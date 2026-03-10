@@ -19,7 +19,7 @@ export async function getAsset(
   symbolOrAssetId: string,
 ): Promise<AlpacaAsset> {
   try {
-    const { APIKey, APISecret, type } = await validateAuth(auth);
+    const { apiKey, apiSecret, type } = await validateAuth(auth);
     const apiBaseUrl = getTradingApiUrl(type as "PAPER" | "LIVE");
 
     // Use encodeURIComponent to handle special characters in symbols (e.g., BTC/USDT)
@@ -30,8 +30,8 @@ export async function getAsset(
       {
         method: "GET",
         headers: {
-          "APCA-API-KEY-ID": APIKey,
-          "APCA-API-SECRET-KEY": APISecret,
+          "APCA-API-KEY-ID": apiKey,
+          "APCA-API-SECRET-KEY": apiSecret,
           "Content-Type": "application/json",
         },
         signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),

@@ -8,7 +8,7 @@ import { getOrder } from "./alpaca/legacy";
 const calculateFees = async (
   action: types.Action,
   trade: types.Trade,
-  alpacaAccount: types.AlpacaAccount,
+  brokerageAccount: types.BrokerageAccount,
 ): Promise<number> => {
   let fee = 0;
 
@@ -18,9 +18,9 @@ const calculateFees = async (
 
   const order = await getOrder(
     {
-      adapticAccountId: trade.alpacaAccountId,
-      alpacaApiKey: alpacaAccount.APIKey,
-      alpacaApiSecret: alpacaAccount.APISecret,
+      adapticAccountId: trade.brokerageAccountId,
+      alpacaApiKey: brokerageAccount.apiKey,
+      alpacaApiSecret: brokerageAccount.apiSecret,
     },
     alpacaOrderId,
   );
@@ -78,15 +78,15 @@ const calculateFees = async (
 export const computeTotalFees = async (trade: types.Trade): Promise<number> => {
   let totalFees = 0;
 
-  // fetch alpaca account details using adaptic.alpacaAccount.get({id: trade.alpacaAccountId})
-  const alpacaAccount = (await adaptic.alpacaAccount.get({
-    id: trade.alpacaAccountId,
-  } as types.AlpacaAccount)) as types.AlpacaAccount;
+  // fetch alpaca account details using adaptic.brokerageAccount.get({id: trade.brokerageAccountId})
+  const brokerageAccount = (await adaptic.brokerageAccount.get({
+    id: trade.brokerageAccountId,
+  } as types.BrokerageAccount)) as types.BrokerageAccount;
 
-  if (!alpacaAccount) return totalFees;
+  if (!brokerageAccount) return totalFees;
 
   const feePromises = trade?.actions?.map((action: types.Action) =>
-    calculateFees(action, trade, alpacaAccount),
+    calculateFees(action, trade, brokerageAccount),
   );
   const fees = await Promise.all(feePromises || []);
   totalFees = fees.reduce((acc, fee) => acc + fee, 0);
