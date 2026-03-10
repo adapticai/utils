@@ -4,7 +4,7 @@ import { describe, it, expect, vi } from "vitest";
 // price-utils.ts has a top-level import of @adaptic/backend-legacy.
 vi.mock("@adaptic/backend-legacy", () => ({
   default: {
-    alpacaAccount: { get: vi.fn() },
+    brokerageAccount: { get: vi.fn() },
   },
   enums: {
     AssetType: { STOCK: "STOCK" },

@@ -5,7 +5,7 @@ import { describe, it, expect, vi } from "vitest";
 // which transitively requires graphql-fields (not installed in utils).
 vi.mock("@adaptic/backend-legacy", () => ({
   default: {
-    alpacaAccount: { get: vi.fn() },
+    brokerageAccount: { get: vi.fn() },
   },
   types: {},
 }));
