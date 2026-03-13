@@ -206,6 +206,8 @@ export const adaptic = {
     sdkPositions: alpacaSDK.positions,
     /** @description Account information and configuration - SDK-based (requires AlpacaClient) */
     sdkAccount: alpacaSDK.account,
+    /** @description Market clock and trading calendar - SDK-based (requires AlpacaClient) */
+    sdkClock: alpacaSDK.clock,
 
     // Legacy API (with original signatures for backward compatibility)
     /** @description Standard order operations - Legacy API (uses AlpacaAuth) */

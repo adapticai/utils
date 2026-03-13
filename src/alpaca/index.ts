@@ -229,6 +229,7 @@ import * as trailingStops from "./trading/trailing-stops";
 import * as smartOrders from "./trading/smart-orders";
 import * as positions from "./trading/positions";
 import * as account from "./trading/account";
+import * as clock from "./trading/clock";
 
 // Market Data imports
 import * as quotes from "./market-data/quotes";
@@ -299,6 +300,9 @@ export const alpaca = {
 
   // Trading - Account
   account,
+
+  // Trading - Clock & Calendar
+  clock,
 
   // Market Data
   quotes,
