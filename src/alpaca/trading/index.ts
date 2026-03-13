@@ -126,3 +126,14 @@ export {
 } from "./oto-orders";
 
 export { default as otoOrders } from "./oto-orders";
+
+// Clock and Calendar exports
+export {
+  getAlpacaClock,
+  getAlpacaCalendar,
+  type AlpacaClock,
+  type AlpacaCalendarDay,
+  type GetAlpacaCalendarOptions,
+} from "./clock";
+
+export { default as clock } from "./clock";
