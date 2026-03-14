@@ -12,8 +12,11 @@ node_modules
 dist/
 coverage/
 
-# Generated documentation
-docs/
+# Generated documentation (TypeDoc output, not hand-written docs)
+docs/*
+!docs/*.md
+!docs/plans/
+!docs/plans/**
 
 # Bundle analysis reports
 dist/bundle-stats.html
