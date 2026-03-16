@@ -11,12 +11,12 @@
     cross-fetch "^4.0.0"
     reflect-metadata "^0.2.2"
 
-"@adaptic/backend-legacy@^0.0.901":
-  version "0.0.901"
-  resolved "https://registry.npmjs.org/@adaptic/backend-legacy/-/backend-legacy-0.0.901.tgz"
-  integrity sha512-fsrWbQ4C5YN+AQMlrTv+iEj+SLRSJSHi97i6eyp/xby0D5iNdDGwAWNJSE/O6Y5//T+8QH6vFLJdqlXl80EEGA==
+"@adaptic/backend-legacy@^0.0.902":
+  version "0.0.902"
+  resolved "https://registry.npmjs.org/@adaptic/backend-legacy/-/backend-legacy-0.0.902.tgz"
+  integrity sha512-865Qh/2ENKy4fES0pBoC+kdH+Do40/renUCQIyKuaUgt8SkOSmmvyr/vcMFbjV8bnkAftFh/c0FliISLM4EYTg==
   dependencies:
-    "@prisma/client" "^5.17.0"
+    "@prisma/client" "^6.19.0"
     cross-fetch "^4.0.0"
     reflect-metadata "^0.2.2"
 
@@ -928,6 +928,11 @@
   version "5.22.0"
   resolved "https://registry.npmjs.org/@prisma/client/-/client-5.22.0.tgz"
   integrity sha512-M0SVXfyHnQREBKxCgyo7sffrKttwE6R8PMq330MIUF0pTwjUhLbW84pFDlf06B27XyCR++VtjugEnIHdr07SVA==
+
+"@prisma/client@^6.19.0":
+  version "6.19.2"
+  resolved "https://registry.npmjs.org/@prisma/client/-/client-6.19.2.tgz"
+  integrity sha512-gR2EMvfK/aTxsuooaDA32D8v+us/8AAet+C3J1cc04SW35FPdZYgLF+iN4NDLUgAaUGTKdAB0CYenu1TAgGdMg==
 
 "@repeaterjs/repeater@^3.0.4":
   version "3.0.6"
@@ -3988,7 +3993,7 @@ typedoc@^0.28.16:
     minimatch "^9.0.5"
     yaml "^2.8.1"
 
-typescript@^5.8.3, typescript@>=3.7.0, "typescript@5.0.x || 5.1.x || 5.2.x || 5.3.x || 5.4.x || 5.5.x || 5.6.x || 5.7.x || 5.8.x || 5.9.x":
+typescript@^5.8.3, typescript@>=3.7.0, typescript@>=5.1.0, "typescript@5.0.x || 5.1.x || 5.2.x || 5.3.x || 5.4.x || 5.5.x || 5.6.x || 5.7.x || 5.8.x || 5.9.x":
   version "5.9.3"
   resolved "https://registry.npmjs.org/typescript/-/typescript-5.9.3.tgz"
   integrity sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==
