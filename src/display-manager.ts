@@ -1,8 +1,35 @@
 import chalk from "chalk";
-import { clearLine, cursorTo, moveCursor } from "readline";
 import { LogOptions } from "./types/logging-types";
-import * as fs from "fs";
-import * as path from "path";
+
+// Detect whether we are running in a Node.js environment with a real stdout.
+// In browsers (or environments without process.stdout) all terminal / fs
+// operations become no-ops so the library can be safely imported client-side.
+const isNode =
+  typeof process !== "undefined" &&
+  typeof process.stdout !== "undefined" &&
+  typeof process.stdout.write === "function";
+
+// Lazy-load Node-only dependencies so bundlers can tree-shake / stub them.
+// chalk is kept as a static import (ESM-only in v5) — Rollup handles it.
+// readline, fs, and path are loaded at runtime only in Node.
+let clearLine: typeof import("readline").clearLine | undefined;
+let cursorTo: typeof import("readline").cursorTo | undefined;
+let fs: typeof import("fs") | undefined;
+let path: typeof import("path") | undefined;
+
+if (isNode) {
+  try {
+    /* eslint-disable @typescript-eslint/no-require-imports */
+    const readline = require("readline");
+    clearLine = readline.clearLine;
+    cursorTo = readline.cursorTo;
+    fs = require("fs");
+    path = require("path");
+    /* eslint-enable @typescript-eslint/no-require-imports */
+  } catch {
+    // Silently degrade — all operations will be no-ops.
+  }
+}
 
 export class DisplayManager {
   private static instance: DisplayManager;
@@ -25,9 +52,21 @@ export class DisplayManager {
    * Logs a message while preserving the prompt at the bottom
    */
   public log(message: string, options?: LogOptions): void {
+    if (!isNode) {
+      // In browser environments, fall back to console
+      const level =
+        options?.type === "error"
+          ? "error"
+          : options?.type === "warn"
+            ? "warn"
+            : "log";
+      console[level](message);
+      return;
+    }
+
     // Clear the current prompt line
-    clearLine(process.stdout, 0);
-    cursorTo(process.stdout, 0);
+    clearLine?.(process.stdout, 0);
+    cursorTo?.(process.stdout, 0);
 
     // Format the timestamp
     const date = new Date();
@@ -41,10 +80,12 @@ export class DisplayManager {
     let logMessage = `[${timestamp}]${options?.source ? ` [${options.source}] ` : ""}${account ? ` [${account}] ` : ""}${symbol ? ` [${symbol}] ` : ""}${message}`;
 
     // Add color based on type
-    if (options?.type === "error") {
-      logMessage = chalk.red(logMessage);
-    } else if (options?.type === "warn") {
-      logMessage = chalk.yellow(logMessage);
+    if (chalk) {
+      if (options?.type === "error") {
+        logMessage = chalk.red(logMessage);
+      } else if (options?.type === "warn") {
+        logMessage = chalk.yellow(logMessage);
+      }
     }
 
     // Write the log message
@@ -72,6 +113,7 @@ export class DisplayManager {
     logMessage: string,
     options?: LogOptions,
   ): void {
+    if (!fs || !path) return;
     try {
       // Create logs directory if it doesn't exist
       if (!fs.existsSync("logs")) {
@@ -106,6 +148,7 @@ export class DisplayManager {
     logMessage: string,
     options?: LogOptions,
   ): void {
+    if (!fs || !path) return;
     try {
       // Create logs directory if it doesn't exist
       if (!fs.existsSync("logs")) {
@@ -135,12 +178,14 @@ export class DisplayManager {
   }
 
   private writePrompt(): void {
+    if (!isNode) return;
     process.stdout.write(this.promptText);
   }
 
   public clearPrompt(): void {
-    clearLine(process.stdout, 0);
-    cursorTo(process.stdout, 0);
+    if (!isNode) return;
+    clearLine?.(process.stdout, 0);
+    cursorTo?.(process.stdout, 0);
   }
 
   public restorePrompt(): void {
