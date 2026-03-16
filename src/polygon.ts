@@ -17,6 +17,12 @@ import {
 import pLimit from "p-limit";
 import { validatePolygonApiKey } from "./utils/auth-validator";
 
+/**
+ * Set of Polygon API response statuses that indicate valid, usable data.
+ * "OK" = real-time data, "DELAYED" = delayed data (still valid, e.g. free-tier plans).
+ */
+const POLYGON_VALID_STATUSES = new Set(["OK", "DELAYED"]);
+
 // Constants from environment variables
 const POLYGON_API_KEY = process.env.POLYGON_API_KEY;
 
@@ -171,7 +177,7 @@ export const fetchLastTrade = async (
       );
       const data = await response.json();
 
-      if (data.status !== "OK" || !data.results) {
+      if (!POLYGON_VALID_STATUSES.has(data.status) || !data.results) {
         throw new Error(
           `Polygon.io API error: ${data.status || "No results"} ${data.error || ""}`,
         );
@@ -280,9 +286,16 @@ export const fetchPrices = async (
         const response = await fetchWithRetry(nextUrl, {}, 3, 1000);
         const data = await response.json();
 
-        if (data.status !== "OK") {
+        if (!POLYGON_VALID_STATUSES.has(data.status)) {
           throw new Error(
             `Polygon.io API responded with status: ${data.status}`,
+          );
+        }
+
+        if (data.status === "DELAYED") {
+          getLogger().warn(
+            `Polygon.io returned DELAYED data for ${params.ticker} — using delayed results`,
+            { ticker: params.ticker, source: "PolygonAPI.fetchPrices" },
           );
         }
 
@@ -435,7 +448,7 @@ export const fetchGroupedDaily = async (
       );
       const data = await response.json();
 
-      if (data.status !== "OK") {
+      if (!POLYGON_VALID_STATUSES.has(data.status)) {
         throw new Error(`Polygon.io API responded with status: ${data.status}`);
       }
 
@@ -549,7 +562,7 @@ export const fetchDailyOpenClose = async (
     );
     const data = await response.json();
 
-    if (data.status !== "OK") {
+    if (!POLYGON_VALID_STATUSES.has(data.status)) {
       throw new Error(
         `Failed to fetch daily open/close data for ${symbol}: ${data.status}`,
       );
