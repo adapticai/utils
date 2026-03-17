@@ -73,18 +73,15 @@ export async function fetchPosition(
     const { APIKey, APISecret, type } = await validateAuth(auth);
     const apiBaseUrl = getTradingApiUrl(type as "PAPER" | "LIVE");
 
-    const response = await fetch(
-      `${apiBaseUrl}/positions/${symbolOrAssetId}`,
-      {
-        method: "GET",
-        headers: {
-          "APCA-API-KEY-ID": APIKey,
-          "APCA-API-SECRET-KEY": APISecret,
-          "Content-Type": "application/json",
-        },
-        signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
+    const response = await fetch(`${apiBaseUrl}/positions/${symbolOrAssetId}`, {
+      method: "GET",
+      headers: {
+        "APCA-API-KEY-ID": APIKey,
+        "APCA-API-SECRET-KEY": APISecret,
+        "Content-Type": "application/json",
       },
-    );
+      signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
+    });
 
     if (!response.ok) {
       const errorText = await response.text();
