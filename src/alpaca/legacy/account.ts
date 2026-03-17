@@ -143,7 +143,7 @@ export async function fetchPortfolioHistory({
 
   const { APIKey, APISecret, type } = alpacaAccountObj;
   const apiBaseUrl = getTradingApiUrl(type as "PAPER" | "LIVE");
-  const apiUrl = `${apiBaseUrl}/v2/account/portfolio/history`;
+  const apiUrl = `${apiBaseUrl}/account/portfolio/history`;
 
   const { start, end, period } = params;
 

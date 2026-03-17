@@ -33,7 +33,7 @@ export async function fetchAllPositions(
   try {
     const { APIKey, APISecret, type } = await validateAuth(auth);
     const apiBaseUrl = getTradingApiUrl(type as "PAPER" | "LIVE");
-    const apiUrl = `${apiBaseUrl}/v2/positions`;
+    const apiUrl = `${apiBaseUrl}/positions`;
 
     const response = await fetch(apiUrl, {
       method: "GET",
@@ -74,7 +74,7 @@ export async function fetchPosition(
     const apiBaseUrl = getTradingApiUrl(type as "PAPER" | "LIVE");
 
     const response = await fetch(
-      `${apiBaseUrl}/v2/positions/${symbolOrAssetId}`,
+      `${apiBaseUrl}/positions/${symbolOrAssetId}`,
       {
         method: "GET",
         headers: {
@@ -228,7 +228,7 @@ export async function closePosition(
       }
 
       const queryString = queryParams.toString();
-      const url = `${apiBaseUrl}/v2/positions/${encodeURIComponent(symbolOrAssetId)}${queryString ? `?${queryString}` : ""}`;
+      const url = `${apiBaseUrl}/positions/${encodeURIComponent(symbolOrAssetId)}${queryString ? `?${queryString}` : ""}`;
 
       const response = await fetch(url, {
         method: "DELETE",
@@ -383,7 +383,7 @@ export async function closeAllPositions(
     const response = await makeRequest<
       { symbol: string; status: number; body?: AlpacaOrder }[]
     >(auth, {
-      endpoint: "/v2/positions",
+      endpoint: "/positions",
       method: "DELETE",
       queryString: cancel_orders ? "?cancel_orders=true" : "",
     });

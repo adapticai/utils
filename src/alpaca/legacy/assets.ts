@@ -26,7 +26,7 @@ export async function getAsset(
     const encodedSymbolOrAssetId = encodeURIComponent(symbolOrAssetId);
 
     const response = await fetch(
-      `${apiBaseUrl}/v2/assets/${encodedSymbolOrAssetId}`,
+      `${apiBaseUrl}/assets/${encodedSymbolOrAssetId}`,
       {
         method: "GET",
         headers: {

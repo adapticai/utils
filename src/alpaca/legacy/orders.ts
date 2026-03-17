@@ -115,7 +115,7 @@ export async function createOrder(
     const { APIKey, APISecret, type } = await validateAuth(auth);
     const apiBaseUrl = getTradingApiUrl(type as "PAPER" | "LIVE");
 
-    const response = await fetch(`${apiBaseUrl}/v2/orders`, {
+    const response = await fetch(`${apiBaseUrl}/orders`, {
       method: "POST",
       headers: {
         "APCA-API-KEY-ID": APIKey,
@@ -169,7 +169,7 @@ export async function getOrders(
         queryParams.append("symbols", params.symbols.join(","));
       if (params.side) queryParams.append("side", params.side);
 
-      const response = await fetch(`${apiBaseUrl}/v2/orders?${queryParams}`, {
+      const response = await fetch(`${apiBaseUrl}/orders?${queryParams}`, {
         method: "GET",
         headers: {
           "APCA-API-KEY-ID": APIKey,
@@ -215,7 +215,7 @@ export async function cancelAllOrders(
     const { APIKey, APISecret, type } = await validateAuth(auth);
     const apiBaseUrl = getTradingApiUrl(type as "PAPER" | "LIVE");
 
-    const response = await fetch(`${apiBaseUrl}/v2/orders`, {
+    const response = await fetch(`${apiBaseUrl}/orders`, {
       method: "DELETE",
       headers: {
         "APCA-API-KEY-ID": APIKey,
@@ -258,7 +258,7 @@ export async function getOrder(
     if (nested) queryParams.append("nested", "true");
 
     const response = await fetch(
-      `${apiBaseUrl}/v2/orders/${orderId}?${queryParams}`,
+      `${apiBaseUrl}/orders/${orderId}?${queryParams}`,
       {
         method: "GET",
         headers: {
@@ -299,7 +299,7 @@ export async function replaceOrder(
     const { APIKey, APISecret, type } = await validateAuth(auth);
     const apiBaseUrl = getTradingApiUrl(type as "PAPER" | "LIVE");
 
-    const response = await fetch(`${apiBaseUrl}/v2/orders/${orderId}`, {
+    const response = await fetch(`${apiBaseUrl}/orders/${orderId}`, {
       method: "PATCH",
       headers: {
         "APCA-API-KEY-ID": APIKey,
@@ -339,7 +339,7 @@ export async function cancelOrder(
     const { APIKey, APISecret, type } = await validateAuth(auth);
     const apiBaseUrl = getTradingApiUrl(type as "PAPER" | "LIVE");
 
-    const response = await fetch(`${apiBaseUrl}/v2/orders/${orderId}`, {
+    const response = await fetch(`${apiBaseUrl}/orders/${orderId}`, {
       method: "DELETE",
       headers: {
         "APCA-API-KEY-ID": APIKey,
@@ -430,7 +430,7 @@ export async function createLimitOrder(
   }
 
   return makeRequest(auth, {
-    endpoint: "/v2/orders",
+    endpoint: "/orders",
     method: "POST",
     body,
   });
