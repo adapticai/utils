@@ -14,6 +14,7 @@ import {
   AlpacaOptionQuoteStream,
   AlpacaOptionBarStream,
   AlpacaOptionStreamMessage,
+  AlpacaSDKOptionStreamSocket,
 } from "../../types/alpaca-types";
 import {
   StreamConfig,
@@ -87,7 +88,7 @@ export interface OptionStreamEventMap {
  */
 export class OptionDataStream extends EventEmitter {
   private client: AlpacaClient;
-  private socket: any = null;
+  private socket: AlpacaSDKOptionStreamSocket | null = null;
   private state: StreamState = "disconnected";
   private feed: OptionDataFeed;
   private config: OptionStreamConfig;
@@ -243,6 +244,7 @@ export class OptionDataStream extends EventEmitter {
    * Set up all data event handlers for SDK
    */
   private setupDataHandlers(): void {
+    if (!this.socket) return;
     // Trade events
     this.socket.onOptionTrade((trade: AlpacaSDKOptionTrade) => {
       const converted = this.convertTrade(trade);

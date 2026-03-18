@@ -19,6 +19,40 @@ import {
 const LOG_SOURCE = "CryptoData";
 
 /**
+ * SDK response entry shape for crypto bars.
+ * The SDK may deliver entries via async iteration or as a thenable response.
+ */
+interface AlpacaCryptoBarSDKEntry {
+  Symbol: string;
+  Timestamp: string;
+  Open: number;
+  High: number;
+  Low: number;
+  Close: number;
+  Volume: number;
+  VWAP?: number;
+  TradeCount?: number;
+}
+
+/**
+ * SDK response entry shape for crypto trades.
+ */
+interface AlpacaCryptoTradeSDKEntry {
+  Price: number;
+  Size: number;
+  Timestamp: string;
+  ID?: number;
+  TakerSide?: "B" | "S";
+}
+
+/**
+ * The Alpaca SDK response for crypto data methods is typed as AsyncIterable.
+ * At runtime, the SDK may also return a thenable/Promise; the code checks
+ * for both patterns via duck-typing.
+ */
+type AlpacaSDKIterableResponse<T> = AsyncIterable<T>;
+
+/**
  * Internal logging helper with consistent source
  */
 const log = (message: string, options: LogOptions = { type: "info" }) => {
@@ -206,10 +240,11 @@ export async function getCryptoBars(
     }
 
     // Use SDK's getCryptoBars method
-    // The SDK may return an async iterator or a Promise depending on the version;
-    // cast to any so TypeScript does not constrain the runtime duck-typing below.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const barsResponse: any = sdk.getCryptoBars(normalizedSymbols, options);
+    // The SDK may return an async iterator or a Promise depending on the version
+    const barsResponse = sdk.getCryptoBars(
+      normalizedSymbols,
+      options,
+    ) as unknown as AlpacaSDKIterableResponse<AlpacaCryptoBarSDKEntry>;
 
     // Handle both async iterator and direct response formats
     if (
@@ -233,9 +268,9 @@ export async function getCryptoBars(
 
         result.set(symbol, existingBars);
       }
-    } else if (barsResponse && barsResponse.then) {
-      // Handle Promise response
-      const response = await barsResponse;
+    } else if (barsResponse && "then" in barsResponse) {
+      // Handle Promise response (SDK returns thenable in some versions)
+      const response = await (barsResponse as unknown as Promise<{ bars?: Record<string, AlpacaCryptoBarSDKEntry[]> }>);
       if (response && response.bars) {
         for (const [symbol, bars] of Object.entries(response.bars)) {
           const barArray = bars as Array<{
@@ -753,10 +788,11 @@ export async function getCryptoTrades(
     }
 
     const trades: CryptoTrade[] = [];
-    // The SDK may return an async iterator or a Promise depending on the version;
-    // cast to any so TypeScript does not constrain the runtime duck-typing below.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const tradesResponse: any = sdk.getCryptoTrades(normalizedSymbol, options);
+    // The SDK may return an async iterator or a Promise depending on the version
+    const tradesResponse = sdk.getCryptoTrades(
+      normalizedSymbol,
+      options,
+    ) as unknown as AlpacaSDKIterableResponse<AlpacaCryptoTradeSDKEntry>;
 
     // Handle both async iterator and direct response formats
     if (
@@ -777,9 +813,9 @@ export async function getCryptoTrades(
           break;
         }
       }
-    } else if (tradesResponse && tradesResponse.then) {
-      // Handle Promise response
-      const response = await tradesResponse;
+    } else if (tradesResponse && "then" in tradesResponse) {
+      // Handle Promise response (SDK returns thenable in some versions)
+      const response = await (tradesResponse as unknown as Promise<{ trades?: AlpacaCryptoTradeSDKEntry[] }>);
       if (response && response.trades) {
         const tradeArray = response.trades as Array<{
           Price: number;

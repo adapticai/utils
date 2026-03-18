@@ -16,6 +16,7 @@ import { log as baseLog } from "../../logging";
 import { LogOptions } from "../../types/logging-types";
 import {
   AlpacaOrder,
+  AlpacaSDKOrderParams,
   OrderSide,
   TimeInForce,
   AlpacaPosition,
@@ -582,8 +583,7 @@ export async function getOpenTrailingStops(
       queryParams.symbols = symbol.toUpperCase();
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const orders = (await sdk.getOrders(queryParams as any)) as AlpacaOrder[];
+    const orders = (await sdk.getOrders(queryParams as unknown as AlpacaSDKOrderParams)) as AlpacaOrder[];
 
     // Filter to only trailing stop orders
     const trailingStops = orders.filter(

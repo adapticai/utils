@@ -7,6 +7,7 @@ import { log as baseLog } from "../../logging";
 import { LogOptions } from "../../types/logging-types";
 import {
   AlpacaOrder,
+  AlpacaSDKOrderParams,
   CreateOrderParams,
   GetOrdersParams,
   ReplaceOrderParams,
@@ -188,7 +189,7 @@ export async function getOrders(
     }
     if (params.side) queryParams.side = params.side;
 
-    const orders = await sdk.getOrders(queryParams as any);
+    const orders = await sdk.getOrders(queryParams as unknown as AlpacaSDKOrderParams);
 
     log(`Retrieved ${orders.length} orders`, {
       type: "debug",

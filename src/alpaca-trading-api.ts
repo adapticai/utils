@@ -103,15 +103,15 @@ export class AlpacaTradingAPI {
     // Initialize message handlers
     this.messageHandlers.set(
       "authorization",
-      this.handleAuthMessage.bind(this) as (data: any) => void,
+      this.handleAuthMessage.bind(this) as (data: AlpacaWebSocketMessage["data"]) => void,
     );
     this.messageHandlers.set(
       "listening",
-      this.handleListenMessage.bind(this) as (data: any) => void,
+      this.handleListenMessage.bind(this) as (data: AlpacaWebSocketMessage["data"]) => void,
     );
     this.messageHandlers.set(
       "trade_updates",
-      this.handleTradeUpdate.bind(this) as (data: any) => void,
+      this.handleTradeUpdate.bind(this) as (data: AlpacaWebSocketMessage["data"]) => void,
     );
 
     this.debugLogging = options?.debugLogging || false;

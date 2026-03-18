@@ -355,7 +355,6 @@ export async function getNews(
     // The SDK returns a slightly different structure, so we map the fields
     const articles: SimpleNews[] = response.map((article) => {
       // SDK returns properties in different format
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const sdkArticle = article as unknown as {
         ID?: number;
         id?: number;

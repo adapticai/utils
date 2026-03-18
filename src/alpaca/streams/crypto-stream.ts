@@ -16,6 +16,7 @@ import {
   AlpacaCryptoDailyBarStream,
   AlpacaCryptoUpdatedBarStream,
   AlpacaCryptoStreamMessage,
+  AlpacaSDKCryptoStreamSocket,
   CryptoPair,
 } from "../../types/alpaca-types";
 import {
@@ -99,7 +100,7 @@ export interface CryptoStreamEventMap {
  */
 export class CryptoDataStream extends EventEmitter {
   private client: AlpacaClient;
-  private socket: any = null;
+  private socket: AlpacaSDKCryptoStreamSocket | null = null;
   private state: StreamState = "disconnected";
   private location: CryptoStreamLocation;
   private config: CryptoStreamConfig;
@@ -258,6 +259,7 @@ export class CryptoDataStream extends EventEmitter {
    * Set up all data event handlers for SDK
    */
   private setupDataHandlers(): void {
+    if (!this.socket) return;
     // Trade events
     this.socket.onCryptoTrade(
       (trade: AlpacaSDKCryptoTrade & { Symbol?: string }) => {

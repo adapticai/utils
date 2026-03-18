@@ -6,6 +6,7 @@ import { AlpacaClient } from "../client";
 import { log as baseLog } from "../../logging";
 import {
   AlpacaAccountDetails,
+  AlpacaSDKPortfolioHistoryParams,
   AccountConfiguration,
   PortfolioHistoryParams,
   PortfolioHistoryResponse,
@@ -182,8 +183,7 @@ export async function getPortfolioHistory(
   );
   try {
     const sdk = client.getSDK();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const history = await sdk.getPortfolioHistory(params as any);
+    const history = await sdk.getPortfolioHistory(params as unknown as AlpacaSDKPortfolioHistoryParams);
     log(
       `Portfolio history fetched successfully with ${history.equity?.length || 0} data points`,
     );

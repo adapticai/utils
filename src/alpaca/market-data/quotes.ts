@@ -5,6 +5,7 @@
 import { AlpacaClient } from "../client";
 import {
   AlpacaQuote,
+  AlpacaSDKConfig,
   LatestQuotesResponse,
   DataFeed,
   SDKMarketDataOptions,
@@ -78,10 +79,9 @@ export async function getLatestQuote(
     const dataFeed = feed || config.dataFeed || "iex";
 
     // Use SDK's getLatestQuote method
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const response = await sdk.getLatestQuote(normalizedSymbol, {
       feed: dataFeed,
-    } as any);
+    } as unknown as AlpacaSDKConfig);
 
     if (!response) {
       throw new QuoteError(
@@ -162,10 +162,9 @@ export async function getLatestQuotes(
     const dataFeed = feed || config.dataFeed || "iex";
 
     // Use SDK's getLatestQuotes method
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const response = await sdk.getLatestQuotes(normalizedSymbols, {
       feed: dataFeed,
-    } as any);
+    } as unknown as AlpacaSDKConfig);
 
     if (!response) {
       throw new QuoteError("No quote data returned", "NO_DATA");

@@ -8,6 +8,7 @@ import { log as baseLog } from "../../logging";
 import { LogOptions } from "../../types/logging-types";
 import {
   AlpacaOrder,
+  AlpacaSDKOrderParams,
   OrderSide,
   OrderType,
   TimeInForce,
@@ -598,8 +599,7 @@ export async function getOpenCryptoOrders(
           : undefined,
     };
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const orders = (await sdk.getOrders(queryParams as any)) as AlpacaOrder[];
+    const orders = (await sdk.getOrders(queryParams as unknown as AlpacaSDKOrderParams)) as AlpacaOrder[];
 
     // Filter to only crypto orders (asset_class === 'crypto')
     const cryptoOrders = orders.filter(

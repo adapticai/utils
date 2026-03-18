@@ -4,6 +4,7 @@
  */
 import { AlpacaClient } from "../client";
 import {
+  AlpacaSDKConfig,
   AlpacaTrade,
   LatestTradesResponse,
   DataFeed,
@@ -84,10 +85,9 @@ export async function getLatestTrade(
     const dataFeed = feed || config.dataFeed || "iex";
 
     // Use SDK's getLatestTrade method
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const response = await sdk.getLatestTrade(normalizedSymbol, {
       feed: dataFeed,
-    } as any);
+    } as unknown as AlpacaSDKConfig);
 
     if (!response) {
       throw new TradeError(
@@ -166,10 +166,9 @@ export async function getLatestTrades(
     const dataFeed = feed || config.dataFeed || "iex";
 
     // Use SDK's getLatestTrades method
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const response = await sdk.getLatestTrades(normalizedSymbols, {
       feed: dataFeed,
-    } as any);
+    } as unknown as AlpacaSDKConfig);
 
     if (!response) {
       throw new TradeError("No trade data returned", "NO_DATA");
@@ -345,10 +344,9 @@ export async function getCurrentPrice(
 
     // Try to get quote first for mid-point price
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const quote = await sdk.getLatestQuote(normalizedSymbol, {
         feed: dataFeed,
-      } as any);
+      } as unknown as AlpacaSDKConfig);
 
       if (quote && quote.BidPrice > 0 && quote.AskPrice > 0) {
         const midPrice = (quote.BidPrice + quote.AskPrice) / 2;
@@ -441,7 +439,7 @@ export async function getCurrentPrices(
     try {
       const quotes = (await sdk.getLatestQuotes(normalizedSymbols, {
         feed: dataFeed,
-      } as any)) as
+      } as unknown as AlpacaSDKConfig)) as
         | Map<string, { BidPrice: number; AskPrice: number }>
         | Record<string, { BidPrice: number; AskPrice: number }>;
 

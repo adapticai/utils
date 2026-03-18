@@ -236,15 +236,11 @@ export async function createOCOOrder(
       limit_price: roundPriceForAlpaca(takeProfit.limitPrice).toString(),
       stop_loss: {
         stop_price: roundPriceForAlpaca(stopLoss.stopPrice).toString(),
+        ...(stopLoss.limitPrice !== undefined
+          ? { limit_price: roundPriceForAlpaca(stopLoss.limitPrice).toString() }
+          : {}),
       },
     };
-
-    // Add stop-limit price if provided
-    if (stopLoss.limitPrice !== undefined) {
-      (orderRequest.stop_loss as any).limit_price = roundPriceForAlpaca(
-        stopLoss.limitPrice,
-      ).toString();
-    }
 
     log(`Submitting OCO order request: ${JSON.stringify(orderRequest)}`, {
       symbol,

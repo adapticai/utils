@@ -1233,7 +1233,7 @@ export async function fetchPerformanceMetrics({
 
     // Fetch benchmark data with enhanced error handling
     const benchmarkSymbol = "SPY";
-    let benchmarkBars: Bar[] = [];
+    let benchmarkBars: BenchmarkBar[] = [];
 
     try {
       const { start, end } = await getStartAndEndTimestamps({
@@ -1286,8 +1286,8 @@ export async function fetchPerformanceMetrics({
     // Calculate metrics in parallel for performance
     const metrics = await Promise.allSettled([
       calculateTotalReturnYTD(portfolioHistory),
-      calculateAlphaAndBeta(portfolioHistory, benchmarkBars as any),
-      calculateInformationRatio(portfolioHistory, benchmarkBars as any),
+      calculateAlphaAndBeta(portfolioHistory, benchmarkBars),
+      calculateInformationRatio(portfolioHistory, benchmarkBars),
       calculateRiskAdjustedReturn(portfolioHistory),
       calculateLiquidityRatio({
         alpacaAccount: alpacaAccountObj as types.AlpacaAccount,

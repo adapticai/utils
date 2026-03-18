@@ -403,7 +403,7 @@ export async function updateConfiguration(
             etfs: updatedConfig.allocation.etfs ?? 0,
             forex: updatedConfig.allocation.forex ?? 0,
             crypto: updatedConfig.allocation.crypto ?? 0,
-          } as any,
+          } as Partial<types.Allocation> as types.Allocation,
           client,
         );
       } else {
@@ -419,7 +419,7 @@ export async function updateConfiguration(
               id: account.id,
             },
             alpacaAccountId: account.id,
-          } as any,
+          } as Partial<types.Allocation> as types.Allocation,
           client,
         );
       }
@@ -464,7 +464,7 @@ export async function updateConfiguration(
           updatedConfig.secondReducedTrailPercentage100 ?? 0,
         minimumPriceChangePercent100:
           updatedConfig.minimumPriceChangePercent100 ?? 0,
-      } as any,
+      } as Partial<types.AlpacaAccount> as types.AlpacaAccount,
       client,
     );
 

@@ -5,6 +5,34 @@ import {
   NormalizedCacheObject,
 } from "@adaptic/backend-legacy";
 import { types } from "@adaptic/backend-legacy";
+import type Alpaca from "@alpacahq/alpaca-trade-api";
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Alpaca SDK adapter types
+// The @alpacahq/alpaca-trade-api SDK uses `any` throughout its own typings.
+// These types are derived directly from the SDK class to stay in sync.
+// Use with double-cast pattern: `value as unknown as AlpacaSDKConfig`
+// ──────────────────────────────────────────────────────────────────────────────
+
+/** Config parameter type for Alpaca SDK market data methods (getLatestQuote, etc.) */
+export type AlpacaSDKConfig = NonNullable<Parameters<Alpaca["getLatestQuote"]>[1]>;
+
+/** Parameter type for Alpaca SDK getOrders method */
+export type AlpacaSDKOrderParams = NonNullable<Parameters<Alpaca["getOrders"]>[0]>;
+
+/** Parameter type for Alpaca SDK getPortfolioHistory method */
+export type AlpacaSDKPortfolioHistoryParams = NonNullable<Parameters<Alpaca["getPortfolioHistory"]>[0]>;
+
+/** Socket type for Alpaca SDK crypto data stream */
+export type AlpacaSDKCryptoStreamSocket = Alpaca["crypto_stream_v1beta3"];
+
+/** Socket type for Alpaca SDK stock data stream */
+export type AlpacaSDKStockStreamSocket = Alpaca["data_stream_v2"];
+
+/** Socket type for Alpaca SDK option data stream */
+export type AlpacaSDKOptionStreamSocket = Alpaca["option_stream"];
+
+// ──────────────────────────────────────────────────────────────────────────────
 
 /**
  * Represents the authentication details for Alpaca.
@@ -217,10 +245,14 @@ export interface TakeProfitParams {
 
 /**
  * Parameters for stop loss orders.
+ * Supports standard stop, stop-limit, and trailing stop variants.
+ * For trailing stops, use trail_percent or trail_price instead of stop_price.
  */
 export interface StopLossParams {
-  stop_price: string; // Stop price for stop loss
-  limit_price?: string; // Optional limit price
+  stop_price?: string; // Stop price (required for stop/stop-limit, omitted for trailing)
+  limit_price?: string; // Optional limit price (stop-limit orders)
+  trail_percent?: string; // Trailing stop percentage
+  trail_price?: string; // Trailing stop dollar amount
   order_class?: OrderClass; // Optional order class
 }
 
@@ -1491,3 +1523,8 @@ export interface AlpacaAccountWithAllocation {
   cryptoTradingPairs?: string[];
   cryptoTradeAllocationPct?: number;
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Alpaca SDK Stream Socket Interfaces
+// These type the SDK stream objects (data_stream_v2, crypto_stream_v1beta3, etc.)
+// ──────────────────────────────────────────────────────────────────────────────

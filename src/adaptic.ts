@@ -5,20 +5,18 @@ import {
   getApolloClient,
   setTokenProvider,
   type TokenProvider,
+  type ApolloClientType,
+  type NormalizedCacheObject,
 } from "@adaptic/backend-legacy";
 import { createTimeoutSignal, DEFAULT_TIMEOUTS } from "./http-timeout";
 
 // Re-export TokenProvider type for consumers
 export type { TokenProvider };
 
-// Types for Apollo client without direct import
-// NOTE: Using `any` here is intentional to avoid circular dependencies with @adaptic/backend-legacy
-// The actual type is ApolloClient<NormalizedCacheObject> but we don't import it directly
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type ApolloClientType = any;
+type ApolloClientInstance = ApolloClientType<NormalizedCacheObject>;
 
 // Keep track of a single instance of Apollo client
-let apolloClientInstance: ApolloClientType | null = null;
+let apolloClientInstance: ApolloClientInstance | null = null;
 
 // Track if auth has been configured
 let authConfigured = false;
@@ -80,9 +78,9 @@ export const isAuthConfigured = (): boolean => {
  * Returns a shared Apollo client instance with connection pooling.
  * This should be used for all @adaptic/backend-legacy operations.
  *
- * @returns {Promise<ApolloClientType>} The shared Apollo client instance.
+ * @returns {Promise<ApolloClientInstance>} The shared Apollo client instance.
  */
-export const getSharedApolloClient = async (): Promise<ApolloClientType> => {
+export const getSharedApolloClient = async (): Promise<ApolloClientInstance> => {
   if (!apolloClientInstance) {
     try {
       // Initialize the client once and reuse it across requests

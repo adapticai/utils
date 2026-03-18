@@ -21,6 +21,7 @@ import {
   AlpacaTradeCancelStream,
   AlpacaOrderImbalanceStream,
   AlpacaStockStreamMessage,
+  AlpacaSDKStockStreamSocket,
 } from "../../types/alpaca-types";
 import {
   StreamConfig,
@@ -161,7 +162,7 @@ export interface StockStreamEventMap {
  */
 export class StockDataStream extends EventEmitter {
   private client: AlpacaClient;
-  private socket: any = null;
+  private socket: AlpacaSDKStockStreamSocket | null = null;
   private state: StreamState = "disconnected";
   private feed: StockDataFeed;
   private config: StockStreamConfig;
@@ -317,6 +318,7 @@ export class StockDataStream extends EventEmitter {
    * Set up all data event handlers for SDK
    */
   private setupDataHandlers(): void {
+    if (!this.socket) return;
     // Trade events
     this.socket.onStockTrade((trade: AlpacaSDKTrade) => {
       const converted = this.convertTrade(trade);

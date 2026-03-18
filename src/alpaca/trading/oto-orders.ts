@@ -18,6 +18,7 @@ import {
   AlpacaOrder,
   OrderSide,
   OrderType,
+  StopLossParams,
   TimeInForce,
 } from "../../types/alpaca-types";
 import { log as baseLog } from "../../logging";
@@ -377,16 +378,16 @@ export async function createOTOOrder(
       };
     } else if (dependent.type === "trailing_stop") {
       // Trailing stop order
-      orderRequest.stop_loss = {};
+      const trailingStop: StopLossParams = {};
       if (dependent.trailPercent !== undefined) {
-        (orderRequest.stop_loss as any).trail_percent =
-          dependent.trailPercent.toString();
+        trailingStop.trail_percent = dependent.trailPercent.toString();
       }
       if (dependent.trailPrice !== undefined) {
-        (orderRequest.stop_loss as any).trail_price = roundPriceForAlpaca(
+        trailingStop.trail_price = roundPriceForAlpaca(
           dependent.trailPrice,
         ).toString();
       }
+      orderRequest.stop_loss = trailingStop;
     }
 
     log(`Submitting OTO order request: ${JSON.stringify(orderRequest)}`, {
