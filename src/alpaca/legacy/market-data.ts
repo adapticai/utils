@@ -117,7 +117,7 @@ export async function fetchNews(
     }
   } else {
     APIKey = process.env.ALPACA_API_KEY;
-    APISecret = process.env.ALPACA_SECRET_KEY;
+    APISecret = process.env.ALPACA_API_SECRET || process.env.ALPACA_SECRET_KEY;
   }
 
   if (!APIKey || !APISecret) {

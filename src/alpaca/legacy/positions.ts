@@ -166,7 +166,7 @@ export async function closePosition(
       const alpacaAuth = {
         type: "LIVE",
         alpacaApiKey: process.env.ALPACA_API_KEY,
-        alpacaApiSecret: process.env.ALPACA_SECRET_KEY,
+        alpacaApiSecret: process.env.ALPACA_API_SECRET || process.env.ALPACA_SECRET_KEY,
       } as AlpacaAuth;
 
       const quotesResponse = await getLatestQuotes(alpacaAuth, {
@@ -293,7 +293,7 @@ export async function closeAllPositions(
     const alpacaAuth = {
       type: "LIVE",
       alpacaApiKey: process.env.ALPACA_API_KEY,
-      alpacaApiSecret: process.env.ALPACA_SECRET_KEY,
+      alpacaApiSecret: process.env.ALPACA_API_SECRET || process.env.ALPACA_SECRET_KEY,
     } as AlpacaAuth;
 
     const symbols = positions.map((position) => position.symbol);
