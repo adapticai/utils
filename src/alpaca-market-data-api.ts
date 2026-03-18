@@ -204,6 +204,8 @@ export class AlpacaMarketDataAPI extends EventEmitter {
     quotes: [],
     bars: [],
   };
+  private reconnectAttempts: Record<string, number> = {};
+  private reconnectTimers: Record<string, ReturnType<typeof setTimeout>> = {};
 
   public setMode(mode: "sandbox" | "test" | "production" = "production"): void {
     if (mode === "sandbox") {
@@ -242,7 +244,7 @@ export class AlpacaMarketDataAPI extends EventEmitter {
     // when env vars are not available. Features will be unavailable until
     // credentials are provided at runtime.
     const apiKey = process.env.ALPACA_API_KEY || "";
-    const apiSecret = process.env.ALPACA_SECRET_KEY || "";
+    const apiSecret = process.env.ALPACA_API_SECRET || process.env.ALPACA_SECRET_KEY || "";
     this.credentialsValid = validateAlpacaCredentials(
       {
         apiKey,
@@ -319,6 +321,17 @@ export class AlpacaMarketDataAPI extends EventEmitter {
       url = this.cryptoStreamUrl;
     }
 
+    const apiKey = process.env.ALPACA_API_KEY || "";
+    const apiSecret = process.env.ALPACA_API_SECRET || process.env.ALPACA_SECRET_KEY || "";
+
+    if (!apiKey || !apiSecret) {
+      log(
+        `Cannot connect ${streamType} stream: missing Alpaca credentials (ALPACA_API_KEY=${apiKey ? "set" : "MISSING"}, ALPACA_API_SECRET/ALPACA_SECRET_KEY=${apiSecret ? "set" : "MISSING"})`,
+        { type: "error" },
+      );
+      return;
+    }
+
     const ws = new WebSocket(url);
     if (streamType === "stock") {
       this.stockWs = ws;
@@ -332,8 +345,8 @@ export class AlpacaMarketDataAPI extends EventEmitter {
       log(`${streamType} stream connected`, { type: "info" });
       const authMessage = {
         action: "auth",
-        key: process.env.ALPACA_API_KEY!,
-        secret: process.env.ALPACA_SECRET_KEY!,
+        key: apiKey,
+        secret: apiSecret,
       };
       ws.send(JSON.stringify(authMessage));
     });
@@ -353,6 +366,7 @@ export class AlpacaMarketDataAPI extends EventEmitter {
       for (const message of messages) {
         if (message.T === "success" && message.msg === "authenticated") {
           log(`${streamType} stream authenticated`, { type: "info" });
+          this.reconnectAttempts[streamType] = 0;
           this.sendSubscription(streamType);
         } else if (message.T === "success" && message.msg === "connected") {
           log(`${streamType} stream connected message received`, {
@@ -386,8 +400,8 @@ export class AlpacaMarketDataAPI extends EventEmitter {
       }
     });
 
-    ws.on("close", () => {
-      log(`${streamType} stream disconnected`, { type: "warn" });
+    ws.on("close", (code: number) => {
+      log(`${streamType} stream disconnected (code: ${code})`, { type: "warn" });
       if (streamType === "stock") {
         this.stockWs = null;
       } else if (streamType === "option") {
@@ -395,12 +409,51 @@ export class AlpacaMarketDataAPI extends EventEmitter {
       } else {
         this.cryptoWs = null;
       }
-      // Optional: implement reconnect logic
+
+      // Reconnect with exponential backoff (unless intentionally closed with code 1000)
+      if (code !== 1000) {
+        this.scheduleReconnect(streamType);
+      }
     });
 
     ws.on("error", (error: Error) => {
       log(`${streamType} stream error: ${error.message}`, { type: "error" });
     });
+  }
+
+  private scheduleReconnect(streamType: "stock" | "option" | "crypto"): void {
+    const attempts = this.reconnectAttempts[streamType] ?? 0;
+    const maxAttempts = 10;
+
+    if (attempts >= maxAttempts) {
+      log(
+        `${streamType} stream: max reconnect attempts (${maxAttempts}) reached, giving up`,
+        { type: "error" },
+      );
+      return;
+    }
+
+    // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s (capped)
+    const delayMs = Math.min(1000 * Math.pow(2, attempts), 30000);
+    this.reconnectAttempts[streamType] = attempts + 1;
+
+    log(
+      `${streamType} stream: scheduling reconnect attempt ${attempts + 1}/${maxAttempts} in ${delayMs}ms`,
+      { type: "info" },
+    );
+
+    // Clear any existing reconnect timer for this stream
+    if (this.reconnectTimers[streamType]) {
+      clearTimeout(this.reconnectTimers[streamType]);
+    }
+
+    this.reconnectTimers[streamType] = setTimeout(() => {
+      log(
+        `${streamType} stream: reconnecting (attempt ${attempts + 1}/${maxAttempts})`,
+        { type: "info" },
+      );
+      this.connect(streamType);
+    }, delayMs);
   }
 
   private sendSubscription(streamType: "stock" | "option" | "crypto"): void {
