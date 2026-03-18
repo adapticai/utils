@@ -557,7 +557,7 @@ describe("Alpaca pagination patterns", () => {
 
     const page1: PolygonTradesPage = {
       results: [{ price: 150 }, { price: 151 }],
-      next_url: "https://api.polygon.io/v3/trades/AAPL?cursor=abc",
+      next_url: "https://api.massive.com/v3/trades/AAPL?cursor=abc",
     };
     const page2: PolygonTradesPage = {
       results: [{ price: 152 }],
@@ -572,7 +572,7 @@ describe("Alpaca pagination patterns", () => {
     const config: UrlPaginationConfig<{ price: number }, PolygonTradesPage> = {
       type: "url",
       fetchPage,
-      initialUrl: "https://api.polygon.io/v3/trades/AAPL",
+      initialUrl: "https://api.massive.com/v3/trades/AAPL",
       getItems: (r) => r.results,
       getNextUrl: (r) => r.next_url,
       label: "Polygon.getTrades",

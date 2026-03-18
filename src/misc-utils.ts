@@ -194,7 +194,7 @@ export async function fetchWithRetry(
 export async function validatePolygonApiKey(apiKey: string): Promise<boolean> {
   try {
     const response = await fetch(
-      `https://api.polygon.io/v1/meta/symbols?apikey=${apiKey}&limit=1`,
+      `https://api.massive.com/v1/meta/symbols?apikey=${apiKey}&limit=1`,
     );
     if (response.status === 401) {
       throw new Error("Invalid or expired Polygon.io API key");

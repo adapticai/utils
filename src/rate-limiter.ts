@@ -291,7 +291,7 @@ export const rateLimiters = {
    *
    * Configured for 5 requests per second (basic plan).
    * Adjust if you have a different subscription tier.
-   * See: https://polygon.io/pricing
+   * See: https://massive.com/pricing
    */
   polygon: new TokenBucketRateLimiter({
     maxTokens: 5,

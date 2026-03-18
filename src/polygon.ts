@@ -51,7 +51,7 @@ export const fetchTickerInfo = async (
   const apiKey = options?.apiKey || POLYGON_API_KEY!;
   validatePolygonApiKey(apiKey);
 
-  const baseUrl = `https://api.polygon.io/v3/reference/tickers/${encodeURIComponent(symbol)}`;
+  const baseUrl = `https://api.massive.com/v3/reference/tickers/${encodeURIComponent(symbol)}`;
   const params = new URLSearchParams({
     apiKey,
   });
@@ -162,7 +162,7 @@ export const fetchLastTrade = async (
   const apiKey = options?.apiKey || POLYGON_API_KEY!;
   validatePolygonApiKey(apiKey);
 
-  const baseUrl = `https://api.polygon.io/v2/last/trade/${encodeURIComponent(symbol)}`;
+  const baseUrl = `https://api.massive.com/v2/last/trade/${encodeURIComponent(symbol)}`;
   const params = new URLSearchParams({
     apiKey,
   });
@@ -265,7 +265,7 @@ export const fetchPrices = async (
     limit = 1000,
   } = params;
 
-  const baseUrl = `https://api.polygon.io/v2/aggs/ticker/${encodeURIComponent(
+  const baseUrl = `https://api.massive.com/v2/aggs/ticker/${encodeURIComponent(
     ticker,
   )}/range/${multiplier}/${timespan}/${start}/${end}`;
 
@@ -431,7 +431,7 @@ export const fetchGroupedDaily = async (
     throw new Error("Polygon API key is missing");
   }
 
-  const baseUrl = `https://api.polygon.io/v2/aggs/grouped/locale/us/market/stocks/${date}`;
+  const baseUrl = `https://api.massive.com/v2/aggs/grouped/locale/us/market/stocks/${date}`;
   const params = new URLSearchParams({
     apiKey: options?.apiKey || POLYGON_API_KEY!,
     adjusted: options?.adjusted !== false ? "true" : "false",
@@ -547,7 +547,7 @@ export const fetchDailyOpenClose = async (
   }
 
   const formattedDate = date.toISOString().split("T")[0]; // Format as YYYY-MM-DD
-  const baseUrl = `https://api.polygon.io/v1/open-close/${encodeURIComponent(symbol)}/${formattedDate}`;
+  const baseUrl = `https://api.massive.com/v1/open-close/${encodeURIComponent(symbol)}/${formattedDate}`;
   const params = new URLSearchParams({
     apiKey: options?.apiKey || POLYGON_API_KEY!,
     adjusted: (options?.adjusted ?? true).toString(),
@@ -635,7 +635,7 @@ export const fetchTrades = async (
     throw new Error("Polygon API key is missing");
   }
 
-  const baseUrl = `https://api.polygon.io/v3/trades/${encodeURIComponent(symbol)}`;
+  const baseUrl = `https://api.massive.com/v3/trades/${encodeURIComponent(symbol)}`;
   const params = new URLSearchParams({
     apiKey: options?.apiKey || POLYGON_API_KEY!,
   });

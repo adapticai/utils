@@ -393,7 +393,7 @@ describe("fetchPrices", () => {
                 t: 1000,
               },
             ],
-            next_url: "https://api.polygon.io/v2/aggs/next",
+            next_url: "https://api.massive.com/v2/aggs/next",
           }),
       } as Response)
       .mockResolvedValueOnce({

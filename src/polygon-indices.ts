@@ -25,7 +25,7 @@ const POLYGON_INDICES_CONCURRENCY_LIMIT = 5;
 const polygonIndicesLimit = pLimit(POLYGON_INDICES_CONCURRENCY_LIMIT);
 
 // Base URL for Polygon API
-const POLYGON_API_BASE_URL = "https://api.polygon.io";
+const POLYGON_API_BASE_URL = "https://api.massive.com";
 
 /**
  * Validates that an API key is available
