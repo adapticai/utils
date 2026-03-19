@@ -51,7 +51,7 @@ new AlpacaApiError(
 
 #### `PolygonApiError`
 
-Errors from Polygon.io market data API.
+Errors from Massive.com market data API.
 
 ```typescript
 new PolygonApiError(

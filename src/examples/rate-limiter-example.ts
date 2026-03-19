@@ -5,9 +5,9 @@
  */
 
 import {
-  rateLimiters,
-  TokenBucketRateLimiter,
-  RateLimitError,
+    RateLimitError,
+    rateLimiters,
+    TokenBucketRateLimiter,
 } from "../rate-limiter";
 
 /**
@@ -24,7 +24,7 @@ async function examplePreConfiguredLimiters(): Promise<void> {
   // await makeAlpacaApiCall();
 
   // Before making a Polygon API call
-  await rateLimiters.polygon.acquire();
+  await rateLimiters.massive.acquire();
   console.log("Polygon token acquired, making API call...");
   // await makePolygonApiCall();
 
@@ -87,7 +87,7 @@ async function exampleErrorHandling(): Promise<void> {
 async function exampleMonitoring(): Promise<void> {
   console.log("\nExample 4: Monitoring\n");
 
-  const limiter = rateLimiters.polygon;
+  const limiter = rateLimiters.massive;
 
   console.log(`Available tokens: ${limiter.getAvailableTokens()}`);
   console.log(`Queue length: ${limiter.getQueueLength()}`);
@@ -148,7 +148,7 @@ async function exampleBurstProtection(): Promise<void> {
 
   // Make multiple concurrent requests - rate limiter will queue them
   const promises = symbols.map(async (symbol) => {
-    await rateLimiters.polygon.acquire();
+    await rateLimiters.massive.acquire();
     console.log(`Fetching data for ${symbol}...`);
     // return fetchTickerInfo(symbol);
   });

@@ -1,31 +1,30 @@
 /**
  * Polygon Indices API Implementation
  *
- * This module provides functions to interact with the Polygon.io Indices API.
+ * This module provides functions to interact with the Massive.com Indices API.
  */
 
+import pLimit from "p-limit";
 import { getLogger } from "./logger";
 import { fetchWithRetry } from "./misc-utils";
-import pLimit from "p-limit";
 import {
-  PolygonIndicesAggregatesParams,
-  PolygonIndicesAggregatesResponse,
-  PolygonIndicesPrevCloseResponse,
-  PolygonIndicesDailyOpenCloseResponse,
-  PolygonIndicesSnapshotParams,
-  PolygonIndicesSnapshotResponse,
-  PolygonIndicesErrorResponse,
+    PolygonIndicesAggregatesParams,
+    PolygonIndicesAggregatesResponse,
+    PolygonIndicesDailyOpenCloseResponse,
+    PolygonIndicesPrevCloseResponse,
+    PolygonIndicesSnapshotParams,
+    PolygonIndicesSnapshotResponse
 } from "./types";
 
 // Constants from environment variables
 const { ALPACA_INDICES_API_KEY } = process.env as Record<string, string>;
 
 // Define concurrency limits for API
-const POLYGON_INDICES_CONCURRENCY_LIMIT = 5;
-const polygonIndicesLimit = pLimit(POLYGON_INDICES_CONCURRENCY_LIMIT);
+const MASSIVE_INDICES_CONCURRENCY_LIMIT = 5;
+const massiveIndicesLimit = pLimit(MASSIVE_INDICES_CONCURRENCY_LIMIT);
 
 // Base URL for Polygon API
-const POLYGON_API_BASE_URL = "https://api.massive.com";
+const MASSIVE_API_BASE_URL = "https://api.massive.com";
 
 /**
  * Validates that an API key is available
@@ -65,7 +64,7 @@ export const fetchIndicesAggregates = async (
   } = params;
 
   const url = new URL(
-    `${POLYGON_API_BASE_URL}/v2/aggs/ticker/${encodeURIComponent(indicesTicker)}/range/${multiplier}/${timespan}/${from}/${to}`,
+    `${MASSIVE_API_BASE_URL}/v2/aggs/ticker/${encodeURIComponent(indicesTicker)}/range/${multiplier}/${timespan}/${from}/${to}`,
   );
 
   const queryParams = new URLSearchParams();
@@ -81,7 +80,7 @@ export const fetchIndicesAggregates = async (
 
   url.search = queryParams.toString();
 
-  return polygonIndicesLimit(async () => {
+  return massiveIndicesLimit(async () => {
     try {
       const response = await fetchWithRetry(url.toString(), {}, 3, 300);
       const data = await response.json();
@@ -113,7 +112,7 @@ export const fetchIndicesPreviousClose = async (
   const apiKey = validateApiKey(options?.apiKey);
 
   const url = new URL(
-    `${POLYGON_API_BASE_URL}/v2/aggs/ticker/${encodeURIComponent(indicesTicker)}/prev`,
+    `${MASSIVE_API_BASE_URL}/v2/aggs/ticker/${encodeURIComponent(indicesTicker)}/prev`,
   );
 
   const queryParams = new URLSearchParams();
@@ -121,7 +120,7 @@ export const fetchIndicesPreviousClose = async (
 
   url.search = queryParams.toString();
 
-  return polygonIndicesLimit(async () => {
+  return massiveIndicesLimit(async () => {
     try {
       const response = await fetchWithRetry(url.toString(), {}, 3, 300);
       const data = await response.json();
@@ -155,7 +154,7 @@ export const fetchIndicesDailyOpenClose = async (
   const apiKey = validateApiKey(options?.apiKey);
 
   const url = new URL(
-    `${POLYGON_API_BASE_URL}/v1/open-close/${encodeURIComponent(indicesTicker)}/${date}`,
+    `${MASSIVE_API_BASE_URL}/v1/open-close/${encodeURIComponent(indicesTicker)}/${date}`,
   );
 
   const queryParams = new URLSearchParams();
@@ -163,7 +162,7 @@ export const fetchIndicesDailyOpenClose = async (
 
   url.search = queryParams.toString();
 
-  return polygonIndicesLimit(async () => {
+  return massiveIndicesLimit(async () => {
     try {
       const response = await fetchWithRetry(url.toString(), {}, 3, 300);
       const data = await response.json();
@@ -194,7 +193,7 @@ export const fetchIndicesSnapshot = async (
 ): Promise<PolygonIndicesSnapshotResponse> => {
   const apiKey = validateApiKey(options?.apiKey);
 
-  const url = new URL(`${POLYGON_API_BASE_URL}/v3/snapshot/indices`);
+  const url = new URL(`${MASSIVE_API_BASE_URL}/v3/snapshot/indices`);
 
   const queryParams = new URLSearchParams();
   queryParams.append("apiKey", apiKey);
@@ -217,7 +216,7 @@ export const fetchIndicesSnapshot = async (
 
   url.search = queryParams.toString();
 
-  return polygonIndicesLimit(async () => {
+  return massiveIndicesLimit(async () => {
     try {
       const response = await fetchWithRetry(url.toString(), {}, 3, 300);
       const data = await response.json();
@@ -258,7 +257,7 @@ export const fetchUniversalSnapshot = async (
 ): Promise<PolygonIndicesSnapshotResponse> => {
   const apiKey = validateApiKey(options?.apiKey);
 
-  const url = new URL(`${POLYGON_API_BASE_URL}/v3/snapshot`);
+  const url = new URL(`${MASSIVE_API_BASE_URL}/v3/snapshot`);
 
   const queryParams = new URLSearchParams();
   queryParams.append("apiKey", apiKey);
@@ -285,7 +284,7 @@ export const fetchUniversalSnapshot = async (
 
   url.search = queryParams.toString();
 
-  return polygonIndicesLimit(async () => {
+  return massiveIndicesLimit(async () => {
     try {
       const response = await fetchWithRetry(url.toString(), {}, 3, 300);
       const data = await response.json();

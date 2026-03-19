@@ -30,7 +30,7 @@ The package exports everything through a single `adaptic.*` namespace with sub-n
 - **news** - News fetching with pagination (fetchNews, fetchNewsV2, fetchNextNewsPage)
 - **ta** - Technical analysis (calculateEMA with dual-period support)
 - **allocation** - Asset allocation algorithm
-- **polygon** - Polygon.io market data API integration
+- **massive** - Massive.com market data API integration
 - **indices** - Polygon index data
 
 ## Module Structure (82 source files)
@@ -54,8 +54,8 @@ Modular SDK-based Alpaca client, organized by domain:
 | `src/technical-analysis.ts`         | 535   | EMA, MACD, RSI, Stochastic, Bollinger, S&R, Fibonacci                                                       |
 | `src/market-time.ts`                | -     | MarketTimeTracker class with timezone-aware market hours                                                    |
 | `src/market-hours.ts`               | -     | US holiday calendar, market schedule data                                                                   |
-| `src/polygon.ts`                    | -     | Polygon.io REST API                                                                                         |
-| `src/polygon-indices.ts`            | -     | Polygon.io index data                                                                                       |
+| `src/massive.ts`                    | -     | Massive.com REST API                                                                                         |
+| `src/massive-indices.ts`            | -     | Massive.com index data                                                                                       |
 | `src/alphavantage.ts`               | -     | Alpha Vantage integration                                                                                   |
 | `src/crypto.ts`                     | -     | Cryptocurrency data via Alpaca v1beta3                                                                      |
 | `src/asset-allocation-algorithm.ts` | -     | Portfolio allocation engine                                                                                 |
@@ -81,7 +81,7 @@ Modular SDK-based Alpaca client, organized by domain:
 | ------------------------------------- | ----- | ----------------------------------------- |
 | `src/types/alpaca-types.ts`           | 1,465 | Comprehensive Alpaca API types            |
 | `src/types/market-time-types.ts`      | -     | Market time and hours types               |
-| `src/types/polygon-types.ts`          | -     | Polygon.io response types                 |
+| `src/types/massive-types.ts`          | -     | Massive.com response types                 |
 | `src/types/alphavantage-types.ts`     | -     | Alpha Vantage response types              |
 | `src/types/ta-types.ts`               | -     | Technical analysis parameter/result types |
 | `src/types/metrics-types.ts`          | -     | Performance metrics types                 |
@@ -111,7 +111,7 @@ Modular SDK-based Alpaca client, organized by domain:
   - `cache.test.ts` - StampedeProtectedCache with stale-while-revalidate
   - `market-time.test.ts` - MarketTimeTracker and market hours
   - `technical-analysis.test.ts` - EMA, MACD, RSI, Bollinger, Fibonacci
-  - Expanded coverage for alpaca, crypto, format, metrics, polygon, and other modules
+  - Expanded coverage for alpaca, crypto, format, metrics, massive, and other modules
 - Legacy `src/test.ts` for manual testing still present (build -> `node dist/test.js`)
 
 ## Known Issues

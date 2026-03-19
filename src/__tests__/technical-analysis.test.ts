@@ -1,12 +1,12 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
-  calculateEMA,
-  calculateRSI,
-  calculateMACD,
-  calculateBollingerBands,
-  calculateStochasticOscillator,
+    calculateBollingerBands,
+    calculateEMA,
+    calculateMACD,
+    calculateRSI,
+    calculateStochasticOscillator,
 } from "../technical-analysis";
-import { PolygonPriceData } from "../types/polygon-types";
+import { PolygonPriceData } from "../types/massive-types";
 
 /**
  * Creates test price data for technical analysis calculations

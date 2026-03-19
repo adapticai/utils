@@ -187,7 +187,7 @@ export async function fetchWithRetry(
 }
 
 /**
- * Validates a Polygon.io API key by making a test request.
+ * Validates a Massive.com API key by making a test request.
  * @param apiKey - The API key to validate.
  * @returns Promise that resolves to true if valid, false otherwise.
  */
@@ -197,16 +197,16 @@ export async function validatePolygonApiKey(apiKey: string): Promise<boolean> {
       `https://api.massive.com/v1/meta/symbols?apikey=${apiKey}&limit=1`,
     );
     if (response.status === 401) {
-      throw new Error("Invalid or expired Polygon.io API key");
+      throw new Error("Invalid or expired Massive.com API key");
     }
     if (response.status === 403) {
-      throw new Error("Polygon.io API key lacks required permissions");
+      throw new Error("Massive.com API key lacks required permissions");
     }
     return response.ok;
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error occurred";
-    getLogger().error("Polygon.io API key validation failed:", {
+    getLogger().error("Massive.com API key validation failed:", {
       errorMessage,
     });
     return false;

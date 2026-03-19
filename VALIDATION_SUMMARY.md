@@ -53,7 +53,7 @@ Comprehensive test suite covering:
 
 ### Polygon APIs
 
-#### `/Users/jstein/adapticai/utils/src/polygon.ts`
+#### `/Users/jstein/adapticai/utils/src/massive.ts`
 
 Modified key functions:
 

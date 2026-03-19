@@ -434,7 +434,7 @@ import 'dotenv/config';
 
 const testFetchTickerInfo = async () => {
   const tickerToTest = 'MWA';
-  const tickerInfo = await adptc.polygon.fetchTickerInfo(tickerToTest);
+  const tickerInfo = await adptc.massive.fetchTickerInfo(tickerToTest);
   console.log(tickerInfo);
 }
 
@@ -708,7 +708,7 @@ const testAssistant = async () => {
   try {
     console.log('Testing Adaptic assistant...');
 
-    if (!process.env.POLYGON_API_KEY) {
+    if (!process.env.MASSIVE_API_KEY) {
       throw new Error('Polygon API key is not defined in environment variables.');
     }
 
@@ -785,7 +785,7 @@ const testGetStartAndEndDates = async () => {
 
 const testFetchDailyOpenClose = async () => {
   const testDate = new Date('2024-12-24T00:00:00-05:00');
-  const dailyOpenClose = await adptc.polygon.fetchDailyOpenClose('TSLA', testDate);
+  const dailyOpenClose = await adptc.massive.fetchDailyOpenClose('TSLA', testDate);
   console.log(`Checking daily open/close for ${testDate.toLocaleString('en-US', { timeZone: 'America/New_York' })}`);
   console.log(dailyOpenClose);
 };
@@ -816,7 +816,7 @@ const testFetchNewsFromAV = async () => {
   const testFetchTickerInfo = async () => {
   const tickerToTest = 'FTAI';
   console.log(`Fetching ticker info for ${tickerToTest}`);
-  const tickerInfo = await adptc.polygon.fetchTickerInfo(tickerToTest);
+  const tickerInfo = await adptc.massive.fetchTickerInfo(tickerToTest);
   console.log(tickerInfo);
 }
 }
@@ -831,7 +831,7 @@ const testFetchTrades = async () => {
   );
 
   try {
-    const trades = await adptc.polygon.fetchTrades(testTicker, {
+    const trades = await adptc.massive.fetchTrades(testTicker, {
       timestamplte: testTimeStamp.valueOf(),
       limit: 10,
       order: 'asc',
@@ -947,11 +947,11 @@ testMarketStatus();
 /*
 import {adaptic as adptc} from './index';
 import 'dotenv/config';
-const poly_api_key = process.env.POLYGON_API_KEY;
+const poly_api_key = process.env.MASSIVE_API_KEY;
 const testFetchTickerInfo = async () => {
   const tickerToTest = 'HIMX';
   console.log(`Fetching ticker info for ${tickerToTest}`);
-  const tickerInfo = await adptc.polygon.fetchTickerInfo(tickerToTest, { apiKey: poly_api_key });
+  const tickerInfo = await adptc.massive.fetchTickerInfo(tickerToTest, { apiKey: poly_api_key });
   console.log(tickerInfo);
 }
 

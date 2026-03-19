@@ -379,7 +379,7 @@ export class StampedeProtectedCache<T> {
    * // Get market quote with custom TTL (5 seconds for real-time data)
    * const quote = await cache.get(
    *   `quote:${symbol}`,
-   *   async (key) => await polygonApi.getQuote(symbol),
+   *   async (key) => await massiveApi.getQuote(symbol),
    *   5000
    * );
    * ```

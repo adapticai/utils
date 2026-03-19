@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 // Mock logger before imports
 vi.mock("../logger", () => ({
@@ -11,46 +11,41 @@ vi.mock("../logger", () => ({
 }));
 
 import {
-  AlpacaAccountDetailsSchema,
-  AlpacaPositionSchema,
-  AlpacaPositionsArraySchema,
-  AlpacaOrderSchema,
-  AlpacaOrdersArraySchema,
-  AlpacaBarSchema,
-  AlpacaHistoricalBarsResponseSchema,
-  AlpacaLatestBarsResponseSchema,
-  AlpacaQuoteSchema,
-  AlpacaLatestQuotesResponseSchema,
-  AlpacaTradeSchema,
-  AlpacaLatestTradesResponseSchema,
-  AlpacaNewsArticleSchema,
-  AlpacaNewsResponseSchema,
-  AlpacaPortfolioHistoryResponseSchema,
-  AlpacaCryptoBarsResponseSchema,
+    AlpacaAccountDetailsSchema,
+    AlpacaBarSchema,
+    AlpacaCryptoBarsResponseSchema,
+    AlpacaHistoricalBarsResponseSchema,
+    AlpacaLatestQuotesResponseSchema,
+    AlpacaNewsArticleSchema,
+    AlpacaNewsResponseSchema,
+    AlpacaOrdersArraySchema,
+    AlpacaOrderSchema,
+    AlpacaPortfolioHistoryResponseSchema,
+    AlpacaPositionsArraySchema,
+    AlpacaPositionSchema,
+    AlpacaQuoteSchema,
+    AlpacaTradeSchema
 } from "../schemas/alpaca-schemas";
 
 import {
-  RawPolygonPriceDataSchema,
-  PolygonTickerInfoSchema,
-  PolygonGroupedDailyResponseSchema,
-  PolygonDailyOpenCloseSchema,
-  PolygonTradeSchema,
-  PolygonTradesResponseSchema,
-  PolygonLastTradeResponseSchema,
-  PolygonAggregatesResponseSchema,
-  PolygonErrorResponseSchema,
-} from "../schemas/polygon-schemas";
+    PolygonDailyOpenCloseSchema,
+    PolygonErrorResponseSchema,
+    PolygonGroupedDailyResponseSchema,
+    PolygonTickerInfoSchema,
+    PolygonTradesResponseSchema,
+    RawPolygonPriceDataSchema
+} from "../schemas/massive-schemas";
 
 import {
-  AlphaVantageQuoteResponseSchema,
-  AVNewsArticleSchema,
-  AVNewsResponseSchema,
+    AlphaVantageQuoteResponseSchema,
+    AVNewsArticleSchema,
+    AVNewsResponseSchema,
 } from "../schemas/alphavantage-schemas";
 
 import {
-  validateResponse,
-  safeValidateResponse,
-  ValidationResponseError,
+    safeValidateResponse,
+    validateResponse,
+    ValidationResponseError,
 } from "../schemas/validate-response";
 
 // ===== Test Data Fixtures =====

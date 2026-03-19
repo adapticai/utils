@@ -48,7 +48,7 @@ export class AlpacaApiError extends AdapticUtilsError {
 }
 
 /**
- * Polygon.io API specific errors
+ * Massive.com API specific errors
  * Handles all errors from Polygon market data API
  */
 export class PolygonApiError extends AdapticUtilsError {
@@ -61,7 +61,7 @@ export class PolygonApiError extends AdapticUtilsError {
     // Rate limit (429) and server errors (5xx) are retryable
     const isRetryable =
       statusCode === 429 || (statusCode !== undefined && statusCode >= 500);
-    super(message, code, "polygon", isRetryable, cause);
+    super(message, code, "massive", isRetryable, cause);
   }
 }
 

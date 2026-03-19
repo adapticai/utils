@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from "vitest";
 import fc from "fast-check";
+import { describe, expect, it, vi } from "vitest";
 
 // Mock @adaptic/backend-legacy before importing the modules under test.
 vi.mock("@adaptic/backend-legacy", () => ({
@@ -19,17 +19,17 @@ vi.mock("../adaptic", () => ({
 }));
 
 import {
-  calculateMaxDrawdown,
-  calculateDrawdownMetrics,
-  calculateDailyReturns,
-  calculateBetaFromReturns,
+    calculateBetaFromReturns,
+    calculateDailyReturns,
+    calculateDrawdownMetrics,
+    calculateMaxDrawdown,
 } from "../performance-metrics";
 import {
-  calculateEMA,
-  calculateRSI,
-  calculateBollingerBands,
+    calculateBollingerBands,
+    calculateEMA,
+    calculateRSI,
 } from "../technical-analysis";
-import { PolygonPriceData } from "../types/polygon-types";
+import { PolygonPriceData } from "../types/massive-types";
 
 // ---------------------------------------------------------------------------
 // Helpers

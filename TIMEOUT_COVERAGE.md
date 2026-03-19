@@ -74,7 +74,7 @@ All endpoints use appropriate timeout values:
 | API Provider     | Default Timeout | Environment Variable        |
 | ---------------- | --------------- | --------------------------- |
 | Alpaca Markets   | 30 seconds      | `ALPACA_API_TIMEOUT`        |
-| Polygon.io       | 30 seconds      | `POLYGON_API_TIMEOUT`       |
+| Massive.com       | 30 seconds      | `MASSIVE_API_TIMEOUT`       |
 | Alpha Vantage    | 30 seconds      | `ALPHA_VANTAGE_API_TIMEOUT` |
 | General/Internal | 30 seconds      | `HTTP_TIMEOUT`              |
 

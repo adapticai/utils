@@ -1,5 +1,5 @@
 /**
- * Zod schemas for Polygon.io API response validation.
+ * Zod schemas for Massive.com API response validation.
  * Validates API responses against expected shapes to catch breaking API changes early.
  */
 import { z } from "zod";

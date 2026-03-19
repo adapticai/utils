@@ -1,18 +1,18 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
-  AdapticUtilsError,
-  AlpacaApiError,
-  PolygonApiError,
-  AlphaVantageError,
-  TimeoutError,
-  ValidationError,
-  AuthenticationError,
-  HttpClientError,
-  HttpServerError,
-  RateLimitError,
-  WebSocketError,
-  NetworkError,
-  DataFormatError,
+    AdapticUtilsError,
+    AlpacaApiError,
+    AlphaVantageError,
+    AuthenticationError,
+    DataFormatError,
+    HttpClientError,
+    HttpServerError,
+    NetworkError,
+    PolygonApiError,
+    RateLimitError,
+    TimeoutError,
+    ValidationError,
+    WebSocketError,
 } from "../errors";
 
 describe("AdapticUtilsError", () => {
@@ -120,10 +120,10 @@ describe("AlpacaApiError", () => {
 });
 
 describe("PolygonApiError", () => {
-  it("should set service to polygon", () => {
+  it("should set service to massive", () => {
     const error = new PolygonApiError("Polygon error", "POLY_ERR", 400);
 
-    expect(error.service).toBe("polygon");
+    expect(error.service).toBe("massive");
     expect(error.name).toBe("PolygonApiError");
   });
 
@@ -166,9 +166,9 @@ describe("TimeoutError", () => {
   });
 
   it("should set the service correctly", () => {
-    const error = new TimeoutError("Timeout", "polygon", 5000);
+    const error = new TimeoutError("Timeout", "massive", 5000);
 
-    expect(error.service).toBe("polygon");
+    expect(error.service).toBe("massive");
   });
 });
 
@@ -202,7 +202,7 @@ describe("AuthenticationError", () => {
 
 describe("HttpClientError", () => {
   it("should not be retryable", () => {
-    const error = new HttpClientError("Bad request", "polygon", 400);
+    const error = new HttpClientError("Bad request", "massive", 400);
 
     expect(error.isRetryable).toBe(false);
     expect(error.code).toBe("CLIENT_ERROR");
@@ -224,7 +224,7 @@ describe("HttpServerError", () => {
 
 describe("RateLimitError", () => {
   it("should always be retryable", () => {
-    const error = new RateLimitError("Rate limited", "polygon", 5000);
+    const error = new RateLimitError("Rate limited", "massive", 5000);
 
     expect(error.isRetryable).toBe(true);
     expect(error.code).toBe("RATE_LIMIT");
@@ -258,7 +258,7 @@ describe("WebSocketError", () => {
 
 describe("NetworkError", () => {
   it("should always be retryable", () => {
-    const error = new NetworkError("DNS failure", "polygon");
+    const error = new NetworkError("DNS failure", "massive");
 
     expect(error.isRetryable).toBe(true);
     expect(error.code).toBe("NETWORK_ERROR");

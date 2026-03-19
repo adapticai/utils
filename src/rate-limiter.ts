@@ -14,8 +14,8 @@
  * ```
  */
 
-import { getLogger } from "./logger";
 import { RateLimitError } from "./errors";
+import { getLogger } from "./logger";
 export { RateLimitError };
 
 /**
@@ -268,7 +268,7 @@ export class TokenBucketRateLimiter {
  *
  * // Use before making API calls
  * await rateLimiters.alpaca.acquire();
- * await rateLimiters.polygon.acquire();
+ * await rateLimiters.massive.acquire();
  * await rateLimiters.alphaVantage.acquire();
  * ```
  */
@@ -287,16 +287,16 @@ export const rateLimiters = {
   }),
 
   /**
-   * Polygon.io API rate limiter
+   * Massive.com API rate limiter
    *
    * Configured for 5 requests per second (basic plan).
    * Adjust if you have a different subscription tier.
    * See: https://massive.com/pricing
    */
-  polygon: new TokenBucketRateLimiter({
+  massive: new TokenBucketRateLimiter({
     maxTokens: 5,
     refillRate: 5, // 5 requests per second
-    label: "polygon",
+    label: "massive",
     timeoutMs: 30000,
   }),
 

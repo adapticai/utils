@@ -32,7 +32,7 @@
  * | Alpaca Trading (direct) | fetch() | Built-in | Undici pool |
  * | Alpaca Market Data | fetch() | Built-in | Undici pool |
  * | Alpaca SDK | internal | Built-in | SDK managed |
- * | Polygon.io | fetch() via fetchWithRetry | Built-in | Undici pool |
+ * | Massive.com | fetch() via fetchWithRetry | Built-in | Undici pool |
  * | Alpha Vantage | fetch() | Built-in | Undici pool |
  * | WebSocket (Trading) | ws | Persistent | Long-lived |
  * | WebSocket (Market Data) | ws | Persistent | Long-lived |

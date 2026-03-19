@@ -1,170 +1,117 @@
-import * as Alpaca from "./alpaca/legacy";
-import * as pm from "./performance-metrics";
-import * as tu from "./time-utils";
-import * as mt from "./market-time";
-import fetchTradeMetrics from "./metrics-calcs";
-import * as pu from "./price-utils";
-import * as ft from "./format-tools";
-import * as Types from "./types";
-import * as misc from "./misc-utils";
-import * as polygon from "./polygon";
-import * as polygonIndices from "./polygon-indices";
-import * as av from "./alphavantage";
 import * as backend from "./adaptic";
-import * as crypto from "./crypto";
-import * as ta from "./technical-analysis";
-import { AlpacaTradingAPI } from "./alpaca-trading-api";
 import { AlpacaMarketDataAPI } from "./alpaca-market-data-api";
+import { AlpacaTradingAPI } from "./alpaca-trading-api";
+import * as Alpaca from "./alpaca/legacy";
+import * as av from "./alphavantage";
+import * as crypto from "./crypto";
+import * as ft from "./format-tools";
+import * as mt from "./market-time";
+import * as massive from "./massive";
+import * as massiveIndices from "./massive-indices";
+import fetchTradeMetrics from "./metrics-calcs";
+import * as misc from "./misc-utils";
+import * as pm from "./performance-metrics";
+import * as pu from "./price-utils";
 import { TokenBucketRateLimiter, rateLimiters } from "./rate-limiter";
+import * as ta from "./technical-analysis";
+import * as tu from "./time-utils";
+import * as Types from "./types";
 
 // New modular Alpaca SDK imports
 import { alpaca as alpacaSDK } from "./alpaca";
 
 // Logger utilities
-export { type Logger, setLogger, getLogger, resetLogger } from "./logger";
+export { getLogger, resetLogger, setLogger, type Logger } from "./logger";
 
 // Error utilities
 export {
   AdapticUtilsError,
-  AlpacaApiError,
-  PolygonApiError,
-  AlphaVantageError,
-  TimeoutError,
-  ValidationError,
-  AuthenticationError,
-  HttpClientError,
-  HttpServerError,
-  RateLimitError,
-  WebSocketError,
-  NetworkError,
-  DataFormatError,
+  AlpacaApiError, AlphaVantageError, AuthenticationError, DataFormatError, HttpClientError,
+  HttpServerError, NetworkError, PolygonApiError, RateLimitError, TimeoutError,
+  ValidationError, WebSocketError
 } from "./errors";
 
 // Auth validation utilities
 export {
-  validateAlpacaCredentials,
-  validatePolygonApiKey,
-  validateAlphaVantageApiKey,
+  validateAlpacaCredentials, validateAlphaVantageApiKey, validatePolygonApiKey
 } from "./utils/auth-validator";
 
 // API Endpoints Configuration
 export {
-  TRADING_API,
-  MARKET_DATA_API,
-  WEBSOCKET_STREAMS,
-  getTradingApiUrl,
-  getTradingWebSocketUrl,
-  getStockStreamUrl,
-  getOptionsStreamUrl,
-  getCryptoStreamUrl,
-  type AccountType,
+  MARKET_DATA_API, TRADING_API, WEBSOCKET_STREAMS, getCryptoStreamUrl, getOptionsStreamUrl, getStockStreamUrl, getTradingApiUrl,
+  getTradingWebSocketUrl, type AccountType
 } from "./config/api-endpoints";
 
 // Cache utilities
 export {
-  StampedeProtectedCache,
-  createStampedeProtectedCache,
-  DEFAULT_CACHE_OPTIONS,
-  type StampedeProtectedCacheOptions,
-  type CacheEntry,
-  type CacheStats,
-  type CacheLoader,
+  DEFAULT_CACHE_OPTIONS, StampedeProtectedCache,
+  createStampedeProtectedCache, type CacheEntry, type CacheLoader, type CacheStats, type StampedeProtectedCacheOptions
 } from "./cache/stampede-protected-cache";
 
 // Rate limiting utilities
 export {
   TokenBucketRateLimiter,
   rateLimiters,
-  type RateLimiterConfig,
+  type RateLimiterConfig
 } from "./rate-limiter";
 
 // Retry utilities with exponential backoff
-export { withRetry, API_RETRY_CONFIGS, type RetryConfig } from "./utils/retry";
+export { API_RETRY_CONFIGS, withRetry, type RetryConfig } from "./utils/retry";
 
 // HTTP timeout utilities
 export {
-  DEFAULT_TIMEOUTS,
-  withTimeout,
-  createTimeoutSignal,
-  getTimeout,
+  DEFAULT_TIMEOUTS, createTimeoutSignal,
+  getTimeout, withTimeout
 } from "./http-timeout";
 
 // Asset Allocation utilities
 export {
   AssetAllocationEngine,
   generateOptimalAllocation,
-  getDefaultRiskProfile,
+  getDefaultRiskProfile
 } from "./asset-allocation-algorithm";
 
 export * from "./types/asset-allocation-types";
 
 // API Response Validation Schemas
 export {
-  validateResponse,
-  safeValidateResponse,
-  ValidationResponseError,
-  type ValidationResult,
-  type ValidateResponseOptions,
-  // Alpaca schemas
-  AlpacaAccountDetailsSchema,
-  AlpacaPositionSchema,
-  AlpacaPositionsArraySchema,
-  AlpacaOrderSchema,
-  AlpacaOrdersArraySchema,
-  AlpacaBarSchema,
-  AlpacaHistoricalBarsResponseSchema,
-  AlpacaLatestBarsResponseSchema,
-  AlpacaQuoteSchema,
-  AlpacaLatestQuotesResponseSchema,
-  AlpacaTradeSchema,
-  AlpacaLatestTradesResponseSchema,
-  AlpacaNewsArticleSchema,
-  AlpacaNewsResponseSchema,
-  AlpacaPortfolioHistoryResponseSchema,
-  AlpacaCryptoBarsResponseSchema,
-  // Polygon schemas
-  RawPolygonPriceDataSchema,
-  PolygonTickerInfoSchema,
-  PolygonTickerDetailsResponseSchema,
-  PolygonGroupedDailyResponseSchema,
-  PolygonDailyOpenCloseSchema,
-  PolygonTradeSchema as PolygonTradeZodSchema,
-  PolygonTradesResponseSchema,
-  PolygonLastTradeResponseSchema,
-  PolygonAggregatesResponseSchema,
-  PolygonErrorResponseSchema,
-  // Alpha Vantage schemas
-  AlphaVantageQuoteResponseSchema,
   AVNewsArticleSchema,
   AVNewsResponseSchema,
+  // Alpaca schemas
+  AlpacaAccountDetailsSchema, AlpacaBarSchema, AlpacaCryptoBarsResponseSchema, AlpacaHistoricalBarsResponseSchema,
+  AlpacaLatestBarsResponseSchema, AlpacaLatestQuotesResponseSchema, AlpacaLatestTradesResponseSchema,
+  AlpacaNewsArticleSchema,
+  AlpacaNewsResponseSchema, AlpacaOrderSchema,
+  AlpacaOrdersArraySchema, AlpacaPortfolioHistoryResponseSchema, AlpacaPositionSchema,
+  AlpacaPositionsArraySchema, AlpacaQuoteSchema, AlpacaTradeSchema,
+  // Alpha Vantage schemas
+  AlphaVantageQuoteResponseSchema, PolygonAggregatesResponseSchema, PolygonDailyOpenCloseSchema, PolygonErrorResponseSchema, PolygonGroupedDailyResponseSchema, PolygonLastTradeResponseSchema, PolygonTickerDetailsResponseSchema, PolygonTickerInfoSchema, PolygonTradeSchema as PolygonTradeZodSchema,
+  PolygonTradesResponseSchema,
+  // Polygon schemas
+  RawPolygonPriceDataSchema, ValidationResponseError, safeValidateResponse, validateResponse, type ValidateResponseOptions, type ValidationResult
 } from "./schemas";
 
 // Pagination utilities
 export {
   paginate,
   paginateAll,
-  type CursorPaginationConfig,
-  type UrlPaginationConfig,
-  type OffsetPaginationConfig,
-  type PaginationConfig,
+  type CursorPaginationConfig, type OffsetPaginationConfig,
+  type PaginationConfig, type UrlPaginationConfig
 } from "./utils/paginator";
 
 // HTTP connection pooling utilities
 export {
-  KEEP_ALIVE_DEFAULTS,
-  httpAgent,
-  httpsAgent,
-  getAgentPoolStatus,
-  verifyFetchKeepAlive,
-  type ConnectionPoolStatus,
+  KEEP_ALIVE_DEFAULTS, getAgentPoolStatus, httpAgent,
+  httpsAgent, verifyFetchKeepAlive,
+  type ConnectionPoolStatus
 } from "./utils/http-keep-alive";
 
 // Re-export all types
 export * from "./types";
 
 // Export key classes directly for easier access
-export { AlpacaTradingAPI } from "./alpaca-trading-api";
 export { AlpacaMarketDataAPI } from "./alpaca-market-data-api";
+export { AlpacaTradingAPI } from "./alpaca-trading-api";
 
 // Export factory functions for easier instantiation
 export const createAlpacaTradingAPI = (
@@ -303,24 +250,24 @@ export const adaptic = {
     infoRatio: pm.calculateInformationRatio,
     allpm: pm.fetchPerformanceMetrics,
   },
-  polygon: {
-    fetchTickerInfo: polygon.fetchTickerInfo,
-    fetchGroupedDaily: polygon.fetchGroupedDaily,
-    fetchLastTrade: polygon.fetchLastTrade,
-    fetchTrades: polygon.fetchTrades,
-    fetchPrices: polygon.fetchPrices,
-    analysePolygonPriceData: polygon.analysePolygonPriceData,
-    formatPriceData: polygon.formatPriceData,
-    fetchDailyOpenClose: polygon.fetchDailyOpenClose,
-    getPreviousClose: polygon.getPreviousClose,
+  massive: {
+    fetchTickerInfo: massive.fetchTickerInfo,
+    fetchGroupedDaily: massive.fetchGroupedDaily,
+    fetchLastTrade: massive.fetchLastTrade,
+    fetchTrades: massive.fetchTrades,
+    fetchPrices: massive.fetchPrices,
+    analysePolygonPriceData: massive.analysePolygonPriceData,
+    formatPriceData: massive.formatPriceData,
+    fetchDailyOpenClose: massive.fetchDailyOpenClose,
+    getPreviousClose: massive.getPreviousClose,
   },
   indices: {
-    fetchAggregates: polygonIndices.fetchIndicesAggregates,
-    fetchPreviousClose: polygonIndices.fetchIndicesPreviousClose,
-    fetchDailyOpenClose: polygonIndices.fetchIndicesDailyOpenClose,
-    fetchSnapshot: polygonIndices.fetchIndicesSnapshot,
-    fetchUniversalSnapshot: polygonIndices.fetchUniversalSnapshot,
-    formatBarData: polygonIndices.formatIndicesBarData,
+    fetchAggregates: massiveIndices.fetchIndicesAggregates,
+    fetchPreviousClose: massiveIndices.fetchIndicesPreviousClose,
+    fetchDailyOpenClose: massiveIndices.fetchIndicesDailyOpenClose,
+    fetchSnapshot: massiveIndices.fetchIndicesSnapshot,
+    fetchUniversalSnapshot: massiveIndices.fetchUniversalSnapshot,
+    formatBarData: massiveIndices.formatIndicesBarData,
   },
   price: {
     roundUp: pu.roundStockPrice,

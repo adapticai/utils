@@ -12,7 +12,7 @@ New utility module providing:
 
 - **`DEFAULT_TIMEOUTS`**: Configurable timeout constants for different APIs
   - `ALPACA_API`: 30s (configurable via `ALPACA_API_TIMEOUT` env var)
-  - `POLYGON_API`: 30s (configurable via `POLYGON_API_TIMEOUT` env var)
+  - `MASSIVE_API`: 30s (configurable via `MASSIVE_API_TIMEOUT` env var)
   - `ALPHA_VANTAGE`: 30s (configurable via `ALPHA_VANTAGE_API_TIMEOUT` env var)
   - `GENERAL`: 30s (configurable via `HTTP_TIMEOUT` env var)
 
@@ -115,7 +115,7 @@ Set custom timeout values via environment variables:
 ```bash
 # Override default 30s timeouts
 export ALPACA_API_TIMEOUT=45000      # 45 seconds
-export POLYGON_API_TIMEOUT=60000     # 60 seconds
+export MASSIVE_API_TIMEOUT=60000     # 60 seconds
 export ALPHA_VANTAGE_API_TIMEOUT=30000
 export HTTP_TIMEOUT=30000             # Default for unspecified APIs
 ```

@@ -1,12 +1,12 @@
 import { Time } from "lightweight-charts";
-export * from "./alpaca-types";
-export * from "./market-time-types";
-export * from "./polygon-types";
-export * from "./polygon-indices-types";
-export * from "./alphavantage-types";
 export * from "./adaptic-types";
-export * from "./ta-types";
+export * from "./alpaca-types";
+export * from "./alphavantage-types";
+export * from "./market-time-types";
+export * from "./massive-indices-types";
+export * from "./massive-types";
 export * from "./metrics-types";
+export * from "./ta-types";
 
 export interface EquityPoint {
   time: Time;

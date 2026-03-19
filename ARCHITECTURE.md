@@ -41,7 +41,7 @@ The Adaptic Utils library is a comprehensive TypeScript utility package providin
 │  ┌──────────────────┐  ┌──────────────────┐  ┌─────────────────┐  │
 │  │   Trading APIs   │  │  Market Data     │  │   Performance   │  │
 │  │                  │  │  Integration     │  │   Metrics       │  │
-│  │ - Alpaca Trade   │  │ - Polygon.io     │  │ - Beta/Alpha    │  │
+│  │ - Alpaca Trade   │  │ - Massive.com     │  │ - Beta/Alpha    │  │
 │  │ - Order Mgmt     │  │ - Alpha Vantage  │  │ - Sharpe Ratio  │  │
 │  │ - Position Mgmt  │  │ - Crypto Data    │  │ - Drawdown      │  │
 │  │ - WebSocket      │  │ - Historical     │  │ - Returns       │  │
@@ -151,7 +151,7 @@ tradingAPI.connectWebsocket();
 
 ### 2. Market Data Acquisition
 
-**Location:** `src/alpaca-market-data-api.ts`, `src/polygon.ts`, `src/alphavantage.ts`
+**Location:** `src/alpaca-market-data-api.ts`, `src/massive.ts`, `src/alphavantage.ts`
 **Size:** 1,400+ LOC
 
 **Purpose:** Multi-source market data integration with real-time and historical capabilities
@@ -165,7 +165,7 @@ tradingAPI.connectWebsocket();
    - Stock/Option/Crypto WebSocket streams
    - News articles with pagination
 
-2. **Polygon.io API**
+2. **Massive.com API**
    - Ticker information and metadata
    - Aggregated daily bars (grouped by date)
    - Trade-level tick data
@@ -290,7 +290,7 @@ const allocation = await engine.generateAllocation({
    - Evidence: `/Users/lucas/adapticai/utils/src/misc-utils.ts:82-99`
 
 3. **API Key Validation** (`validatePolygonApiKey()`)
-   - Performs live validation against Polygon.io API
+   - Performs live validation against Massive.com API
    - Returns boolean validation status
    - Handles 401 (invalid), 403 (insufficient permissions) errors
    - Evidence: `/Users/lucas/adapticai/utils/src/misc-utils.ts:250-265`
@@ -303,13 +303,13 @@ const maskedKey = maskApiKey("12341239856677"); // Returns "12****77"
 
 // Sanitize URL before logging
 const sanitizedUrl = hideApiKeyFromurl(
-  "https://api.polygon.io/v2/aggs?apiKey=12341239856677",
-); // Returns "https://api.polygon.io/v2/aggs?apiKey=12****77"
+  "https://api.massive.com/v2/aggs?apiKey=12341239856677",
+); // Returns "https://api.massive.com/v2/aggs?apiKey=12****77"
 
 // Validate Polygon API key
-const isValid = await validatePolygonApiKey(process.env.POLYGON_API_KEY);
+const isValid = await validatePolygonApiKey(process.env.MASSIVE_API_KEY);
 if (!isValid) {
-  throw new Error("Invalid Polygon.io API key");
+  throw new Error("Invalid Massive.com API key");
 }
 ```
 
@@ -586,9 +586,9 @@ await tradingAPI.createOrder({
 
 ---
 
-### Polygon.io Integration
+### Massive.com Integration
 
-**Location:** `src/polygon.ts`, `src/polygon-indices.ts`
+**Location:** `src/massive.ts`, `src/massive-indices.ts`
 **Size:** 882 LOC
 
 **Purpose:** Alternative market data source with enhanced tick-level data
@@ -612,7 +612,7 @@ await tradingAPI.createOrder({
    - Index composition snapshots
    - Universal market snapshot (all symbols)
 
-**Evidence:** `/Users/lucas/adapticai/utils/src/polygon.ts:1-568`
+**Evidence:** `/Users/lucas/adapticai/utils/src/massive.ts:1-568`
 
 **Data Transformation:**
 
@@ -631,7 +631,7 @@ interface PolygonPriceData {
 }
 ```
 
-**Evidence:** `/Users/lucas/adapticai/utils/src/polygon.ts:200-300`
+**Evidence:** `/Users/lucas/adapticai/utils/src/massive.ts:200-300`
 
 ---
 
@@ -857,7 +857,7 @@ function calculateBetaFromReturns(
 import { adaptic } from "@adaptic/utils";
 
 // Fetch price data
-const priceData = await adaptic.polygon.fetchPrices("AAPL", {
+const priceData = await adaptic.massive.fetchPrices("AAPL", {
   start: "2025-01-01",
   end: "2025-12-31",
   timeframe: "1Day",
@@ -1073,7 +1073,7 @@ const { start, end } = adaptic.time.getStartAndEndTimestamps({
 
 **Evidence:** `/Users/lucas/adapticai/utils/src/types/asset-allocation-types.ts:1-473`
 
-#### 3. Polygon Types (`polygon-types.ts`, `polygon-indices-types.ts`)
+#### 3. Polygon Types (`massive-types.ts`, `massive-indices-types.ts`)
 
 **Size:** 413 LOC
 
@@ -1085,7 +1085,7 @@ const { start, end } = adaptic.time.getStartAndEndTimestamps({
 - `IndicesAggregate`: Index-specific aggregates
 - `UniversalSnapshot`: Market-wide snapshot
 
-**Evidence:** `/Users/lucas/adapticai/utils/src/types/polygon-types.ts:1-213`
+**Evidence:** `/Users/lucas/adapticai/utils/src/types/massive-types.ts:1-213`
 
 #### 4. Market Time Types (`market-time-types.ts`)
 
@@ -1469,7 +1469,7 @@ adaptic.alpaca.position.closeAll(auth);
 adaptic.alpaca.news(params);
 
 // Market data
-adaptic.polygon.fetchPrices(symbol, params);
+adaptic.massive.fetchPrices(symbol, params);
 adaptic.crypto.fetchBars(params);
 adaptic.av.fetchQuote(symbol);
 
@@ -1706,8 +1706,8 @@ import type {
 │   ├── metrics-calcs.ts              (300+ LOC)  - Trade metrics
 │   ├── misc-utils.ts                 (266 LOC)   - Error handling, retry logic
 │   ├── performance-metrics.ts        (1111 LOC)  - Performance calculations
-│   ├── polygon.ts                    (568 LOC)   - Polygon.io integration
-│   ├── polygon-indices.ts            (314 LOC)   - Index data
+│   ├── massive.ts                    (568 LOC)   - Massive.com integration
+│   ├── massive-indices.ts            (314 LOC)   - Index data
 │   ├── price-utils.ts                (222 LOC)   - Price calculations
 │   ├── technical-analysis.ts         (535 LOC)   - Technical indicators
 │   ├── time-utils.ts                 (200 LOC)   - Date/time utilities
@@ -1715,7 +1715,7 @@ import type {
 │   └── types/                        (2215 LOC total)
 │       ├── alpaca-types.ts           (1382 LOC)
 │       ├── asset-allocation-types.ts (473 LOC)
-│       ├── polygon-types.ts          (213 LOC)
+│       ├── massive-types.ts          (213 LOC)
 │       ├── market-time-types.ts      (66 LOC)
 │       ├── ta-types.ts               (101 LOC)
 │       └── ... (other type files)
@@ -1733,7 +1733,7 @@ import type {
 
 | Variable                     | Required | Purpose                           |
 | ---------------------------- | -------- | --------------------------------- |
-| `POLYGON_API_KEY`            | Optional | Polygon.io market data            |
+| `MASSIVE_API_KEY`            | Optional | Massive.com market data            |
 | `ALPHA_VANTAGE_API_KEY`      | Optional | Alpha Vantage market data         |
 | `ALPACA_API_KEY`             | Optional | Alpaca trading/data API           |
 | `ALPACA_API_SECRET`          | Optional | Alpaca API secret                 |

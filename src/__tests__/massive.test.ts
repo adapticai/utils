@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock dependencies before importing module under test
 vi.mock("../misc-utils", () => ({
@@ -36,15 +36,15 @@ vi.mock("../format-tools", () => ({
 
 import {
   analysePolygonPriceData,
-  formatPriceData,
-  fetchTickerInfo,
+  fetchDailyOpenClose,
+  fetchGroupedDaily,
   fetchLastTrade,
   fetchPrices,
-  fetchGroupedDaily,
-  fetchDailyOpenClose,
-  getPreviousClose,
+  fetchTickerInfo,
   fetchTrades,
-} from "../polygon";
+  formatPriceData,
+  getPreviousClose,
+} from "../massive";
 import { fetchWithRetry } from "../misc-utils";
 import { PolygonPriceData } from "../types";
 
@@ -185,15 +185,15 @@ describe("fetchTickerInfo", () => {
   });
 
   it("should throw if no API key is available", async () => {
-    // Mock process.env to not have POLYGON_API_KEY
-    const originalEnv = process.env.POLYGON_API_KEY;
-    delete process.env.POLYGON_API_KEY;
+    // Mock process.env to not have MASSIVE_API_KEY
+    const originalEnv = process.env.MASSIVE_API_KEY;
+    delete process.env.MASSIVE_API_KEY;
 
     await expect(fetchTickerInfo("AAPL")).rejects.toThrow(
       "Polygon API key is missing",
     );
 
-    process.env.POLYGON_API_KEY = originalEnv;
+    process.env.MASSIVE_API_KEY = originalEnv;
   });
 
   it("should return ticker info for valid symbol", async () => {
@@ -261,14 +261,14 @@ describe("fetchLastTrade", () => {
   });
 
   it("should throw if no API key is available", async () => {
-    const originalEnv = process.env.POLYGON_API_KEY;
-    delete process.env.POLYGON_API_KEY;
+    const originalEnv = process.env.MASSIVE_API_KEY;
+    delete process.env.MASSIVE_API_KEY;
 
     await expect(fetchLastTrade("AAPL")).rejects.toThrow(
       "Polygon API key is missing",
     );
 
-    process.env.POLYGON_API_KEY = originalEnv;
+    process.env.MASSIVE_API_KEY = originalEnv;
   });
 
   it("should return last trade data", async () => {
@@ -300,7 +300,7 @@ describe("fetchLastTrade", () => {
 
     await expect(
       fetchLastTrade("INVALID", { apiKey: "test-key" }),
-    ).rejects.toThrow("Polygon.io API error");
+    ).rejects.toThrow("Massive.com API error");
   });
 
   it("should throw if trade data has invalid types", async () => {
@@ -324,8 +324,8 @@ describe("fetchPrices", () => {
   });
 
   it("should throw if no API key is available", async () => {
-    const originalEnv = process.env.POLYGON_API_KEY;
-    delete process.env.POLYGON_API_KEY;
+    const originalEnv = process.env.MASSIVE_API_KEY;
+    delete process.env.MASSIVE_API_KEY;
 
     await expect(
       fetchPrices({
@@ -336,7 +336,7 @@ describe("fetchPrices", () => {
       }),
     ).rejects.toThrow("Polygon API key is missing");
 
-    process.env.POLYGON_API_KEY = originalEnv;
+    process.env.MASSIVE_API_KEY = originalEnv;
   });
 
   it("should return mapped price data", async () => {
@@ -432,14 +432,14 @@ describe("fetchGroupedDaily", () => {
   });
 
   it("should throw if no API key is available", async () => {
-    const originalEnv = process.env.POLYGON_API_KEY;
-    delete process.env.POLYGON_API_KEY;
+    const originalEnv = process.env.MASSIVE_API_KEY;
+    delete process.env.MASSIVE_API_KEY;
 
     await expect(fetchGroupedDaily("2025-01-10")).rejects.toThrow(
       "Polygon API key is missing",
     );
 
-    process.env.POLYGON_API_KEY = originalEnv;
+    process.env.MASSIVE_API_KEY = originalEnv;
   });
 
   it("should return grouped daily data", async () => {
@@ -556,14 +556,14 @@ describe("fetchTrades", () => {
   });
 
   it("should throw if no API key is available", async () => {
-    const originalEnv = process.env.POLYGON_API_KEY;
-    delete process.env.POLYGON_API_KEY;
+    const originalEnv = process.env.MASSIVE_API_KEY;
+    delete process.env.MASSIVE_API_KEY;
 
     await expect(fetchTrades("AAPL")).rejects.toThrow(
       "Polygon API key is missing",
     );
 
-    process.env.POLYGON_API_KEY = originalEnv;
+    process.env.MASSIVE_API_KEY = originalEnv;
   });
 
   it("should return trades response", async () => {

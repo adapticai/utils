@@ -360,8 +360,8 @@ export async function withRetry<T>(
  * These configurations are tuned based on each API's rate limits and characteristics.
  */
 export const API_RETRY_CONFIGS = {
-  /** Polygon.io API - 5 requests/second rate limit */
-  POLYGON: {
+  /** Massive.com API - 5 requests/second rate limit */
+  MASSIVE: {
     maxRetries: 3,
     baseDelayMs: 1000,
     maxDelayMs: 30000,

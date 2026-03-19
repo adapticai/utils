@@ -1,35 +1,35 @@
 /**********************************************************************************
- * Polygon.io calls
+ * Massive.com calls
  **********************************************************************************/
 
+import pLimit from "p-limit";
 import { getLogger } from "./logger";
 import { fetchWithRetry, hideApiKeyFromurl } from "./misc-utils";
 import {
-  PolygonQuote,
-  PolygonPriceData,
-  PolygonGroupedDailyResponse,
-  RawPolygonPriceData,
-  PolygonTickerInfo,
-  PolygonDailyOpenClose,
-  PolygonTradesResponse,
-  PolygonErrorResponse,
+    PolygonDailyOpenClose,
+    PolygonErrorResponse,
+    PolygonGroupedDailyResponse,
+    PolygonPriceData,
+    PolygonQuote,
+    PolygonTickerInfo,
+    PolygonTradesResponse,
+    RawPolygonPriceData,
 } from "./types";
-import pLimit from "p-limit";
 import { validatePolygonApiKey } from "./utils/auth-validator";
 
 /**
  * Set of Polygon API response statuses that indicate valid, usable data.
  * "OK" = real-time data, "DELAYED" = delayed data (still valid, e.g. free-tier plans).
  */
-const POLYGON_VALID_STATUSES = new Set(["OK", "DELAYED"]);
+const MASSIVE_VALID_STATUSES = new Set(["OK", "DELAYED"]);
 
 // Constants from environment variables
-const POLYGON_API_KEY = process.env.POLYGON_API_KEY;
+const MASSIVE_API_KEY = process.env.MASSIVE_API_KEY;
 
 // Define concurrency limits per API
-const POLYGON_CONCURRENCY_LIMIT = 100;
+const MASSIVE_CONCURRENCY_LIMIT = 100;
 
-const polygonLimit = pLimit(POLYGON_CONCURRENCY_LIMIT);
+const massiveLimit = pLimit(MASSIVE_CONCURRENCY_LIMIT);
 
 // Use to update general information about stocks
 /**
@@ -44,11 +44,11 @@ export const fetchTickerInfo = async (
   symbol: string,
   options?: { apiKey?: string },
 ): Promise<PolygonTickerInfo | null> => {
-  if (!options?.apiKey && !POLYGON_API_KEY) {
+  if (!options?.apiKey && !MASSIVE_API_KEY) {
     throw new Error("Polygon API key is missing");
   }
 
-  const apiKey = options?.apiKey || POLYGON_API_KEY!;
+  const apiKey = options?.apiKey || MASSIVE_API_KEY!;
   validatePolygonApiKey(apiKey);
 
   const baseUrl = `https://api.massive.com/v3/reference/tickers/${encodeURIComponent(symbol)}`;
@@ -56,7 +56,7 @@ export const fetchTickerInfo = async (
     apiKey,
   });
 
-  return polygonLimit(async () => {
+  return massiveLimit(async () => {
     try {
       const response = await fetchWithRetry(
         `${baseUrl}?${params.toString()}`,
@@ -142,7 +142,7 @@ export const fetchTickerInfo = async (
   });
 };
 
-// Fetch last trade using Polygon.io
+// Fetch last trade using Massive.com
 /**
  * Fetches the last trade for a given stock ticker.
  * @param {string} symbol - The stock ticker symbol to fetch the last trade for.
@@ -155,11 +155,11 @@ export const fetchLastTrade = async (
   symbol: string,
   options?: { apiKey?: string },
 ): Promise<PolygonQuote> => {
-  if (!options?.apiKey && !POLYGON_API_KEY) {
+  if (!options?.apiKey && !MASSIVE_API_KEY) {
     throw new Error("Polygon API key is missing");
   }
 
-  const apiKey = options?.apiKey || POLYGON_API_KEY!;
+  const apiKey = options?.apiKey || MASSIVE_API_KEY!;
   validatePolygonApiKey(apiKey);
 
   const baseUrl = `https://api.massive.com/v2/last/trade/${encodeURIComponent(symbol)}`;
@@ -167,7 +167,7 @@ export const fetchLastTrade = async (
     apiKey,
   });
 
-  return polygonLimit(async () => {
+  return massiveLimit(async () => {
     try {
       const response = await fetchWithRetry(
         `${baseUrl}?${params.toString()}`,
@@ -177,9 +177,9 @@ export const fetchLastTrade = async (
       );
       const data = await response.json();
 
-      if (!POLYGON_VALID_STATUSES.has(data.status) || !data.results) {
+      if (!MASSIVE_VALID_STATUSES.has(data.status) || !data.results) {
         throw new Error(
-          `Polygon.io API error: ${data.status || "No results"} ${data.error || ""}`,
+          `Massive.com API error: ${data.status || "No results"} ${data.error || ""}`,
         );
       }
 
@@ -189,7 +189,7 @@ export const fetchLastTrade = async (
         typeof vol !== "number" ||
         typeof timestamp !== "number"
       ) {
-        throw new Error("Invalid trade data received from Polygon.io API");
+        throw new Error("Invalid trade data received from Massive.com API");
       }
 
       return {
@@ -249,11 +249,11 @@ export const fetchPrices = async (
   },
   options?: { apiKey?: string },
 ): Promise<PolygonPriceData[]> => {
-  if (!options?.apiKey && !POLYGON_API_KEY) {
+  if (!options?.apiKey && !MASSIVE_API_KEY) {
     throw new Error("Polygon API key is missing");
   }
 
-  const apiKey = options?.apiKey || POLYGON_API_KEY!;
+  const apiKey = options?.apiKey || MASSIVE_API_KEY!;
   validatePolygonApiKey(apiKey);
 
   const {
@@ -276,7 +276,7 @@ export const fetchPrices = async (
     limit: limit.toString(),
   });
 
-  return polygonLimit(async () => {
+  return massiveLimit(async () => {
     try {
       let allResults: RawPolygonPriceData[] = [];
       let nextUrl = `${baseUrl}?${urlParams.toString()}`;
@@ -286,15 +286,15 @@ export const fetchPrices = async (
         const response = await fetchWithRetry(nextUrl, {}, 3, 1000);
         const data = await response.json();
 
-        if (!POLYGON_VALID_STATUSES.has(data.status)) {
+        if (!MASSIVE_VALID_STATUSES.has(data.status)) {
           throw new Error(
-            `Polygon.io API responded with status: ${data.status}`,
+            `Massive.com API responded with status: ${data.status}`,
           );
         }
 
         if (data.status === "DELAYED") {
           getLogger().warn(
-            `Polygon.io returned DELAYED data for ${params.ticker} — using delayed results`,
+            `Massive.com returned DELAYED data for ${params.ticker} — using delayed results`,
             { ticker: params.ticker, source: "PolygonAPI.fetchPrices" },
           );
         }
@@ -427,18 +427,18 @@ export const fetchGroupedDaily = async (
     includeOTC?: boolean;
   },
 ): Promise<PolygonGroupedDailyResponse> => {
-  if (!options?.apiKey && !POLYGON_API_KEY) {
+  if (!options?.apiKey && !MASSIVE_API_KEY) {
     throw new Error("Polygon API key is missing");
   }
 
   const baseUrl = `https://api.massive.com/v2/aggs/grouped/locale/us/market/stocks/${date}`;
   const params = new URLSearchParams({
-    apiKey: options?.apiKey || POLYGON_API_KEY!,
+    apiKey: options?.apiKey || MASSIVE_API_KEY!,
     adjusted: options?.adjusted !== false ? "true" : "false",
     include_otc: options?.includeOTC ? "true" : "false",
   });
 
-  return polygonLimit(async () => {
+  return massiveLimit(async () => {
     try {
       const response = await fetchWithRetry(
         `${baseUrl}?${params.toString()}`,
@@ -448,8 +448,8 @@ export const fetchGroupedDaily = async (
       );
       const data = await response.json();
 
-      if (!POLYGON_VALID_STATUSES.has(data.status)) {
-        throw new Error(`Polygon.io API responded with status: ${data.status}`);
+      if (!MASSIVE_VALID_STATUSES.has(data.status)) {
+        throw new Error(`Massive.com API responded with status: ${data.status}`);
       }
 
       return {
@@ -542,18 +542,18 @@ export const fetchDailyOpenClose = async (
     adjusted?: boolean;
   },
 ): Promise<PolygonDailyOpenClose> => {
-  if (!options?.apiKey && !POLYGON_API_KEY) {
+  if (!options?.apiKey && !MASSIVE_API_KEY) {
     throw new Error("Polygon API key is missing");
   }
 
   const formattedDate = date.toISOString().split("T")[0]; // Format as YYYY-MM-DD
   const baseUrl = `https://api.massive.com/v1/open-close/${encodeURIComponent(symbol)}/${formattedDate}`;
   const params = new URLSearchParams({
-    apiKey: options?.apiKey || POLYGON_API_KEY!,
+    apiKey: options?.apiKey || MASSIVE_API_KEY!,
     adjusted: (options?.adjusted ?? true).toString(),
   });
 
-  return polygonLimit(async () => {
+  return massiveLimit(async () => {
     const response = await fetchWithRetry(
       `${baseUrl}?${params.toString()}`,
       {},
@@ -562,7 +562,7 @@ export const fetchDailyOpenClose = async (
     );
     const data = await response.json();
 
-    if (!POLYGON_VALID_STATUSES.has(data.status)) {
+    if (!MASSIVE_VALID_STATUSES.has(data.status)) {
       throw new Error(
         `Failed to fetch daily open/close data for ${symbol}: ${data.status}`,
       );
@@ -631,13 +631,13 @@ export const fetchTrades = async (
     sort?: string;
   },
 ): Promise<PolygonTradesResponse> => {
-  if (!options?.apiKey && !POLYGON_API_KEY) {
+  if (!options?.apiKey && !MASSIVE_API_KEY) {
     throw new Error("Polygon API key is missing");
   }
 
   const baseUrl = `https://api.massive.com/v3/trades/${encodeURIComponent(symbol)}`;
   const params = new URLSearchParams({
-    apiKey: options?.apiKey || POLYGON_API_KEY!,
+    apiKey: options?.apiKey || MASSIVE_API_KEY!,
   });
 
   // Add optional parameters if they exist
@@ -655,7 +655,7 @@ export const fetchTrades = async (
   if (options?.limit) params.append("limit", options.limit.toString());
   if (options?.sort) params.append("sort", options.sort);
 
-  return polygonLimit(async () => {
+  return massiveLimit(async () => {
     const url = `${baseUrl}?${params.toString()}`;
     try {
       getLogger().info(`[DEBUG] Fetching trades for ${symbol} from ${url}`);
