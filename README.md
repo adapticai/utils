@@ -387,7 +387,7 @@ Fetches historical bar data for crypto trading pairs.
 
 ## Market Data Functions
 
-### `fetchPolygonPrices(symbol: string, params: object): Promise<PolygonPriceData[]>`
+### `fetchMassivePrices(symbol: string, params: object): Promise<MassivePriceData[]>`
 
 Fetches historical price data from Massive.com.
 
@@ -398,7 +398,7 @@ Fetches historical price data from Massive.com.
 
 **Returns:**
 
-- `Promise<PolygonPriceData[]>`:
+- `Promise<MassivePriceData[]>`:
   ```typescript
   {
     date: string;

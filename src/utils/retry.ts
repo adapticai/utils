@@ -222,7 +222,7 @@ function calculateBackoff(
  * @template T - The return type of the wrapped function
  * @param fn - The async function to wrap with retry logic
  * @param config - Retry configuration (merged with defaults)
- * @param label - A descriptive label for logging (e.g., 'Polygon.fetchTickerInfo')
+ * @param label - A descriptive label for logging (e.g., 'Massive.fetchTickerInfo')
  * @returns A promise that resolves to the function's return value
  * @throws The last error encountered if all retries are exhausted
  *

@@ -11,41 +11,41 @@ vi.mock("../logger", () => ({
 }));
 
 import {
-    AlpacaAccountDetailsSchema,
-    AlpacaBarSchema,
-    AlpacaCryptoBarsResponseSchema,
-    AlpacaHistoricalBarsResponseSchema,
-    AlpacaLatestQuotesResponseSchema,
-    AlpacaNewsArticleSchema,
-    AlpacaNewsResponseSchema,
-    AlpacaOrdersArraySchema,
-    AlpacaOrderSchema,
-    AlpacaPortfolioHistoryResponseSchema,
-    AlpacaPositionsArraySchema,
-    AlpacaPositionSchema,
-    AlpacaQuoteSchema,
-    AlpacaTradeSchema
+  AlpacaAccountDetailsSchema,
+  AlpacaBarSchema,
+  AlpacaCryptoBarsResponseSchema,
+  AlpacaHistoricalBarsResponseSchema,
+  AlpacaLatestQuotesResponseSchema,
+  AlpacaNewsArticleSchema,
+  AlpacaNewsResponseSchema,
+  AlpacaOrdersArraySchema,
+  AlpacaOrderSchema,
+  AlpacaPortfolioHistoryResponseSchema,
+  AlpacaPositionsArraySchema,
+  AlpacaPositionSchema,
+  AlpacaQuoteSchema,
+  AlpacaTradeSchema
 } from "../schemas/alpaca-schemas";
 
 import {
-    PolygonDailyOpenCloseSchema,
-    PolygonErrorResponseSchema,
-    PolygonGroupedDailyResponseSchema,
-    PolygonTickerInfoSchema,
-    PolygonTradesResponseSchema,
-    RawPolygonPriceDataSchema
+  MassiveDailyOpenCloseSchema,
+  MassiveErrorResponseSchema,
+  MassiveGroupedDailyResponseSchema,
+  MassiveTickerInfoSchema,
+  MassiveTradesResponseSchema,
+  RawMassivePriceDataSchema
 } from "../schemas/massive-schemas";
 
 import {
-    AlphaVantageQuoteResponseSchema,
-    AVNewsArticleSchema,
-    AVNewsResponseSchema,
+  AlphaVantageQuoteResponseSchema,
+  AVNewsArticleSchema,
+  AVNewsResponseSchema,
 } from "../schemas/alphavantage-schemas";
 
 import {
-    safeValidateResponse,
-    validateResponse,
-    ValidationResponseError,
+  safeValidateResponse,
+  validateResponse,
+  ValidationResponseError,
 } from "../schemas/validate-response";
 
 // ===== Test Data Fixtures =====
@@ -470,10 +470,10 @@ describe("Alpaca Schemas", () => {
   });
 });
 
-// ===== Polygon Schema Tests =====
+// ===== Massive Schema Tests =====
 
-describe("Polygon Schemas", () => {
-  describe("RawPolygonPriceDataSchema", () => {
+describe("Massive Schemas", () => {
+  describe("RawMassivePriceDataSchema", () => {
     it("should validate raw price data", () => {
       const data = {
         T: "AAPL",
@@ -486,12 +486,12 @@ describe("Polygon Schemas", () => {
         v: 1000000,
         vw: 152.0,
       };
-      const result = RawPolygonPriceDataSchema.safeParse(data);
+      const result = RawMassivePriceDataSchema.safeParse(data);
       expect(result.success).toBe(true);
     });
 
     it("should reject data with missing fields", () => {
-      const result = RawPolygonPriceDataSchema.safeParse({
+      const result = RawMassivePriceDataSchema.safeParse({
         T: "AAPL",
         c: 150.0,
       });
@@ -499,7 +499,7 @@ describe("Polygon Schemas", () => {
     });
   });
 
-  describe("PolygonTickerInfoSchema", () => {
+  describe("MassiveTickerInfoSchema", () => {
     it("should validate ticker info", () => {
       const data = {
         active: true,
@@ -514,7 +514,7 @@ describe("Polygon Schemas", () => {
         ticker: "AAPL",
         type: "CS",
       };
-      const result = PolygonTickerInfoSchema.safeParse(data);
+      const result = MassiveTickerInfoSchema.safeParse(data);
       expect(result.success).toBe(true);
     });
 
@@ -530,7 +530,7 @@ describe("Polygon Schemas", () => {
         ticker: "TEST",
         type: "CS",
       };
-      const result = PolygonTickerInfoSchema.safeParse(data);
+      const result = MassiveTickerInfoSchema.safeParse(data);
       expect(result.success).toBe(true);
     });
 
@@ -545,12 +545,12 @@ describe("Polygon Schemas", () => {
         ticker: "TEST",
         type: "CS",
       };
-      const result = PolygonTickerInfoSchema.safeParse(data);
+      const result = MassiveTickerInfoSchema.safeParse(data);
       expect(result.success).toBe(false);
     });
   });
 
-  describe("PolygonGroupedDailyResponseSchema", () => {
+  describe("MassiveGroupedDailyResponseSchema", () => {
     it("should validate grouped daily response", () => {
       const data = {
         adjusted: true,
@@ -572,12 +572,12 @@ describe("Polygon Schemas", () => {
           },
         ],
       };
-      const result = PolygonGroupedDailyResponseSchema.safeParse(data);
+      const result = MassiveGroupedDailyResponseSchema.safeParse(data);
       expect(result.success).toBe(true);
     });
   });
 
-  describe("PolygonDailyOpenCloseSchema", () => {
+  describe("MassiveDailyOpenCloseSchema", () => {
     it("should validate daily open close data", () => {
       const data = {
         afterHours: 150.5,
@@ -591,7 +591,7 @@ describe("Polygon Schemas", () => {
         symbol: "AAPL",
         volume: 1000000,
       };
-      const result = PolygonDailyOpenCloseSchema.safeParse(data);
+      const result = MassiveDailyOpenCloseSchema.safeParse(data);
       expect(result.success).toBe(true);
     });
 
@@ -606,12 +606,12 @@ describe("Polygon Schemas", () => {
         symbol: "AAPL",
         volume: 1000000,
       };
-      const result = PolygonDailyOpenCloseSchema.safeParse(data);
+      const result = MassiveDailyOpenCloseSchema.safeParse(data);
       expect(result.success).toBe(true);
     });
   });
 
-  describe("PolygonTradesResponseSchema", () => {
+  describe("MassiveTradesResponseSchema", () => {
     it("should validate trades response", () => {
       const data = {
         status: "OK",
@@ -629,19 +629,19 @@ describe("Polygon Schemas", () => {
           },
         ],
       };
-      const result = PolygonTradesResponseSchema.safeParse(data);
+      const result = MassiveTradesResponseSchema.safeParse(data);
       expect(result.success).toBe(true);
     });
   });
 
-  describe("PolygonErrorResponseSchema", () => {
+  describe("MassiveErrorResponseSchema", () => {
     it("should validate error response", () => {
       const data = {
         status: "ERROR",
         request_id: "req-123",
         message: "Not found",
       };
-      const result = PolygonErrorResponseSchema.safeParse(data);
+      const result = MassiveErrorResponseSchema.safeParse(data);
       expect(result.success).toBe(true);
     });
   });

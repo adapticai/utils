@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
-    calculateBollingerBands,
-    calculateEMA,
-    calculateMACD,
-    calculateRSI,
-    calculateStochasticOscillator,
+  calculateBollingerBands,
+  calculateEMA,
+  calculateMACD,
+  calculateRSI,
+  calculateStochasticOscillator,
 } from "../technical-analysis";
-import { PolygonPriceData } from "../types/massive-types";
+import { MassivePriceData } from "../types/massive-types";
 
 /**
  * Creates test price data for technical analysis calculations
@@ -14,8 +14,8 @@ import { PolygonPriceData } from "../types/massive-types";
 function createTestPriceData(
   length: number,
   startPrice: number = 100,
-): PolygonPriceData[] {
-  const data: PolygonPriceData[] = [];
+): MassivePriceData[] {
+  const data: MassivePriceData[] = [];
   let price = startPrice;
 
   for (let i = 0; i < length; i++) {
@@ -42,7 +42,7 @@ function createTestPriceData(
 /**
  * Creates deterministic price data for known calculation results
  */
-function createDeterministicPriceData(): PolygonPriceData[] {
+function createDeterministicPriceData(): MassivePriceData[] {
   const prices = [
     100, 102, 101, 103, 105, 104, 106, 108, 107, 109, 111, 110, 112, 114, 113,
     115, 117, 116, 118, 120,
@@ -100,7 +100,7 @@ describe("calculateEMA", () => {
 
   it("should calculate correct EMA values for known data", () => {
     // Simple data: [10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
-    const priceData: PolygonPriceData[] = Array.from(
+    const priceData: MassivePriceData[] = Array.from(
       { length: 10 },
       (_, i) => ({
         symbol: "TEST",
@@ -173,7 +173,7 @@ describe("calculateRSI", () => {
 
   it("should calculate RSI near 50 for sideways market", () => {
     // Create sideways price data oscillating around 100
-    const priceData: PolygonPriceData[] = Array.from({ length: 30 }, (_, i) => {
+    const priceData: MassivePriceData[] = Array.from({ length: 30 }, (_, i) => {
       const price = 100 + (i % 2 === 0 ? 1 : -1);
       return {
         symbol: "TEST",
@@ -201,7 +201,7 @@ describe("calculateRSI", () => {
 
   it("should calculate high RSI for uptrend", () => {
     // Create strong uptrend
-    const priceData: PolygonPriceData[] = Array.from(
+    const priceData: MassivePriceData[] = Array.from(
       { length: 30 },
       (_, i) => ({
         symbol: "TEST",
@@ -340,7 +340,7 @@ describe("calculateBollingerBands", () => {
 
   it("should have middle band equal to SMA", () => {
     // Create simple data for easy calculation
-    const priceData: PolygonPriceData[] = Array.from(
+    const priceData: MassivePriceData[] = Array.from(
       { length: 25 },
       (_, i) => ({
         symbol: "TEST",
@@ -367,7 +367,7 @@ describe("calculateBollingerBands", () => {
   });
 
   it("should widen bands for volatile price data", () => {
-    const volatilePriceData: PolygonPriceData[] = Array.from(
+    const volatilePriceData: MassivePriceData[] = Array.from(
       { length: 30 },
       (_, i) => ({
         symbol: "TEST",
@@ -426,7 +426,7 @@ describe("calculateStochasticOscillator", () => {
   });
 
   it("should calculate high values when price is at recent highs", () => {
-    const priceData: PolygonPriceData[] = Array.from(
+    const priceData: MassivePriceData[] = Array.from(
       { length: 20 },
       (_, i) => ({
         symbol: "TEST",
@@ -462,7 +462,7 @@ describe("edge cases and data validation", () => {
   });
 
   it("should handle price data with identical values", () => {
-    const constantPriceData: PolygonPriceData[] = Array.from(
+    const constantPriceData: MassivePriceData[] = Array.from(
       { length: 30 },
       (_, i) => ({
         symbol: "TEST",
@@ -489,7 +489,7 @@ describe("edge cases and data validation", () => {
   });
 
   it("should handle very small price changes", () => {
-    const priceData: PolygonPriceData[] = Array.from(
+    const priceData: MassivePriceData[] = Array.from(
       { length: 30 },
       (_, i) => ({
         symbol: "TEST",

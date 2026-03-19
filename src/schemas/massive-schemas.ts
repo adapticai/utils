@@ -6,8 +6,8 @@ import { z } from "zod";
 
 // ===== Raw Price Data Schemas =====
 
-/** Schema for raw Polygon price data (as returned from aggregates endpoint) */
-export const RawPolygonPriceDataSchema = z.object({
+/** Schema for raw Massive price data (as returned from aggregates endpoint) */
+export const RawMassivePriceDataSchema = z.object({
   T: z.string(),
   c: z.number(),
   h: z.number(),
@@ -21,8 +21,8 @@ export const RawPolygonPriceDataSchema = z.object({
 
 // ===== Ticker Info Schemas =====
 
-/** Schema for Polygon ticker info response */
-export const PolygonTickerInfoSchema = z.object({
+/** Schema for Massive ticker info response */
+export const MassiveTickerInfoSchema = z.object({
   active: z.boolean(),
   currency_name: z.string(),
   delisted_utc: z.string().optional(),
@@ -38,28 +38,28 @@ export const PolygonTickerInfoSchema = z.object({
 });
 
 /** Schema for the wrapper around ticker details API response */
-export const PolygonTickerDetailsResponseSchema = z.object({
-  results: PolygonTickerInfoSchema,
+export const MassiveTickerDetailsResponseSchema = z.object({
+  results: MassiveTickerInfoSchema,
   status: z.string(),
   request_id: z.string(),
 });
 
 // ===== Grouped Daily Schemas =====
 
-/** Schema for Polygon grouped daily response */
-export const PolygonGroupedDailyResponseSchema = z.object({
+/** Schema for Massive grouped daily response */
+export const MassiveGroupedDailyResponseSchema = z.object({
   adjusted: z.boolean(),
   queryCount: z.number(),
   request_id: z.string(),
   resultsCount: z.number(),
   status: z.string(),
-  results: z.array(RawPolygonPriceDataSchema),
+  results: z.array(RawMassivePriceDataSchema),
 });
 
 // ===== Daily Open Close Schemas =====
 
-/** Schema for Polygon daily open close response */
-export const PolygonDailyOpenCloseSchema = z.object({
+/** Schema for Massive daily open close response */
+export const MassiveDailyOpenCloseSchema = z.object({
   afterHours: z.number().optional(),
   close: z.number(),
   from: z.string(),
@@ -74,8 +74,8 @@ export const PolygonDailyOpenCloseSchema = z.object({
 
 // ===== Trade Schemas =====
 
-/** Schema for a single Polygon trade */
-export const PolygonTradeSchema = z.object({
+/** Schema for a single Massive trade */
+export const MassiveTradeSchema = z.object({
   conditions: z.array(z.number()),
   correction: z.number().optional(),
   exchange: z.number(),
@@ -90,18 +90,18 @@ export const PolygonTradeSchema = z.object({
   trf_timestamp: z.number().optional(),
 });
 
-/** Schema for Polygon trades response */
-export const PolygonTradesResponseSchema = z.object({
+/** Schema for Massive trades response */
+export const MassiveTradesResponseSchema = z.object({
   status: z.literal("OK"),
   request_id: z.string(),
   next_url: z.string().optional(),
-  results: z.array(PolygonTradeSchema),
+  results: z.array(MassiveTradeSchema),
 });
 
 // ===== Last Trade Schemas =====
 
-/** Schema for Polygon last trade response */
-export const PolygonLastTradeResponseSchema = z.object({
+/** Schema for Massive last trade response */
+export const MassiveLastTradeResponseSchema = z.object({
   status: z.string(),
   request_id: z.string(),
   results: z.object({
@@ -120,13 +120,13 @@ export const PolygonLastTradeResponseSchema = z.object({
 
 // ===== Aggregates (Bars) Schemas =====
 
-/** Schema for Polygon aggregates (bars) response */
-export const PolygonAggregatesResponseSchema = z.object({
+/** Schema for Massive aggregates (bars) response */
+export const MassiveAggregatesResponseSchema = z.object({
   adjusted: z.boolean().optional(),
   next_url: z.string().optional(),
   queryCount: z.number().optional(),
   request_id: z.string(),
-  results: z.array(RawPolygonPriceDataSchema).optional(),
+  results: z.array(RawMassivePriceDataSchema).optional(),
   resultsCount: z.number().optional(),
   status: z.string(),
   ticker: z.string().optional(),
@@ -134,8 +134,8 @@ export const PolygonAggregatesResponseSchema = z.object({
 
 // ===== Error Response Schema =====
 
-/** Schema for Polygon error response */
-export const PolygonErrorResponseSchema = z.object({
+/** Schema for Massive error response */
+export const MassiveErrorResponseSchema = z.object({
   status: z.string(),
   request_id: z.string(),
   message: z.string(),

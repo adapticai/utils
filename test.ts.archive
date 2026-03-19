@@ -709,7 +709,7 @@ const testAssistant = async () => {
     console.log('Testing Adaptic assistant...');
 
     if (!process.env.MASSIVE_API_KEY) {
-      throw new Error('Polygon API key is not defined in environment variables.');
+      throw new Error('Massive API key is not defined in environment variables.');
     }
 
     const query = `Retrieve the last 365 days of TSLA price data and return the current price, 50 day EMA, and 200 day EMA. Return a JSON object.`;

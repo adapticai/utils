@@ -7,7 +7,7 @@ import { LRUCache } from "lru-cache";
  * prevention, including access tracking, expiration management, and refresh state monitoring.
  *
  * @rationale In high-frequency trading systems, cache stampedes can cause request bursts that
- * overwhelm market data APIs (Alpaca, Polygon) during periods of synchronized expiration,
+ * overwhelm market data APIs (Alpaca, Massive) during periods of synchronized expiration,
  * leading to rate limiting and missed trading opportunities.
  *
  * @example
@@ -262,7 +262,7 @@ export type CacheLoader<T> = (key: string) => Promise<T>;
  * request bursts during synchronized cache expiration events.
  *
  * @rationale In algorithmic trading, cache stampedes can:
- * - Overwhelm market data APIs (Alpaca, Polygon) causing rate limiting (200 req/min limits)
+ * - Overwhelm market data APIs (Alpaca, Massive) causing rate limiting (200 req/min limits)
  * - Introduce latency spikes during critical trading windows (market open/close)
  * - Trigger cascading failures when position data becomes unavailable
  * - Cause missed trading opportunities due to stale or unavailable data

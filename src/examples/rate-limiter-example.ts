@@ -5,9 +5,9 @@
  */
 
 import {
-    RateLimitError,
-    rateLimiters,
-    TokenBucketRateLimiter,
+  RateLimitError,
+  rateLimiters,
+  TokenBucketRateLimiter,
 } from "../rate-limiter";
 
 /**
@@ -23,10 +23,10 @@ async function examplePreConfiguredLimiters(): Promise<void> {
   console.log("Alpaca token acquired, making API call...");
   // await makeAlpacaApiCall();
 
-  // Before making a Polygon API call
+  // Before making a Massive API call
   await rateLimiters.massive.acquire();
-  console.log("Polygon token acquired, making API call...");
-  // await makePolygonApiCall();
+  console.log("Massive token acquired, making API call...");
+  // await makeMassiveApiCall();
 
   // Before making an AlphaVantage API call
   await rateLimiters.alphaVantage.acquire();

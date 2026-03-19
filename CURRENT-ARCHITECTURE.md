@@ -31,7 +31,7 @@ The package exports everything through a single `adaptic.*` namespace with sub-n
 - **ta** - Technical analysis (calculateEMA with dual-period support)
 - **allocation** - Asset allocation algorithm
 - **massive** - Massive.com market data API integration
-- **indices** - Polygon index data
+- **indices** - Massive index data
 
 ## Module Structure (82 source files)
 
@@ -67,7 +67,7 @@ Modular SDK-based Alpaca client, organized by domain:
 | `src/cache/stampede-protected-cache.ts` | LRU cache with stale-while-revalidate                                                  |
 | `src/rate-limiter.ts`                   | Token bucket rate limiter                                                              |
 | `src/http-timeout.ts`                   | Timeout utilities and configuration                                                    |
-| `src/errors/index.ts`                   | 13 error classes (AlpacaApiError, PolygonApiError, TimeoutError, RateLimitError, etc.) |
+| `src/errors/index.ts`                   | 13 error classes (AlpacaApiError, MassiveApiError, TimeoutError, RateLimitError, etc.) |
 | `src/utils/retry.ts`                    | Exponential backoff retry wrapper                                                      |
 | `src/utils/auth-validator.ts`           | API credential validation                                                              |
 | `src/logger.ts`                         | Configurable Pino-compatible logger                                                    |

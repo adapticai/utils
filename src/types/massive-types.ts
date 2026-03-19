@@ -1,7 +1,7 @@
 /**
  * Represents a unit of price data for a specific symbol on a given date.
  */
-export type PolygonPriceData = {
+export type MassivePriceData = {
   /** The symbol of the asset. */
   symbol: string;
   /** The date of the price data. */
@@ -27,7 +27,7 @@ export type PolygonPriceData = {
 /**
  * Represents a quote for a specific asset.
  */
-export type PolygonQuote = {
+export type MassiveQuote = {
   /** The price of the asset. */
   price: number;
   /** The volume of the asset. */
@@ -37,9 +37,9 @@ export type PolygonQuote = {
 };
 
 /**
- * The Polygon API response for grouped daily data.
+ * The Massive API response for grouped daily data.
  */
-export type PolygonGroupedDailyResponse = {
+export type MassiveGroupedDailyResponse = {
   /** Indicates if the data is adjusted. */
   adjusted: boolean;
   /** The count of queries made. */
@@ -51,13 +51,13 @@ export type PolygonGroupedDailyResponse = {
   /** The status of the response. */
   status: string;
   /** The array of price data results. */
-  results: PolygonPriceData[];
+  results: MassivePriceData[];
 };
 
 /**
- * Represents raw price data from Polygon.
+ * Represents raw price data from Massive.
  */
-export interface RawPolygonPriceData {
+export interface RawMassivePriceData {
   /** The ticker symbol. */
   T: string;
   /** The closing price. */
@@ -81,7 +81,7 @@ export interface RawPolygonPriceData {
 /**
  * Represents information about a ticker including its name, market cap, and outstanding shares.
  */
-export interface PolygonTickerInfo {
+export interface MassiveTickerInfo {
   /** Indicates if the ticker is active. */
   active: boolean;
   /** The name of the currency. */
@@ -109,9 +109,9 @@ export interface PolygonTickerInfo {
 }
 
 /**
- * Represents the Polygon API response for ticker information.
+ * Represents the Massive API response for ticker information.
  */
-export interface PolygonTickerResponse {
+export interface MassiveTickerResponse {
   /** The count of tickers returned. */
   count: number;
   /** The next URL for pagination, if applicable. */
@@ -119,7 +119,7 @@ export interface PolygonTickerResponse {
   /** The request ID. */
   request_id: string;
   /** The array of ticker information results. */
-  results: PolygonTickerInfo[];
+  results: MassiveTickerInfo[];
   /** The status of the response. */
   status: string;
 }
@@ -127,7 +127,7 @@ export interface PolygonTickerResponse {
 /**
  * Represents daily open and close data for a ticker for grouped daily data.
  */
-export interface PolygonDailyOpenClose {
+export interface MassiveDailyOpenClose {
   /** The after-hours price, if applicable. */
   afterHours?: number;
   /** The closing price. */
@@ -151,9 +151,9 @@ export interface PolygonDailyOpenClose {
 }
 
 /**
- * Represents a trade in the Polygon system.
+ * Represents a trade in the Massive system.
  */
-export interface PolygonTrade {
+export interface MassiveTrade {
   /** The conditions of the trade. */
   conditions: number[];
   /** The correction status, if applicable. */
@@ -181,9 +181,9 @@ export interface PolygonTrade {
 }
 
 /**
- * Represents the base response structure from Polygon.
+ * Represents the base response structure from Massive.
  */
-export interface PolygonBaseResponse {
+export interface MassiveBaseResponse {
   /** The status of the response. */
   status: string;
   /** The request ID. */
@@ -191,21 +191,21 @@ export interface PolygonBaseResponse {
 }
 
 /**
- * Represents the response for trades from Polygon.
+ * Represents the response for trades from Massive.
  */
-export interface PolygonTradesResponse extends PolygonBaseResponse {
+export interface MassiveTradesResponse extends MassiveBaseResponse {
   /** The status of the response, which should be 'OK'. */
   status: "OK";
   /** The next URL for pagination, if applicable. */
   next_url?: string;
   /** The array of trade results. */
-  results: PolygonTrade[];
+  results: MassiveTrade[];
 }
 
 /**
- * Represents an error response from Polygon.
+ * Represents an error response from Massive.
  */
-export interface PolygonErrorResponse extends PolygonBaseResponse {
+export interface MassiveErrorResponse extends MassiveBaseResponse {
   /** The status of the error response. */
   status: "ERROR" | "NOT_AUTHORIZED" | string;
   /** The error message. */

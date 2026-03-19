@@ -2,7 +2,7 @@
  * Structured error type hierarchy for all API integrations
  *
  * This module provides a comprehensive error handling system for external API integrations,
- * including Alpaca, Polygon, and AlphaVantage services.
+ * including Alpaca, Massive, and AlphaVantage services.
  */
 
 /**
@@ -49,9 +49,9 @@ export class AlpacaApiError extends AdapticUtilsError {
 
 /**
  * Massive.com API specific errors
- * Handles all errors from Polygon market data API
+ * Handles all errors from Massive market data API
  */
-export class PolygonApiError extends AdapticUtilsError {
+export class MassiveApiError extends AdapticUtilsError {
   constructor(
     message: string,
     code: string,

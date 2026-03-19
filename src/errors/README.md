@@ -49,12 +49,12 @@ new AlpacaApiError(
 - Status code is 429 (rate limit)
 - Status code is 5xx (server error)
 
-#### `PolygonApiError`
+#### `MassiveApiError`
 
 Errors from Massive.com market data API.
 
 ```typescript
-new PolygonApiError(
+new MassiveApiError(
   message: string,
   code: string,
   statusCode?: number,

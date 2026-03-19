@@ -64,13 +64,13 @@ export function validateAlpacaCredentials(
 }
 
 /**
- * Validates Polygon API key
- * @param apiKey - Polygon API key
+ * Validates Massive API key
+ * @param apiKey - Massive API key
  * @throws {Error} If API key is invalid or missing
  */
-export function validatePolygonApiKey(apiKey: string): void {
+export function validateMassiveApiKey(apiKey: string): void {
   if (!apiKey || typeof apiKey !== "string" || apiKey.trim().length === 0) {
-    throw new Error("Invalid Polygon API key: must be a non-empty string");
+    throw new Error("Invalid Massive API key: must be a non-empty string");
   }
 }
 

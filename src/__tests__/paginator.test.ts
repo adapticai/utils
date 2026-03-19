@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 // Mock logger before imports
 vi.mock("../logger", () => ({
@@ -11,11 +11,11 @@ vi.mock("../logger", () => ({
 }));
 
 import {
+  CursorPaginationConfig,
+  OffsetPaginationConfig,
   paginate,
   paginateAll,
-  CursorPaginationConfig,
   UrlPaginationConfig,
-  OffsetPaginationConfig,
 } from "../utils/paginator";
 
 // ===== Cursor-Based Pagination Tests =====
@@ -549,17 +549,17 @@ describe("Alpaca pagination patterns", () => {
     expect(result.map((n) => n.id)).toEqual([1, 2, 3]);
   });
 
-  it("should support Polygon next_url pagination pattern", async () => {
-    interface PolygonTradesPage {
+  it("should support Massive next_url pagination pattern", async () => {
+    interface MassiveTradesPage {
       results: Array<{ price: number }>;
       next_url: string | null;
     }
 
-    const page1: PolygonTradesPage = {
+    const page1: MassiveTradesPage = {
       results: [{ price: 150 }, { price: 151 }],
       next_url: "https://api.massive.com/v3/trades/AAPL?cursor=abc",
     };
-    const page2: PolygonTradesPage = {
+    const page2: MassiveTradesPage = {
       results: [{ price: 152 }],
       next_url: null,
     };
@@ -569,13 +569,13 @@ describe("Alpaca pagination patterns", () => {
       .mockResolvedValueOnce(page1)
       .mockResolvedValueOnce(page2);
 
-    const config: UrlPaginationConfig<{ price: number }, PolygonTradesPage> = {
+    const config: UrlPaginationConfig<{ price: number }, MassiveTradesPage> = {
       type: "url",
       fetchPage,
       initialUrl: "https://api.massive.com/v3/trades/AAPL",
       getItems: (r) => r.results,
       getNextUrl: (r) => r.next_url,
-      label: "Polygon.getTrades",
+      label: "Massive.getTrades",
     };
 
     const result = await paginateAll(config);

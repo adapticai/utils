@@ -1,6 +1,5 @@
-import { PolygonPriceData } from "./types";
-import { BollingerBandsData, BollingerBandsParams } from "./types";
 import { logIfDebug } from "./misc-utils";
+import { BollingerBandsData, BollingerBandsParams, MassivePriceData } from "./types";
 
 /**
  * Calculates Bollinger Bands for a given set of price data.
@@ -14,7 +13,7 @@ import { logIfDebug } from "./misc-utils";
  * @returns An array of BollingerBandsData objects containing the calculated bands.
  */
 export function calculateBollingerBands(
-  priceData: PolygonPriceData[],
+  priceData: MassivePriceData[],
   { period = 20, standardDeviations = 2 }: BollingerBandsParams = {},
 ): BollingerBandsData[] {
   if (priceData.length < period) {
@@ -70,7 +69,7 @@ import { EMAParams } from "./types";
  * @returns An array of EMAData objects containing the calculated EMA values.
  */
 export function calculateEMA(
-  priceData: PolygonPriceData[],
+  priceData: MassivePriceData[],
   { period = 20, period2 = 9 }: EMAParams = {},
 ): EMAData[] {
   if (priceData.length < period || (period2 && priceData.length < period2)) {
@@ -138,7 +137,7 @@ export function calculateEMA(
   return result;
 }
 
-import { FibonacciData, FibonacciParams, FibonacciLevel } from "./types";
+import { FibonacciData, FibonacciLevel, FibonacciParams } from "./types";
 
 /**
  * Calculates Fibonacci retracement and extension levels based on price data.
@@ -153,7 +152,7 @@ import { FibonacciData, FibonacciParams, FibonacciLevel } from "./types";
  * @returns An array of FibonacciData objects containing the calculated levels.
  */
 export function calculateFibonacciLevels(
-  priceData: PolygonPriceData[],
+  priceData: MassivePriceData[],
   {
     lookbackPeriod = 20,
     retracementLevels = [0.236, 0.382, 0.5, 0.618, 0.786],
@@ -226,7 +225,7 @@ export function calculateFibonacciLevels(
   return result;
 }
 
-import { MACDData, MACDParams, EMAData } from "./types";
+import { EMAData, MACDData, MACDParams } from "./types";
 
 /**
  * Calculates the Moving Average Convergence Divergence (MACD) for a given set of price data.
@@ -240,7 +239,7 @@ import { MACDData, MACDParams, EMAData } from "./types";
  * @returns An array of MACDData objects containing the calculated MACD values.
  */
 export function calculateMACD(
-  priceData: PolygonPriceData[],
+  priceData: MassivePriceData[],
   { shortPeriod = 12, longPeriod = 26, signalPeriod = 9 }: MACDParams = {},
 ): MACDData[] {
   if (priceData.length < longPeriod + signalPeriod) {
@@ -317,7 +316,7 @@ import { RSIData, RSIParams } from "./types";
  * @returns An array of RSIData objects containing the calculated RSI values.
  */
 export function calculateRSI(
-  priceData: PolygonPriceData[],
+  priceData: MassivePriceData[],
   { period = 14 }: RSIParams = {},
 ): RSIData[] {
   if (priceData.length < period + 1) {
@@ -392,7 +391,7 @@ import { StochData, StochasticParams } from "./types";
  * @returns An array of StochData objects containing the calculated %K and %D values.
  */
 export function calculateStochasticOscillator(
-  priceData: PolygonPriceData[],
+  priceData: MassivePriceData[],
   {
     lookbackPeriod = 5,
     signalPeriod = 3,
@@ -454,8 +453,8 @@ export function calculateStochasticOscillator(
 
 import {
   SupportResistanceData,
-  SupportResistanceParams,
   SupportResistanceLevel,
+  SupportResistanceParams,
 } from "./types";
 
 /**
@@ -469,7 +468,7 @@ import {
  * @returns An array of SupportResistanceData objects containing the calculated levels.
  */
 export function calculateSupportAndResistance(
-  priceData: PolygonPriceData[],
+  priceData: MassivePriceData[],
   { maxLevels = 5, lookbackPeriod = 10 }: SupportResistanceParams = {},
 ): SupportResistanceData[] {
   const result: SupportResistanceData[] = [];

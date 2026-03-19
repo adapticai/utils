@@ -2,7 +2,7 @@
 
 ## Overview
 
-Added comprehensive API credential validation before making requests to Alpaca, Polygon, and Alpha Vantage APIs.
+Added comprehensive API credential validation before making requests to Alpaca, Massive, and Alpha Vantage APIs.
 
 ## Files Created
 
@@ -11,7 +11,7 @@ Added comprehensive API credential validation before making requests to Alpaca, 
 New utility module containing fast, synchronous validation functions:
 
 - `validateAlpacaCredentials()` - Validates Alpaca API key and secret
-- `validatePolygonApiKey()` - Validates Polygon API key
+- `validateMassiveApiKey()` - Validates Massive API key
 - `validateAlphaVantageApiKey()` - Validates Alpha Vantage API key
 
 All validation functions:
@@ -51,7 +51,7 @@ Comprehensive test suite covering:
 - Validates both database-retrieved and directly-provided credentials
 - Ensures validation occurs at the entry point of all API operations
 
-### Polygon APIs
+### Massive APIs
 
 #### `/Users/jstein/adapticai/utils/src/massive.ts`
 
@@ -112,7 +112,7 @@ Examples:
 ```
 "Invalid Alpaca API key: must be a non-empty string"
 "Alpaca API key appears to be too short"
-"Invalid Polygon API key: must be a non-empty string"
+"Invalid Massive API key: must be a non-empty string"
 "Invalid Alpha Vantage API key: must be a non-empty string"
 ```
 

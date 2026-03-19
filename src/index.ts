@@ -27,13 +27,13 @@ export { getLogger, resetLogger, setLogger, type Logger } from "./logger";
 export {
   AdapticUtilsError,
   AlpacaApiError, AlphaVantageError, AuthenticationError, DataFormatError, HttpClientError,
-  HttpServerError, NetworkError, PolygonApiError, RateLimitError, TimeoutError,
+  HttpServerError, MassiveApiError, NetworkError, RateLimitError, TimeoutError,
   ValidationError, WebSocketError
 } from "./errors";
 
 // Auth validation utilities
 export {
-  validateAlpacaCredentials, validateAlphaVantageApiKey, validatePolygonApiKey
+  validateAlpacaCredentials, validateAlphaVantageApiKey, validateMassiveApiKey
 } from "./utils/auth-validator";
 
 // API Endpoints Configuration
@@ -85,10 +85,10 @@ export {
   AlpacaOrdersArraySchema, AlpacaPortfolioHistoryResponseSchema, AlpacaPositionSchema,
   AlpacaPositionsArraySchema, AlpacaQuoteSchema, AlpacaTradeSchema,
   // Alpha Vantage schemas
-  AlphaVantageQuoteResponseSchema, PolygonAggregatesResponseSchema, PolygonDailyOpenCloseSchema, PolygonErrorResponseSchema, PolygonGroupedDailyResponseSchema, PolygonLastTradeResponseSchema, PolygonTickerDetailsResponseSchema, PolygonTickerInfoSchema, PolygonTradeSchema as PolygonTradeZodSchema,
-  PolygonTradesResponseSchema,
-  // Polygon schemas
-  RawPolygonPriceDataSchema, ValidationResponseError, safeValidateResponse, validateResponse, type ValidateResponseOptions, type ValidationResult
+  AlphaVantageQuoteResponseSchema, MassiveAggregatesResponseSchema, MassiveDailyOpenCloseSchema, MassiveErrorResponseSchema, MassiveGroupedDailyResponseSchema, MassiveLastTradeResponseSchema, MassiveTickerDetailsResponseSchema, MassiveTickerInfoSchema, MassiveTradeSchema as MassiveTradeZodSchema,
+  MassiveTradesResponseSchema,
+  // Massive schemas
+  RawMassivePriceDataSchema, ValidationResponseError, safeValidateResponse, validateResponse, type ValidateResponseOptions, type ValidationResult
 } from "./schemas";
 
 // Pagination utilities
@@ -256,7 +256,7 @@ export const adaptic = {
     fetchLastTrade: massive.fetchLastTrade,
     fetchTrades: massive.fetchTrades,
     fetchPrices: massive.fetchPrices,
-    analysePolygonPriceData: massive.analysePolygonPriceData,
+    analyseMassivePriceData: massive.analyseMassivePriceData,
     formatPriceData: massive.formatPriceData,
     fetchDailyOpenClose: massive.fetchDailyOpenClose,
     getPreviousClose: massive.getPreviousClose,
@@ -314,7 +314,7 @@ export const adaptic = {
   utils: {
     logIfDebug: misc.logIfDebug,
     fetchWithRetry: misc.fetchWithRetry,
-    validatePolygonApiKey: misc.validatePolygonApiKey,
+    validateMassiveApiKey: misc.validateMassiveApiKey,
   },
   rateLimiter: {
     TokenBucketRateLimiter,

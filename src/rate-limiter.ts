@@ -2,7 +2,7 @@
  * Token bucket rate limiter for external API integrations
  *
  * Implements client-side rate limiting to prevent exceeding API quotas
- * and ensure fair usage of external services like Alpaca, Polygon, and AlphaVantage.
+ * and ensure fair usage of external services like Alpaca, Massive, and AlphaVantage.
  *
  * @example
  * ```typescript

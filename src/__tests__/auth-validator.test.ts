@@ -1,8 +1,8 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   validateAlpacaCredentials,
-  validatePolygonApiKey,
   validateAlphaVantageApiKey,
+  validateMassiveApiKey,
 } from "../utils/auth-validator";
 
 describe("Auth Validator", () => {
@@ -58,20 +58,20 @@ describe("Auth Validator", () => {
     });
   });
 
-  describe("validatePolygonApiKey", () => {
+  describe("validateMassiveApiKey", () => {
     it("should pass for valid API key", () => {
-      expect(() => validatePolygonApiKey("VALID_MASSIVE_KEY")).not.toThrow();
+      expect(() => validateMassiveApiKey("VALID_MASSIVE_KEY")).not.toThrow();
     });
 
     it("should throw for empty API key", () => {
-      expect(() => validatePolygonApiKey("")).toThrow(
-        "Invalid Polygon API key: must be a non-empty string",
+      expect(() => validateMassiveApiKey("")).toThrow(
+        "Invalid Massive API key: must be a non-empty string",
       );
     });
 
     it("should throw for whitespace-only API key", () => {
-      expect(() => validatePolygonApiKey("   ")).toThrow(
-        "Invalid Polygon API key: must be a non-empty string",
+      expect(() => validateMassiveApiKey("   ")).toThrow(
+        "Invalid Massive API key: must be a non-empty string",
       );
     });
   });

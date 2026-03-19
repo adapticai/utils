@@ -7,11 +7,11 @@ vi.mock("../misc-utils", () => ({
     url.replace(/apiKey=[^&]+/, "apiKey=***"),
   ),
   logIfDebug: vi.fn(),
-  validatePolygonApiKey: vi.fn(),
+  validateMassiveApiKey: vi.fn(),
 }));
 
 vi.mock("../utils/auth-validator", () => ({
-  validatePolygonApiKey: vi.fn(),
+  validateMassiveApiKey: vi.fn(),
 }));
 
 vi.mock("../logger", () => ({
@@ -35,7 +35,7 @@ vi.mock("../format-tools", () => ({
 }));
 
 import {
-  analysePolygonPriceData,
+  analyseMassivePriceData,
   fetchDailyOpenClose,
   fetchGroupedDaily,
   fetchLastTrade,
@@ -46,25 +46,25 @@ import {
   getPreviousClose,
 } from "../massive";
 import { fetchWithRetry } from "../misc-utils";
-import { PolygonPriceData } from "../types";
+import { MassivePriceData } from "../types";
 
 const mockFetchWithRetry = vi.mocked(fetchWithRetry);
 
-describe("analysePolygonPriceData", () => {
+describe("analyseMassivePriceData", () => {
   it("should return no data message for empty array", () => {
-    const result = analysePolygonPriceData([]);
+    const result = analyseMassivePriceData([]);
     expect(result).toBe("No price data available for analysis.");
   });
 
   it("should return no data message for null-like input", () => {
-    const result = analysePolygonPriceData(
-      null as unknown as PolygonPriceData[],
+    const result = analyseMassivePriceData(
+      null as unknown as MassivePriceData[],
     );
     expect(result).toBe("No price data available for analysis.");
   });
 
   it("should generate a report for valid price data", () => {
-    const priceData: PolygonPriceData[] = [
+    const priceData: MassivePriceData[] = [
       {
         symbol: "AAPL",
         date: "2025-01-10T10:00:00",
@@ -91,14 +91,14 @@ describe("analysePolygonPriceData", () => {
       },
     ];
 
-    const result = analysePolygonPriceData(priceData);
+    const result = analyseMassivePriceData(priceData);
     expect(result).toContain("Report:");
     expect(result).toContain("Number of data points: 2");
     expect(result).toContain("Average interval between data points (seconds)");
   });
 
   it("should handle single data point", () => {
-    const priceData: PolygonPriceData[] = [
+    const priceData: MassivePriceData[] = [
       {
         symbol: "MSFT",
         date: "2025-01-10T10:00:00",
@@ -113,7 +113,7 @@ describe("analysePolygonPriceData", () => {
       },
     ];
 
-    const result = analysePolygonPriceData(priceData);
+    const result = analyseMassivePriceData(priceData);
     expect(result).toContain("Number of data points: 1");
     expect(result).toContain(
       "Average interval between data points (seconds): 0.00",
@@ -127,13 +127,13 @@ describe("formatPriceData", () => {
   });
 
   it("should return no data message for null-like input", () => {
-    expect(formatPriceData(null as unknown as PolygonPriceData[])).toBe(
+    expect(formatPriceData(null as unknown as MassivePriceData[])).toBe(
       "No price data available",
     );
   });
 
   it("should format price data correctly", () => {
-    const priceData: PolygonPriceData[] = [
+    const priceData: MassivePriceData[] = [
       {
         symbol: "AAPL",
         date: "Jan 10, 2025, 10:00:00 EST",
@@ -158,7 +158,7 @@ describe("formatPriceData", () => {
   });
 
   it("should strip midnight time from daily data", () => {
-    const priceData: PolygonPriceData[] = [
+    const priceData: MassivePriceData[] = [
       {
         symbol: "AAPL",
         date: "Jan 10, 2025, 00:00:00 EST",
@@ -190,7 +190,7 @@ describe("fetchTickerInfo", () => {
     delete process.env.MASSIVE_API_KEY;
 
     await expect(fetchTickerInfo("AAPL")).rejects.toThrow(
-      "Polygon API key is missing",
+      "Massive API key is missing",
     );
 
     process.env.MASSIVE_API_KEY = originalEnv;
@@ -251,7 +251,7 @@ describe("fetchTickerInfo", () => {
 
     await expect(
       fetchTickerInfo("AAPL", { apiKey: "test-key" }),
-    ).rejects.toThrow("Missing required field in Polygon API response");
+    ).rejects.toThrow("Missing required field in Massive API response");
   });
 });
 
@@ -265,7 +265,7 @@ describe("fetchLastTrade", () => {
     delete process.env.MASSIVE_API_KEY;
 
     await expect(fetchLastTrade("AAPL")).rejects.toThrow(
-      "Polygon API key is missing",
+      "Massive API key is missing",
     );
 
     process.env.MASSIVE_API_KEY = originalEnv;
@@ -334,7 +334,7 @@ describe("fetchPrices", () => {
         multiplier: 1,
         timespan: "day",
       }),
-    ).rejects.toThrow("Polygon API key is missing");
+    ).rejects.toThrow("Massive API key is missing");
 
     process.env.MASSIVE_API_KEY = originalEnv;
   });
@@ -436,7 +436,7 @@ describe("fetchGroupedDaily", () => {
     delete process.env.MASSIVE_API_KEY;
 
     await expect(fetchGroupedDaily("2025-01-10")).rejects.toThrow(
-      "Polygon API key is missing",
+      "Massive API key is missing",
     );
 
     process.env.MASSIVE_API_KEY = originalEnv;
@@ -560,7 +560,7 @@ describe("fetchTrades", () => {
     delete process.env.MASSIVE_API_KEY;
 
     await expect(fetchTrades("AAPL")).rejects.toThrow(
-      "Polygon API key is missing",
+      "Massive API key is missing",
     );
 
     process.env.MASSIVE_API_KEY = originalEnv;
@@ -606,7 +606,7 @@ describe("fetchTrades", () => {
     } as Response);
 
     await expect(fetchTrades("AAPL", { apiKey: "bad-key" })).rejects.toThrow(
-      "Polygon API Error: Not authorized",
+      "Massive API Error: Not authorized",
     );
   });
 });

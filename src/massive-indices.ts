@@ -1,5 +1,5 @@
 /**
- * Polygon Indices API Implementation
+ * Massive Indices API Implementation
  *
  * This module provides functions to interact with the Massive.com Indices API.
  */
@@ -8,12 +8,12 @@ import pLimit from "p-limit";
 import { getLogger } from "./logger";
 import { fetchWithRetry } from "./misc-utils";
 import {
-    PolygonIndicesAggregatesParams,
-    PolygonIndicesAggregatesResponse,
-    PolygonIndicesDailyOpenCloseResponse,
-    PolygonIndicesPrevCloseResponse,
-    PolygonIndicesSnapshotParams,
-    PolygonIndicesSnapshotResponse
+  MassiveIndicesAggregatesParams,
+  MassiveIndicesAggregatesResponse,
+  MassiveIndicesDailyOpenCloseResponse,
+  MassiveIndicesPrevCloseResponse,
+  MassiveIndicesSnapshotParams,
+  MassiveIndicesSnapshotResponse
 } from "./types";
 
 // Constants from environment variables
@@ -23,7 +23,7 @@ const { ALPACA_INDICES_API_KEY } = process.env as Record<string, string>;
 const MASSIVE_INDICES_CONCURRENCY_LIMIT = 5;
 const massiveIndicesLimit = pLimit(MASSIVE_INDICES_CONCURRENCY_LIMIT);
 
-// Base URL for Polygon API
+// Base URL for Massive API
 const MASSIVE_API_BASE_URL = "https://api.massive.com";
 
 /**
@@ -34,7 +34,7 @@ const MASSIVE_API_BASE_URL = "https://api.massive.com";
 const validateApiKey = (apiKey?: string): string => {
   const key = apiKey || ALPACA_INDICES_API_KEY;
   if (!key) {
-    throw new Error("Polygon Indices API key is missing");
+    throw new Error("Massive Indices API key is missing");
   }
   return key;
 };
@@ -42,15 +42,15 @@ const validateApiKey = (apiKey?: string): string => {
 /**
  * Fetches aggregate bars for an index over a given date range in custom time window sizes.
  *
- * @param {PolygonIndicesAggregatesParams} params - Parameters for the aggregates request
+ * @param {MassiveIndicesAggregatesParams} params - Parameters for the aggregates request
  * @param {Object} [options] - Optional parameters
  * @param {string} [options.apiKey] - API key to use for the request
- * @returns {Promise<PolygonIndicesAggregatesResponse>} The aggregates response
+ * @returns {Promise<MassiveIndicesAggregatesResponse>} The aggregates response
  */
 export const fetchIndicesAggregates = async (
-  params: PolygonIndicesAggregatesParams,
+  params: MassiveIndicesAggregatesParams,
   options?: { apiKey?: string },
-): Promise<PolygonIndicesAggregatesResponse> => {
+): Promise<MassiveIndicesAggregatesResponse> => {
   const apiKey = validateApiKey(options?.apiKey);
 
   const {
@@ -86,10 +86,10 @@ export const fetchIndicesAggregates = async (
       const data = await response.json();
 
       if (data.status === "ERROR") {
-        throw new Error(`Polygon API Error: ${data.error}`);
+        throw new Error(`Massive API Error: ${data.error}`);
       }
 
-      return data as PolygonIndicesAggregatesResponse;
+      return data as MassiveIndicesAggregatesResponse;
     } catch (error) {
       getLogger().error("Error fetching indices aggregates:", error);
       throw error;
@@ -103,12 +103,12 @@ export const fetchIndicesAggregates = async (
  * @param {string} indicesTicker - The ticker symbol of the index
  * @param {Object} [options] - Optional parameters
  * @param {string} [options.apiKey] - API key to use for the request
- * @returns {Promise<PolygonIndicesPrevCloseResponse>} The previous close response
+ * @returns {Promise<MassiveIndicesPrevCloseResponse>} The previous close response
  */
 export const fetchIndicesPreviousClose = async (
   indicesTicker: string,
   options?: { apiKey?: string },
-): Promise<PolygonIndicesPrevCloseResponse> => {
+): Promise<MassiveIndicesPrevCloseResponse> => {
   const apiKey = validateApiKey(options?.apiKey);
 
   const url = new URL(
@@ -126,10 +126,10 @@ export const fetchIndicesPreviousClose = async (
       const data = await response.json();
 
       if (data.status === "ERROR") {
-        throw new Error(`Polygon API Error: ${data.error}`);
+        throw new Error(`Massive API Error: ${data.error}`);
       }
 
-      return data as PolygonIndicesPrevCloseResponse;
+      return data as MassiveIndicesPrevCloseResponse;
     } catch (error) {
       getLogger().error("Error fetching indices previous close:", error);
       throw error;
@@ -144,13 +144,13 @@ export const fetchIndicesPreviousClose = async (
  * @param {string} date - The date in YYYY-MM-DD format
  * @param {Object} [options] - Optional parameters
  * @param {string} [options.apiKey] - API key to use for the request
- * @returns {Promise<PolygonIndicesDailyOpenCloseResponse>} The daily open/close response
+ * @returns {Promise<MassiveIndicesDailyOpenCloseResponse>} The daily open/close response
  */
 export const fetchIndicesDailyOpenClose = async (
   indicesTicker: string,
   date: string,
   options?: { apiKey?: string },
-): Promise<PolygonIndicesDailyOpenCloseResponse> => {
+): Promise<MassiveIndicesDailyOpenCloseResponse> => {
   const apiKey = validateApiKey(options?.apiKey);
 
   const url = new URL(
@@ -168,10 +168,10 @@ export const fetchIndicesDailyOpenClose = async (
       const data = await response.json();
 
       if (data.status === "ERROR") {
-        throw new Error(`Polygon API Error: ${data.error}`);
+        throw new Error(`Massive API Error: ${data.error}`);
       }
 
-      return data as PolygonIndicesDailyOpenCloseResponse;
+      return data as MassiveIndicesDailyOpenCloseResponse;
     } catch (error) {
       getLogger().error("Error fetching indices daily open/close:", error);
       throw error;
@@ -182,15 +182,15 @@ export const fetchIndicesDailyOpenClose = async (
 /**
  * Gets a snapshot of indices data for specified tickers.
  *
- * @param {PolygonIndicesSnapshotParams} [params] - Parameters for the snapshot request
+ * @param {MassiveIndicesSnapshotParams} [params] - Parameters for the snapshot request
  * @param {Object} [options] - Optional parameters
  * @param {string} [options.apiKey] - API key to use for the request
- * @returns {Promise<PolygonIndicesSnapshotResponse>} The indices snapshot response
+ * @returns {Promise<MassiveIndicesSnapshotResponse>} The indices snapshot response
  */
 export const fetchIndicesSnapshot = async (
-  params?: PolygonIndicesSnapshotParams,
+  params?: MassiveIndicesSnapshotParams,
   options?: { apiKey?: string },
-): Promise<PolygonIndicesSnapshotResponse> => {
+): Promise<MassiveIndicesSnapshotResponse> => {
   const apiKey = validateApiKey(options?.apiKey);
 
   const url = new URL(`${MASSIVE_API_BASE_URL}/v3/snapshot/indices`);
@@ -222,10 +222,10 @@ export const fetchIndicesSnapshot = async (
       const data = await response.json();
 
       if (data.status === "ERROR") {
-        throw new Error(`Polygon API Error: ${data.error}`);
+        throw new Error(`Massive API Error: ${data.error}`);
       }
 
-      return data as PolygonIndicesSnapshotResponse;
+      return data as MassiveIndicesSnapshotResponse;
     } catch (error) {
       getLogger().error("Error fetching indices snapshot:", error);
       throw error;
@@ -243,7 +243,7 @@ export const fetchIndicesSnapshot = async (
  * @param {string} [options.order] - Order results
  * @param {number} [options.limit] - Limit the number of results
  * @param {string} [options.sort] - Sort field
- * @returns {Promise<PolygonIndicesSnapshotResponse>} The universal snapshot response
+ * @returns {Promise<MassiveIndicesSnapshotResponse>} The universal snapshot response
  */
 export const fetchUniversalSnapshot = async (
   tickers: string[],
@@ -254,7 +254,7 @@ export const fetchUniversalSnapshot = async (
     limit?: number;
     sort?: string;
   },
-): Promise<PolygonIndicesSnapshotResponse> => {
+): Promise<MassiveIndicesSnapshotResponse> => {
   const apiKey = validateApiKey(options?.apiKey);
 
   const url = new URL(`${MASSIVE_API_BASE_URL}/v3/snapshot`);
@@ -290,7 +290,7 @@ export const fetchUniversalSnapshot = async (
       const data = await response.json();
 
       if (data.status === "ERROR") {
-        throw new Error(`Polygon API Error: ${data.error}`);
+        throw new Error(`Massive API Error: ${data.error}`);
       }
 
       return data;
@@ -302,13 +302,13 @@ export const fetchUniversalSnapshot = async (
 };
 
 /**
- * Converts Polygon Indices bar data to a more standardized format
+ * Converts Massive Indices bar data to a more standardized format
  *
- * @param {PolygonIndicesAggregatesResponse} data - The raw aggregates response
+ * @param {MassiveIndicesAggregatesResponse} data - The raw aggregates response
  * @returns {Array<{date: string, open: number, high: number, low: number, close: number, timestamp: number}>} Formatted bar data
  */
 export const formatIndicesBarData = (
-  data: PolygonIndicesAggregatesResponse,
+  data: MassiveIndicesAggregatesResponse,
 ): Array<{
   date: string;
   open: number;

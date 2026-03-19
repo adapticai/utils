@@ -191,7 +191,7 @@ export async function fetchWithRetry(
  * @param apiKey - The API key to validate.
  * @returns Promise that resolves to true if valid, false otherwise.
  */
-export async function validatePolygonApiKey(apiKey: string): Promise<boolean> {
+export async function validateMassiveApiKey(apiKey: string): Promise<boolean> {
   try {
     const response = await fetch(
       `https://api.massive.com/v1/meta/symbols?apikey=${apiKey}&limit=1`,

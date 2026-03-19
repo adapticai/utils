@@ -56,7 +56,7 @@ export class AlpacaClient {
       keyId: config.apiKey,
       secretKey: config.apiSecret,
       paper: config.accountType === "PAPER",
-      usePolygon: false,
+      useMassive: false,
     });
 
     // Set up for direct API calls

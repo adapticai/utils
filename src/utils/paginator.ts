@@ -3,7 +3,7 @@
  *
  * Supports:
  * - Cursor-based pagination (Alpaca: `next_page_token` / `page_token`)
- * - URL-based pagination (Polygon: `next_url`)
+ * - URL-based pagination (Massive: `next_url`)
  * - Offset-based pagination (page numbers or skip/take)
  *
  * Provides both async iterator and collect-all patterns.
@@ -46,7 +46,7 @@ export interface CursorPaginationConfig<TItem, TResponse> {
 
 /**
  * Configuration for URL-based pagination.
- * Used by Polygon APIs that return `next_url`.
+ * Used by Massive APIs that return `next_url`.
  */
 export interface UrlPaginationConfig<TItem, TResponse> {
   /** Pagination strategy type */

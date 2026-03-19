@@ -27,7 +27,7 @@ The following files were updated to use `getLogger()` instead of console:
 - `src/misc-utils.ts` - Updated `logIfDebug` and `fetchWithRetry` functions
 - `src/alpaca-functions.ts` - Replaced all console calls in Alpaca API functions
 - `src/metrics-calcs.ts` - Replaced console.warn calls in metric calculations
-- `src/massive-indices.ts` - Replaced console.error calls in Polygon indices functions
+- `src/massive-indices.ts` - Replaced console.error calls in Massive indices functions
 - `src/performance-metrics.ts` - Replaced console.warn and console.error calls
 - `src/massive.ts` - Replaced console.error, console.warn, and console.log calls
 - `src/adaptic.ts` - Replaced console.warn, console.log, and console.error calls

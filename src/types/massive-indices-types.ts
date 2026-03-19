@@ -1,11 +1,11 @@
 /**
- * Types for Polygon Indices API
+ * Types for Massive Indices API
  */
 
 /**
- * Base response interface for Polygon API responses
+ * Base response interface for Massive API responses
  */
-export interface PolygonIndicesBaseResponse {
+export interface MassiveIndicesBaseResponse {
   /** The status of the response. */
   status: string;
   /** The request ID. */
@@ -13,9 +13,9 @@ export interface PolygonIndicesBaseResponse {
 }
 
 /**
- * Error response from Polygon Indices API
+ * Error response from Massive Indices API
  */
-export interface PolygonIndicesErrorResponse extends PolygonIndicesBaseResponse {
+export interface MassiveIndicesErrorResponse extends MassiveIndicesBaseResponse {
   /** The status of the error response. */
   status: "ERROR" | "NOT_AUTHORIZED" | string;
   /** The error message. */
@@ -25,7 +25,7 @@ export interface PolygonIndicesErrorResponse extends PolygonIndicesBaseResponse 
 /**
  * Represents a single bar/aggregate data point for an index
  */
-export interface PolygonIndicesBar {
+export interface MassiveIndicesBar {
   /** The close value for the index in the given time period. */
   c: number;
   /** The highest value for the index in the given time period. */
@@ -41,7 +41,7 @@ export interface PolygonIndicesBar {
 /**
  * Response for the aggregates (bars) endpoint
  */
-export interface PolygonIndicesAggregatesResponse extends PolygonIndicesBaseResponse {
+export interface MassiveIndicesAggregatesResponse extends MassiveIndicesBaseResponse {
   /** The ticker symbol of the index. */
   ticker: string;
   /** The number of aggregates used to generate the response. */
@@ -51,13 +51,13 @@ export interface PolygonIndicesAggregatesResponse extends PolygonIndicesBaseResp
   /** The count of results returned. */
   count?: number;
   /** The array of aggregate results. */
-  results: PolygonIndicesBar[];
+  results: MassiveIndicesBar[];
 }
 
 /**
  * Represents a previous close result for an index
  */
-export interface PolygonIndicesPrevCloseResult {
+export interface MassiveIndicesPrevCloseResult {
   /** The ticker symbol. */
   T: string;
   /** The close value for the index in the given time period. */
@@ -75,7 +75,7 @@ export interface PolygonIndicesPrevCloseResult {
 /**
  * Response for the previous close endpoint
  */
-export interface PolygonIndicesPrevCloseResponse extends PolygonIndicesBaseResponse {
+export interface MassiveIndicesPrevCloseResponse extends MassiveIndicesBaseResponse {
   /** The ticker symbol of the index. */
   ticker: string;
   /** The number of aggregates used to generate the response. */
@@ -83,13 +83,13 @@ export interface PolygonIndicesPrevCloseResponse extends PolygonIndicesBaseRespo
   /** The total number of results for this request. */
   resultsCount: number;
   /** The array of previous close results. */
-  results: PolygonIndicesPrevCloseResult[];
+  results: MassiveIndicesPrevCloseResult[];
 }
 
 /**
  * Response for the daily open/close endpoint
  */
-export interface PolygonIndicesDailyOpenCloseResponse {
+export interface MassiveIndicesDailyOpenCloseResponse {
   /** The after-hours value of the index, if available. */
   afterHours?: number;
   /** The close value for the index. */
@@ -113,7 +113,7 @@ export interface PolygonIndicesDailyOpenCloseResponse {
 /**
  * Represents a session data for an index in the snapshot
  */
-export interface PolygonIndicesSession {
+export interface MassiveIndicesSession {
   /** The value of the change for the index from the previous trading day. */
   change: number;
   /** The percent of the change for the index from the previous trading day. */
@@ -133,7 +133,7 @@ export interface PolygonIndicesSession {
 /**
  * Represents a single index result in the snapshot response
  */
-export interface PolygonIndicesSnapshotResult {
+export interface MassiveIndicesSnapshotResult {
   /** The nanosecond timestamp of when this information was updated. */
   last_updated?: number;
   /** The market status for the market that trades this index. */
@@ -141,7 +141,7 @@ export interface PolygonIndicesSnapshotResult {
   /** Name of the index. */
   name?: string;
   /** Session data for the index. */
-  session?: PolygonIndicesSession;
+  session?: MassiveIndicesSession;
   /** Ticker of the index. */
   ticker: string;
   /** The time relevance of the data. */
@@ -159,17 +159,17 @@ export interface PolygonIndicesSnapshotResult {
 /**
  * Response for the indices snapshot endpoint
  */
-export interface PolygonIndicesSnapshotResponse extends PolygonIndicesBaseResponse {
+export interface MassiveIndicesSnapshotResponse extends MassiveIndicesBaseResponse {
   /** URL for the next page of results, if available. */
   next_url?: string;
   /** The array of index snapshot results. */
-  results: PolygonIndicesSnapshotResult[];
+  results: MassiveIndicesSnapshotResult[];
 }
 
 /**
  * Parameters for fetching aggregates (bars) for an index
  */
-export interface PolygonIndicesAggregatesParams {
+export interface MassiveIndicesAggregatesParams {
   /** The ticker symbol of the index. */
   indicesTicker: string;
   /** The size of the timespan multiplier. */
@@ -189,7 +189,7 @@ export interface PolygonIndicesAggregatesParams {
 /**
  * Parameters for fetching indices snapshot
  */
-export interface PolygonIndicesSnapshotParams {
+export interface MassiveIndicesSnapshotParams {
   /** Comma separated list of tickers. */
   tickers?: string[];
   /** Order results based on the sort field. */

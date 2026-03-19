@@ -1,7 +1,7 @@
 /**
  * API Response Validation Schemas
  *
- * Zod schemas for validating API responses from Alpaca, Polygon, and Alpha Vantage.
+ * Zod schemas for validating API responses from Alpaca, Massive, and Alpha Vantage.
  * Use these schemas with `validateResponse()` to catch breaking API changes early.
  *
  * @example
@@ -16,28 +16,24 @@
  */
 
 // Validation utilities
-export {
-    ValidationResponseError, safeValidateResponse, validateResponse, type ValidateResponseOptions, type ValidationResult
-} from "./validate-response";
+export { safeValidateResponse, validateResponse, ValidationResponseError, type ValidateResponseOptions, type ValidationResult } from "./validate-response";
 
 // Alpaca schemas
 export {
-    AlpacaAccountDetailsSchema, AlpacaBarSchema, AlpacaCryptoBarsResponseSchema, AlpacaHistoricalBarsResponseSchema,
-    AlpacaLatestBarsResponseSchema, AlpacaLatestQuotesResponseSchema, AlpacaLatestTradesResponseSchema,
-    AlpacaNewsArticleSchema,
-    AlpacaNewsResponseSchema, AlpacaOrderSchema,
-    AlpacaOrdersArraySchema, AlpacaPortfolioHistoryResponseSchema, AlpacaPositionSchema,
-    AlpacaPositionsArraySchema, AlpacaQuoteSchema, AlpacaTradeSchema
+  AlpacaAccountDetailsSchema, AlpacaBarSchema, AlpacaCryptoBarsResponseSchema, AlpacaHistoricalBarsResponseSchema,
+  AlpacaLatestBarsResponseSchema, AlpacaLatestQuotesResponseSchema, AlpacaLatestTradesResponseSchema,
+  AlpacaNewsArticleSchema,
+  AlpacaNewsResponseSchema, AlpacaOrdersArraySchema, AlpacaOrderSchema, AlpacaPortfolioHistoryResponseSchema, AlpacaPositionsArraySchema, AlpacaPositionSchema, AlpacaQuoteSchema, AlpacaTradeSchema
 } from "./alpaca-schemas";
 
-// Polygon schemas
+// Massive schemas
 export {
-    PolygonAggregatesResponseSchema, PolygonDailyOpenCloseSchema, PolygonErrorResponseSchema, PolygonGroupedDailyResponseSchema, PolygonLastTradeResponseSchema, PolygonTickerDetailsResponseSchema, PolygonTickerInfoSchema, PolygonTradeSchema,
-    PolygonTradesResponseSchema, RawPolygonPriceDataSchema
+  MassiveAggregatesResponseSchema, MassiveDailyOpenCloseSchema, MassiveErrorResponseSchema, MassiveGroupedDailyResponseSchema, MassiveLastTradeResponseSchema, MassiveTickerDetailsResponseSchema, MassiveTickerInfoSchema, MassiveTradeSchema,
+  MassiveTradesResponseSchema, RawMassivePriceDataSchema
 } from "./massive-schemas";
 
 // Alpha Vantage schemas
 export {
-    AVNewsArticleSchema,
-    AVNewsResponseSchema, AlphaVantageQuoteResponseSchema
+  AlphaVantageQuoteResponseSchema, AVNewsArticleSchema,
+  AVNewsResponseSchema
 } from "./alphavantage-schemas";

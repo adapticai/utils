@@ -67,7 +67,7 @@ The Adaptic Utils library is a comprehensive TypeScript utility package providin
 │  │                  Type System (TypeScript)                    │  │
 │  │  - Alpaca Types (1382 LOC)                                   │  │
 │  │  - Asset Allocation Types (473 LOC)                          │  │
-│  │  - Polygon Types (213 LOC)                                   │  │
+│  │  - Massive Types (213 LOC)                                   │  │
 │  │  - Market Time Types (66 LOC)                                │  │
 │  │  - Technical Analysis Types (101 LOC)                        │  │
 │  └──────────────────────────────────────────────────────────────┘  │
@@ -289,7 +289,7 @@ const allocation = await engine.generateAllocation({
    - Preserves URL structure while hiding credentials
    - Evidence: `/Users/lucas/adapticai/utils/src/misc-utils.ts:82-99`
 
-3. **API Key Validation** (`validatePolygonApiKey()`)
+3. **API Key Validation** (`validateMassiveApiKey()`)
    - Performs live validation against Massive.com API
    - Returns boolean validation status
    - Handles 401 (invalid), 403 (insufficient permissions) errors
@@ -306,8 +306,8 @@ const sanitizedUrl = hideApiKeyFromurl(
   "https://api.massive.com/v2/aggs?apiKey=12341239856677",
 ); // Returns "https://api.massive.com/v2/aggs?apiKey=12****77"
 
-// Validate Polygon API key
-const isValid = await validatePolygonApiKey(process.env.MASSIVE_API_KEY);
+// Validate Massive API key
+const isValid = await validateMassiveApiKey(process.env.MASSIVE_API_KEY);
 if (!isValid) {
   throw new Error("Invalid Massive.com API key");
 }
@@ -387,7 +387,7 @@ log("Trade executed at $150.25", {
 // Error log with red console output
 log("API rate limit exceeded", {
   type: "error",
-  source: "PolygonAPI",
+  source: "MassiveAPI",
 });
 ```
 
@@ -419,7 +419,7 @@ log("API rate limit exceeded", {
 
 In algorithmic trading, cache stampedes occur when multiple concurrent requests for expired data cause simultaneous API calls, triggering:
 
-- API rate limiting (Alpaca: 200 req/min, Polygon: 5 req/sec)
+- API rate limiting (Alpaca: 200 req/min, Massive: 5 req/sec)
 - Latency spikes during critical trading windows (market open/close)
 - Cascading failures when position data becomes unavailable
 
@@ -515,7 +515,7 @@ interface CacheStats {
 
 **Operational Benefits:**
 
-- **API Rate Limit Protection**: Prevents burst requests to Alpaca/Polygon APIs
+- **API Rate Limit Protection**: Prevents burst requests to Alpaca/Massive APIs
 - **Latency Reduction**: Serve stale data (< 60s old) while refreshing asynchronously
 - **Fault Tolerance**: Degrade gracefully to stale data during API outages
 - **Cost Optimization**: Reduce billable API calls by 80-95% (typical hit ratio: 0.85)
@@ -616,10 +616,10 @@ await tradingAPI.createOrder({
 
 **Data Transformation:**
 
-Polygon API returns raw aggregates; library transforms to standardized `PolygonPriceData`:
+Massive API returns raw aggregates; library transforms to standardized `MassivePriceData`:
 
 ```typescript
-interface PolygonPriceData {
+interface MassivePriceData {
   date: string; // YYYY-MM-DD format
   timeStamp: number; // Unix epoch milliseconds
   open: number; // Opening price
@@ -1073,15 +1073,15 @@ const { start, end } = adaptic.time.getStartAndEndTimestamps({
 
 **Evidence:** `/Users/lucas/adapticai/utils/src/types/asset-allocation-types.ts:1-473`
 
-#### 3. Polygon Types (`massive-types.ts`, `massive-indices-types.ts`)
+#### 3. Massive Types (`massive-types.ts`, `massive-indices-types.ts`)
 
 **Size:** 413 LOC
 
 **Key Interfaces:**
 
-- `PolygonPriceData`: OHLCV bar data
-- `PolygonTickerInfo`: Company metadata
-- `PolygonTrade`: Tick-level trade data
+- `MassivePriceData`: OHLCV bar data
+- `MassiveTickerInfo`: Company metadata
+- `MassiveTrade`: Tick-level trade data
 - `IndicesAggregate`: Index-specific aggregates
 - `UniversalSnapshot`: Market-wide snapshot
 
@@ -1596,7 +1596,7 @@ import type {
 - Trading API: 200 requests/minute
 - Market Data API: Variable (enforced via 429 responses)
 
-**Polygon Limits:**
+**Massive Limits:**
 
 - Free tier: 5 requests/second
 - Paid tier: Higher limits

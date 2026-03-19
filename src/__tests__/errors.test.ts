@@ -1,18 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
-    AdapticUtilsError,
-    AlpacaApiError,
-    AlphaVantageError,
-    AuthenticationError,
-    DataFormatError,
-    HttpClientError,
-    HttpServerError,
-    NetworkError,
-    PolygonApiError,
-    RateLimitError,
-    TimeoutError,
-    ValidationError,
-    WebSocketError,
+  AdapticUtilsError,
+  AlpacaApiError,
+  AlphaVantageError,
+  AuthenticationError,
+  DataFormatError,
+  HttpClientError,
+  HttpServerError,
+  MassiveApiError,
+  NetworkError,
+  RateLimitError,
+  TimeoutError,
+  ValidationError,
+  WebSocketError,
 } from "../errors";
 
 describe("AdapticUtilsError", () => {
@@ -119,22 +119,22 @@ describe("AlpacaApiError", () => {
   });
 });
 
-describe("PolygonApiError", () => {
+describe("MassiveApiError", () => {
   it("should set service to massive", () => {
-    const error = new PolygonApiError("Polygon error", "POLY_ERR", 400);
+    const error = new MassiveApiError("Massive error", "MASSIVE_ERR", 400);
 
     expect(error.service).toBe("massive");
-    expect(error.name).toBe("PolygonApiError");
+    expect(error.name).toBe("MassiveApiError");
   });
 
   it("should be retryable for 429", () => {
-    const error = new PolygonApiError("Rate limited", "RATE_LIMIT", 429);
+    const error = new MassiveApiError("Rate limited", "RATE_LIMIT", 429);
 
     expect(error.isRetryable).toBe(true);
   });
 
   it("should not be retryable for 404", () => {
-    const error = new PolygonApiError("Not found", "NOT_FOUND", 404);
+    const error = new MassiveApiError("Not found", "NOT_FOUND", 404);
 
     expect(error.isRetryable).toBe(false);
   });
@@ -280,7 +280,7 @@ describe("Error hierarchy", () => {
   it("should all be instanceof Error", () => {
     const errors = [
       new AlpacaApiError("test", "CODE", 400),
-      new PolygonApiError("test", "CODE", 400),
+      new MassiveApiError("test", "CODE", 400),
       new AlphaVantageError("test", "CODE", 400),
       new TimeoutError("test", "service", 1000),
       new ValidationError("test", "service"),
@@ -302,7 +302,7 @@ describe("Error hierarchy", () => {
   it("each error should have a unique name", () => {
     const names = [
       new AlpacaApiError("test", "CODE").name,
-      new PolygonApiError("test", "CODE").name,
+      new MassiveApiError("test", "CODE").name,
       new AlphaVantageError("test", "CODE").name,
       new TimeoutError("test", "service", 1000).name,
       new ValidationError("test", "service").name,

@@ -18,27 +18,27 @@ vi.mock("../adaptic", () => ({
 }));
 
 import {
-    calculateBetaFromReturns,
-    calculateDailyReturns,
-    calculateDrawdownMetrics,
-    calculateMaxDrawdown,
+  calculateBetaFromReturns,
+  calculateDailyReturns,
+  calculateDrawdownMetrics,
+  calculateMaxDrawdown,
 } from "../performance-metrics";
 import {
-    calculateBollingerBands,
-    calculateEMA,
-    calculateMACD,
-    calculateRSI,
+  calculateBollingerBands,
+  calculateEMA,
+  calculateMACD,
+  calculateRSI,
 } from "../technical-analysis";
-import { PolygonPriceData } from "../types/massive-types";
+import { MassivePriceData } from "../types/massive-types";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 /**
- * Builds a PolygonPriceData array from raw close prices.
+ * Builds a MassivePriceData array from raw close prices.
  */
-function toPriceData(closePrices: number[]): PolygonPriceData[] {
+function toPriceData(closePrices: number[]): MassivePriceData[] {
   return closePrices.map((close, i) => ({
     symbol: "TEST",
     date: `2025-01-${String(i + 1).padStart(2, "0")}`,
