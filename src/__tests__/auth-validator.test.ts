@@ -60,7 +60,7 @@ describe("Auth Validator", () => {
 
   describe("validatePolygonApiKey", () => {
     it("should pass for valid API key", () => {
-      expect(() => validatePolygonApiKey("VALID_POLYGON_KEY")).not.toThrow();
+      expect(() => validatePolygonApiKey("VALID_MASSIVE_KEY")).not.toThrow();
     });
 
     it("should throw for empty API key", () => {

@@ -9,7 +9,7 @@
  */
 export const DEFAULT_TIMEOUTS = {
   ALPACA_API: parseInt(process.env.ALPACA_API_TIMEOUT || "30000", 10),
-  POLYGON_API: parseInt(process.env.POLYGON_API_TIMEOUT || "30000", 10),
+  MASSIVE_API: parseInt(process.env.MASSIVE_API_TIMEOUT || "30000", 10),
   ALPHA_VANTAGE: parseInt(process.env.ALPHA_VANTAGE_API_TIMEOUT || "30000", 10),
   GENERAL: parseInt(process.env.HTTP_TIMEOUT || "30000", 10),
 } as const;

@@ -12,9 +12,9 @@ describe("DEFAULT_TIMEOUTS", () => {
     expect(DEFAULT_TIMEOUTS.ALPACA_API).toBeGreaterThan(0);
   });
 
-  it("should have POLYGON_API timeout defined", () => {
-    expect(typeof DEFAULT_TIMEOUTS.POLYGON_API).toBe("number");
-    expect(DEFAULT_TIMEOUTS.POLYGON_API).toBeGreaterThan(0);
+  it("should have MASSIVE_API timeout defined", () => {
+    expect(typeof DEFAULT_TIMEOUTS.MASSIVE_API).toBe("number");
+    expect(DEFAULT_TIMEOUTS.MASSIVE_API).toBeGreaterThan(0);
   });
 
   it("should have ALPHA_VANTAGE timeout defined", () => {
@@ -30,7 +30,7 @@ describe("DEFAULT_TIMEOUTS", () => {
   it("should default to 30000ms when env vars are not set", () => {
     // Default values should be 30000 unless overridden by env
     expect(DEFAULT_TIMEOUTS.ALPACA_API).toBe(30000);
-    expect(DEFAULT_TIMEOUTS.POLYGON_API).toBe(30000);
+    expect(DEFAULT_TIMEOUTS.MASSIVE_API).toBe(30000);
     expect(DEFAULT_TIMEOUTS.ALPHA_VANTAGE).toBe(30000);
     expect(DEFAULT_TIMEOUTS.GENERAL).toBe(30000);
   });
@@ -133,8 +133,8 @@ describe("getTimeout", () => {
     expect(getTimeout("ALPACA_API")).toBe(DEFAULT_TIMEOUTS.ALPACA_API);
   });
 
-  it("should return POLYGON_API timeout", () => {
-    expect(getTimeout("POLYGON_API")).toBe(DEFAULT_TIMEOUTS.POLYGON_API);
+  it("should return MASSIVE_API timeout", () => {
+    expect(getTimeout("MASSIVE_API")).toBe(DEFAULT_TIMEOUTS.MASSIVE_API);
   });
 
   it("should return ALPHA_VANTAGE timeout", () => {
