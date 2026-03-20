@@ -4,18 +4,93 @@ on:
   push:
     branches:
       - master
+      - stable-release
     paths:
       - "src/**"
       - "*.json"
       - "*.mjs"
       - "types/**"
       - "*.ts"
+      - ".github/workflows/**"
 
 jobs:
+  # Master branch: use reusable workflow (existing behavior)
   publish-npm-package:
+    if: github.ref == 'refs/heads/master'
     uses: adapticai/workflows/.github/workflows/publish-npm-package.yml@master
     with:
       git_user_name: ${{ github.actor }}
       git_user_email: ${{ github.actor }}@users.noreply.github.com
     secrets:
       NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # Stable-release branch: standalone publish with stable dist-tag
+  publish-stable:
+    if: github.ref == 'refs/heads/stable-release'
+    runs-on: ubuntu-latest
+    env:
+      GIT_USER_NAME: ${{ github.actor }}
+      GIT_USER_EMAIL: ${{ github.actor }}@users.noreply.github.com
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          registry-url: 'https://registry.npmjs.org/'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build package
+        run: npm run build
+
+      - name: Set up Git user
+        run: |
+          git config --global user.name "$GIT_USER_NAME"
+          git config --global user.email "$GIT_USER_EMAIL"
+
+      - name: Bump version from latest stable
+        id: bump_version
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          PACKAGE_NAME=$(jq -r .name package.json)
+          STABLE_VERSION=$(npm view "$PACKAGE_NAME" dist-tags.stable 2>/dev/null || echo "")
+
+          if [ -z "$STABLE_VERSION" ]; then
+            NEW_VERSION="0.0.900"
+            echo "No existing stable release found, starting at $NEW_VERSION"
+          else
+            PATCH=$(echo "$STABLE_VERSION" | cut -d'.' -f3)
+            NEW_PATCH=$((PATCH + 1))
+            NEW_VERSION="0.0.$NEW_PATCH"
+            echo "Latest stable version is $STABLE_VERSION, bumping to $NEW_VERSION"
+          fi
+
+          echo "new_version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+
+          jq --arg v "$NEW_VERSION" '.version=$v' package.json > tmp.json && mv tmp.json package.json
+          echo "Updated package.json to version $NEW_VERSION"
+
+          git add package.json
+          if ! git diff-index --cached --quiet HEAD --; then
+            git commit -m "ci: bump version to $NEW_VERSION"
+          fi
+
+      - name: Publish package with stable tag
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NEW_VERSION: ${{ steps.bump_version.outputs.new_version }}
+        run: |
+          echo "Publishing @adaptic/utils@$NEW_VERSION with tag stable"
+          npm publish --access public --tag stable
+
+      - name: Push version bump back
+        run: |
+          git push origin HEAD:stable-release
