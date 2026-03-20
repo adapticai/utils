@@ -5,7 +5,16 @@ import {
   RiskBudgetPrefsSchema,
   SignalConsumptionPrefsSchema,
   ExecutionPrefsSchema,
+  PositionManagementPrefsSchema,
+  PortfolioConstructionPrefsSchema,
+  OverlayResponsePrefsSchema,
+  ModelPrefsSchema,
+  AuditNotificationPrefsSchema,
+  PolicyMutationSchema,
+  EffectiveTradingPolicySchema,
 } from '../trading-policy/schemas';
+import { DEFAULT_TRADING_POLICY } from '../trading-policy/defaults/default-trading-policy';
+import { AutonomyMode, OverlayType, LlmProvider } from '../trading-policy/enums';
 
 describe('AutonomyPrefsSchema', () => {
   it('accepts empty object and applies defaults', () => {
@@ -307,5 +316,105 @@ describe('ExecutionPrefsSchema', () => {
 
   it('rejects negative slippage tolerance', () => {
     expect(() => ExecutionPrefsSchema.parse({ maxSlippageTolerancePct: -0.5 })).toThrow();
+  });
+});
+
+describe('PositionManagementPrefsSchema', () => {
+  it('accepts empty object and applies defaults', () => {
+    const result = PositionManagementPrefsSchema.parse({});
+    expect(result.defaultStopLossMethod).toBe('trailing_stop');
+    expect(result.scaleInEnabled).toBe(false);
+    expect(result.trailingStopTighteningRules).toHaveLength(2);
+    expect(result.trailingStopTighteningRules[0].profitThresholdPct).toBe(2);
+  });
+});
+
+describe('PortfolioConstructionPrefsSchema', () => {
+  it('accepts empty object and applies defaults', () => {
+    const result = PortfolioConstructionPrefsSchema.parse({});
+    expect(result.driftThresholdPct).toBe(5);
+    expect(result.autonomousRebalancing).toBe(false);
+    expect(result.portfolioCircuitBreakerEnabled).toBe(true);
+  });
+});
+
+describe('OverlayResponsePrefsSchema', () => {
+  it('accepts empty object', () => {
+    const result = OverlayResponsePrefsSchema.parse({});
+    expect(result.overlayResponses).toEqual({});
+  });
+
+  it('accepts a valid overlay type config', () => {
+    const result = OverlayResponsePrefsSchema.parse({
+      overlayResponses: {
+        [OverlayType.BLACK_SWAN]: { pauseRealtimeTrading: true, cancelAllOpenOrders: true },
+      },
+    });
+    expect(result.overlayResponses[OverlayType.BLACK_SWAN]?.pauseRealtimeTrading).toBe(true);
+  });
+});
+
+describe('ModelPrefsSchema', () => {
+  it('accepts empty object and applies defaults', () => {
+    const result = ModelPrefsSchema.parse({});
+    expect(result.maxCostPerDayUsd).toBe(10);
+    expect(result.latencyTargetMs).toBe(5000);
+    expect(result.toolUsePermissionsByTier.advanced?.writeTools).toBe(true);
+    expect(result.toolUsePermissionsByTier.mini?.writeTools).toBe(false);
+  });
+});
+
+describe('AuditNotificationPrefsSchema', () => {
+  it('accepts empty object and applies defaults', () => {
+    const result = AuditNotificationPrefsSchema.parse({});
+    expect(result.notifyOnAutonomousActions).toBe(true);
+    expect(result.auditDetailLevel).toBe('standard');
+    expect(result.retainDecisionArtifactsDays).toBe(90);
+  });
+});
+
+describe('PolicyMutationSchema', () => {
+  it('accepts empty object', () => {
+    const result = PolicyMutationSchema.parse({});
+    expect(result).toEqual({});
+  });
+
+  it('accepts partial policy fields', () => {
+    const result = PolicyMutationSchema.parse({
+      realtimeTradingEnabled: false,
+      riskBudgetPrefs: { maxLossPerDayPct: 2 },
+    });
+    expect(result.realtimeTradingEnabled).toBe(false);
+  });
+
+  it('accepts model provider fields', () => {
+    const result = PolicyMutationSchema.parse({
+      miniModelProvider: LlmProvider.ANTHROPIC,
+      miniModelId: 'claude-sonnet-4-6',
+    });
+    expect(result.miniModelProvider).toBe('ANTHROPIC');
+  });
+});
+
+describe('EffectiveTradingPolicySchema', () => {
+  it('validates a full effective policy', () => {
+    const result = EffectiveTradingPolicySchema.safeParse(DEFAULT_TRADING_POLICY);
+    expect(result.success).toBe(true);
+  });
+});
+
+describe('DEFAULT_TRADING_POLICY', () => {
+  it('has conservative defaults', () => {
+    expect(DEFAULT_TRADING_POLICY.autonomyMode).toBe(AutonomyMode.ADVISORY_ONLY);
+    expect(DEFAULT_TRADING_POLICY.realtimeTradingEnabled).toBe(false);
+    expect(DEFAULT_TRADING_POLICY.shortingEnabled).toBe(false);
+    expect(DEFAULT_TRADING_POLICY.cryptoEnabled).toBe(false);
+    expect(DEFAULT_TRADING_POLICY.miniModelProvider).toBeNull();
+  });
+
+  it('has fully expanded nested defaults', () => {
+    expect(DEFAULT_TRADING_POLICY.autonomyPrefs.autoPauseOnIncident).toBe(true);
+    expect(DEFAULT_TRADING_POLICY.executionPrefs.preferredOrderType).toBe('limit');
+    expect(DEFAULT_TRADING_POLICY.riskBudgetPrefs.maxDrawdownFromPeakPct).toBe(20);
   });
 });
