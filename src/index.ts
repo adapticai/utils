@@ -127,6 +127,20 @@ export const createAlpacaMarketDataAPI = () => {
 // Export new modular Alpaca SDK wrappers
 export * from "./alpaca";
 
+// Trading Policy schemas, types, enums, and defaults
+export * as tradingPolicy from './trading-policy';
+export {
+  AutonomyMode, OverlayType, OverlaySeverity, OverlayStatus,
+  DecisionOutcome, DecisionRecordStatus, DecisionMemoryOutcome, LlmProvider,
+} from './trading-policy/enums';
+export type {
+  AutonomyPrefs, AssetUniversePrefs, RiskBudgetPrefs,
+  SignalConsumptionPrefs, ExecutionPrefs, PositionManagementPrefs,
+  PortfolioConstructionPrefs, OverlayResponsePrefs, ModelPrefs,
+  AuditNotificationPrefs, PolicyMutation, EffectiveTradingPolicy,
+} from './trading-policy/schemas';
+export { DEFAULT_TRADING_POLICY } from './trading-policy/defaults/default-trading-policy';
+
 // Export TokenProvider type for Apollo client auth
 export type { TokenProvider } from "./adaptic";
 
