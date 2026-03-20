@@ -277,6 +277,27 @@ export async function closeAllPositions(
   );
 
   if (useLimitOrders) {
+    // Cancel all existing orders first when requested, to free up qty_available
+    // for the limit close orders. Without this, existing trailing stops and
+    // pending orders reduce qty_available, causing "insufficient qty" errors.
+    if (cancel_orders) {
+      try {
+        await cancelAllOrders(auth);
+        getLogger().info("Canceled all open orders before placing limit close orders", {
+          account: auth.adapticAccountId || "direct",
+        });
+      } catch (cancelError) {
+        getLogger().warn(
+          `Failed to cancel orders before limit closure: ${cancelError instanceof Error ? cancelError.message : String(cancelError)}`,
+          {
+            account: auth.adapticAccountId || "direct",
+            type: "warn",
+          },
+        );
+        // Continue with closure attempt even if cancel failed
+      }
+    }
+
     const positions = await fetchAllPositions(auth);
 
     if (positions.length === 0) {
@@ -290,14 +311,10 @@ export async function closeAllPositions(
       account: auth.adapticAccountId || "direct",
     });
 
-    const alpacaAuth = {
-      type: "LIVE",
-      alpacaApiKey: process.env.ALPACA_API_KEY,
-      alpacaApiSecret: process.env.ALPACA_API_SECRET || process.env.ALPACA_SECRET_KEY,
-    } as AlpacaAuth;
-
+    // Use the passed auth for quote fetching (not hardcoded env vars)
+    // so multi-account setups use the correct credentials per account
     const symbols = positions.map((position) => position.symbol);
-    const quotesResponse = await getLatestQuotes(alpacaAuth, { symbols });
+    const quotesResponse = await getLatestQuotes(auth, { symbols });
 
     const lengthOfQuotes = Object.keys(quotesResponse.quotes).length;
     if (lengthOfQuotes === 0) {
@@ -313,13 +330,14 @@ export async function closeAllPositions(
 
     if (lengthOfQuotes !== positions.length) {
       getLogger().warn(
-        `Received ${lengthOfQuotes} quotes for ${positions.length} positions, expected ${positions.length} quotes`,
+        `Received ${lengthOfQuotes} quotes for ${positions.length} positions (expected ${positions.length}), proceeding with available quotes`,
         {
           account: auth.adapticAccountId || "direct",
           type: "warn",
         },
       );
-      return [];
+      // Continue with available quotes instead of aborting — some symbols may
+      // lack quotes (halted, delisted) but other positions should still close
     }
 
     for (const position of positions) {
