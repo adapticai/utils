@@ -100,22 +100,28 @@ export const MassiveTradesResponseSchema = z.object({
 
 // ===== Last Trade Schemas =====
 
-/** Schema for Massive last trade response */
+/** Schema for Massive last trade response (v3 format - returns array of trades) */
 export const MassiveLastTradeResponseSchema = z.object({
   status: z.string(),
   request_id: z.string(),
-  results: z.object({
-    T: z.string(),
-    p: z.number(),
-    s: z.number(),
-    t: z.number(),
-    c: z.array(z.number()).optional(),
-    e: z.number().optional(),
-    i: z.string().optional(),
-    q: z.number().optional(),
-    x: z.number().optional(),
-    z: z.number().optional(),
-  }),
+  results: z
+    .array(
+      z.object({
+        conditions: z.array(z.number()).optional(),
+        correction: z.number().optional(),
+        exchange: z.number(),
+        id: z.string(),
+        participant_timestamp: z.number(),
+        price: z.number(),
+        sequence_number: z.number(),
+        sip_timestamp: z.number(),
+        size: z.number(),
+        tape: z.number().optional(),
+        trf_id: z.number().optional(),
+        trf_timestamp: z.number().optional(),
+      }),
+    )
+    .min(1),
 });
 
 // ===== Aggregates (Bars) Schemas =====

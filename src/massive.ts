@@ -11,6 +11,8 @@ import {
   MassiveGroupedDailyResponse,
   MassivePriceData,
   MassiveQuote,
+  MassiveQuotesResponse,
+  MassiveSpreadInfo,
   MassiveTickerInfo,
   MassiveTradesResponse,
   RawMassivePriceData,
@@ -162,9 +164,12 @@ export const fetchLastTrade = async (
   const apiKey = options?.apiKey || MASSIVE_API_KEY!;
   validateMassiveApiKey(apiKey);
 
-  const baseUrl = `https://api.massive.com/v2/last/trade/${encodeURIComponent(symbol)}`;
+  const baseUrl = `https://api.massive.com/v3/trades/${encodeURIComponent(symbol)}`;
   const params = new URLSearchParams({
     apiKey,
+    limit: "1",
+    sort: "timestamp",
+    order: "desc",
   });
 
   return massiveLimit(async () => {
@@ -175,15 +180,31 @@ export const fetchLastTrade = async (
         3,
         1000,
       );
-      const data = await response.json();
+      const data = (await response.json()) as
+        | MassiveTradesResponse
+        | MassiveErrorResponse;
 
-      if (!MASSIVE_VALID_STATUSES.has(data.status) || !data.results) {
+      if ("message" in data) {
         throw new Error(
-          `Massive.com API error: ${data.status || "No results"} ${data.error || ""}`,
+          `Massive.com API error: ${(data as MassiveErrorResponse).message}`,
         );
       }
 
-      const { p: price, s: vol, t: timestamp } = data.results;
+      if (
+        !data.results ||
+        !Array.isArray(data.results) ||
+        data.results.length === 0
+      ) {
+        throw new Error(
+          `Massive.com API error: No trade results for ${symbol}`,
+        );
+      }
+
+      const latestTrade = data.results[0];
+      const price = latestTrade.price;
+      const vol = latestTrade.size;
+      const timestamp = latestTrade.sip_timestamp;
+
       if (
         typeof price !== "number" ||
         typeof vol !== "number" ||
@@ -196,7 +217,7 @@ export const fetchLastTrade = async (
         price,
         vol,
         time: new Date(Math.floor(timestamp / 1000000)), // Convert nanoseconds to milliseconds
-      } as MassiveQuote;
+      } satisfies MassiveQuote;
     } catch (error: unknown) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error occurred";
@@ -215,6 +236,105 @@ export const fetchLastTrade = async (
                 : "UNKNOWN",
         url: hideApiKeyFromurl(`${baseUrl}?${params.toString()}`),
         source: "MassiveAPI.fetchLastTrade",
+        timestamp: new Date().toISOString(),
+      });
+
+      throw new Error(`${contextualMessage}: ${errorMessage}`);
+    }
+  });
+};
+
+/**
+ * Fetches the latest NBBO quote for a given stock ticker using the Massive v3 API.
+ * Returns processed spread information including bid, ask, spread, and mid price.
+ *
+ * @param symbol - The stock ticker symbol.
+ * @param options - Optional parameters including API key override.
+ * @returns Processed quote data with spread metrics.
+ */
+export const fetchLastQuote = async (
+  symbol: string,
+  options?: { apiKey?: string },
+): Promise<MassiveSpreadInfo> => {
+  if (!options?.apiKey && !MASSIVE_API_KEY) {
+    throw new Error("Massive API key is missing");
+  }
+
+  const apiKey = options?.apiKey || MASSIVE_API_KEY!;
+  validateMassiveApiKey(apiKey);
+
+  const baseUrl = `https://api.massive.com/v3/quotes/${encodeURIComponent(symbol)}`;
+  const params = new URLSearchParams({
+    apiKey,
+    limit: "1",
+    sort: "timestamp",
+    order: "desc",
+  });
+
+  return massiveLimit(async () => {
+    try {
+      const response = await fetchWithRetry(
+        `${baseUrl}?${params.toString()}`,
+        {},
+        3,
+        1000,
+      );
+      const data = (await response.json()) as
+        | MassiveQuotesResponse
+        | MassiveErrorResponse;
+
+      if ("message" in data) {
+        throw new Error(
+          `Massive.com API error: ${(data as MassiveErrorResponse).message}`,
+        );
+      }
+
+      const results = (data as MassiveQuotesResponse).results;
+      if (!Array.isArray(results) || results.length === 0) {
+        throw new Error(
+          `Massive.com API error: No quote results for ${symbol}`,
+        );
+      }
+
+      const quote = results[0];
+      if (
+        typeof quote.bid_price !== "number" ||
+        typeof quote.ask_price !== "number"
+      ) {
+        throw new Error("Invalid quote data received from Massive.com API");
+      }
+
+      const midPrice = (quote.bid_price + quote.ask_price) / 2;
+      const spread = quote.ask_price - quote.bid_price;
+
+      return {
+        bid: quote.bid_price,
+        ask: quote.ask_price,
+        spread,
+        spreadPercent: midPrice > 0 ? (spread / midPrice) * 100 : 0,
+        midPrice,
+        bidSize: quote.bid_size,
+        askSize: quote.ask_size,
+        time: new Date(Math.floor(quote.sip_timestamp / 1000000)),
+      } satisfies MassiveSpreadInfo;
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error occurred";
+      const contextualMessage = `Error fetching last quote for ${symbol}`;
+
+      getLogger().error(`${contextualMessage}: ${errorMessage}`, {
+        symbol,
+        errorType:
+          error instanceof Error && error.message.includes("AUTH_ERROR")
+            ? "AUTH_ERROR"
+            : error instanceof Error && error.message.includes("RATE_LIMIT")
+              ? "RATE_LIMIT"
+              : error instanceof Error &&
+                  error.message.includes("NETWORK_ERROR")
+                ? "NETWORK_ERROR"
+                : "UNKNOWN",
+        url: hideApiKeyFromurl(`${baseUrl}?${params.toString()}`),
+        source: "MassiveAPI.fetchLastQuote",
         timestamp: new Date().toISOString(),
       });
 

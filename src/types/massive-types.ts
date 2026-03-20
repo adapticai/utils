@@ -181,6 +181,56 @@ export interface MassiveTrade {
 }
 
 /**
+ * Represents an NBBO (National Best Bid and Offer) quote from Massive v3 API.
+ */
+export interface MassiveNBBOQuote {
+  /** The ask price. */
+  ask_price: number;
+  /** The ask size (number of round lots). */
+  ask_size: number;
+  /** The ask exchange ID. */
+  ask_exchange: number;
+  /** The bid price. */
+  bid_price: number;
+  /** The bid size (number of round lots). */
+  bid_size: number;
+  /** The bid exchange ID. */
+  bid_exchange: number;
+  /** The conditions of the quote. */
+  conditions?: number[];
+  /** The timestamp from the SIP in nanoseconds. */
+  sip_timestamp: number;
+  /** The timestamp of the participant in nanoseconds. */
+  participant_timestamp: number;
+  /** The sequence number. */
+  sequence_number: number;
+  /** The tape number. */
+  tape?: number;
+}
+
+/**
+ * Processed quote data with computed spread metrics.
+ */
+export interface MassiveSpreadInfo {
+  /** The bid price. */
+  bid: number;
+  /** The ask price. */
+  ask: number;
+  /** The spread in dollars (ask - bid). */
+  spread: number;
+  /** The spread as a percentage of the mid price. */
+  spreadPercent: number;
+  /** The mid price ((bid + ask) / 2). */
+  midPrice: number;
+  /** The bid size in round lots. */
+  bidSize: number;
+  /** The ask size in round lots. */
+  askSize: number;
+  /** The timestamp of the quote. */
+  time: Date;
+}
+
+/**
  * Represents the base response structure from Massive.
  */
 export interface MassiveBaseResponse {
@@ -200,6 +250,18 @@ export interface MassiveTradesResponse extends MassiveBaseResponse {
   next_url?: string;
   /** The array of trade results. */
   results: MassiveTrade[];
+}
+
+/**
+ * Represents the response for quotes from Massive v3 API.
+ */
+export interface MassiveQuotesResponse extends MassiveBaseResponse {
+  /** The status of the response, which should be 'OK'. */
+  status: "OK";
+  /** The next URL for pagination, if applicable. */
+  next_url?: string;
+  /** The array of NBBO quote results. */
+  results: MassiveNBBOQuote[];
 }
 
 /**

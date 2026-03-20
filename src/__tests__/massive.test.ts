@@ -38,6 +38,7 @@ import {
   analyseMassivePriceData,
   fetchDailyOpenClose,
   fetchGroupedDaily,
+  fetchLastQuote,
   fetchLastTrade,
   fetchPrices,
   fetchTickerInfo,
@@ -271,15 +272,24 @@ describe("fetchLastTrade", () => {
     process.env.MASSIVE_API_KEY = originalEnv;
   });
 
-  it("should return last trade data", async () => {
+  it("should return last trade data from v3 response", async () => {
     const timestamp = Date.now() * 1000000; // nanoseconds
     const mockResponse = {
       status: "OK",
-      results: {
-        p: 150.25,
-        s: 100,
-        t: timestamp,
-      },
+      request_id: "test-123",
+      results: [
+        {
+          conditions: [12, 37],
+          exchange: 4,
+          id: "trade-1",
+          participant_timestamp: timestamp,
+          price: 150.25,
+          sequence_number: 1,
+          sip_timestamp: timestamp,
+          size: 100,
+          tape: 3,
+        },
+      ],
     };
 
     mockFetchWithRetry.mockResolvedValue({
@@ -293,14 +303,65 @@ describe("fetchLastTrade", () => {
     expect(result.time).toBeInstanceOf(Date);
   });
 
-  it("should throw if status is not OK", async () => {
+  it("should call v3 trades endpoint with correct params", async () => {
+    const timestamp = Date.now() * 1000000;
+    const mockResponse = {
+      status: "OK",
+      request_id: "test-456",
+      results: [
+        {
+          exchange: 4,
+          id: "trade-1",
+          participant_timestamp: timestamp,
+          price: 150.25,
+          sequence_number: 1,
+          sip_timestamp: timestamp,
+          size: 100,
+        },
+      ],
+    };
+
     mockFetchWithRetry.mockResolvedValue({
-      json: () => Promise.resolve({ status: "ERROR", error: "Not found" }),
+      json: () => Promise.resolve(mockResponse),
+    } as Response);
+
+    await fetchLastTrade("AAPL", { apiKey: "test-key" });
+
+    const calledUrl = mockFetchWithRetry.mock.calls[0][0] as string;
+    expect(calledUrl).toContain("/v3/trades/AAPL");
+    expect(calledUrl).toContain("limit=1");
+    expect(calledUrl).toContain("sort=timestamp");
+    expect(calledUrl).toContain("order=desc");
+  });
+
+  it("should throw on error response with message", async () => {
+    mockFetchWithRetry.mockResolvedValue({
+      json: () =>
+        Promise.resolve({
+          status: "NOT_AUTHORIZED",
+          request_id: "req-err",
+          message: "Not authorized",
+        }),
     } as Response);
 
     await expect(
       fetchLastTrade("INVALID", { apiKey: "test-key" }),
-    ).rejects.toThrow("Massive.com API error");
+    ).rejects.toThrow("Massive.com API error: Not authorized");
+  });
+
+  it("should throw on empty results array", async () => {
+    mockFetchWithRetry.mockResolvedValue({
+      json: () =>
+        Promise.resolve({
+          status: "OK",
+          request_id: "test-empty",
+          results: [],
+        }),
+    } as Response);
+
+    await expect(
+      fetchLastTrade("AAPL", { apiKey: "test-key" }),
+    ).rejects.toThrow("No trade results for AAPL");
   });
 
   it("should throw if trade data has invalid types", async () => {
@@ -308,13 +369,141 @@ describe("fetchLastTrade", () => {
       json: () =>
         Promise.resolve({
           status: "OK",
-          results: { p: "not-a-number", s: 100, t: 123 },
+          request_id: "test-invalid",
+          results: [
+            {
+              exchange: 4,
+              id: "trade-1",
+              participant_timestamp: 123,
+              price: "not-a-number",
+              sequence_number: 1,
+              sip_timestamp: 123,
+              size: 100,
+            },
+          ],
         }),
     } as Response);
 
     await expect(
       fetchLastTrade("AAPL", { apiKey: "test-key" }),
     ).rejects.toThrow("Invalid trade data");
+  });
+});
+
+describe("fetchLastQuote", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("should throw if no API key is available", async () => {
+    const originalEnv = process.env.MASSIVE_API_KEY;
+    delete process.env.MASSIVE_API_KEY;
+
+    await expect(fetchLastQuote("AAPL")).rejects.toThrow(
+      "Massive API key is missing",
+    );
+
+    process.env.MASSIVE_API_KEY = originalEnv;
+  });
+
+  it("should return processed quote with spread info", async () => {
+    const timestamp = Date.now() * 1000000; // nanoseconds
+    const mockResponse = {
+      status: "OK",
+      request_id: "test-quote-123",
+      results: [
+        {
+          ask_price: 150.5,
+          ask_size: 200,
+          ask_exchange: 11,
+          bid_price: 150.25,
+          bid_size: 300,
+          bid_exchange: 4,
+          sip_timestamp: timestamp,
+          participant_timestamp: timestamp,
+          sequence_number: 1,
+          tape: 3,
+        },
+      ],
+    };
+
+    mockFetchWithRetry.mockResolvedValue({
+      json: () => Promise.resolve(mockResponse),
+    } as Response);
+
+    const result = await fetchLastQuote("AAPL", { apiKey: "test-key" });
+
+    expect(result.bid).toBe(150.25);
+    expect(result.ask).toBe(150.5);
+    expect(result.spread).toBeCloseTo(0.25);
+    expect(result.midPrice).toBeCloseTo(150.375);
+    expect(result.spreadPercent).toBeCloseTo((0.25 / 150.375) * 100);
+    expect(result.bidSize).toBe(300);
+    expect(result.askSize).toBe(200);
+    expect(result.time).toBeInstanceOf(Date);
+  });
+
+  it("should call v3 quotes endpoint with correct params", async () => {
+    const timestamp = Date.now() * 1000000;
+    const mockResponse = {
+      status: "OK",
+      request_id: "test-quote-456",
+      results: [
+        {
+          ask_price: 150.5,
+          ask_size: 200,
+          ask_exchange: 11,
+          bid_price: 150.25,
+          bid_size: 300,
+          bid_exchange: 4,
+          sip_timestamp: timestamp,
+          participant_timestamp: timestamp,
+          sequence_number: 1,
+        },
+      ],
+    };
+
+    mockFetchWithRetry.mockResolvedValue({
+      json: () => Promise.resolve(mockResponse),
+    } as Response);
+
+    await fetchLastQuote("AAPL", { apiKey: "test-key" });
+
+    const calledUrl = mockFetchWithRetry.mock.calls[0][0] as string;
+    expect(calledUrl).toContain("/v3/quotes/AAPL");
+    expect(calledUrl).toContain("limit=1");
+    expect(calledUrl).toContain("sort=timestamp");
+    expect(calledUrl).toContain("order=desc");
+  });
+
+  it("should throw on error response", async () => {
+    mockFetchWithRetry.mockResolvedValue({
+      json: () =>
+        Promise.resolve({
+          status: "NOT_AUTHORIZED",
+          request_id: "req-err",
+          message: "Not authorized",
+        }),
+    } as Response);
+
+    await expect(
+      fetchLastQuote("AAPL", { apiKey: "test-key" }),
+    ).rejects.toThrow("Massive.com API error: Not authorized");
+  });
+
+  it("should throw on empty results", async () => {
+    mockFetchWithRetry.mockResolvedValue({
+      json: () =>
+        Promise.resolve({
+          status: "OK",
+          request_id: "test-empty",
+          results: [],
+        }),
+    } as Response);
+
+    await expect(
+      fetchLastQuote("AAPL", { apiKey: "test-key" }),
+    ).rejects.toThrow("No quote results for AAPL");
   });
 });
 

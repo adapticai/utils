@@ -268,6 +268,7 @@ export const adaptic = {
     fetchTickerInfo: massive.fetchTickerInfo,
     fetchGroupedDaily: massive.fetchGroupedDaily,
     fetchLastTrade: massive.fetchLastTrade,
+    fetchLastQuote: massive.fetchLastQuote,
     fetchTrades: massive.fetchTrades,
     fetchPrices: massive.fetchPrices,
     analyseMassivePriceData: massive.analyseMassivePriceData,
