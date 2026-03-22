@@ -289,13 +289,12 @@ export const rateLimiters = {
   /**
    * Massive.com API rate limiter
    *
-   * Configured for 5 requests per second (basic plan).
-   * Adjust if you have a different subscription tier.
+   * Configured for 100 requests per second (paid tier — matches Massive.com recommended soft limit).
    * See: https://massive.com/pricing
    */
   massive: new TokenBucketRateLimiter({
-    maxTokens: 5,
-    refillRate: 5, // 5 requests per second
+    maxTokens: 100,
+    refillRate: 100, // 100 requests per second (paid tier — matches Massive.com recommended soft limit)
     label: "massive",
     timeoutMs: 30000,
   }),

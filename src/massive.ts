@@ -17,6 +17,7 @@ import {
   MassiveTradesResponse,
   RawMassivePriceData,
 } from "./types";
+import { rateLimiters } from "./rate-limiter";
 import { validateMassiveApiKey } from "./utils/auth-validator";
 
 /**
@@ -403,6 +404,7 @@ export const fetchPrices = async (
 
       while (nextUrl) {
         //getLogger().info(`Debug: Fetching ${nextUrl}`);
+        await rateLimiters.massive.acquire();
         const response = await fetchWithRetry(nextUrl, {}, 3, 1000);
         const data = await response.json();
 
