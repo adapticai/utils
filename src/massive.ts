@@ -374,6 +374,7 @@ export const fetchPrices = async (
     multiplier: number;
     timespan: string;
     limit?: number;
+    adjusted?: boolean;
   },
   options?: { apiKey?: string },
 ): Promise<MassivePriceData[]> => {
@@ -399,7 +400,7 @@ export const fetchPrices = async (
 
   const urlParams = new URLSearchParams({
     apiKey,
-    adjusted: "true",
+    ...(params.adjusted !== false && { adjusted: "true" }),
     sort: "asc",
     limit: limit.toString(),
   });
@@ -426,7 +427,7 @@ export const fetchPrices = async (
           const lastWarn = delayedWarnTimestamps.get(params.ticker) ?? 0;
           if (now - lastWarn > DELAYED_WARN_COOLDOWN_MS) {
             delayedWarnTimestamps.set(params.ticker, now);
-            getLogger().warn(
+            getLogger().info(
               `Massive.com returned DELAYED data for ${params.ticker} — using delayed results`,
               { ticker: params.ticker, source: "MassiveAPI.fetchPrices" },
             );
