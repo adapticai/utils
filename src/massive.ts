@@ -26,6 +26,13 @@ import { validateMassiveApiKey } from "./utils/auth-validator";
  */
 const MASSIVE_VALID_STATUSES = new Set(["OK", "DELAYED"]);
 
+/**
+ * Throttle map for DELAYED data warnings — logs once per ticker per 15 minutes
+ * to avoid flooding logs when the entire feed is delayed (e.g. free-tier plans).
+ */
+const DELAYED_WARN_COOLDOWN_MS = 15 * 60 * 1000;
+const delayedWarnTimestamps = new Map<string, number>();
+
 // Constants from environment variables
 const MASSIVE_API_KEY = process.env.MASSIVE_API_KEY;
 
@@ -415,10 +422,15 @@ export const fetchPrices = async (
         }
 
         if (data.status === "DELAYED") {
-          getLogger().warn(
-            `Massive.com returned DELAYED data for ${params.ticker} — using delayed results`,
-            { ticker: params.ticker, source: "MassiveAPI.fetchPrices" },
-          );
+          const now = Date.now();
+          const lastWarn = delayedWarnTimestamps.get(params.ticker) ?? 0;
+          if (now - lastWarn > DELAYED_WARN_COOLDOWN_MS) {
+            delayedWarnTimestamps.set(params.ticker, now);
+            getLogger().warn(
+              `Massive.com returned DELAYED data for ${params.ticker} — using delayed results`,
+              { ticker: params.ticker, source: "MassiveAPI.fetchPrices" },
+            );
+          }
         }
 
         if (data.results) {
