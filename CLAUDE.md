@@ -23,3 +23,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Documentation**: JSDoc comments for public functions/interfaces
 
 Always maintain the existing code style when making changes. Follow TypeScript's strict mode guidelines.
+
+## Backend-Legacy CRUD & Field Availability
+
+This package depends on `@adaptic/backend-legacy` for database CRUD operations (`adaptic.<model>.<op>()`). The fields available on returned objects are **curated via GQL inline comments** in `~/adapticai/backend-legacy/prisma/schema.prisma` — that file is the single source of truth.
+
+If a field you expect is missing from CRUD results, check the schema for `GQL.SKIP=true`, `GQL.EXCLUDE`, or `GQL.INCLUDE` directives on that field or its parent relation. To make a previously excluded field available: update the inline comment in `schema.prisma`, run `npm run build` in backend-legacy, publish the package, then update the dependency here.
+
+Similarly, `typeStrings` (string representations of model types for LLM context) are controlled by `TYPESTRING.SKIP=true` and `TYPESTRING.INCLUDE` directives in the same schema file.
