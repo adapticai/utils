@@ -13,10 +13,10 @@ const OrderTypeEnum = z.enum(['market', 'limit', 'stop', 'stop_limit', 'trailing
 export const ExecutionPrefsObjectSchema = z.object({
   allowedOrderTypes: z.array(OrderTypeEnum).default(['market', 'limit', 'stop', 'trailing_stop']),
   preferredOrderType: OrderTypeEnum.default('limit'),
-  preferredOrderTypeByAssetClass: z.record(z.string(), z.string()).default({}),
+  preferredOrderTypeByAssetClass: z.record(z.string(), z.string()).default({ crypto: 'market' }),
   defaultTimeInForce: z.enum(['day', 'gtc', 'ioc', 'fok']).default('day'),
   executionBias: z.enum(['passive', 'neutral', 'aggressive']).default('neutral'),
-  maxSlippageTolerancePct: z.number().min(0).max(100).default(0.5),
+  maxSlippageTolerancePct: z.number().min(0).max(100).default(1.0),
   priceCollarEnabled: z.boolean().default(true),
   priceCollarPct: z.number().min(0).default(2),
   repriceEnabled: z.boolean().default(false),

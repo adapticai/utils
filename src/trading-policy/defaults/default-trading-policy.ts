@@ -16,12 +16,12 @@ import { EffectiveTradingPolicySchema, type EffectiveTradingPolicy } from '../sc
  */
 export const DEFAULT_TRADING_POLICY: EffectiveTradingPolicy = EffectiveTradingPolicySchema.parse({
   autonomyMode: AutonomyMode.ADVISORY_ONLY,
-  realtimeTradingEnabled: false,
+  realtimeTradingEnabled: true,
   paperTradingOnly: false,
   killSwitchEnabled: false,
   equitiesEnabled: true,
   etfsEnabled: true,
-  cryptoEnabled: false,
+  cryptoEnabled: true,
   optionsEnabled: false,
   futuresEnabled: false,
   forexEnabled: false,

@@ -266,7 +266,7 @@ describe('ExecutionPrefsSchema', () => {
     expect(result.preferredOrderType).toBe('limit');
     expect(result.defaultTimeInForce).toBe('day');
     expect(result.executionBias).toBe('neutral');
-    expect(result.maxSlippageTolerancePct).toBe(0.5);
+    expect(result.maxSlippageTolerancePct).toBe(1.0);
     expect(result.failureBehavior).toBe('fail_safe');
   });
 
@@ -324,8 +324,8 @@ describe('PositionManagementPrefsSchema', () => {
     const result = PositionManagementPrefsSchema.parse({});
     expect(result.defaultStopLossMethod).toBe('trailing_stop');
     expect(result.scaleInEnabled).toBe(false);
-    expect(result.trailingStopTighteningRules).toHaveLength(2);
-    expect(result.trailingStopTighteningRules[0].profitThresholdPct).toBe(2);
+    expect(result.trailingStopTighteningRules).toHaveLength(3);
+    expect(result.trailingStopTighteningRules[0].profitThresholdPct).toBe(3);
   });
 });
 
@@ -406,9 +406,9 @@ describe('EffectiveTradingPolicySchema', () => {
 describe('DEFAULT_TRADING_POLICY', () => {
   it('has conservative defaults', () => {
     expect(DEFAULT_TRADING_POLICY.autonomyMode).toBe(AutonomyMode.ADVISORY_ONLY);
-    expect(DEFAULT_TRADING_POLICY.realtimeTradingEnabled).toBe(false);
+    expect(DEFAULT_TRADING_POLICY.realtimeTradingEnabled).toBe(true);
     expect(DEFAULT_TRADING_POLICY.shortingEnabled).toBe(false);
-    expect(DEFAULT_TRADING_POLICY.cryptoEnabled).toBe(false);
+    expect(DEFAULT_TRADING_POLICY.cryptoEnabled).toBe(true);
     expect(DEFAULT_TRADING_POLICY.miniModelProvider).toBeNull();
   });
 
