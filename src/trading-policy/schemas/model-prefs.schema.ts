@@ -43,6 +43,7 @@ export const ModelPrefsObjectSchema = z.object({
   memorySummaryCadenceMinutes: z.number().min(0).default(60),
   maxMemorySummariesRetained: z.number().min(0).default(50),
   excludedProvidersForWorkflows: z.record(z.string(), z.array(z.string())).default({}),
+  quantModelWeight: z.number().min(0).max(1).default(0.7),
 });
 
 export const ModelPrefsSchema = ModelPrefsObjectSchema.default({});
