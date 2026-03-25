@@ -102,10 +102,11 @@ export class OptionDataStream extends EventEmitter {
   constructor(client: AlpacaClient, config: Partial<OptionStreamConfig> = {}) {
     super();
     this.client = client;
-    this.config = {
+    const mergedConfig = {
       ...DEFAULT_OPTION_STREAM_CONFIG,
       ...config,
-    } as OptionStreamConfig;
+    };
+    this.config = mergedConfig as OptionStreamConfig;
     this.feed = config.feed || DEFAULT_OPTION_STREAM_CONFIG.feed || "opra";
   }
 
@@ -336,7 +337,7 @@ export class OptionDataStream extends EventEmitter {
   /**
    * Subscribe to option bars (not supported by SDK - logs warning)
    */
-  subscribeBars(symbols: string[]): void {
+  subscribeBars(_symbols: string[]): void {
     this.log("Option bars are not supported by the SDK option_stream", {
       type: "warn",
     });
@@ -366,7 +367,7 @@ export class OptionDataStream extends EventEmitter {
   /**
    * Unsubscribe from option bars (not supported)
    */
-  unsubscribeBars(symbols: string[]): void {
+  unsubscribeBars(_symbols: string[]): void {
     this.log("Option bars are not supported by the SDK option_stream", {
       type: "warn",
     });

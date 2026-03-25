@@ -4,7 +4,6 @@ import {
   Bar,
   AlpacaQuote,
   TimeFrame,
-  AlpacaTrade,
   AlpacaAsset,
   OptionBar,
   OptionTrade,
@@ -704,7 +703,7 @@ export class AlpacaMarketDataAPI extends EventEmitter {
   ): Promise<HistoricalBarsResponse> {
     const symbols = params.symbols;
     const symbolsStr = symbols.join(",");
-    let allBars: { [symbol: string]: Bar[] } = {};
+    const allBars: { [symbol: string]: Bar[] } = {};
     let pageToken: string | null = null;
     let hasMorePages = true;
     let totalBarsCount = 0;
@@ -1132,7 +1131,7 @@ export class AlpacaMarketDataAPI extends EventEmitter {
     params: LatestOptionsTradesParams,
   ): Promise<LatestOptionsTradesResponse> {
     // Remove limit and page_token as they're not supported by this endpoint
-    const { limit, page_token, ...requestParams } = params;
+    const { limit: _limit, page_token: _page_token, ...requestParams } = params;
     return this.makeRequest(
       "/options/trades/latest",
       "GET",
@@ -1152,7 +1151,7 @@ export class AlpacaMarketDataAPI extends EventEmitter {
     params: LatestOptionsQuotesParams,
   ): Promise<LatestOptionsQuotesResponse> {
     // Remove limit and page_token as they're not supported by this endpoint
-    const { limit, page_token, ...requestParams } = params;
+    const { limit: _limit, page_token: _page_token, ...requestParams } = params;
     return this.makeRequest(
       "/options/quotes/latest",
       "GET",
@@ -1174,7 +1173,7 @@ export class AlpacaMarketDataAPI extends EventEmitter {
   ): Promise<HistoricalOptionsBarsResponse> {
     const symbols = params.symbols;
     const symbolsStr = symbols.join(",");
-    let allBars: { [symbol: string]: OptionBar[] } = {};
+    const allBars: { [symbol: string]: OptionBar[] } = {};
     let pageToken: string | null = null;
     let hasMorePages = true;
     let totalBarsCount = 0;
@@ -1293,7 +1292,7 @@ export class AlpacaMarketDataAPI extends EventEmitter {
   ): Promise<HistoricalOptionsTradesResponse> {
     const symbols = params.symbols;
     const symbolsStr = symbols.join(",");
-    let allTrades: { [symbol: string]: OptionTrade[] } = {};
+    const allTrades: { [symbol: string]: OptionTrade[] } = {};
     let pageToken: string | null = null;
     let hasMorePages = true;
     let totalTradesCount = 0;
@@ -1411,7 +1410,7 @@ export class AlpacaMarketDataAPI extends EventEmitter {
     params: OptionsSnapshotsParams,
   ): Promise<OptionsSnapshotsResponse> {
     // Remove limit and page_token as they may not be supported by this endpoint
-    const { limit, page_token, ...requestParams } = params;
+    const { limit: _limit, page_token: _page_token, ...requestParams } = params;
     return this.makeRequest(
       "/options/snapshots",
       "GET",

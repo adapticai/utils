@@ -9,7 +9,6 @@ import {
 } from "../../types/alpaca-types";
 import { validateAuth } from "./auth";
 import {
-  createOrder,
   getOrders,
   cancelOrder,
   cancelAllOrders,
@@ -163,11 +162,12 @@ export async function closePosition(
       }
 
       // Construct global Alpaca Auth for quote fetching
-      const alpacaAuth = {
+      const alpacaAuthData = {
         type: "LIVE",
         alpacaApiKey: process.env.ALPACA_API_KEY,
         alpacaApiSecret: process.env.ALPACA_API_SECRET || process.env.ALPACA_SECRET_KEY,
-      } as AlpacaAuth;
+      };
+      const alpacaAuth = alpacaAuthData as AlpacaAuth;
 
       const quotesResponse = await getLatestQuotes(alpacaAuth, {
         symbols: [symbolOrAssetId],
@@ -452,11 +452,12 @@ export async function closeAllPositionsAfterHours(
     });
   }
 
-  const alpacaAuth = {
+  const alpacaAuthObj = {
     type: "LIVE",
     alpacaApiKey: process.env.ALPACA_API_KEY,
     alpacaApiSecret: process.env.ALPACA_SECRET_KEY,
-  } as AlpacaAuth;
+  };
+  const alpacaAuth = alpacaAuthObj as AlpacaAuth;
 
   const symbols = positions.map((position) => position.symbol);
   const quotesResponse = await getLatestQuotes(alpacaAuth, { symbols });

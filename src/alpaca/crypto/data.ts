@@ -9,7 +9,6 @@ import { LogOptions } from "../../types/logging-types";
 import {
   CryptoBar,
   CryptoPair,
-  CryptoTimeframe,
   BTCPairs,
   USDTPairs,
   USDCPairs,

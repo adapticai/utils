@@ -113,7 +113,7 @@ export const fetchTickerInfo = async (
         results.share_class_shares_outstanding = null;
       }
 
-      return {
+      const tickerInfo = {
         ticker: results.ticker,
         type: results.type,
         active: results.active,
@@ -125,7 +125,8 @@ export const fetchTickerInfo = async (
         name: results.name,
         primary_exchange: results.primary_exchange,
         share_class_shares_outstanding: results.share_class_shares_outstanding,
-      } as MassiveTickerInfo;
+      };
+      return tickerInfo as MassiveTickerInfo;
     } catch (error: unknown) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error occurred";
@@ -513,7 +514,7 @@ export function analyseMassivePriceData(priceData: MassivePriceData[]): string {
   const endTime = parsedData[parsedData.length - 1].date;
 
   // Calculate the total time in hours
-  const totalTimeInHours =
+  const _totalTimeInHours =
     (endTime.getTime() - startTime.getTime()) / (1000 * 60 * 60);
 
   // Calculate the interval between data points
@@ -587,7 +588,7 @@ export const fetchGroupedDaily = async (
         throw new Error(`Massive.com API responded with status: ${data.status}`);
       }
 
-      return {
+      const groupedDaily = {
         adjusted: data.adjusted,
         queryCount: data.queryCount,
         request_id: data.request_id,
@@ -604,7 +605,8 @@ export const fetchGroupedDaily = async (
           vwap: result.vw,
           trades: result.n,
         })),
-      } as MassiveGroupedDailyResponse;
+      };
+      return groupedDaily as MassiveGroupedDailyResponse;
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error occurred";

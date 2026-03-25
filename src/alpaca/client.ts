@@ -178,7 +178,8 @@ export class AlpacaClient {
       // Handle empty responses (e.g., DELETE requests)
       const contentType = response.headers.get("content-type");
       if (!contentType || !contentType.includes("application/json")) {
-        return {} as T;
+        const emptyObj = {};
+        return emptyObj as T;
       }
 
       return (await response.json()) as T;

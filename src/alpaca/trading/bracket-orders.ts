@@ -110,7 +110,7 @@ function validateBracketOrderParams(params: BracketOrderParams): void {
   // Validate price levels make sense based on side
   if (params.side === "buy") {
     // For a buy order, take profit should be higher than entry, stop loss lower
-    const entryPrice = params.limitPrice || params.takeProfit.limitPrice; // Use a reference price
+    const _entryPrice = params.limitPrice || params.takeProfit.limitPrice; // Use a reference price
     if (params.takeProfit.limitPrice <= params.stopLoss.stopPrice) {
       log(
         "Warning: Take profit price should typically be higher than stop loss price for buy orders",

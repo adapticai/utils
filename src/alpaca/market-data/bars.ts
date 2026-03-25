@@ -3,7 +3,7 @@
  * Historical and real-time OHLCV data using Alpaca SDK
  */
 import { AlpacaClient } from "../client";
-import { AlpacaSDKConfig, Bar, TimeFrame, SDKMarketDataOptions } from "../../types/alpaca-types";
+import { AlpacaSDKConfig, Bar, TimeFrame } from "../../types/alpaca-types";
 import { log as baseLog } from "../../logging";
 import { LogOptions } from "../../types/logging-types";
 

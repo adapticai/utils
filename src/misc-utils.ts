@@ -3,9 +3,9 @@ import { getLogger } from "./logger";
 import { withRetry } from "./utils/retry";
 
 // Define the possible log types as a const array for better type inference
-const LOG_TYPES = ["info", "warn", "error", "debug", "trace"] as const;
+const _LOG_TYPES = ["info", "warn", "error", "debug", "trace"] as const;
 // Create a union type from the array
-type LogType = (typeof LOG_TYPES)[number];
+type LogType = (typeof _LOG_TYPES)[number];
 
 /**
  * Debug logging utility that respects environment debug flags.

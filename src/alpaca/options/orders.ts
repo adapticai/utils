@@ -11,7 +11,6 @@ import {
   PositionIntent,
   TimeInForce,
   CreateMultiLegOrderParams,
-  OrderLeg,
   OrderStatus,
 } from "../../types/alpaca-types";
 

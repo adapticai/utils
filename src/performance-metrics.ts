@@ -9,9 +9,7 @@ import {
   PortfolioHistoryResponse,
   BenchmarkBar,
   CalculateBetaResult,
-  Bar,
   AlpacaAccountDetails,
-  FetchAccountDetailsProps,
   AlpacaAccountGetOptions,
 } from "./types/alpaca-types";
 import { Period, IntradayReporting } from "./types/market-time-types";
@@ -87,7 +85,7 @@ async function calculateExpenseRatio({
     return "N/A";
   }
 
-  let alpacaAccountId: string =
+  const alpacaAccountId: string =
     accountId || (alpacaAccount && alpacaAccount.id) || "";
   let accountDetails: AlpacaAccountDetails | null;
 
@@ -141,7 +139,7 @@ async function calculateExpenseRatio({
 
 // Mock function to represent fetching expenses from your system
 async function getPortfolioExpensesFromYourSystem(
-  accountId: string,
+  _accountId: string,
 ): Promise<number> {
   // Implement this function based on your data storage
 
@@ -167,7 +165,7 @@ async function calculateLiquidityRatio({
     return "N/A";
   }
 
-  let alpacaAccountId: string =
+  const alpacaAccountId: string =
     accountId || (alpacaAccount && alpacaAccount.id) || "";
   let accountDetails: AlpacaAccountDetails | null;
 
@@ -661,7 +659,7 @@ export function calculateDrawdownMetrics(
   let maxTroughIndex = 0;
   let peakIndex = 0;
   let peakValue = validEquity[0];
-  let currentPeakIndex = 0;
+  let _currentPeakIndex = 0;
   let currentPeakValue = validEquity[0];
   let recoveryIndex: number | undefined;
 
@@ -699,7 +697,7 @@ export function calculateDrawdownMetrics(
     // Track current peak for current drawdown calculation
     if (currentValue >= currentPeakValue) {
       currentPeakValue = currentValue;
-      currentPeakIndex = i;
+      _currentPeakIndex = i;
     }
   }
 
@@ -884,7 +882,7 @@ export function alignReturnsByDate(
  * @param portfolioHistory - The portfolio history data.
  * @throws Error if validation fails.
  */
-function validatePortfolioHistory(portfolioHistory: PortfolioHistory): void {
+function _validatePortfolioHistory(portfolioHistory: PortfolioHistory): void {
   const { equity, timestamp } = portfolioHistory;
 
   if (!equity || !Array.isArray(equity) || equity.length < 2) {
@@ -923,7 +921,7 @@ function validatePortfolioHistory(portfolioHistory: PortfolioHistory): void {
  * @param benchmarkBars - Array of benchmark bar data.
  * @throws Error if validation fails.
  */
-function validateBenchmarkBars(benchmarkBars: BenchmarkBar[]): void {
+function _validateBenchmarkBars(benchmarkBars: BenchmarkBar[]): void {
   if (
     !benchmarkBars ||
     !Array.isArray(benchmarkBars) ||
@@ -1236,7 +1234,7 @@ export async function fetchPerformanceMetrics({
     let benchmarkBars: BenchmarkBar[] = [];
 
     try {
-      const { start, end } = await getStartAndEndTimestamps({
+      const { start, end } = getStartAndEndTimestamps({
         timezone: "America/New_York",
         period:
           params?.period === "YTD" || params?.period === "1A"
@@ -1296,7 +1294,7 @@ export async function fetchPerformanceMetrics({
         alpacaAccount: alpacaAccountObj as types.AlpacaAccount,
       }),
       getDividendYield(),
-      calculateMaxDrawdown(portfolioHistory.equity),
+      Promise.resolve(calculateMaxDrawdown(portfolioHistory.equity)),
     ]);
 
     // Extract results with error handling for each metric

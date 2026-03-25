@@ -457,7 +457,7 @@ export function approximateImpliedVolatility(
   underlyingPrice: number,
   strike: number,
   daysToExpiration: number,
-  riskFreeRate: number = 0.05,
+  _riskFreeRate: number = 0.05,
   isCall: boolean = true,
 ): number {
   // Simplified IV approximation using Brenner-Subrahmanyam formula

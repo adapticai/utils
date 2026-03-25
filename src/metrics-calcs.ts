@@ -3,7 +3,6 @@ import { getLogger } from "./logger";
 
 import { Bar, BenchmarkBar } from "./types/alpaca-types";
 import { computeTotalFees } from "./price-utils";
-import { normalizeDate } from "./time-utils";
 import { types } from "@adaptic/backend-legacy";
 import { CalculateBetaResult, TradeMetrics } from "./types";
 /**
@@ -255,7 +254,7 @@ export function calculateBetaFromReturns(
  * @param isShort - Whether the position is a short position
  * @returns Array of position-appropriate returns
  */
-function calculatePositionAwareReturns(
+function _calculatePositionAwareReturns(
   prices: number[],
   isShort: boolean,
 ): number[] {

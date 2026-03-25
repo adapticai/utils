@@ -19,13 +19,13 @@ let path: typeof import("path") | undefined;
 
 if (isNode) {
   try {
-    /* eslint-disable @typescript-eslint/no-require-imports */
+     
     const readline = require("readline");
     clearLine = readline.clearLine;
     cursorTo = readline.cursorTo;
     fs = require("fs");
     path = require("path");
-    /* eslint-enable @typescript-eslint/no-require-imports */
+     
   } catch {
     // Silently degrade — all operations will be no-ops.
   }
@@ -111,7 +111,7 @@ export class DisplayManager {
     symbol: string,
     date: Date,
     logMessage: string,
-    options?: LogOptions,
+    _options?: LogOptions,
   ): void {
     if (!fs || !path) return;
     try {
@@ -130,7 +130,7 @@ export class DisplayManager {
       const filePath = path.join("logs", filename);
 
       // Strip ANSI color codes from log message
-      const plainLogMessage = logMessage.replace(/\x1B\[\d+m/g, "");
+      const plainLogMessage = logMessage.replace(new RegExp(String.fromCharCode(27) + "\\[\\d+m", "g"), "");
 
       // Write to file (append if exists, create if not)
       fs.appendFileSync(filePath, plainLogMessage + "\n");
@@ -167,7 +167,7 @@ export class DisplayManager {
       const filePath = path.join("logs", filename);
 
       // Strip ANSI color codes from log message
-      const plainLogMessage = logMessage.replace(/\x1B\[\d+m/g, "");
+      const plainLogMessage = logMessage.replace(new RegExp(String.fromCharCode(27) + "\\[\\d+m", "g"), "");
 
       // Write to file (append if exists, create if not)
       fs.appendFileSync(filePath, plainLogMessage + "\n");

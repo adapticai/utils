@@ -1,7 +1,7 @@
 // time-utils.ts
 
 import ms from "ms";
-import { fromZonedTime, format } from "date-fns-tz";
+import { fromZonedTime } from "date-fns-tz";
 
 // Helper function to convert timestamp to Unix timestamp in seconds
 export const toUnixTimestamp = (ts: string): number => {

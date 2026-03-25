@@ -172,7 +172,7 @@ export function calculateFibonacciLevels(
     const priceRange = swingHigh - swingLow;
 
     const trend = reverseDirection ? "downtrend" : "uptrend";
-    let levels: FibonacciLevel[] = [];
+    const levels: FibonacciLevel[] = [];
 
     if (priceRange > 0) {
       // Calculate retracement levels

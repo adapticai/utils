@@ -10,7 +10,7 @@ import {
   ReplaceOrderParams,
 } from "../../types/alpaca-types";
 import { validateAuth } from "./auth";
-import { getTradingApiUrl, MARKET_DATA_API } from "../../config/api-endpoints";
+import { getTradingApiUrl } from "../../config/api-endpoints";
 import { getLogger } from "../../logger";
 import { createTimeoutSignal, DEFAULT_TIMEOUTS } from "../../http-timeout";
 

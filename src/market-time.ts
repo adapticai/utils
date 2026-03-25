@@ -370,7 +370,7 @@ export class MarketTimeUtil {
 
     // In all other cases (during trading hours, before market open, holidays, weekends),
     // we want the last completed trading day
-    let lastFullDate = this.getLastMarketDay(nowET);
+    const lastFullDate = this.getLastMarketDay(nowET);
 
     // Set to midnight ET while preserving the date
     return fromZonedTime(
@@ -532,7 +532,6 @@ export class MarketTimeUtil {
     // Convert end date to specified timezone
     const zonedEndDate = toZonedTime(end, this.timezone);
 
-    let startDate: Date;
     let endDate: Date;
 
     const isCurrentMarketDay = this.isMarketDayZoned(zonedEndDate);
@@ -564,7 +563,7 @@ export class MarketTimeUtil {
     // Now calculate the start date based on the period
     const periodStartDate = this.calculatePeriodStartDate(endDate, period);
     const { start: dayStart } = this.getDayBoundaries(periodStartDate);
-    startDate = dayStart;
+    const startDate = dayStart;
 
     // Convert boundaries back to UTC for final output
     const utcStart = fromZonedTime(startDate, this.timezone);
@@ -906,7 +905,7 @@ export function getMarketStatus(options: { date?: Date } = {}): MarketStatus {
   const timeInMinutes = nyTime.getHours() * 60 + nyTime.getMinutes();
   const extendedStartMinutes = MARKET_TIMES.EXTENDED.START.MINUTES;
   const marketStartMinutes = MARKET_TIMES.REGULAR.START.MINUTES;
-  const endOfEarlyMarketMinutes = MARKET_TIMES.EARLY_MORNING.END.MINUTES;
+  const _endOfEarlyMarketMinutes = MARKET_TIMES.EARLY_MORNING.END.MINUTES;
   const marketRegularCloseMinutes = isEarlyCloseDay
     ? MARKET_TIMES.EARLY_CLOSE_BEFORE_HOLIDAY.END.MINUTES
     : MARKET_TIMES.REGULAR.END.MINUTES;

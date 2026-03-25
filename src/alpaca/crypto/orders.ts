@@ -12,7 +12,6 @@ import {
   OrderSide,
   OrderType,
   TimeInForce,
-  CryptoPair,
 } from "../../types/alpaca-types";
 
 const LOG_SOURCE = "CryptoOrders";

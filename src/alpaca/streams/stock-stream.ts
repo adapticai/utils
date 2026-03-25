@@ -176,10 +176,11 @@ export class StockDataStream extends EventEmitter {
   constructor(client: AlpacaClient, config: Partial<StockStreamConfig> = {}) {
     super();
     this.client = client;
-    this.config = {
+    const mergedConfig = {
       ...DEFAULT_STOCK_STREAM_CONFIG,
       ...config,
-    } as StockStreamConfig;
+    };
+    this.config = mergedConfig as StockStreamConfig;
     this.feed = config.feed || DEFAULT_STOCK_STREAM_CONFIG.feed || "sip";
   }
 

@@ -34,38 +34,19 @@ const calculateFees = async (
     Number(order.filled_avg_price || order.limit_price || order.stop_price) ||
     0;
 
-  // Determine trade value
-  const tradeValue = qty ? qty * filledPrice : notional;
+  // Determine trade value (reserved for future fee calculations)
+  const _tradeValue = qty ? qty * filledPrice : notional;
 
-  let perContractFee = 0;
-  let baseCommission = 0;
-  let commissionFee = 0;
-  let regulatoryFee = 0;
+  const _perContractFee = 0;
+  const _baseCommission = 0;
+  const _commissionFee = 0;
+  const _regulatoryFee = 0;
 
   switch (assetType) {
     case "STOCK" as enums.AssetType.STOCK:
-    // case "ETF" as enums.AssetType.ETF:
-    //   commissionFee =
-    //     (tradeValue * FEE_CONFIG.SHARES_COMMISSION_PERCENTAGE) / 100;
-    //   regulatoryFee =
-    //     (tradeValue * FEE_CONFIG.REGULATORY_FEES_PERCENTAGE) / 100;
-    //   fee = commissionFee + regulatoryFee;
-    //   break;
-
-    // case "OPTION" as enums.AssetType.OPTION:
-    //   perContractFee = qty * FEE_CONFIG.OPTIONS_PER_CONTRACT_FEE;
-    //   baseCommission = FEE_CONFIG.OPTIONS_BASE_COMMISSION;
-    //   fee = perContractFee + baseCommission;
-    //   break;
-
-    // case "CRYPTOCURRENCY" as enums.AssetType.CRYPTOCURRENCY:
-    //   fee = (tradeValue * FEE_CONFIG.CRYPTO_TRANSACTION_PERCENTAGE) / 100;
-    //   break;
-
-    // case "FUTURE" as enums.AssetType.FUTURE:
-    //   // Sum of all futures fees
-    //   fee = 0.85 + 0.85 + 0.25 + 0.02 + 0.01 + 0.3 + 0.01;
-    //   break;
+      // Currently zero fees for stocks via Alpaca
+      fee = 0;
+      break;
 
     default:
       fee = 0;

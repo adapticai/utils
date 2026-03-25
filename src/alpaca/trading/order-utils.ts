@@ -334,7 +334,7 @@ export async function getFilledOrders(
   client: AlpacaClient,
   params: GetFilledOrdersParams,
 ): Promise<AlpacaOrder[]> {
-  const sdk = client.getSDK();
+  const _sdk = client.getSDK();
   const { startDate, endDate, symbols, side } = params;
 
   try {

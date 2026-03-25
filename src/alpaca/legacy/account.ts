@@ -35,11 +35,12 @@ export async function fetchAccountDetails({
 
   if (!alpacaAccountObj && auth) {
     const validatedAuth = await validateAuth(auth);
-    alpacaAccountObj = {
+    const accountFromAuth = {
       APIKey: validatedAuth.APIKey,
       APISecret: validatedAuth.APISecret,
       type: validatedAuth.type,
-    } as types.AlpacaAccount;
+    };
+    alpacaAccountObj = accountFromAuth as types.AlpacaAccount;
   }
 
   if (!alpacaAccountObj) {
@@ -390,8 +391,7 @@ export async function updateConfiguration(
       }
 
       if (account.allocation) {
-        allocUpdatePromise = adaptic.allocation.update(
-          {
+        const allocUpdateData = {
             id: account.allocation.id,
             alpacaAccount: {
               id: account.id,
@@ -403,12 +403,13 @@ export async function updateConfiguration(
             etfs: updatedConfig.allocation.etfs ?? 0,
             forex: updatedConfig.allocation.forex ?? 0,
             crypto: updatedConfig.allocation.crypto ?? 0,
-          } as Partial<types.Allocation> as types.Allocation,
+          };
+        allocUpdatePromise = adaptic.allocation.update(
+          allocUpdateData as Partial<types.Allocation> as types.Allocation,
           client,
         );
       } else {
-        allocUpdatePromise = adaptic.allocation.create(
-          {
+        const allocCreateData = {
             stocks: updatedConfig.allocation.stocks ?? 0,
             options: updatedConfig.allocation.options ?? 0,
             futures: updatedConfig.allocation.futures ?? 0,
@@ -419,14 +420,15 @@ export async function updateConfiguration(
               id: account.id,
             },
             alpacaAccountId: account.id,
-          } as Partial<types.Allocation> as types.Allocation,
+          };
+        allocUpdatePromise = adaptic.allocation.create(
+          allocCreateData as Partial<types.Allocation> as types.Allocation,
           client,
         );
       }
     }
 
-    const adapticUpdatePromise = adaptic.alpacaAccount.update(
-      {
+    const accountUpdateData = {
         id: account.id,
         user: {
           id: user.id,
@@ -464,7 +466,9 @@ export async function updateConfiguration(
           updatedConfig.secondReducedTrailPercentage100 ?? 0,
         minimumPriceChangePercent100:
           updatedConfig.minimumPriceChangePercent100 ?? 0,
-      } as Partial<types.AlpacaAccount> as types.AlpacaAccount,
+      };
+    const adapticUpdatePromise = adaptic.alpacaAccount.update(
+      accountUpdateData as Partial<types.AlpacaAccount> as types.AlpacaAccount,
       client,
     );
 

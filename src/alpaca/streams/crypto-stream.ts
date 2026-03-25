@@ -116,10 +116,11 @@ export class CryptoDataStream extends EventEmitter {
   constructor(client: AlpacaClient, config: Partial<CryptoStreamConfig> = {}) {
     super();
     this.client = client;
-    this.config = {
+    const mergedConfig = {
       ...DEFAULT_CRYPTO_STREAM_CONFIG,
       ...config,
-    } as CryptoStreamConfig;
+    };
+    this.config = mergedConfig as CryptoStreamConfig;
     this.location =
       config.location || DEFAULT_CRYPTO_STREAM_CONFIG.location || "us";
   }

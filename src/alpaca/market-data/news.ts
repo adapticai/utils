@@ -6,7 +6,6 @@ import { AlpacaClient } from "../client";
 import {
   AlpacaNewsArticle,
   SimpleNews,
-  NewsResponse,
 } from "../../types/alpaca-types";
 import { log as baseLog } from "../../logging";
 import { LogOptions } from "../../types/logging-types";

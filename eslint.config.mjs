@@ -123,6 +123,93 @@ export default [
     },
   },
   {
+    // Example, testing, logger, and display files - allow console usage
+    files: [
+      "src/examples/**/*.ts",
+      "src/testing/**/*.ts",
+      "src/alpaca/test-imports.ts",
+      "src/logger.ts",
+      "src/display-manager.ts",
+    ],
+    languageOptions: {
+      parser: tsparser,
+      parserOptions: {
+        ecmaVersion: "latest",
+        sourceType: "module",
+        project: "./tsconfig.json",
+      },
+      globals: {
+        console: "readonly",
+        process: "readonly",
+        Buffer: "readonly",
+        __dirname: "readonly",
+        __filename: "readonly",
+        NodeJS: "readonly",
+        setTimeout: "readonly",
+        setInterval: "readonly",
+        clearTimeout: "readonly",
+        clearInterval: "readonly",
+      },
+    },
+    plugins: {
+      "@typescript-eslint": tseslint,
+    },
+    rules: {
+      ...eslint.configs.recommended.rules,
+      ...tseslint.configs["recommended"].rules,
+
+      // === Type Safety (institutional-grade) ===
+      "@typescript-eslint/no-explicit-any": "error",
+      "@typescript-eslint/no-unsafe-assignment": "warn",
+      "@typescript-eslint/no-unsafe-member-access": "warn",
+      "@typescript-eslint/no-unsafe-call": "warn",
+      "@typescript-eslint/no-unsafe-return": "warn",
+      "@typescript-eslint/no-unsafe-argument": "warn",
+      "@typescript-eslint/consistent-type-assertions": [
+        "error",
+        { assertionStyle: "as", objectLiteralTypeAssertions: "allow-as-parameter" },
+      ],
+      "@typescript-eslint/no-non-null-assertion": "warn",
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          caughtErrors: "none",
+        },
+      ],
+
+      // === Async Safety ===
+      "@typescript-eslint/no-floating-promises": "error",
+      "@typescript-eslint/no-misused-promises": [
+        "error",
+        {
+          checksVoidReturn: {
+            arguments: false,
+            attributes: true,
+            properties: true,
+            returns: true,
+            variables: true,
+          },
+          checksConditionals: true,
+        },
+      ],
+      "@typescript-eslint/await-thenable": "error",
+
+      // === Code Quality ===
+      "@typescript-eslint/no-require-imports": "off",
+      "no-console": "off",
+      "no-debugger": "error",
+      "no-var": "error",
+      "prefer-const": "error",
+      "no-eval": "error",
+      "no-implied-eval": "error",
+      "no-undef": "off",
+      "no-case-declarations": "error",
+      "no-throw-literal": "error",
+    },
+  },
+  {
     // Test files - relaxed rules
     files: [
       "**/__tests__/**/*.ts",

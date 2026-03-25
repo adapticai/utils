@@ -41,25 +41,21 @@ import { LogOptions } from "../../types/logging-types";
 import {
   TradingStream,
   createTradingStream,
-  TradingStreamEventMap,
 } from "./trading-stream";
 import {
   StockDataStream,
   createStockDataStream,
   StockStreamConfig,
-  StockStreamEventMap,
 } from "./stock-stream";
 import {
   OptionDataStream,
   createOptionDataStream,
   OptionStreamConfig,
-  OptionStreamEventMap,
 } from "./option-stream";
 import {
   CryptoDataStream,
   createCryptoDataStream,
   CryptoStreamConfig,
-  CryptoStreamEventMap,
 } from "./crypto-stream";
 import { StreamConfig, StreamState, SubscriptionRequest } from "./base-stream";
 

@@ -359,7 +359,7 @@ export async function withRetry<T>(
  * API-specific retry configurations for different external services.
  * These configurations are tuned based on each API's rate limits and characteristics.
  */
-export const API_RETRY_CONFIGS = {
+export const API_RETRY_CONFIGS: Record<string, Partial<RetryConfig>> = {
   /** Massive.com API - 5 requests/second rate limit */
   MASSIVE: {
     maxRetries: 3,
@@ -367,7 +367,7 @@ export const API_RETRY_CONFIGS = {
     maxDelayMs: 30000,
     retryableStatusCodes: [429, 500, 502, 503, 504],
     retryOnNetworkError: true,
-  } as Partial<RetryConfig>,
+  },
 
   /** Alpha Vantage API - 5 requests/minute rate limit (more strict) */
   ALPHA_VANTAGE: {
@@ -376,7 +376,7 @@ export const API_RETRY_CONFIGS = {
     maxDelayMs: 60000,
     retryableStatusCodes: [429, 500, 502, 503, 504],
     retryOnNetworkError: true,
-  } as Partial<RetryConfig>,
+  },
 
   /** Alpaca API - generally reliable, shorter retry window */
   ALPACA: {
@@ -385,7 +385,7 @@ export const API_RETRY_CONFIGS = {
     maxDelayMs: 30000,
     retryableStatusCodes: [429, 500, 502, 503, 504],
     retryOnNetworkError: true,
-  } as Partial<RetryConfig>,
+  },
 
   /** Generic crypto API configuration */
   CRYPTO: {
@@ -394,5 +394,5 @@ export const API_RETRY_CONFIGS = {
     maxDelayMs: 30000,
     retryableStatusCodes: [429, 500, 502, 503, 504],
     retryOnNetworkError: true,
-  } as Partial<RetryConfig>,
+  },
 };

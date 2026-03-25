@@ -29,7 +29,6 @@ import {
   AllocationPreferences,
   AllocationConstraint,
   DefaultRiskProfile,
-  RiskAdjustedParameters,
 } from "./types/asset-allocation-types";
 
 /**
@@ -486,7 +485,7 @@ export class AssetAllocationEngine {
     allocations: Map<AllocationAssetClass, number>,
     preferences?: AllocationPreferences,
     constraints?: AllocationConstraint[],
-    characteristics?: AssetClassCharacteristics[],
+    _characteristics?: AssetClassCharacteristics[],
   ): Map<AllocationAssetClass, number> {
     const constrained = new Map(allocations);
 
