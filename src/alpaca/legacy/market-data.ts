@@ -23,7 +23,47 @@ const DEFAULT_CURRENCY = "USD";
 const DEFAULT_FEED: DataFeed = "sip";
 
 /**
+ * Known quote currencies that signal a crypto pair when found as a suffix.
+ * E.g. "BTCUSD" → crypto, "AAPL" → equity.
+ */
+const CRYPTO_QUOTE_CURRENCIES = ["USD", "USDT", "USDC", "BTC"] as const;
+
+/**
+ * Detect whether a symbol looks like a crypto pair (e.g. "BTCUSD", "DOGEUSD",
+ * "BTC/USD"). Equity tickers never end with these suffixes because Alpaca
+ * equity symbols are plain tickers without a quote currency.
+ */
+function isCryptoSymbol(symbol: string): boolean {
+  if (symbol.includes("/")) return true;
+  const upper = symbol.toUpperCase();
+  return CRYPTO_QUOTE_CURRENCIES.some((qc) => {
+    if (!upper.endsWith(qc)) return false;
+    const base = upper.slice(0, -qc.length);
+    // Require at least 2-char base (e.g. "BT" from "BTUSD" is valid, "U" from "UUSD" is unlikely but acceptable)
+    return base.length >= 2;
+  });
+}
+
+/**
+ * Convert a flat crypto symbol (e.g. "DOGEUSD") to the slash-separated
+ * format the Alpaca crypto data API expects ("DOGE/USD").
+ */
+function normalizeCryptoSymbolForApi(symbol: string): string {
+  if (symbol.includes("/")) return symbol.toUpperCase();
+  const upper = symbol.toUpperCase();
+  for (const qc of CRYPTO_QUOTE_CURRENCIES) {
+    if (upper.endsWith(qc)) {
+      const base = upper.slice(0, -qc.length);
+      if (base.length >= 2) return `${base}/${qc}`;
+    }
+  }
+  return `${upper}/USD`;
+}
+
+/**
  * Get the most recent quotes for requested symbols.
+ * Automatically routes crypto symbols to the crypto data API and equity
+ * symbols to the stocks data API, then merges the results.
  * @param auth - The authentication details for Alpaca
  * @param params - Parameters including symbols array, optional feed and currency
  * @returns Latest quote data for each symbol
@@ -49,17 +89,75 @@ export async function getLatestQuotes(
     };
   }
 
-  const queryParams = new URLSearchParams();
-  queryParams.append("symbols", symbols.join(","));
-  queryParams.append("feed", feed || DEFAULT_FEED);
-  queryParams.append("currency", currency || DEFAULT_CURRENCY);
+  // Partition symbols into crypto and equity groups
+  const equitySymbols: string[] = [];
+  const cryptoSymbols: string[] = [];
+  for (const sym of symbols) {
+    if (isCryptoSymbol(sym)) {
+      cryptoSymbols.push(sym);
+    } else {
+      equitySymbols.push(sym);
+    }
+  }
 
-  return makeRequest(auth, {
-    endpoint: "/v2/stocks/quotes/latest",
-    method: "GET",
-    queryString: `?${queryParams.toString()}`,
-    apiBaseUrl: MARKET_DATA_API.STOCKS.replace("/v2", ""),
-  });
+  // Fetch from both endpoints concurrently
+  const results: LatestQuotesResponse = {
+    quotes: {},
+    currency: currency || DEFAULT_CURRENCY,
+  };
+
+  const fetchPromises: Promise<void>[] = [];
+
+  // Equity quotes from stocks API
+  if (equitySymbols.length > 0) {
+    const equityPromise = (async () => {
+      const queryParams = new URLSearchParams();
+      queryParams.append("symbols", equitySymbols.join(","));
+      queryParams.append("feed", feed || DEFAULT_FEED);
+      queryParams.append("currency", currency || DEFAULT_CURRENCY);
+
+      const response = await makeRequest<LatestQuotesResponse>(auth, {
+        endpoint: "/v2/stocks/quotes/latest",
+        method: "GET",
+        queryString: `?${queryParams.toString()}`,
+        apiBaseUrl: MARKET_DATA_API.STOCKS.replace("/v2", ""),
+      });
+      Object.assign(results.quotes, response.quotes);
+    })();
+    fetchPromises.push(equityPromise);
+  }
+
+  // Crypto quotes from crypto API
+  if (cryptoSymbols.length > 0) {
+    const cryptoPromise = (async () => {
+      // Alpaca crypto data API expects slash-separated symbols (BTC/USD)
+      const normalizedMap = new Map<string, string>();
+      for (const sym of cryptoSymbols) {
+        normalizedMap.set(normalizeCryptoSymbolForApi(sym), sym);
+      }
+      const normalizedSymbols = [...normalizedMap.keys()];
+
+      const queryParams = new URLSearchParams();
+      queryParams.append("symbols", normalizedSymbols.join(","));
+
+      const response = await makeRequest<LatestQuotesResponse>(auth, {
+        endpoint: "/v1beta3/crypto/us/latest/quotes",
+        method: "GET",
+        queryString: `?${queryParams.toString()}`,
+        apiBaseUrl: MARKET_DATA_API.CRYPTO.replace("/v1beta3", ""),
+      });
+
+      // Map response keys back to original symbol format
+      for (const [normalizedSym, quote] of Object.entries(response.quotes)) {
+        const originalSym = normalizedMap.get(normalizedSym) ?? normalizedSym;
+        results.quotes[originalSym] = quote;
+      }
+    })();
+    fetchPromises.push(cryptoPromise);
+  }
+
+  await Promise.all(fetchPromises);
+  return results;
 }
 
 /**
