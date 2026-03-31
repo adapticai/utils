@@ -23,6 +23,9 @@ export const AuditNotificationPrefsObjectSchema = z.object({
   incidentAlertEndpoint: z.string().default(''),
   requirePostActionExplanation: z.boolean().default(true),
   retainDecisionArtifactsDays: z.number().min(0).default(90),
+
+  /** Trade confirmation email preference. Synced to Alpaca API. */
+  tradeConfirmEmail: z.enum(['all', 'none']).default('all'),
 });
 
 export const AuditNotificationPrefsSchema = AuditNotificationPrefsObjectSchema.default({});

@@ -52,6 +52,11 @@ export const SignalConsumptionPrefsObjectSchema = z.object({
   earningsBlackoutEnabled: z.boolean().default(false),
   earningsBlackoutHoursBefore: z.number().min(0).default(24),
   earningsBlackoutHoursAfter: z.number().min(0).default(2),
+
+  /** Minimum price movement % to qualify as a tradeable signal. Replaces legacy AlpacaAccount.minPercentageChange. */
+  minPercentageChange: z.number().min(0).default(0.5),
+  /** Minimum average daily volume to qualify a symbol for trading. Replaces legacy AlpacaAccount.volumeThreshold. */
+  volumeThreshold: z.number().min(0).default(50000),
 });
 
 export const SignalConsumptionPrefsSchema = SignalConsumptionPrefsObjectSchema.default({});

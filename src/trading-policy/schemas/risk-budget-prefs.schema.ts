@@ -29,6 +29,18 @@ export const RiskBudgetPrefsObjectSchema = z.object({
   weekendExposureCapPct: z.number().min(0).max(100).default(30),
   eventRiskExposureCapPct: z.number().min(0).max(100).default(40),
   gapRiskSensitivity: z.enum(['low', 'medium', 'high']).default('medium'),
+
+  /** Per-trade equity allocation as % of account equity. Replaces legacy AlpacaAccount.tradeAllocationPct. */
+  perTradeAllocationPct: z.number().min(0).max(100).default(5),
+  /** Per-trade crypto allocation as % of account equity. Replaces legacy AlpacaAccount.cryptoTradeAllocationPct. */
+  perTradeCryptoAllocationPct: z.number().min(0).max(100).default(5),
+
+  /** Alpaca day-trading buying power check enforcement. Synced to Alpaca API. */
+  dtbpCheck: z.enum(['both', 'entry', 'exit']).default('both'),
+  /** Alpaca pattern day trader rule enforcement. Synced to Alpaca API. */
+  pdtCheck: z.enum(['both', 'entry', 'exit']).default('both'),
+  /** Strict PDT enforcement — block all violations without exception. Synced to Alpaca API. */
+  ptpNoExceptionEntry: z.boolean().default(false),
 });
 
 export const RiskBudgetPrefsSchema = RiskBudgetPrefsObjectSchema.default({});
