@@ -41,6 +41,15 @@ const MASSIVE_CONCURRENCY_LIMIT = 100;
 
 const massiveLimit = pLimit(MASSIVE_CONCURRENCY_LIMIT);
 
+/**
+ * In-flight request deduplication for fetchLastTrade.
+ * When multiple callers request the same symbol simultaneously (e.g. 10 options
+ * contracts all need the AMD underlying price), only one actual HTTP request is
+ * made. All callers share the same Promise. The entry is removed when the
+ * request settles, so subsequent calls after resolution make a fresh request.
+ */
+const fetchLastTradeInflight = new Map<string, Promise<MassiveQuote>>();
+
 // Use to update general information about stocks
 /**
  * Fetches general information about a stock ticker.
@@ -163,6 +172,30 @@ export const fetchTickerInfo = async (
  */
 
 export const fetchLastTrade = async (
+  symbol: string,
+  options?: { apiKey?: string },
+): Promise<MassiveQuote> => {
+  // Coalesce concurrent requests for the same symbol.
+  // If a request is already in-flight, return the shared promise.
+  const inflight = fetchLastTradeInflight.get(symbol);
+  if (inflight) {
+    return inflight;
+  }
+
+  const promise = fetchLastTradeImpl(symbol, options);
+  fetchLastTradeInflight.set(symbol, promise);
+
+  try {
+    return await promise;
+  } finally {
+    fetchLastTradeInflight.delete(symbol);
+  }
+};
+
+/**
+ * Internal implementation of fetchLastTrade (called once per dedup window).
+ */
+const fetchLastTradeImpl = async (
   symbol: string,
   options?: { apiKey?: string },
 ): Promise<MassiveQuote> => {
