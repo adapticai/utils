@@ -6,11 +6,11 @@ import { EffectiveTradingPolicySchema, type EffectiveTradingPolicy } from '../sc
  * user-customized policy exists. All nested preference sub-objects are
  * passed as empty objects so Zod applies their field-level defaults.
  *
- * Key conservative choices:
+ * Key choices:
  * - Advisory-only autonomy (no autonomous execution)
- * - Real-time trading disabled
- * - Only equities, ETFs, and fractional shares enabled
- * - No shorting, margin, crypto, options, futures, or forex
+ * - Real-time trading enabled
+ * - Equities, ETFs, crypto, options, futures, and forex enabled
+ * - No shorting or margin (user must opt-in)
  * - All protective overlays disabled (user must opt-in)
  * - No LLM providers pre-configured
  */
@@ -22,9 +22,9 @@ export const DEFAULT_TRADING_POLICY: EffectiveTradingPolicy = EffectiveTradingPo
   equitiesEnabled: true,
   etfsEnabled: true,
   cryptoEnabled: true,
-  optionsEnabled: false,
-  futuresEnabled: false,
-  forexEnabled: false,
+  optionsEnabled: true,
+  futuresEnabled: true,
+  forexEnabled: true,
   shortingEnabled: false,
   marginEnabled: false,
   fractionalSharesEnabled: true,
