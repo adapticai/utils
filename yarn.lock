@@ -11,10 +11,10 @@
     cross-fetch "^4.0.0"
     reflect-metadata "^0.2.2"
 
-"@adaptic/backend-legacy@^0.0.931":
-  version "0.0.931"
-  resolved "https://registry.npmjs.org/@adaptic/backend-legacy/-/backend-legacy-0.0.931.tgz"
-  integrity sha512-HaCPJB9ALENFrTHLJIWJCZYNJ0Lx3ew3uPHoHPt5niVxlH2DgO9Dvtqk+8QIcW3ceklTVZvNTqxU0ft9Rmbbqw==
+"@adaptic/backend-legacy@^0.0.934":
+  version "0.0.934"
+  resolved "https://registry.npmjs.org/@adaptic/backend-legacy/-/backend-legacy-0.0.934.tgz"
+  integrity sha512-vtmcHSqht4jsMCg373LFGmMFotyAZIXPoIN5y+GpWeYT0ZhwMiK/1hwmj3N5GOMVEqF2noHwcn4jzJ9hkdfMDA==
   dependencies:
     "@prisma/client" "^6.19.0"
     cross-fetch "^4.0.0"
