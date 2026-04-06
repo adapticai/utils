@@ -56,9 +56,9 @@ export const WEBSOCKET_STREAMS = {
     PAPER: "wss://paper-api.alpaca.markets/stream",
     LIVE: "wss://api.alpaca.markets/stream",
   },
-  /** Stock market data stream (v2) */
+  /** Stock market data stream (v2). Feed controlled by ALPACA_DATA_FEED env (iex|sip, default: iex). */
   STOCKS: {
-    PRODUCTION: "wss://stream.data.alpaca.markets/v2/sip",
+    PRODUCTION: `wss://stream.data.alpaca.markets/v2/${process.env.ALPACA_DATA_FEED || "iex"}`,
     TEST: "wss://stream.data.alpaca.markets/v2/test",
   },
   /** Options market data stream (v1beta3) */
