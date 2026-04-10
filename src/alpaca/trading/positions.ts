@@ -356,7 +356,15 @@ export async function closePosition(
   symbol: string,
   options?: ClosePositionOptions,
 ): Promise<AlpacaOrder> {
-  log(`Closing position for ${symbol}`, { type: "info", symbol });
+  // Normalize crypto symbols: Alpaca positions endpoint rejects hyphenated
+  // format (e.g., "SOL-USD") but accepts concatenated form (e.g., "SOLUSD").
+  const isCrypto = symbol.includes("/") || symbol.includes("-") ||
+    /^[A-Z]{2,}USD[TC]?$/i.test(symbol);
+  const normalizedSymbol = isCrypto
+    ? symbol.replace(/[-/]/g, "")
+    : symbol;
+
+  log(`Closing position for ${normalizedSymbol}`, { type: "info", symbol: normalizedSymbol });
 
   try {
     const sdk = client.getSDK();
@@ -366,18 +374,18 @@ export async function closePosition(
 
     if (options?.qty !== undefined) {
       queryParams.qty = options.qty.toString();
-      log(`Closing ${options.qty} shares of ${symbol}`, {
+      log(`Closing ${options.qty} shares of ${normalizedSymbol}`, {
         type: "info",
-        symbol,
+        symbol: normalizedSymbol,
       });
     } else if (options?.percentage !== undefined) {
       queryParams.percentage = options.percentage.toString();
-      log(`Closing ${options.percentage}% of ${symbol} position`, {
+      log(`Closing ${options.percentage}% of ${normalizedSymbol} position`, {
         type: "info",
-        symbol,
+        symbol: normalizedSymbol,
       });
     } else {
-      log(`Closing entire position for ${symbol}`, { type: "info", symbol });
+      log(`Closing entire position for ${normalizedSymbol}`, { type: "info", symbol: normalizedSymbol });
     }
 
     // Use sendRequest for parameterized close, closePosition for full close
@@ -385,25 +393,25 @@ export async function closePosition(
     if (Object.keys(queryParams).length > 0) {
       // SDK doesn't support params, use sendRequest directly
       order = (await sdk.sendRequest(
-        `/positions/${encodeURIComponent(symbol)}`,
+        `/positions/${encodeURIComponent(normalizedSymbol)}`,
         queryParams,
         null,
         "DELETE",
       )) as AlpacaOrder;
     } else {
-      order = (await sdk.closePosition(symbol)) as AlpacaOrder;
+      order = (await sdk.closePosition(normalizedSymbol)) as AlpacaOrder;
     }
 
-    log(`Position close order created for ${symbol}: ${order.id}`, {
+    log(`Position close order created for ${normalizedSymbol}: ${order.id}`, {
       type: "info",
-      symbol,
+      symbol: normalizedSymbol,
     });
     return order;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
-    log(`Failed to close position for ${symbol}: ${message}`, {
+    log(`Failed to close position for ${normalizedSymbol}: ${message}`, {
       type: "error",
-      symbol,
+      symbol: normalizedSymbol,
     });
     throw error;
   }

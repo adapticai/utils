@@ -90,7 +90,12 @@ export async function fetchPosition(
     const { APIKey, APISecret, type } = await validateAuth(auth);
     const apiBaseUrl = getTradingApiUrl(type as "PAPER" | "LIVE");
 
-    const response = await fetch(`${apiBaseUrl}/positions/${symbolOrAssetId}`, {
+    // Normalize crypto symbols for Alpaca API compatibility
+    const normalizedSymbol = isCryptoSymbol(symbolOrAssetId)
+      ? symbolOrAssetId.replace(/[-/]/g, "")
+      : symbolOrAssetId;
+
+    const response = await fetch(`${apiBaseUrl}/positions/${normalizedSymbol}`, {
       method: "GET",
       headers: {
         "APCA-API-KEY-ID": APIKey,
@@ -145,6 +150,13 @@ export async function closePosition(
     const { APIKey, APISecret, type } = await validateAuth(auth);
     const apiBaseUrl = getTradingApiUrl(type as "PAPER" | "LIVE");
 
+    // Normalize crypto symbols for Alpaca API compatibility.
+    // Alpaca positions endpoint rejects hyphenated format (e.g., "SOL-USD")
+    // but accepts concatenated form (e.g., "SOLUSD").
+    const normalizedSymbol = isCryptoSymbol(symbolOrAssetId)
+      ? symbolOrAssetId.replace(/[-/]/g, "")
+      : symbolOrAssetId;
+
     const useLimitOrder = params?.useLimitOrder ?? false;
     const cancelOrdersFlag = params?.cancelOrders ?? true;
     const slippagePercent1 = params?.slippagePercent1 ?? 0.1;
@@ -153,20 +165,20 @@ export async function closePosition(
     // Cancel open orders for this symbol if requested
     if (cancelOrdersFlag) {
       getLogger().info(
-        `Canceling open orders for ${symbolOrAssetId} before closing position`,
+        `Canceling open orders for ${normalizedSymbol} before closing position`,
         {
           account: auth.adapticAccountId || "direct",
-          symbol: symbolOrAssetId,
+          symbol: normalizedSymbol,
         },
       );
 
       const openOrders = await getOrders(auth, {
         status: "open",
-        symbols: [symbolOrAssetId],
+        symbols: [normalizedSymbol],
       });
 
       for (const order of openOrders) {
-        if (order.symbol === symbolOrAssetId) {
+        if (order.symbol === normalizedSymbol) {
           await cancelOrder(auth, order.id);
         }
       }
@@ -252,8 +264,8 @@ export async function closePosition(
     // for crypto symbols, or as a fallback when limit order quotes are unavailable
     if (isCryptoSymbol(symbolOrAssetId)) {
       getLogger().info(
-        `Closing crypto position ${symbolOrAssetId} via market order (DELETE endpoint)`,
-        { account: auth.adapticAccountId || "direct", symbol: symbolOrAssetId },
+        `Closing crypto position ${normalizedSymbol} via market order (DELETE endpoint)`,
+        { account: auth.adapticAccountId || "direct", symbol: normalizedSymbol },
       );
     }
     const queryParams = new URLSearchParams();
@@ -265,7 +277,7 @@ export async function closePosition(
     }
 
     const queryString = queryParams.toString();
-    const url = `${apiBaseUrl}/positions/${encodeURIComponent(symbolOrAssetId)}${queryString ? `?${queryString}` : ""}`;
+    const url = `${apiBaseUrl}/positions/${encodeURIComponent(normalizedSymbol)}${queryString ? `?${queryString}` : ""}`;
 
     const response = await fetch(url, {
       method: "DELETE",
