@@ -172,24 +172,30 @@ export async function closePosition(
         },
       );
 
-      // Alpaca stores crypto orders under "SOL/USD" (slash format) but we may
-      // receive "SOL-USD" (hyphen) or "SOLUSD" (concatenated). Query all three
-      // formats so getOrders returns matching open orders for cancellation.
-      const slashSymbol = normalizedSymbol.replace(/^([A-Z]+)(USD[TC]?)$/i, "$1/$2");
-      const orderSymbols = isCryptoSymbol(symbolOrAssetId)
-        ? [...new Set([normalizedSymbol, symbolOrAssetId, slashSymbol])]
-        : [normalizedSymbol];
-      const openOrders = await getOrders(auth, {
-        status: "open",
-        symbols: orderSymbols,
-      });
+      // For crypto, Alpaca stores orders under "SOL/USD" (slash format) but the
+      // symbols filter may not match across formats reliably. Fetch all open
+      // orders without symbol filter and match client-side via normalization.
+      const openOrders = isCryptoSymbol(symbolOrAssetId)
+        ? await getOrders(auth, { status: "open" })
+        : await getOrders(auth, { status: "open", symbols: [normalizedSymbol] });
 
+      let cancelledCount = 0;
       for (const order of openOrders) {
-        // Normalize both sides for comparison to handle format differences
         const orderSymbolNorm = order.symbol.replace(/[-/]/g, "");
         if (orderSymbolNorm === normalizedSymbol) {
+          getLogger().info(
+            `Cancelling order ${order.id} (${order.symbol}) for ${normalizedSymbol}`,
+            { account: auth.adapticAccountId || "direct", symbol: normalizedSymbol },
+          );
           await cancelOrder(auth, order.id);
+          cancelledCount++;
         }
+      }
+      if (cancelledCount > 0) {
+        getLogger().info(
+          `Cancelled ${cancelledCount} open orders for ${normalizedSymbol}`,
+          { account: auth.adapticAccountId || "direct", symbol: normalizedSymbol },
+        );
       }
     }
 
