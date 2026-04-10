@@ -175,95 +175,114 @@ export async function closePosition(
     // Crypto positions cannot use limit orders with SIP quotes or time_in_force="day".
     // Use direct DELETE (market order) for crypto regardless of useLimitOrder flag.
     if (useLimitOrder && !isCryptoSymbol(symbolOrAssetId)) {
-      const { position } = await fetchPosition(auth, symbolOrAssetId);
+      // Attempt limit order closure; if quotes are unavailable (after-hours, IEX gaps),
+      // fall back to market order (DELETE) so the position still gets closed.
+      try {
+        const { position } = await fetchPosition(auth, symbolOrAssetId);
 
-      if (!position) {
-        throw new Error(`Position not found for ${symbolOrAssetId}`);
-      }
+        if (!position) {
+          throw new Error(`Position not found for ${symbolOrAssetId}`);
+        }
 
-      // Use the passed auth for quote fetching so multi-account setups
-      // use the correct credentials per account
-      const quotesResponse = await getLatestQuotes(auth, {
-        symbols: [symbolOrAssetId],
-      });
-      const quote = quotesResponse.quotes[symbolOrAssetId];
+        // Use the passed auth for quote fetching so multi-account setups
+        // use the correct credentials per account
+        const quotesResponse = await getLatestQuotes(auth, {
+          symbols: [symbolOrAssetId],
+        });
+        const quote = quotesResponse.quotes[symbolOrAssetId];
 
-      if (!quote) {
-        throw new Error(`No quote available for ${symbolOrAssetId}`);
-      }
+        if (!quote) {
+          throw new Error(`No quote available for ${symbolOrAssetId}`);
+        }
 
-      let qty = Math.abs(parseFloat(position.qty));
-      if (params?.qty !== undefined) {
-        qty = params.qty;
-      } else if (params?.percentage !== undefined) {
-        qty = Math.abs(parseFloat(position.qty)) * (params.percentage / 100);
-      }
+        let qty = Math.abs(parseFloat(position.qty));
+        if (params?.qty !== undefined) {
+          qty = params.qty;
+        } else if (params?.percentage !== undefined) {
+          qty = Math.abs(parseFloat(position.qty)) * (params.percentage / 100);
+        }
 
-      const side = position.side === "long" ? "sell" : "buy";
-      const positionIntent = side === "sell" ? "sell_to_close" : "buy_to_close";
-      const currentPrice = side === "sell" ? quote.bp : quote.ap;
+        const side = position.side === "long" ? "sell" : "buy";
+        const positionIntent = side === "sell" ? "sell_to_close" : "buy_to_close";
+        const currentPrice = side === "sell" ? quote.bp : quote.ap;
 
-      if (!currentPrice) {
-        throw new Error(`No valid price available for ${symbolOrAssetId}`);
-      }
+        if (!currentPrice) {
+          throw new Error(`No valid price available for ${symbolOrAssetId}`);
+        }
 
-      const limitSlippage = slippagePercent1 / 100;
-      const limitPrice =
-        side === "sell"
-          ? roundPriceForAlpaca(currentPrice * (1 - limitSlippage))
-          : roundPriceForAlpaca(currentPrice * (1 + limitSlippage));
+        const limitSlippage = slippagePercent1 / 100;
+        const limitPrice =
+          side === "sell"
+            ? roundPriceForAlpaca(currentPrice * (1 - limitSlippage))
+            : roundPriceForAlpaca(currentPrice * (1 + limitSlippage));
 
-      getLogger().info(
-        `Creating limit order to close ${symbolOrAssetId} position: ${side} ${qty} shares at ${limitPrice.toFixed(2)}`,
-        {
-          account: auth.adapticAccountId || "direct",
-          symbol: symbolOrAssetId,
-        },
-      );
-
-      return await createLimitOrder(auth, {
-        symbol: symbolOrAssetId,
-        qty,
-        side,
-        limitPrice,
-        position_intent: positionIntent,
-        extended_hours: extendedHours,
-      });
-    } else {
-      if (isCryptoSymbol(symbolOrAssetId)) {
         getLogger().info(
-          `Closing crypto position ${symbolOrAssetId} via market order (DELETE endpoint)`,
-          { account: auth.adapticAccountId || "direct", symbol: symbolOrAssetId },
+          `Creating limit order to close ${symbolOrAssetId} position: ${side} ${qty} shares at ${limitPrice.toFixed(2)}`,
+          {
+            account: auth.adapticAccountId || "direct",
+            symbol: symbolOrAssetId,
+          },
         );
-      }
-      const queryParams = new URLSearchParams();
-      if (params?.qty !== undefined) {
-        queryParams.append("qty", params.qty.toString());
-      }
-      if (params?.percentage !== undefined) {
-        queryParams.append("percentage", params.percentage.toString());
-      }
 
-      const queryString = queryParams.toString();
-      const url = `${apiBaseUrl}/positions/${encodeURIComponent(symbolOrAssetId)}${queryString ? `?${queryString}` : ""}`;
-
-      const response = await fetch(url, {
-        method: "DELETE",
-        headers: {
-          "APCA-API-KEY-ID": APIKey,
-          "APCA-API-SECRET-KEY": APISecret,
-        },
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(
-          `Failed to close position: ${response.status} ${response.statusText} ${errorText}`,
+        return await createLimitOrder(auth, {
+          symbol: symbolOrAssetId,
+          qty,
+          side,
+          limitPrice,
+          position_intent: positionIntent,
+          extended_hours: extendedHours,
+        });
+      } catch (limitOrderError) {
+        // Quote unavailable or invalid price — fall back to market order (DELETE)
+        // so the position still gets closed rather than leaving it open
+        const errMsg = limitOrderError instanceof Error ? limitOrderError.message : String(limitOrderError);
+        getLogger().warn(
+          `Limit order closure failed for ${symbolOrAssetId} (${errMsg}), falling back to market order`,
+          {
+            account: auth.adapticAccountId || "direct",
+            symbol: symbolOrAssetId,
+            type: "warn",
+          },
         );
+        // Fall through to the DELETE (market order) path below
       }
-
-      return (await response.json()) as AlpacaOrder;
     }
+
+    // Market order (DELETE) path — used when limit orders are not requested,
+    // for crypto symbols, or as a fallback when limit order quotes are unavailable
+    if (isCryptoSymbol(symbolOrAssetId)) {
+      getLogger().info(
+        `Closing crypto position ${symbolOrAssetId} via market order (DELETE endpoint)`,
+        { account: auth.adapticAccountId || "direct", symbol: symbolOrAssetId },
+      );
+    }
+    const queryParams = new URLSearchParams();
+    if (params?.qty !== undefined) {
+      queryParams.append("qty", params.qty.toString());
+    }
+    if (params?.percentage !== undefined) {
+      queryParams.append("percentage", params.percentage.toString());
+    }
+
+    const queryString = queryParams.toString();
+    const url = `${apiBaseUrl}/positions/${encodeURIComponent(symbolOrAssetId)}${queryString ? `?${queryString}` : ""}`;
+
+    const response = await fetch(url, {
+      method: "DELETE",
+      headers: {
+        "APCA-API-KEY-ID": APIKey,
+        "APCA-API-SECRET-KEY": APISecret,
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(
+        `Failed to close position: ${response.status} ${response.statusText} ${errorText}`,
+      );
+    }
+
+    return (await response.json()) as AlpacaOrder;
   } catch (error) {
     getLogger().error("Error in closePosition:", error);
     throw error;
