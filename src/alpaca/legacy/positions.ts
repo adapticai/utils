@@ -181,15 +181,9 @@ export async function closePosition(
         throw new Error(`Position not found for ${symbolOrAssetId}`);
       }
 
-      // Construct global Alpaca Auth for quote fetching
-      const alpacaAuthData = {
-        type: "LIVE",
-        alpacaApiKey: process.env.ALPACA_API_KEY,
-        alpacaApiSecret: process.env.ALPACA_API_SECRET || process.env.ALPACA_SECRET_KEY,
-      };
-      const alpacaAuth = alpacaAuthData as AlpacaAuth;
-
-      const quotesResponse = await getLatestQuotes(alpacaAuth, {
+      // Use the passed auth for quote fetching so multi-account setups
+      // use the correct credentials per account
+      const quotesResponse = await getLatestQuotes(auth, {
         symbols: [symbolOrAssetId],
       });
       const quote = quotesResponse.quotes[symbolOrAssetId];
@@ -561,15 +555,10 @@ export async function closeAllPositionsAfterHours(
     return;
   }
 
-  const alpacaAuthObj = {
-    type: "LIVE",
-    alpacaApiKey: process.env.ALPACA_API_KEY,
-    alpacaApiSecret: process.env.ALPACA_SECRET_KEY,
-  };
-  const alpacaAuth = alpacaAuthObj as AlpacaAuth;
-
+  // Use the passed auth for quote fetching (not hardcoded env vars)
+  // so multi-account setups use the correct credentials per account
   const symbols = equityPositions.map((position) => position.symbol);
-  const quotesResponse = await getLatestQuotes(alpacaAuth, { symbols });
+  const quotesResponse = await getLatestQuotes(auth, { symbols });
 
   for (const position of equityPositions) {
     const quote = quotesResponse.quotes[position.symbol];
