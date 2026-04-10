@@ -386,6 +386,7 @@ export async function createLimitOrder(
       | "sell_to_close";
     extended_hours: boolean;
     client_order_id?: string;
+    time_in_force?: "day" | "gtc" | "ioc" | "fok";
   } = {
     symbol: "",
     qty: 0,
@@ -394,6 +395,7 @@ export async function createLimitOrder(
     position_intent: "buy_to_open",
     extended_hours: false,
     client_order_id: undefined,
+    time_in_force: undefined,
   },
 ): Promise<AlpacaOrder> {
   const {
@@ -404,10 +406,13 @@ export async function createLimitOrder(
     position_intent,
     extended_hours,
     client_order_id,
+    time_in_force,
   } = params;
 
+  const effectiveTimeInForce = time_in_force ?? "day";
+
   getLogger().info(
-    `Creating limit order for ${symbol}: ${side} ${qty} shares at ${limitPrice.toFixed(2)} (${position_intent})`,
+    `Creating limit order for ${symbol}: ${side} ${qty} shares at ${limitPrice.toFixed(2)} (${position_intent}, tif=${effectiveTimeInForce})`,
     {
       account: auth.adapticAccountId || "direct",
       symbol,
@@ -421,7 +426,7 @@ export async function createLimitOrder(
     position_intent,
     type: "limit",
     limit_price: limitPrice.toString(),
-    time_in_force: "day",
+    time_in_force: effectiveTimeInForce,
     order_class: "simple",
     extended_hours,
   };

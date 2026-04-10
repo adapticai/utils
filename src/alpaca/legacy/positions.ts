@@ -21,6 +21,24 @@ import { getTradingApiUrl } from "../../config/api-endpoints";
 import { getLogger } from "../../logger";
 import { createTimeoutSignal, DEFAULT_TIMEOUTS } from "../../http-timeout";
 
+/** Known quote currencies that signal a crypto pair when found as a suffix */
+const CRYPTO_QUOTE_CURRENCIES = ["USD", "USDT", "USDC", "BTC"] as const;
+
+/**
+ * Detect whether a symbol looks like a crypto pair (e.g. "BTCUSD", "DOGEUSD",
+ * "BTC/USD"). Equity tickers never end with these suffixes because Alpaca
+ * equity symbols are plain tickers without a quote currency.
+ */
+function isCryptoSymbol(symbol: string): boolean {
+  if (symbol.includes("/")) return true;
+  const upper = symbol.toUpperCase();
+  return CRYPTO_QUOTE_CURRENCIES.some((qc) => {
+    if (!upper.endsWith(qc)) return false;
+    const base = upper.slice(0, -qc.length);
+    return base.length >= 2;
+  });
+}
+
 /**
  * Fetches all positions for an Alpaca trading account.
  * @param auth - The authentication details for Alpaca
@@ -154,7 +172,9 @@ export async function closePosition(
       }
     }
 
-    if (useLimitOrder) {
+    // Crypto positions cannot use limit orders with SIP quotes or time_in_force="day".
+    // Use direct DELETE (market order) for crypto regardless of useLimitOrder flag.
+    if (useLimitOrder && !isCryptoSymbol(symbolOrAssetId)) {
       const { position } = await fetchPosition(auth, symbolOrAssetId);
 
       if (!position) {
@@ -216,6 +236,12 @@ export async function closePosition(
         extended_hours: extendedHours,
       });
     } else {
+      if (isCryptoSymbol(symbolOrAssetId)) {
+        getLogger().info(
+          `Closing crypto position ${symbolOrAssetId} via market order (DELETE endpoint)`,
+          { account: auth.adapticAccountId || "direct", symbol: symbolOrAssetId },
+        );
+      }
       const queryParams = new URLSearchParams();
       if (params?.qty !== undefined) {
         queryParams.append("qty", params.qty.toString());
@@ -298,28 +324,71 @@ export async function closeAllPositions(
       }
     }
 
-    const positions = await fetchAllPositions(auth);
+    const allPositions = await fetchAllPositions(auth);
 
-    if (positions.length === 0) {
+    if (allPositions.length === 0) {
       getLogger().info("No positions to close", {
         account: auth.adapticAccountId || "direct",
       });
       return [];
     }
 
-    getLogger().info(`Found ${positions.length} positions to close`, {
-      account: auth.adapticAccountId || "direct",
-    });
+    // Separate crypto and equity positions — crypto cannot use SIP quotes or time_in_force="day"
+    const equityPositions = allPositions.filter((p) => !isCryptoSymbol(p.symbol));
+    const cryptoPositions = allPositions.filter((p) => isCryptoSymbol(p.symbol));
+
+    getLogger().info(
+      `Found ${allPositions.length} positions to close (${equityPositions.length} equity, ${cryptoPositions.length} crypto)`,
+      { account: auth.adapticAccountId || "direct" },
+    );
+
+    // Close crypto positions via direct DELETE (market order) — no SIP quotes needed
+    for (const position of cryptoPositions) {
+      try {
+        const { APIKey, APISecret, type } = await validateAuth(auth);
+        const apiBaseUrl = getTradingApiUrl(type as "PAPER" | "LIVE");
+        const url = `${apiBaseUrl}/positions/${encodeURIComponent(position.symbol)}`;
+        const response = await fetch(url, {
+          method: "DELETE",
+          headers: {
+            "APCA-API-KEY-ID": APIKey,
+            "APCA-API-SECRET-KEY": APISecret,
+          },
+        });
+        if (response.ok) {
+          getLogger().info(`Closed crypto position ${position.symbol} via market order`, {
+            account: auth.adapticAccountId || "direct",
+            symbol: position.symbol,
+          });
+        } else {
+          const errorText = await response.text();
+          getLogger().warn(
+            `Failed to close crypto position ${position.symbol}: ${response.status} ${errorText}`,
+            { account: auth.adapticAccountId || "direct", symbol: position.symbol },
+          );
+        }
+      } catch (cryptoError) {
+        getLogger().warn(
+          `Error closing crypto position ${position.symbol}: ${cryptoError instanceof Error ? cryptoError.message : String(cryptoError)}`,
+          { account: auth.adapticAccountId || "direct", symbol: position.symbol },
+        );
+      }
+    }
+
+    // Close equity positions via limit orders with SIP quotes
+    if (equityPositions.length === 0) {
+      return [];
+    }
 
     // Use the passed auth for quote fetching (not hardcoded env vars)
     // so multi-account setups use the correct credentials per account
-    const symbols = positions.map((position) => position.symbol);
+    const symbols = equityPositions.map((position) => position.symbol);
     const quotesResponse = await getLatestQuotes(auth, { symbols });
 
     const lengthOfQuotes = Object.keys(quotesResponse.quotes).length;
     if (lengthOfQuotes === 0) {
       getLogger().error(
-        "No quotes available for positions, received 0 quotes",
+        "No quotes available for equity positions, received 0 quotes",
         {
           account: auth.adapticAccountId || "direct",
           type: "error",
@@ -328,19 +397,17 @@ export async function closeAllPositions(
       return [];
     }
 
-    if (lengthOfQuotes !== positions.length) {
+    if (lengthOfQuotes !== equityPositions.length) {
       getLogger().warn(
-        `Received ${lengthOfQuotes} quotes for ${positions.length} positions (expected ${positions.length}), proceeding with available quotes`,
+        `Received ${lengthOfQuotes} quotes for ${equityPositions.length} equity positions, proceeding with available quotes`,
         {
           account: auth.adapticAccountId || "direct",
           type: "warn",
         },
       );
-      // Continue with available quotes instead of aborting — some symbols may
-      // lack quotes (halted, delisted) but other positions should still close
     }
 
-    for (const position of positions) {
+    for (const position of equityPositions) {
       const quote = quotesResponse.quotes[position.symbol];
       if (!quote) {
         getLogger().warn(
@@ -432,24 +499,66 @@ export async function closeAllPositionsAfterHours(
 
   const { cancel_orders, slippagePercent1 = 0.1 } = params;
 
-  const positions = await fetchAllPositions(auth);
+  const allPositions = await fetchAllPositions(auth);
 
-  if (positions.length === 0) {
+  if (allPositions.length === 0) {
     getLogger().info("No positions to close", {
       account: auth.adapticAccountId || "direct",
     });
     return;
   }
 
-  getLogger().info(`Found ${positions.length} positions to close`, {
-    account: auth.adapticAccountId || "direct",
-  });
+  // Separate crypto and equity positions
+  const equityPositions = allPositions.filter((p) => !isCryptoSymbol(p.symbol));
+  const cryptoPositions = allPositions.filter((p) => isCryptoSymbol(p.symbol));
+
+  getLogger().info(
+    `Found ${allPositions.length} positions to close after hours (${equityPositions.length} equity, ${cryptoPositions.length} crypto)`,
+    { account: auth.adapticAccountId || "direct" },
+  );
 
   if (cancel_orders) {
     await cancelAllOrders(auth);
     getLogger().info("Cancelled all open orders", {
       account: auth.adapticAccountId || "direct",
     });
+  }
+
+  // Close crypto positions via direct DELETE (market order)
+  for (const position of cryptoPositions) {
+    try {
+      const { APIKey, APISecret, type } = await validateAuth(auth);
+      const apiBaseUrl = getTradingApiUrl(type as "PAPER" | "LIVE");
+      const url = `${apiBaseUrl}/positions/${encodeURIComponent(position.symbol)}`;
+      const response = await fetch(url, {
+        method: "DELETE",
+        headers: {
+          "APCA-API-KEY-ID": APIKey,
+          "APCA-API-SECRET-KEY": APISecret,
+        },
+      });
+      if (response.ok) {
+        getLogger().info(`Closed crypto position ${position.symbol} via market order`, {
+          account: auth.adapticAccountId || "direct",
+          symbol: position.symbol,
+        });
+      } else {
+        const errorText = await response.text();
+        getLogger().warn(
+          `Failed to close crypto position ${position.symbol}: ${response.status} ${errorText}`,
+          { account: auth.adapticAccountId || "direct", symbol: position.symbol },
+        );
+      }
+    } catch (cryptoError) {
+      getLogger().warn(
+        `Error closing crypto position ${position.symbol}: ${cryptoError instanceof Error ? cryptoError.message : String(cryptoError)}`,
+        { account: auth.adapticAccountId || "direct", symbol: position.symbol },
+      );
+    }
+  }
+
+  if (equityPositions.length === 0) {
+    return;
   }
 
   const alpacaAuthObj = {
@@ -459,10 +568,10 @@ export async function closeAllPositionsAfterHours(
   };
   const alpacaAuth = alpacaAuthObj as AlpacaAuth;
 
-  const symbols = positions.map((position) => position.symbol);
+  const symbols = equityPositions.map((position) => position.symbol);
   const quotesResponse = await getLatestQuotes(alpacaAuth, { symbols });
 
-  for (const position of positions) {
+  for (const position of equityPositions) {
     const quote = quotesResponse.quotes[position.symbol];
     if (!quote) {
       getLogger().warn(
@@ -518,7 +627,7 @@ export async function closeAllPositionsAfterHours(
   }
 
   getLogger().info(
-    `All positions closed: ${positions.map((p) => p.symbol).join(", ")}`,
+    `All positions closed: ${allPositions.map((p: AlpacaPosition) => p.symbol).join(", ")}`,
     {
       account: auth.adapticAccountId || "direct",
     },
