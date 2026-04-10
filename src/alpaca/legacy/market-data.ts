@@ -108,21 +108,49 @@ export async function getLatestQuotes(
 
   const fetchPromises: Promise<void>[] = [];
 
-  // Equity quotes from stocks API
+  // Equity quotes from stocks API (with SIP→IEX fallback for free-tier accounts)
   if (equitySymbols.length > 0) {
     const equityPromise = (async () => {
+      const requestedFeed = feed || DEFAULT_FEED;
       const queryParams = new URLSearchParams();
       queryParams.append("symbols", equitySymbols.join(","));
-      queryParams.append("feed", feed || DEFAULT_FEED);
+      queryParams.append("feed", requestedFeed);
       queryParams.append("currency", currency || DEFAULT_CURRENCY);
 
-      const response = await makeRequest<LatestQuotesResponse>(auth, {
-        endpoint: "/v2/stocks/quotes/latest",
-        method: "GET",
-        queryString: `?${queryParams.toString()}`,
-        apiBaseUrl: MARKET_DATA_API.STOCKS.replace("/v2", ""),
-      });
-      Object.assign(results.quotes, response.quotes);
+      try {
+        const response = await makeRequest<LatestQuotesResponse>(auth, {
+          endpoint: "/v2/stocks/quotes/latest",
+          method: "GET",
+          queryString: `?${queryParams.toString()}`,
+          apiBaseUrl: MARKET_DATA_API.STOCKS.replace("/v2", ""),
+        });
+        Object.assign(results.quotes, response.quotes);
+      } catch (sipError) {
+        // Fall back to IEX feed if SIP is unavailable (free-tier accounts)
+        const isSipPermissionError =
+          sipError instanceof Error &&
+          sipError.message.includes("subscription does not permit");
+        if (isSipPermissionError && requestedFeed === "sip") {
+          getLogger().warn(
+            "SIP data unavailable, falling back to IEX feed for equity quotes",
+            { type: "warn" },
+          );
+          const iexParams = new URLSearchParams();
+          iexParams.append("symbols", equitySymbols.join(","));
+          iexParams.append("feed", "iex");
+          iexParams.append("currency", currency || DEFAULT_CURRENCY);
+
+          const response = await makeRequest<LatestQuotesResponse>(auth, {
+            endpoint: "/v2/stocks/quotes/latest",
+            method: "GET",
+            queryString: `?${iexParams.toString()}`,
+            apiBaseUrl: MARKET_DATA_API.STOCKS.replace("/v2", ""),
+          });
+          Object.assign(results.quotes, response.quotes);
+        } else {
+          throw sipError;
+        }
+      }
     })();
     fetchPromises.push(equityPromise);
   }
