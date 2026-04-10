@@ -172,13 +172,20 @@ export async function closePosition(
         },
       );
 
+      // For crypto symbols, query orders using both the normalized and original
+      // formats since Alpaca may store orders under "SOL/USD" while we normalized to "SOLUSD"
+      const orderSymbols = isCryptoSymbol(symbolOrAssetId)
+        ? [normalizedSymbol, symbolOrAssetId]
+        : [normalizedSymbol];
       const openOrders = await getOrders(auth, {
         status: "open",
-        symbols: [normalizedSymbol],
+        symbols: orderSymbols,
       });
 
       for (const order of openOrders) {
-        if (order.symbol === normalizedSymbol) {
+        // Normalize both sides for comparison to handle format differences
+        const orderSymbolNorm = order.symbol.replace(/[-/]/g, "");
+        if (orderSymbolNorm === normalizedSymbol) {
           await cancelOrder(auth, order.id);
         }
       }
