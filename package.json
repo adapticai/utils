@@ -1,6 +1,6 @@
 {
   "name": "@adaptic/utils",
-  "version": "0.0.944",
+  "version": "0.0.945",
   "author": "Adaptic.ai",
   "description": "Utility functions used in Adaptic app and Lambda functions",
   "always-build-npm": true,
