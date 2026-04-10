@@ -172,10 +172,12 @@ export async function closePosition(
         },
       );
 
-      // For crypto symbols, query orders using both the normalized and original
-      // formats since Alpaca may store orders under "SOL/USD" while we normalized to "SOLUSD"
+      // Alpaca stores crypto orders under "SOL/USD" (slash format) but we may
+      // receive "SOL-USD" (hyphen) or "SOLUSD" (concatenated). Query all three
+      // formats so getOrders returns matching open orders for cancellation.
+      const slashSymbol = normalizedSymbol.replace(/^([A-Z]+)(USD[TC]?)$/i, "$1/$2");
       const orderSymbols = isCryptoSymbol(symbolOrAssetId)
-        ? [normalizedSymbol, symbolOrAssetId]
+        ? [...new Set([normalizedSymbol, symbolOrAssetId, slashSymbol])]
         : [normalizedSymbol];
       const openOrders = await getOrders(auth, {
         status: "open",
