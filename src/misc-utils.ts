@@ -9,7 +9,12 @@ type LogType = (typeof _LOG_TYPES)[number];
 
 /**
  * Debug logging utility that respects environment debug flags.
- * Logs messages to the console based on the specified log level.
+ * Logs messages through the configured structured logger when LUMIC_DEBUG
+ * is enabled. The level is preserved by routing through the corresponding
+ * logger method — the structured logger already encodes the level, so we
+ * do NOT prefix the message text with `[DEBUG][LEVEL]` (that produced
+ * malformed `[INFO] [DEBUG][INFO] ...` lines in downstream consumers
+ * that wrap this logger with Pino).
  *
  * @param message - The message to log.
  * @param data - Optional data to log alongside the message. This can be any type of data.
@@ -32,7 +37,6 @@ export const logIfDebug = (
 
   if (!debugMode) return;
 
-  const prefix = `[DEBUG][${type.toUpperCase()}]`;
   const logger = getLogger();
   const context =
     data !== undefined
@@ -41,25 +45,23 @@ export const logIfDebug = (
         : { data }
       : undefined;
 
-  const fullMessage = prefix + " " + message;
-
   switch (type) {
     case "error":
-      logger.error(fullMessage, context);
+      logger.error(message, context);
       break;
     case "warn":
-      logger.warn(fullMessage, context);
+      logger.warn(message, context);
       break;
     case "debug":
-      logger.debug(fullMessage, context);
+      logger.debug(message, context);
       break;
     case "trace":
       // trace maps to debug in our logger interface
-      logger.debug(fullMessage, context);
+      logger.debug(message, context);
       break;
     case "info":
     default:
-      logger.info(fullMessage, context);
+      logger.info(message, context);
   }
 };
 

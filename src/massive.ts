@@ -4,7 +4,7 @@
 
 import pLimit from "p-limit";
 import { getLogger } from "./logger";
-import { fetchWithRetry, hideApiKeyFromurl } from "./misc-utils";
+import { fetchWithRetry, hideApiKeyFromurl, logIfDebug } from "./misc-utils";
 import {
   MassiveDailyOpenClose,
   MassiveErrorResponse,
@@ -828,7 +828,7 @@ export const fetchTrades = async (
   return massiveLimit(async () => {
     const url = `${baseUrl}?${params.toString()}`;
     try {
-      getLogger().info(`[DEBUG] Fetching trades for ${symbol} from ${url}`);
+      logIfDebug(`Fetching trades for ${symbol} from ${url}`);
       const response = await fetchWithRetry(url, {}, 3, 1000);
       const data = (await response.json()) as
         | MassiveTradesResponse
