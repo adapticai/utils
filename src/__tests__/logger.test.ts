@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { setLogger, getLogger, resetLogger } from "../logger";
+import { setLogger, getLogger, resetLogger, isLoggerInjected } from "../logger";
 import type { Logger } from "../logger";
 
 describe("Logger", () => {
@@ -80,6 +80,40 @@ describe("Logger", () => {
       expect(mockLogger.warn).toHaveBeenCalledTimes(1);
       expect(mockLogger.info).toHaveBeenCalledTimes(1);
       expect(mockLogger.debug).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("isLoggerInjected", () => {
+    it("should return false initially", () => {
+      expect(isLoggerInjected()).toBe(false);
+    });
+
+    it("should return true after setLogger is called", () => {
+      const mockLogger: Logger = {
+        error: vi.fn(),
+        warn: vi.fn(),
+        info: vi.fn(),
+        debug: vi.fn(),
+      };
+
+      setLogger(mockLogger);
+
+      expect(isLoggerInjected()).toBe(true);
+    });
+
+    it("should return false after resetLogger is called", () => {
+      const mockLogger: Logger = {
+        error: vi.fn(),
+        warn: vi.fn(),
+        info: vi.fn(),
+        debug: vi.fn(),
+      };
+
+      setLogger(mockLogger);
+      expect(isLoggerInjected()).toBe(true);
+
+      resetLogger();
+      expect(isLoggerInjected()).toBe(false);
     });
   });
 

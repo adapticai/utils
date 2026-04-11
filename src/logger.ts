@@ -53,6 +53,7 @@ const defaultLogger: Logger = {
 };
 
 let currentLogger: Logger = defaultLogger;
+let loggerInjected: boolean = false;
 
 /**
  * Sets a custom logger implementation.
@@ -77,6 +78,22 @@ let currentLogger: Logger = defaultLogger;
  */
 export function setLogger(logger: Logger): void {
   currentLogger = logger;
+  loggerInjected = true;
+}
+
+/**
+ * Returns true when an external logger has been injected via {@link setLogger}.
+ *
+ * Used by the legacy {@link log} export in `logging.ts` to decide whether to
+ * route messages through the injected (production) logger or fall back to the
+ * `DisplayManager` terminal widget (standalone CLI usage). Without this flag,
+ * library code that imports `log` from `./logging` would silently bypass any
+ * structured logging pipeline (Pino, OTel) the host application has wired in.
+ *
+ * @returns `true` if {@link setLogger} has been called since the last reset
+ */
+export function isLoggerInjected(): boolean {
+  return loggerInjected;
 }
 
 /**
@@ -106,4 +123,5 @@ export function getLogger(): Logger {
  */
 export function resetLogger(): void {
   currentLogger = defaultLogger;
+  loggerInjected = false;
 }
