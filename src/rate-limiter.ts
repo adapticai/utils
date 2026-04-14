@@ -276,12 +276,13 @@ export const rateLimiters = {
   /**
    * Alpaca API rate limiter
    *
-   * Configured for 200 requests per minute.
+   * Configured for 1000 requests per minute (paid tier).
+   * The token bucket allows burst up to maxTokens, then refills at the steady rate.
    * See: https://alpaca.markets/docs/api-references/trading-api/#rate-limit
    */
   alpaca: new TokenBucketRateLimiter({
-    maxTokens: 200,
-    refillRate: 200 / 60, // 200 requests per 60 seconds (~3.33/sec)
+    maxTokens: 1000,
+    refillRate: 1000 / 60, // 1000 requests per 60 seconds (~16.67/sec)
     label: "alpaca",
     timeoutMs: 60000,
   }),
@@ -289,12 +290,14 @@ export const rateLimiters = {
   /**
    * Massive.com API rate limiter
    *
-   * Configured for 100 requests per second (paid tier — matches Massive.com recommended soft limit).
-   * See: https://massive.com/pricing
+   * Configured generously for paid unlimited tier. The bucket exists only as a
+   * safety net against runaway loops — the 1000 token burst and 500/sec refill
+   * should never be hit under normal operation. If the paid plan truly has no
+   * hard limit, this just prevents accidental self-DDoS.
    */
   massive: new TokenBucketRateLimiter({
-    maxTokens: 100,
-    refillRate: 100, // 100 requests per second (paid tier — matches Massive.com recommended soft limit)
+    maxTokens: 1000,
+    refillRate: 500, // 500 tokens/sec refill — effectively unlimited for paid tier
     label: "massive",
     timeoutMs: 30000,
   }),
