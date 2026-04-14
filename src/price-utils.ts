@@ -4,6 +4,7 @@ import adaptic, { enums, types } from "@adaptic/backend-legacy";
 import { EquityPoint, AlpacaPortfolioHistory } from "./types/index";
 import { getDateInNY, MarketTimeUtil } from "./market-time";
 import { getOrder } from "./alpaca/legacy";
+import { getSharedApolloClient } from "./adaptic";
 
 const calculateFees = async (
   action: types.Action,
@@ -59,10 +60,11 @@ const calculateFees = async (
 export const computeTotalFees = async (trade: types.Trade): Promise<number> => {
   let totalFees = 0;
 
-  // fetch alpaca account details using adaptic.alpacaAccount.get({id: trade.alpacaAccountId})
+  // Use the shared singleton Apollo client to avoid creating orphaned connections
+  const client = await getSharedApolloClient();
   const alpacaAccount = (await adaptic.alpacaAccount.get({
     id: trade.alpacaAccountId,
-  } as types.AlpacaAccount)) as types.AlpacaAccount;
+  } as types.AlpacaAccount, client)) as types.AlpacaAccount;
 
   if (!alpacaAccount) return totalFees;
 

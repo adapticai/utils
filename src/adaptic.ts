@@ -4,6 +4,7 @@ import { AssetOverviewResponse, AssetOverview } from "./types";
 import {
   getApolloClient,
   setTokenProvider,
+  stopClient,
   type TokenProvider,
   type ApolloClientType,
   type NormalizedCacheObject,
@@ -168,4 +169,21 @@ export const fetchAssetOverview = async (
       success: false,
     };
   }
+};
+
+/**
+ * Gracefully disconnects the shared Apollo client and releases its resources.
+ * Call this during process shutdown to close keep-alive HTTP connections
+ * and drain in-flight operations.
+ *
+ * After calling `disconnectClient()`, the next call to `getSharedApolloClient()`
+ * will create a fresh instance.
+ */
+export const disconnectClient = (): void => {
+  if (apolloClientInstance) {
+    apolloClientInstance = null;
+    getLogger().info("[adaptic] Shared Apollo client reference cleared");
+  }
+  // Delegate to backend-legacy's stopClient() which calls .stop() on the underlying singleton
+  stopClient();
 };

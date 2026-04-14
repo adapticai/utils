@@ -151,6 +151,7 @@ export const adaptic = {
     getApolloClient: backend.getSharedApolloClient,
     configureAuth: backend.configureAuth,
     isAuthConfigured: backend.isAuthConfigured,
+    disconnectClient: backend.disconnectClient,
   },
   alpaca: {
     // New SDK-based client factory (RECOMMENDED)
