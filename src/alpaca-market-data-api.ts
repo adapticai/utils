@@ -58,7 +58,18 @@ const log = (message: string, options: LogOptions = { type: "info" }) => {
 
 // Default settings for market data API
 const DEFAULT_ADJUSTMENT = "all" as const;
-const DEFAULT_FEED = "sip" as DataFeed;
+// Data feed tier. SIP is full US-market-consolidated feed (requires a paid
+// Alpaca market-data subscription). IEX is the free tier — single-exchange,
+// delayed. Engine deploys running on IEX-only accounts hit chronic HTTP 403
+// ("subscription does not permit querying recent SIP data") at ~100/min when
+// this defaulted to "sip", which saturated Railway's per-replica log ingest
+// and hid steady-state signal. The ALPACA_MARKET_DATA_FEED env var overrides
+// the default. Fall back to "iex" so the free tier is safe by default; LIVE
+// deployments with SIP entitlements set ALPACA_MARKET_DATA_FEED=sip in their
+// environment to restore full data access. Per-call overrides (the optional
+// `feed` argument on getOptions*/getLatestBars/etc.) still win.
+const DEFAULT_FEED = (process.env.ALPACA_MARKET_DATA_FEED ||
+  "iex") as DataFeed;
 const DEFAULT_CURRENCY = "USD" as const;
 
 /**
