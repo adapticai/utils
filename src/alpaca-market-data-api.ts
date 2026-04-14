@@ -51,6 +51,7 @@ import { EventEmitter } from "events";
 import WebSocket from "ws";
 import { validateAlpacaCredentials } from "./utils/auth-validator";
 import { createTimeoutSignal, DEFAULT_TIMEOUTS } from "./http-timeout";
+import { rateLimiters } from "./rate-limiter";
 
 const log = (message: string, options: LogOptions = { type: "info" }) => {
   baseLog(message, { ...options, source: "AlpacaMarketDataAPI" });
@@ -675,6 +676,12 @@ export class AlpacaMarketDataAPI extends EventEmitter {
           }
         });
       }
+
+      // Gate all Alpaca market-data calls through the shared 1000/min token
+      // bucket so concurrent callers (bar fetches, quotes, options, snapshots)
+      // can't overrun Alpaca's server-side rate limit. Prior to this, parallel
+      // historical-bar fan-out produced ~125 server-side 429s per minute.
+      await rateLimiters.alpaca.acquire();
 
       const response = await fetch(url.toString(), {
         method,
