@@ -105,7 +105,7 @@ export async function getAccountDetails(
   log("Fetching account details");
   try {
     const sdk = client.getSDK();
-    const account = await sdk.getAccount();
+    const account = await client.executeWithRateLimit(() => sdk.getAccount(), "getAccount");
     log(
       `Account details fetched successfully for account ${account.account_number}`,
     );
@@ -129,7 +129,7 @@ export async function getAccountConfiguration(
   log("Fetching account configuration");
   try {
     const sdk = client.getSDK();
-    const config = await sdk.getAccountConfigurations();
+    const config = await client.executeWithRateLimit(() => sdk.getAccountConfigurations(), "getAccountConfigurations");
     log("Account configuration fetched successfully");
     return config as AccountConfiguration;
   } catch (error) {
@@ -155,7 +155,7 @@ export async function updateAccountConfiguration(
   log("Updating account configuration");
   try {
     const sdk = client.getSDK();
-    const updatedConfig = await sdk.updateAccountConfigurations(config);
+    const updatedConfig = await client.executeWithRateLimit(() => sdk.updateAccountConfigurations(config), "updateAccountConfigurations");
     log("Account configuration updated successfully");
     return updatedConfig as AccountConfiguration;
   } catch (error) {
@@ -183,7 +183,7 @@ export async function getPortfolioHistory(
   );
   try {
     const sdk = client.getSDK();
-    const history = await sdk.getPortfolioHistory(params as unknown as AlpacaSDKPortfolioHistoryParams);
+    const history = await client.executeWithRateLimit(() => sdk.getPortfolioHistory(params as unknown as AlpacaSDKPortfolioHistoryParams), "getPortfolioHistory");
     log(
       `Portfolio history fetched successfully with ${history.equity?.length || 0} data points`,
     );

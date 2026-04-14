@@ -91,7 +91,7 @@ export async function getAlpacaClock(
   log("Fetching market clock");
   try {
     const sdk = client.getSDK();
-    const clock = await sdk.getClock();
+    const clock = await client.executeWithRateLimit(() => sdk.getClock(), "getClock");
     log(
       `Market clock fetched: is_open=${clock.is_open}, next_open=${clock.next_open}`,
     );
@@ -146,10 +146,13 @@ export async function getAlpacaCalendar(
 
   try {
     const sdk = client.getSDK();
-    const calendar = await sdk.getCalendar({
-      start: startStr,
-      end: endStr,
-    });
+    const calendar = await client.executeWithRateLimit(
+      () => sdk.getCalendar({
+        start: startStr,
+        end: endStr,
+      }),
+      "getCalendar",
+    );
     log(`Market calendar fetched: ${calendar.length} trading days`);
     return calendar as AlpacaCalendarDay[];
   } catch (error) {

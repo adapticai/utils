@@ -76,7 +76,10 @@ export async function createOrder(
 
   try {
     const sdk = client.getSDK();
-    const order = await sdk.createOrder(params);
+    const order = await client.executeWithRateLimit(
+      () => sdk.createOrder(params),
+      `createOrder ${symbol}`,
+    );
 
     log(`Order created successfully: ${order.id}`, {
       type: "info",
@@ -124,7 +127,10 @@ export async function getOrder(
 
   try {
     const sdk = client.getSDK();
-    const order = await sdk.getOrder(orderId);
+    const order = await client.executeWithRateLimit(
+      () => sdk.getOrder(orderId),
+      `getOrder ${orderId}`,
+    );
 
     log(`Order retrieved: ${orderId} (${order.status})`, {
       type: "debug",
@@ -189,7 +195,10 @@ export async function getOrders(
     }
     if (params.side) queryParams.side = params.side;
 
-    const orders = await sdk.getOrders(queryParams as unknown as AlpacaSDKOrderParams);
+    const orders = await client.executeWithRateLimit(
+      () => sdk.getOrders(queryParams as unknown as AlpacaSDKOrderParams),
+      "getOrders",
+    );
 
     log(`Retrieved ${orders.length} orders`, {
       type: "debug",
@@ -225,7 +234,7 @@ export async function cancelOrder(
 
   try {
     const sdk = client.getSDK();
-    await sdk.cancelOrder(orderId);
+    await client.executeWithRateLimit(() => sdk.cancelOrder(orderId), "cancelOrder");
 
     log(`Order canceled successfully: ${orderId}`, { type: "info" });
   } catch (error) {
@@ -280,7 +289,7 @@ export async function cancelAllOrders(
 
   try {
     const sdk = client.getSDK();
-    const result = await sdk.cancelAllOrders();
+    const result = await client.executeWithRateLimit(() => sdk.cancelAllOrders(), "cancelAllOrders");
 
     // The SDK returns an array of canceled order statuses
     const canceled = Array.isArray(result) ? result.length : 0;
@@ -353,7 +362,7 @@ export async function replaceOrder(
 
   try {
     const sdk = client.getSDK();
-    const newOrder = await sdk.replaceOrder(orderId, params);
+    const newOrder = await client.executeWithRateLimit(() => sdk.replaceOrder(orderId, params), "replaceOrder");
 
     log(`Order replaced successfully: ${orderId} -> ${newOrder.id}`, {
       type: "info",
@@ -476,7 +485,7 @@ export async function getOrderByClientId(
 
   try {
     const sdk = client.getSDK();
-    const order = await sdk.getOrderByClientId(clientOrderId);
+    const order = await client.executeWithRateLimit(() => sdk.getOrderByClientId(clientOrderId), "getOrderByClientId");
 
     log(`Order retrieved by client_order_id: ${clientOrderId} -> ${order.id}`, {
       type: "debug",

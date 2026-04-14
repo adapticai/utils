@@ -78,9 +78,12 @@ export async function getLatestQuote(
     const dataFeed = feed || config.dataFeed || "iex";
 
     // Use SDK's getLatestQuote method
-    const response = await sdk.getLatestQuote(normalizedSymbol, {
-      feed: dataFeed,
-    } as unknown as AlpacaSDKConfig);
+    const response = await client.executeWithRateLimit(
+      () => sdk.getLatestQuote(normalizedSymbol, {
+        feed: dataFeed,
+      } as unknown as AlpacaSDKConfig),
+      "getLatestQuote",
+    );
 
     if (!response) {
       throw new QuoteError(
@@ -161,9 +164,12 @@ export async function getLatestQuotes(
     const dataFeed = feed || config.dataFeed || "iex";
 
     // Use SDK's getLatestQuotes method
-    const response = await sdk.getLatestQuotes(normalizedSymbols, {
-      feed: dataFeed,
-    } as unknown as AlpacaSDKConfig);
+    const response = await client.executeWithRateLimit(
+      () => sdk.getLatestQuotes(normalizedSymbols, {
+        feed: dataFeed,
+      } as unknown as AlpacaSDKConfig),
+      "getLatestQuotes",
+    );
 
     if (!response) {
       throw new QuoteError("No quote data returned", "NO_DATA");

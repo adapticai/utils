@@ -7,6 +7,8 @@ import { getTradingApiUrl } from "../config/api-endpoints";
 import { createTimeoutSignal, DEFAULT_TIMEOUTS } from "../http-timeout";
 import { log as baseLog } from "../logging";
 import { LogOptions } from "../types/logging-types";
+import { rateLimiters } from "../rate-limiter";
+import { withRetry } from "../utils/retry";
 
 const log = (message: string, options: LogOptions = { type: "info" }) => {
   baseLog(message, { ...options, source: "AlpacaClient" });
@@ -95,6 +97,33 @@ export class AlpacaClient {
   }
 
   /**
+   * Execute an Alpaca SDK operation with rate limiting and retry.
+   * Use this for all SDK calls to prevent rate limit breaches and handle
+   * transient failures during market hours.
+   *
+   * @param operation - Async function that calls the SDK
+   * @param label - Human-readable label for logging
+   * @returns Result of the operation
+   */
+  async executeWithRateLimit<T>(
+    operation: () => Promise<T>,
+    label: string,
+  ): Promise<T> {
+    await rateLimiters.alpaca.acquire();
+    return withRetry(
+      operation,
+      {
+        maxRetries: 2,
+        baseDelayMs: 1000,
+        maxDelayMs: 10000,
+        retryableStatusCodes: [429, 500, 502, 503, 504],
+        retryOnNetworkError: true,
+      },
+      `Alpaca SDK: ${label}`,
+    );
+  }
+
+  /**
    * Validate credentials by fetching account info
    */
   async validateCredentials(): Promise<ValidatedCredentials> {
@@ -151,6 +180,7 @@ export class AlpacaClient {
     method: "GET" | "POST" | "PUT" | "DELETE" = "GET",
     body?: Record<string, unknown>,
   ): Promise<T> {
+    await rateLimiters.alpaca.acquire();
     const url = `${this.apiBaseUrl}${endpoint}`;
 
     const options: RequestInit = {
@@ -162,35 +192,48 @@ export class AlpacaClient {
       options.body = JSON.stringify(body);
     }
 
-    try {
-      const response = await fetch(url, {
-        ...options,
-        signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
-      });
+    return withRetry(
+      async () => {
+        const response = await fetch(url, {
+          ...options,
+          signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
+        });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(
-          `API request failed (${response.status}): ${errorText}`,
-        );
-      }
+        if (!response.ok) {
+          const errorText = await response.text();
+          const statusCode = response.status;
+          // Classify error for retry logic
+          if (statusCode === 429) {
+            const retryAfter = response.headers.get("Retry-After");
+            throw new Error(`RATE_LIMIT: ${statusCode}${retryAfter ? `:${parseInt(retryAfter, 10) * 1000}` : ""}`);
+          }
+          if ([500, 502, 503, 504].includes(statusCode)) {
+            throw new Error(`SERVER_ERROR: ${statusCode}`);
+          }
+          if ([401, 403].includes(statusCode)) {
+            throw new Error(`AUTH_ERROR: ${statusCode}: ${errorText}`);
+          }
+          throw new Error(`CLIENT_ERROR: ${statusCode}: ${errorText}`);
+        }
 
-      // Handle empty responses (e.g., DELETE requests)
-      const contentType = response.headers.get("content-type");
-      if (!contentType || !contentType.includes("application/json")) {
-        const emptyObj = {};
-        return emptyObj as T;
-      }
+        // Handle empty responses (e.g., DELETE requests)
+        const contentType = response.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) {
+          const emptyObj = {};
+          return emptyObj as T;
+        }
 
-      return (await response.json()) as T;
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error";
-      log(`API request to ${endpoint} failed: ${errorMessage}`, {
-        type: "error",
-      });
-      throw error;
-    }
+        return (await response.json()) as T;
+      },
+      {
+        maxRetries: 2,
+        baseDelayMs: 1000,
+        maxDelayMs: 10000,
+        retryableStatusCodes: [429, 500, 502, 503, 504],
+        retryOnNetworkError: true,
+      },
+      `Alpaca ${method} ${endpoint}`,
+    );
   }
 }
 

@@ -343,7 +343,7 @@ export async function getNews(
     }
 
     // Use SDK's getNews method
-    const response = await sdk.getNews(options);
+    const response = await client.executeWithRateLimit(() => sdk.getNews(options), "getNews");
 
     if (!response || !Array.isArray(response)) {
       log("No news data returned", { type: "debug" });

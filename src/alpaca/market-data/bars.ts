@@ -149,7 +149,8 @@ export async function getBars(
       result.set(symbol, []);
     }
 
-    // Fetch bars - the SDK handles pagination internally via async iterator
+    // Acquire rate limit token before starting the async iterator
+    await client.executeWithRateLimit(() => Promise.resolve(), "getBarsV2");
     const barsIterator = sdk.getBarsV2(normalizedSymbols.join(","), options);
 
     for await (const bar of barsIterator) {
@@ -224,9 +225,12 @@ export async function getLatestBars(
     const config = client.getConfig();
     const dataFeed = config.dataFeed || "iex";
 
-    const response = await sdk.getLatestBars(normalizedSymbols, {
-      feed: dataFeed,
-    } as unknown as AlpacaSDKConfig);
+    const response = await client.executeWithRateLimit(
+      () => sdk.getLatestBars(normalizedSymbols, {
+        feed: dataFeed,
+      } as unknown as AlpacaSDKConfig),
+      "getLatestBars",
+    );
 
     const result = new Map<string, Bar>();
 

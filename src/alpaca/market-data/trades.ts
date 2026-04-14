@@ -84,9 +84,12 @@ export async function getLatestTrade(
     const dataFeed = feed || config.dataFeed || "iex";
 
     // Use SDK's getLatestTrade method
-    const response = await sdk.getLatestTrade(normalizedSymbol, {
-      feed: dataFeed,
-    } as unknown as AlpacaSDKConfig);
+    const response = await client.executeWithRateLimit(
+      () => sdk.getLatestTrade(normalizedSymbol, {
+        feed: dataFeed,
+      } as unknown as AlpacaSDKConfig),
+      "getLatestTrade",
+    );
 
     if (!response) {
       throw new TradeError(
@@ -165,9 +168,12 @@ export async function getLatestTrades(
     const dataFeed = feed || config.dataFeed || "iex";
 
     // Use SDK's getLatestTrades method
-    const response = await sdk.getLatestTrades(normalizedSymbols, {
-      feed: dataFeed,
-    } as unknown as AlpacaSDKConfig);
+    const response = await client.executeWithRateLimit(
+      () => sdk.getLatestTrades(normalizedSymbols, {
+        feed: dataFeed,
+      } as unknown as AlpacaSDKConfig),
+      "getLatestTrades",
+    );
 
     if (!response) {
       throw new TradeError("No trade data returned", "NO_DATA");
@@ -268,7 +274,8 @@ export async function getHistoricalTrades(
 
     const trades: AlpacaTrade[] = [];
 
-    // Use SDK's getTradesV2 method with pagination (async iterator)
+    // Acquire rate limit token before starting the async iterator
+    await client.executeWithRateLimit(() => Promise.resolve(), "getTradesV2");
     const tradesIterator = sdk.getTradesV2(normalizedSymbol, options);
 
     for await (const trade of tradesIterator) {

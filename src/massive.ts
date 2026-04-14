@@ -18,6 +18,7 @@ import {
   RawMassivePriceData,
 } from "./types";
 import { rateLimiters } from "./rate-limiter";
+import { createTimeoutSignal, DEFAULT_TIMEOUTS } from "./http-timeout";
 import { validateMassiveApiKey } from "./utils/auth-validator";
 
 /**
@@ -155,10 +156,11 @@ export const fetchTickerInfo = async (
   });
 
   return massiveLimit(async () => {
+    await rateLimiters.massive.acquire();
     try {
       const response = await fetchWithRetry(
         `${baseUrl}?${params.toString()}`,
-        {},
+        { signal: createTimeoutSignal(DEFAULT_TIMEOUTS.MASSIVE_API) },
         3,
         1000,
       );
@@ -296,10 +298,11 @@ const fetchLastTradeImpl = async (
   });
 
   return massiveLimit(async () => {
+    await rateLimiters.massive.acquire();
     try {
       const response = await fetchWithRetry(
         `${baseUrl}?${params.toString()}`,
-        {},
+        { signal: createTimeoutSignal(DEFAULT_TIMEOUTS.MASSIVE_API) },
         3,
         1000,
       );
@@ -396,10 +399,11 @@ export const fetchLastQuote = async (
   });
 
   return massiveLimit(async () => {
+    await rateLimiters.massive.acquire();
     try {
       const response = await fetchWithRetry(
         `${baseUrl}?${params.toString()}`,
-        {},
+        { signal: createTimeoutSignal(DEFAULT_TIMEOUTS.MASSIVE_API) },
         3,
         1000,
       );
@@ -529,7 +533,7 @@ export const fetchPrices = async (
       while (nextUrl) {
         //getLogger().info(`Debug: Fetching ${nextUrl}`);
         await rateLimiters.massive.acquire();
-        const response = await fetchWithRetry(nextUrl, {}, 3, 1000);
+        const response = await fetchWithRetry(nextUrl, { signal: createTimeoutSignal(DEFAULT_TIMEOUTS.MASSIVE_API) }, 3, 1000);
         const data = await response.json();
 
         if (!MASSIVE_VALID_STATUSES.has(data.status)) {
@@ -690,10 +694,11 @@ export const fetchGroupedDaily = async (
   });
 
   return massiveLimit(async () => {
+    await rateLimiters.massive.acquire();
     try {
       const response = await fetchWithRetry(
         `${baseUrl}?${params.toString()}`,
-        {},
+        { signal: createTimeoutSignal(DEFAULT_TIMEOUTS.MASSIVE_API) },
         3,
         1000,
       );
@@ -808,21 +813,31 @@ export const fetchDailyOpenClose = async (
   });
 
   return massiveLimit(async () => {
-    const response = await fetchWithRetry(
-      `${baseUrl}?${params.toString()}`,
-      {},
-      3,
-      1000,
-    );
-    const data = await response.json();
-
-    if (!MASSIVE_VALID_STATUSES.has(data.status)) {
-      throw new Error(
-        `Failed to fetch daily open/close data for ${symbol}: ${data.status}`,
+    await rateLimiters.massive.acquire();
+    try {
+      const response = await fetchWithRetry(
+        `${baseUrl}?${params.toString()}`,
+        { signal: createTimeoutSignal(DEFAULT_TIMEOUTS.MASSIVE_API) },
+        3,
+        1000,
       );
-    }
+      const data = await response.json();
 
-    return data;
+      if (!MASSIVE_VALID_STATUSES.has(data.status)) {
+        throw new Error(
+          `Failed to fetch daily open/close data for ${symbol}: ${data.status}`,
+        );
+      }
+
+      return data;
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error occurred";
+      getLogger().error(
+        `Error fetching daily open/close for ${symbol}: ${errorMessage}`,
+      );
+      throw error;
+    }
   });
 };
 
@@ -910,10 +925,11 @@ export const fetchTrades = async (
   if (options?.sort) params.append("sort", options.sort);
 
   return massiveLimit(async () => {
+    await rateLimiters.massive.acquire();
     const url = `${baseUrl}?${params.toString()}`;
     try {
       logIfDebug(`Fetching trades for ${symbol} from ${url}`);
-      const response = await fetchWithRetry(url, {}, 3, 1000);
+      const response = await fetchWithRetry(url, { signal: createTimeoutSignal(DEFAULT_TIMEOUTS.MASSIVE_API) }, 3, 1000);
       const data = (await response.json()) as
         | MassiveTradesResponse
         | MassiveErrorResponse;

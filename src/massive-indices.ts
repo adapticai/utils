@@ -7,6 +7,8 @@
 import pLimit from "p-limit";
 import { getLogger } from "./logger";
 import { fetchWithRetry } from "./misc-utils";
+import { rateLimiters } from "./rate-limiter";
+import { createTimeoutSignal, DEFAULT_TIMEOUTS } from "./http-timeout";
 import {
   MassiveIndicesAggregatesParams,
   MassiveIndicesAggregatesResponse,
@@ -81,8 +83,9 @@ export const fetchIndicesAggregates = async (
   url.search = queryParams.toString();
 
   return massiveIndicesLimit(async () => {
+    await rateLimiters.massive.acquire();
     try {
-      const response = await fetchWithRetry(url.toString(), {}, 3, 300);
+      const response = await fetchWithRetry(url.toString(), { signal: createTimeoutSignal(DEFAULT_TIMEOUTS.MASSIVE_API) }, 3, 300);
       const data = await response.json();
 
       if (data.status === "ERROR") {
@@ -121,8 +124,9 @@ export const fetchIndicesPreviousClose = async (
   url.search = queryParams.toString();
 
   return massiveIndicesLimit(async () => {
+    await rateLimiters.massive.acquire();
     try {
-      const response = await fetchWithRetry(url.toString(), {}, 3, 300);
+      const response = await fetchWithRetry(url.toString(), { signal: createTimeoutSignal(DEFAULT_TIMEOUTS.MASSIVE_API) }, 3, 300);
       const data = await response.json();
 
       if (data.status === "ERROR") {
@@ -163,8 +167,9 @@ export const fetchIndicesDailyOpenClose = async (
   url.search = queryParams.toString();
 
   return massiveIndicesLimit(async () => {
+    await rateLimiters.massive.acquire();
     try {
-      const response = await fetchWithRetry(url.toString(), {}, 3, 300);
+      const response = await fetchWithRetry(url.toString(), { signal: createTimeoutSignal(DEFAULT_TIMEOUTS.MASSIVE_API) }, 3, 300);
       const data = await response.json();
 
       if (data.status === "ERROR") {
@@ -217,8 +222,9 @@ export const fetchIndicesSnapshot = async (
   url.search = queryParams.toString();
 
   return massiveIndicesLimit(async () => {
+    await rateLimiters.massive.acquire();
     try {
-      const response = await fetchWithRetry(url.toString(), {}, 3, 300);
+      const response = await fetchWithRetry(url.toString(), { signal: createTimeoutSignal(DEFAULT_TIMEOUTS.MASSIVE_API) }, 3, 300);
       const data = await response.json();
 
       if (data.status === "ERROR") {
@@ -285,8 +291,9 @@ export const fetchUniversalSnapshot = async (
   url.search = queryParams.toString();
 
   return massiveIndicesLimit(async () => {
+    await rateLimiters.massive.acquire();
     try {
-      const response = await fetchWithRetry(url.toString(), {}, 3, 300);
+      const response = await fetchWithRetry(url.toString(), { signal: createTimeoutSignal(DEFAULT_TIMEOUTS.MASSIVE_API) }, 3, 300);
       const data = await response.json();
 
       if (data.status === "ERROR") {
