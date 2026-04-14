@@ -583,7 +583,9 @@ export async function getOpenTrailingStops(
       queryParams.symbols = symbol.toUpperCase();
     }
 
-    const orders = (await sdk.getOrders(queryParams as unknown as AlpacaSDKOrderParams)) as AlpacaOrder[];
+    const orders = (await sdk.getOrders(
+      queryParams as unknown as AlpacaSDKOrderParams,
+    )) as AlpacaOrder[];
 
     // Filter to only trailing stop orders
     const trailingStops = orders.filter(

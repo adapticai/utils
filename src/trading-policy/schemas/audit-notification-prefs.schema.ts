@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 /**
  * Audit and notification preferences schema (section 7.10).
@@ -15,20 +15,27 @@ export const AuditNotificationPrefsObjectSchema = z.object({
   notifyOnPolicyMutation: z.boolean().default(true),
   dailySummaryEnabled: z.boolean().default(true),
   eventSummaryEnabled: z.boolean().default(true),
-  auditDetailLevel: z.enum(['minimal', 'standard', 'verbose']).default('standard'),
+  auditDetailLevel: z
+    .enum(["minimal", "standard", "verbose"])
+    .default("standard"),
   saveRationaleSummaries: z.boolean().default(true),
   saveToolCallTraces: z.boolean().default(false),
   saveContextSnapshots: z.boolean().default(true),
-  incidentAlertChannel: z.enum(['email', 'slack', 'discord', 'webhook', 'none']).default('none'),
-  incidentAlertEndpoint: z.string().default(''),
+  incidentAlertChannel: z
+    .enum(["email", "slack", "discord", "webhook", "none"])
+    .default("none"),
+  incidentAlertEndpoint: z.string().default(""),
   requirePostActionExplanation: z.boolean().default(true),
   retainDecisionArtifactsDays: z.number().min(0).default(90),
 
   /** Trade confirmation email preference. Synced to Alpaca API. */
-  tradeConfirmEmail: z.enum(['all', 'none']).default('all'),
+  tradeConfirmEmail: z.enum(["all", "none"]).default("all"),
 });
 
-export const AuditNotificationPrefsSchema = AuditNotificationPrefsObjectSchema.default({});
+export const AuditNotificationPrefsSchema =
+  AuditNotificationPrefsObjectSchema.default({});
 
 /** Inferred TypeScript type for audit and notification preferences. */
-export type AuditNotificationPrefs = z.infer<typeof AuditNotificationPrefsSchema>;
+export type AuditNotificationPrefs = z.infer<
+  typeof AuditNotificationPrefsSchema
+>;

@@ -19,13 +19,11 @@ let path: typeof import("path") | undefined;
 
 if (isNode) {
   try {
-     
     const readline = require("readline");
     clearLine = readline.clearLine;
     cursorTo = readline.cursorTo;
     fs = require("fs");
     path = require("path");
-     
   } catch {
     // Silently degrade — all operations will be no-ops.
   }
@@ -130,7 +128,10 @@ export class DisplayManager {
       const filePath = path.join("logs", filename);
 
       // Strip ANSI color codes from log message
-      const plainLogMessage = logMessage.replace(new RegExp(String.fromCharCode(27) + "\\[\\d+m", "g"), "");
+      const plainLogMessage = logMessage.replace(
+        new RegExp(String.fromCharCode(27) + "\\[\\d+m", "g"),
+        "",
+      );
 
       // Write to file (append if exists, create if not)
       fs.appendFileSync(filePath, plainLogMessage + "\n");
@@ -167,7 +168,10 @@ export class DisplayManager {
       const filePath = path.join("logs", filename);
 
       // Strip ANSI color codes from log message
-      const plainLogMessage = logMessage.replace(new RegExp(String.fromCharCode(27) + "\\[\\d+m", "g"), "");
+      const plainLogMessage = logMessage.replace(
+        new RegExp(String.fromCharCode(27) + "\\[\\d+m", "g"),
+        "",
+      );
 
       // Write to file (append if exists, create if not)
       fs.appendFileSync(filePath, plainLogMessage + "\n");

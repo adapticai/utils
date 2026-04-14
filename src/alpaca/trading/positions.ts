@@ -358,13 +358,16 @@ export async function closePosition(
 ): Promise<AlpacaOrder> {
   // Normalize crypto symbols: Alpaca positions endpoint rejects hyphenated
   // format (e.g., "SOL-USD") but accepts concatenated form (e.g., "SOLUSD").
-  const isCrypto = symbol.includes("/") || symbol.includes("-") ||
+  const isCrypto =
+    symbol.includes("/") ||
+    symbol.includes("-") ||
     /^[A-Z]{2,}USD[TC]?$/i.test(symbol);
-  const normalizedSymbol = isCrypto
-    ? symbol.replace(/[-/]/g, "")
-    : symbol;
+  const normalizedSymbol = isCrypto ? symbol.replace(/[-/]/g, "") : symbol;
 
-  log(`Closing position for ${normalizedSymbol}`, { type: "info", symbol: normalizedSymbol });
+  log(`Closing position for ${normalizedSymbol}`, {
+    type: "info",
+    symbol: normalizedSymbol,
+  });
 
   try {
     const sdk = client.getSDK();
@@ -385,7 +388,10 @@ export async function closePosition(
         symbol: normalizedSymbol,
       });
     } else {
-      log(`Closing entire position for ${normalizedSymbol}`, { type: "info", symbol: normalizedSymbol });
+      log(`Closing entire position for ${normalizedSymbol}`, {
+        type: "info",
+        symbol: normalizedSymbol,
+      });
     }
 
     // Use sendRequest for parameterized close, closePosition for full close

@@ -15,7 +15,7 @@ import {
   MassiveIndicesDailyOpenCloseResponse,
   MassiveIndicesPrevCloseResponse,
   MassiveIndicesSnapshotParams,
-  MassiveIndicesSnapshotResponse
+  MassiveIndicesSnapshotResponse,
 } from "./types";
 
 // Constants from environment variables

@@ -1,5 +1,5 @@
-import { z } from 'zod';
-import { OverlayType } from '../enums';
+import { z } from "zod";
+import { OverlayType } from "../enums";
 
 /** Schema for the response configuration applied when a specific overlay type activates. */
 const OverlayResponseConfigSchema = z.object({
@@ -32,10 +32,13 @@ const OverlayResponseConfigSchema = z.object({
  * for use with `deepPartial()`, which requires a ZodObject (not ZodDefault).
  */
 export const OverlayResponsePrefsObjectSchema = z.object({
-  overlayResponses: z.record(z.nativeEnum(OverlayType), OverlayResponseConfigSchema).default({}),
+  overlayResponses: z
+    .record(z.nativeEnum(OverlayType), OverlayResponseConfigSchema)
+    .default({}),
 });
 
-export const OverlayResponsePrefsSchema = OverlayResponsePrefsObjectSchema.default({});
+export const OverlayResponsePrefsSchema =
+  OverlayResponsePrefsObjectSchema.default({});
 
 /** Inferred TypeScript type for overlay response preferences. */
 export type OverlayResponsePrefs = z.infer<typeof OverlayResponsePrefsSchema>;

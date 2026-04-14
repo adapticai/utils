@@ -15,13 +15,19 @@ import type Alpaca from "@alpacahq/alpaca-trade-api";
 // ──────────────────────────────────────────────────────────────────────────────
 
 /** Config parameter type for Alpaca SDK market data methods (getLatestQuote, etc.) */
-export type AlpacaSDKConfig = NonNullable<Parameters<Alpaca["getLatestQuote"]>[1]>;
+export type AlpacaSDKConfig = NonNullable<
+  Parameters<Alpaca["getLatestQuote"]>[1]
+>;
 
 /** Parameter type for Alpaca SDK getOrders method */
-export type AlpacaSDKOrderParams = NonNullable<Parameters<Alpaca["getOrders"]>[0]>;
+export type AlpacaSDKOrderParams = NonNullable<
+  Parameters<Alpaca["getOrders"]>[0]
+>;
 
 /** Parameter type for Alpaca SDK getPortfolioHistory method */
-export type AlpacaSDKPortfolioHistoryParams = NonNullable<Parameters<Alpaca["getPortfolioHistory"]>[0]>;
+export type AlpacaSDKPortfolioHistoryParams = NonNullable<
+  Parameters<Alpaca["getPortfolioHistory"]>[0]
+>;
 
 /** Socket type for Alpaca SDK crypto data stream */
 export type AlpacaSDKCryptoStreamSocket = Alpaca["crypto_stream_v1beta3"];

@@ -38,10 +38,7 @@ import { AlpacaClient } from "../client";
 import { EventEmitter } from "events";
 import { log as baseLog } from "../../logging";
 import { LogOptions } from "../../types/logging-types";
-import {
-  TradingStream,
-  createTradingStream,
-} from "./trading-stream";
+import { TradingStream, createTradingStream } from "./trading-stream";
 import {
   StockDataStream,
   createStockDataStream,

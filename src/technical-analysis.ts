@@ -1,5 +1,9 @@
 import { logIfDebug } from "./misc-utils";
-import { BollingerBandsData, BollingerBandsParams, MassivePriceData } from "./types";
+import {
+  BollingerBandsData,
+  BollingerBandsParams,
+  MassivePriceData,
+} from "./types";
 
 /**
  * Calculates Bollinger Bands for a given set of price data.

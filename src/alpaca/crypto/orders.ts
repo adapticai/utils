@@ -598,7 +598,9 @@ export async function getOpenCryptoOrders(
           : undefined,
     };
 
-    const orders = (await sdk.getOrders(queryParams as unknown as AlpacaSDKOrderParams)) as AlpacaOrder[];
+    const orders = (await sdk.getOrders(
+      queryParams as unknown as AlpacaSDKOrderParams,
+    )) as AlpacaOrder[];
 
     // Filter to only crypto orders (asset_class === 'crypto')
     const cryptoOrders = orders.filter(

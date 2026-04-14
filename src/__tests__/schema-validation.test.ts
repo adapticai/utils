@@ -24,7 +24,7 @@ import {
   AlpacaPositionsArraySchema,
   AlpacaPositionSchema,
   AlpacaQuoteSchema,
-  AlpacaTradeSchema
+  AlpacaTradeSchema,
 } from "../schemas/alpaca-schemas";
 
 import {
@@ -33,7 +33,7 @@ import {
   MassiveGroupedDailyResponseSchema,
   MassiveTickerInfoSchema,
   MassiveTradesResponseSchema,
-  RawMassivePriceDataSchema
+  RawMassivePriceDataSchema,
 } from "../schemas/massive-schemas";
 
 import {

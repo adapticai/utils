@@ -1,5 +1,5 @@
-import { z } from 'zod';
-import { LlmProvider } from '../enums';
+import { z } from "zod";
+import { LlmProvider } from "../enums";
 
 /** Schema for a single entry in an LLM fallback chain. */
 const FallbackChainEntrySchema = z.object({
@@ -35,14 +35,18 @@ export const ModelPrefsObjectSchema = z.object({
   latencyTargetMs: z.number().min(0).default(5000),
   timeoutMs: z.number().min(0).default(30000),
   maxRetries: z.number().min(0).default(2),
-  toolUsePermissionsByTier: z.record(z.string(), ToolUsePermissionsSchema).default({
-    mini: { readTools: true, writeTools: false },
-    normal: { readTools: true, writeTools: false },
-    advanced: { readTools: true, writeTools: true },
-  }),
+  toolUsePermissionsByTier: z
+    .record(z.string(), ToolUsePermissionsSchema)
+    .default({
+      mini: { readTools: true, writeTools: false },
+      normal: { readTools: true, writeTools: false },
+      advanced: { readTools: true, writeTools: true },
+    }),
   memorySummaryCadenceMinutes: z.number().min(0).default(60),
   maxMemorySummariesRetained: z.number().min(0).default(50),
-  excludedProvidersForWorkflows: z.record(z.string(), z.array(z.string())).default({}),
+  excludedProvidersForWorkflows: z
+    .record(z.string(), z.array(z.string()))
+    .default({}),
   quantModelWeight: z.number().min(0).max(1).default(0.7),
 });
 

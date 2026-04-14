@@ -234,7 +234,10 @@ export async function cancelOrder(
 
   try {
     const sdk = client.getSDK();
-    await client.executeWithRateLimit(() => sdk.cancelOrder(orderId), "cancelOrder");
+    await client.executeWithRateLimit(
+      () => sdk.cancelOrder(orderId),
+      "cancelOrder",
+    );
 
     log(`Order canceled successfully: ${orderId}`, { type: "info" });
   } catch (error) {
@@ -289,7 +292,10 @@ export async function cancelAllOrders(
 
   try {
     const sdk = client.getSDK();
-    const result = await client.executeWithRateLimit(() => sdk.cancelAllOrders(), "cancelAllOrders");
+    const result = await client.executeWithRateLimit(
+      () => sdk.cancelAllOrders(),
+      "cancelAllOrders",
+    );
 
     // The SDK returns an array of canceled order statuses
     const canceled = Array.isArray(result) ? result.length : 0;
@@ -362,7 +368,10 @@ export async function replaceOrder(
 
   try {
     const sdk = client.getSDK();
-    const newOrder = await client.executeWithRateLimit(() => sdk.replaceOrder(orderId, params), "replaceOrder");
+    const newOrder = await client.executeWithRateLimit(
+      () => sdk.replaceOrder(orderId, params),
+      "replaceOrder",
+    );
 
     log(`Order replaced successfully: ${orderId} -> ${newOrder.id}`, {
       type: "info",
@@ -485,7 +494,10 @@ export async function getOrderByClientId(
 
   try {
     const sdk = client.getSDK();
-    const order = await client.executeWithRateLimit(() => sdk.getOrderByClientId(clientOrderId), "getOrderByClientId");
+    const order = await client.executeWithRateLimit(
+      () => sdk.getOrderByClientId(clientOrderId),
+      "getOrderByClientId",
+    );
 
     log(`Order retrieved by client_order_id: ${clientOrderId} -> ${order.id}`, {
       type: "debug",

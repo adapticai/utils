@@ -21,10 +21,7 @@ import {
 } from "./bracket-orders";
 import { createOCOOrder, OCOOrderResult } from "./oco-orders";
 import { createOTOOrder, OTOOrderResult } from "./oto-orders";
-import {
-  createTrailingStop,
-  updateTrailingStop,
-} from "./trailing-stops";
+import { createTrailingStop, updateTrailingStop } from "./trailing-stops";
 import { log as baseLog } from "../../logging";
 import { LogOptions } from "../../types/logging-types";
 

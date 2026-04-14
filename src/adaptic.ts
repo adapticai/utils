@@ -81,18 +81,19 @@ export const isAuthConfigured = (): boolean => {
  *
  * @returns {Promise<ApolloClientInstance>} The shared Apollo client instance.
  */
-export const getSharedApolloClient = async (): Promise<ApolloClientInstance> => {
-  if (!apolloClientInstance) {
-    try {
-      // Initialize the client once and reuse it across requests
-      apolloClientInstance = await getApolloClient();
-    } catch (error) {
-      getLogger().error("Error initializing shared Apollo client:", error);
-      throw error;
+export const getSharedApolloClient =
+  async (): Promise<ApolloClientInstance> => {
+    if (!apolloClientInstance) {
+      try {
+        // Initialize the client once and reuse it across requests
+        apolloClientInstance = await getApolloClient();
+      } catch (error) {
+        getLogger().error("Error initializing shared Apollo client:", error);
+        throw error;
+      }
     }
-  }
-  return apolloClientInstance;
-};
+    return apolloClientInstance;
+  };
 
 /**
  * Fetches the asset overview for a given symbol from the Adaptic backend.

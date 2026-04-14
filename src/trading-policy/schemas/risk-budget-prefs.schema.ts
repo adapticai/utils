@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 /**
  * Risk budget preferences schema (section 7.3).
@@ -28,7 +28,7 @@ export const RiskBudgetPrefsObjectSchema = z.object({
   overnightExposureCapPct: z.number().min(0).max(100).default(50),
   weekendExposureCapPct: z.number().min(0).max(100).default(30),
   eventRiskExposureCapPct: z.number().min(0).max(100).default(40),
-  gapRiskSensitivity: z.enum(['low', 'medium', 'high']).default('medium'),
+  gapRiskSensitivity: z.enum(["low", "medium", "high"]).default("medium"),
 
   /** Per-trade equity allocation as % of account equity. Replaces legacy AlpacaAccount.tradeAllocationPct. */
   perTradeAllocationPct: z.number().min(0).max(100).default(5),
@@ -36,9 +36,9 @@ export const RiskBudgetPrefsObjectSchema = z.object({
   perTradeCryptoAllocationPct: z.number().min(0).max(100).default(5),
 
   /** Alpaca day-trading buying power check enforcement. Synced to Alpaca API. */
-  dtbpCheck: z.enum(['both', 'entry', 'exit']).default('both'),
+  dtbpCheck: z.enum(["both", "entry", "exit"]).default("both"),
   /** Alpaca pattern day trader rule enforcement. Synced to Alpaca API. */
-  pdtCheck: z.enum(['both', 'entry', 'exit']).default('both'),
+  pdtCheck: z.enum(["both", "entry", "exit"]).default("both"),
   /** Strict PDT enforcement — block all violations without exception. Synced to Alpaca API. */
   ptpNoExceptionEntry: z.boolean().default(false),
 });

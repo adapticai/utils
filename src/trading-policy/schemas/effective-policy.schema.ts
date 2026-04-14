@@ -1,15 +1,15 @@
-import { z } from 'zod';
-import { AutonomyMode, LlmProvider } from '../enums';
-import { AutonomyPrefsSchema } from './autonomy-prefs.schema';
-import { AssetUniversePrefsSchema } from './asset-universe-prefs.schema';
-import { RiskBudgetPrefsSchema } from './risk-budget-prefs.schema';
-import { SignalConsumptionPrefsSchema } from './signal-consumption-prefs.schema';
-import { ExecutionPrefsSchema } from './execution-prefs.schema';
-import { PositionManagementPrefsSchema } from './position-management-prefs.schema';
-import { PortfolioConstructionPrefsSchema } from './portfolio-construction-prefs.schema';
-import { OverlayResponsePrefsSchema } from './overlay-response-prefs.schema';
-import { ModelPrefsSchema } from './model-prefs.schema';
-import { AuditNotificationPrefsSchema } from './audit-notification-prefs.schema';
+import { z } from "zod";
+import { AutonomyMode, LlmProvider } from "../enums";
+import { AutonomyPrefsSchema } from "./autonomy-prefs.schema";
+import { AssetUniversePrefsSchema } from "./asset-universe-prefs.schema";
+import { RiskBudgetPrefsSchema } from "./risk-budget-prefs.schema";
+import { SignalConsumptionPrefsSchema } from "./signal-consumption-prefs.schema";
+import { ExecutionPrefsSchema } from "./execution-prefs.schema";
+import { PositionManagementPrefsSchema } from "./position-management-prefs.schema";
+import { PortfolioConstructionPrefsSchema } from "./portfolio-construction-prefs.schema";
+import { OverlayResponsePrefsSchema } from "./overlay-response-prefs.schema";
+import { ModelPrefsSchema } from "./model-prefs.schema";
+import { AuditNotificationPrefsSchema } from "./audit-notification-prefs.schema";
 
 /**
  * Effective trading policy schema representing the fully-resolved policy
@@ -68,4 +68,6 @@ export const EffectiveTradingPolicySchema = z.object({
 });
 
 /** Inferred TypeScript type for a fully-resolved effective trading policy. */
-export type EffectiveTradingPolicy = z.infer<typeof EffectiveTradingPolicySchema>;
+export type EffectiveTradingPolicy = z.infer<
+  typeof EffectiveTradingPolicySchema
+>;

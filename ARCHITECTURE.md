@@ -1733,7 +1733,7 @@ import type {
 
 | Variable                     | Required | Purpose                           |
 | ---------------------------- | -------- | --------------------------------- |
-| `MASSIVE_API_KEY`            | Optional | Massive.com market data            |
+| `MASSIVE_API_KEY`            | Optional | Massive.com market data           |
 | `ALPHA_VANTAGE_API_KEY`      | Optional | Alpha Vantage market data         |
 | `ALPACA_API_KEY`             | Optional | Alpaca trading/data API           |
 | `ALPACA_API_SECRET`          | Optional | Alpaca API secret                 |

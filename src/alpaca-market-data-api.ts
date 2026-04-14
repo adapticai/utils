@@ -243,7 +243,8 @@ export class AlpacaMarketDataAPI extends EventEmitter {
     // when env vars are not available. Features will be unavailable until
     // credentials are provided at runtime.
     const apiKey = process.env.ALPACA_API_KEY || "";
-    const apiSecret = process.env.ALPACA_API_SECRET || process.env.ALPACA_SECRET_KEY || "";
+    const apiSecret =
+      process.env.ALPACA_API_SECRET || process.env.ALPACA_SECRET_KEY || "";
     this.credentialsValid = validateAlpacaCredentials(
       {
         apiKey,
@@ -321,7 +322,8 @@ export class AlpacaMarketDataAPI extends EventEmitter {
     }
 
     const apiKey = process.env.ALPACA_API_KEY || "";
-    const apiSecret = process.env.ALPACA_API_SECRET || process.env.ALPACA_SECRET_KEY || "";
+    const apiSecret =
+      process.env.ALPACA_API_SECRET || process.env.ALPACA_SECRET_KEY || "";
 
     if (!apiKey || !apiSecret) {
       log(
@@ -400,7 +402,9 @@ export class AlpacaMarketDataAPI extends EventEmitter {
     });
 
     ws.on("close", (code: number) => {
-      log(`${streamType} stream disconnected (code: ${code})`, { type: "warn" });
+      log(`${streamType} stream disconnected (code: ${code})`, {
+        type: "warn",
+      });
       if (streamType === "stock") {
         this.stockWs = null;
       } else if (streamType === "option") {

@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 /** Schema for tactical allocation band constraints around a target weight. */
 const TacticalBandSchema = z.object({
@@ -31,13 +31,24 @@ export const PortfolioConstructionPrefsObjectSchema = z.object({
   targetAllocationByAssetClass: z.record(z.string(), z.number()).default({}),
   tacticalAllocationBands: z.record(z.string(), TacticalBandSchema).default({}),
   driftThresholdPct: z.number().min(0).max(100).default(5),
-  rebalanceTrigger: z.enum(['threshold', 'calendar', 'both']).default('threshold'),
+  rebalanceTrigger: z
+    .enum(["threshold", "calendar", "both"])
+    .default("threshold"),
   rebalanceFrequencyDays: z.number().min(0).default(30),
   autonomousRebalancing: z.boolean().default(false),
   rebalanceDuringRiskOff: z.boolean().default(false),
   maxTurnoverPerRebalancePct: z.number().min(0).max(100).default(20),
-  preferredWeighting: z.enum(['equal_weight', 'risk_based', 'conviction_weighted', 'target_allocation']).default('equal_weight'),
-  strategySleeveBudgets: z.record(z.string(), StrategySleeveBudgetSchema).default({}),
+  preferredWeighting: z
+    .enum([
+      "equal_weight",
+      "risk_based",
+      "conviction_weighted",
+      "target_allocation",
+    ])
+    .default("equal_weight"),
+  strategySleeveBudgets: z
+    .record(z.string(), StrategySleeveBudgetSchema)
+    .default({}),
   cashTargetPct: z.number().min(0).max(100).default(10),
   defensiveCashEscalationEnabled: z.boolean().default(false),
   defensiveCashEscalationRules: z.array(DefensiveCashRuleSchema).default([]),
@@ -53,7 +64,10 @@ export const PortfolioConstructionPrefsObjectSchema = z.object({
   forcedDeleveragingTargetExposurePct: z.number().min(0).max(100).default(50),
 });
 
-export const PortfolioConstructionPrefsSchema = PortfolioConstructionPrefsObjectSchema.default({});
+export const PortfolioConstructionPrefsSchema =
+  PortfolioConstructionPrefsObjectSchema.default({});
 
 /** Inferred TypeScript type for portfolio construction preferences. */
-export type PortfolioConstructionPrefs = z.infer<typeof PortfolioConstructionPrefsSchema>;
+export type PortfolioConstructionPrefs = z.infer<
+  typeof PortfolioConstructionPrefsSchema
+>;

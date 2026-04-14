@@ -23,9 +23,7 @@ const INFO_LEVEL_TYPES: ReadonlySet<LogType> = new Set([
  * `service-initializer.ts`). We surface every meaningful field from
  * `LogOptions` so downstream consumers can filter, query, and correlate.
  */
-function buildLoggerContext(
-  options: LogOptions,
-): Record<string, unknown> {
+function buildLoggerContext(options: LogOptions): Record<string, unknown> {
   const context: Record<string, unknown> = {};
   if (options.source) context.source = options.source;
   if (options.account) context.account = options.account;

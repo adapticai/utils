@@ -392,35 +392,35 @@ export async function updateConfiguration(
 
       if (account.allocation) {
         const allocUpdateData = {
-            id: account.allocation.id,
-            alpacaAccount: {
-              id: account.id,
-            },
-            alpacaAccountId: account.id,
-            stocks: updatedConfig.allocation.stocks ?? 0,
-            options: updatedConfig.allocation.options ?? 0,
-            futures: updatedConfig.allocation.futures ?? 0,
-            etfs: updatedConfig.allocation.etfs ?? 0,
-            forex: updatedConfig.allocation.forex ?? 0,
-            crypto: updatedConfig.allocation.crypto ?? 0,
-          };
+          id: account.allocation.id,
+          alpacaAccount: {
+            id: account.id,
+          },
+          alpacaAccountId: account.id,
+          stocks: updatedConfig.allocation.stocks ?? 0,
+          options: updatedConfig.allocation.options ?? 0,
+          futures: updatedConfig.allocation.futures ?? 0,
+          etfs: updatedConfig.allocation.etfs ?? 0,
+          forex: updatedConfig.allocation.forex ?? 0,
+          crypto: updatedConfig.allocation.crypto ?? 0,
+        };
         allocUpdatePromise = adaptic.allocation.update(
           allocUpdateData as Partial<types.Allocation> as types.Allocation,
           client,
         );
       } else {
         const allocCreateData = {
-            stocks: updatedConfig.allocation.stocks ?? 0,
-            options: updatedConfig.allocation.options ?? 0,
-            futures: updatedConfig.allocation.futures ?? 0,
-            etfs: updatedConfig.allocation.etfs ?? 0,
-            forex: updatedConfig.allocation.forex ?? 0,
-            crypto: updatedConfig.allocation.crypto ?? 0,
-            alpacaAccount: {
-              id: account.id,
-            },
-            alpacaAccountId: account.id,
-          };
+          stocks: updatedConfig.allocation.stocks ?? 0,
+          options: updatedConfig.allocation.options ?? 0,
+          futures: updatedConfig.allocation.futures ?? 0,
+          etfs: updatedConfig.allocation.etfs ?? 0,
+          forex: updatedConfig.allocation.forex ?? 0,
+          crypto: updatedConfig.allocation.crypto ?? 0,
+          alpacaAccount: {
+            id: account.id,
+          },
+          alpacaAccountId: account.id,
+        };
         allocUpdatePromise = adaptic.allocation.create(
           allocCreateData as Partial<types.Allocation> as types.Allocation,
           client,
@@ -429,44 +429,44 @@ export async function updateConfiguration(
     }
 
     const accountUpdateData = {
-        id: account.id,
-        user: {
-          id: user.id,
-          name: user?.name,
-        },
-        configuration: updatedConfig,
-        marketOpen: updatedConfig.marketOpen ?? false,
-        realTime: updatedConfig.realTime ?? false,
-        tradeAllocationPct: updatedConfig.tradeAllocationPct ?? 0,
-        minPercentageChange: updatedConfig.minPercentageChange ?? 0,
-        volumeThreshold: updatedConfig.volumeThreshold ?? 0,
+      id: account.id,
+      user: {
+        id: user.id,
+        name: user?.name,
+      },
+      configuration: updatedConfig,
+      marketOpen: updatedConfig.marketOpen ?? false,
+      realTime: updatedConfig.realTime ?? false,
+      tradeAllocationPct: updatedConfig.tradeAllocationPct ?? 0,
+      minPercentageChange: updatedConfig.minPercentageChange ?? 0,
+      volumeThreshold: updatedConfig.volumeThreshold ?? 0,
 
-        cryptoTradingEnabled: updatedConfig.cryptoTradingEnabled ?? false,
-        cryptoTradingPairs: updatedConfig.cryptoTradingPairs ?? [],
-        cryptoTradeAllocationPct: updatedConfig.cryptoTradeAllocationPct ?? 0,
-        autoAllocation: updatedConfig.autoAllocation ?? false,
+      cryptoTradingEnabled: updatedConfig.cryptoTradingEnabled ?? false,
+      cryptoTradingPairs: updatedConfig.cryptoTradingPairs ?? [],
+      cryptoTradeAllocationPct: updatedConfig.cryptoTradeAllocationPct ?? 0,
+      autoAllocation: updatedConfig.autoAllocation ?? false,
 
-        enablePortfolioTrailingStop:
-          updatedConfig.enablePortfolioTrailingStop ?? false,
-        portfolioTrailPercent: updatedConfig.portfolioTrailPercent ?? 0,
-        portfolioProfitThresholdPercent:
-          updatedConfig.portfolioProfitThresholdPercent ?? 0,
-        reducedPortfolioTrailPercent:
-          updatedConfig.reducedPortfolioTrailPercent ?? 0,
+      enablePortfolioTrailingStop:
+        updatedConfig.enablePortfolioTrailingStop ?? false,
+      portfolioTrailPercent: updatedConfig.portfolioTrailPercent ?? 0,
+      portfolioProfitThresholdPercent:
+        updatedConfig.portfolioProfitThresholdPercent ?? 0,
+      reducedPortfolioTrailPercent:
+        updatedConfig.reducedPortfolioTrailPercent ?? 0,
 
-        defaultTrailingStopPercentage100:
-          updatedConfig.defaultTrailingStopPercentage100 ?? 0,
-        firstTrailReductionThreshold100:
-          updatedConfig.firstTrailReductionThreshold100 ?? 0,
-        secondTrailReductionThreshold100:
-          updatedConfig.secondTrailReductionThreshold100 ?? 0,
-        firstReducedTrailPercentage100:
-          updatedConfig.firstReducedTrailPercentage100 ?? 0,
-        secondReducedTrailPercentage100:
-          updatedConfig.secondReducedTrailPercentage100 ?? 0,
-        minimumPriceChangePercent100:
-          updatedConfig.minimumPriceChangePercent100 ?? 0,
-      };
+      defaultTrailingStopPercentage100:
+        updatedConfig.defaultTrailingStopPercentage100 ?? 0,
+      firstTrailReductionThreshold100:
+        updatedConfig.firstTrailReductionThreshold100 ?? 0,
+      secondTrailReductionThreshold100:
+        updatedConfig.secondTrailReductionThreshold100 ?? 0,
+      firstReducedTrailPercentage100:
+        updatedConfig.firstReducedTrailPercentage100 ?? 0,
+      secondReducedTrailPercentage100:
+        updatedConfig.secondReducedTrailPercentage100 ?? 0,
+      minimumPriceChangePercent100:
+        updatedConfig.minimumPriceChangePercent100 ?? 0,
+    };
     const adapticUpdatePromise = adaptic.alpacaAccount.update(
       accountUpdateData as Partial<types.AlpacaAccount> as types.AlpacaAccount,
       client,

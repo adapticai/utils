@@ -26,33 +26,56 @@ export { getLogger, resetLogger, setLogger, type Logger } from "./logger";
 // Error utilities
 export {
   AdapticUtilsError,
-  AlpacaApiError, AlphaVantageError, AuthenticationError, DataFormatError, HttpClientError,
-  HttpServerError, MassiveApiError, NetworkError, RateLimitError, TimeoutError,
-  ValidationError, WebSocketError
+  AlpacaApiError,
+  AlphaVantageError,
+  AuthenticationError,
+  DataFormatError,
+  HttpClientError,
+  HttpServerError,
+  MassiveApiError,
+  NetworkError,
+  RateLimitError,
+  TimeoutError,
+  ValidationError,
+  WebSocketError,
 } from "./errors";
 
 // Auth validation utilities
 export {
-  validateAlpacaCredentials, validateAlphaVantageApiKey, validateMassiveApiKey
+  validateAlpacaCredentials,
+  validateAlphaVantageApiKey,
+  validateMassiveApiKey,
 } from "./utils/auth-validator";
 
 // API Endpoints Configuration
 export {
-  MARKET_DATA_API, TRADING_API, WEBSOCKET_STREAMS, getCryptoStreamUrl, getOptionsStreamUrl, getStockStreamUrl, getTradingApiUrl,
-  getTradingWebSocketUrl, type AccountType
+  MARKET_DATA_API,
+  TRADING_API,
+  WEBSOCKET_STREAMS,
+  getCryptoStreamUrl,
+  getOptionsStreamUrl,
+  getStockStreamUrl,
+  getTradingApiUrl,
+  getTradingWebSocketUrl,
+  type AccountType,
 } from "./config/api-endpoints";
 
 // Cache utilities
 export {
-  DEFAULT_CACHE_OPTIONS, StampedeProtectedCache,
-  createStampedeProtectedCache, type CacheEntry, type CacheLoader, type CacheStats, type StampedeProtectedCacheOptions
+  DEFAULT_CACHE_OPTIONS,
+  StampedeProtectedCache,
+  createStampedeProtectedCache,
+  type CacheEntry,
+  type CacheLoader,
+  type CacheStats,
+  type StampedeProtectedCacheOptions,
 } from "./cache/stampede-protected-cache";
 
 // Rate limiting utilities
 export {
   TokenBucketRateLimiter,
   rateLimiters,
-  type RateLimiterConfig
+  type RateLimiterConfig,
 } from "./rate-limiter";
 
 // Retry utilities with exponential backoff
@@ -60,15 +83,17 @@ export { API_RETRY_CONFIGS, withRetry, type RetryConfig } from "./utils/retry";
 
 // HTTP timeout utilities
 export {
-  DEFAULT_TIMEOUTS, createTimeoutSignal,
-  getTimeout, withTimeout
+  DEFAULT_TIMEOUTS,
+  createTimeoutSignal,
+  getTimeout,
+  withTimeout,
 } from "./http-timeout";
 
 // Asset Allocation utilities
 export {
   AssetAllocationEngine,
   generateOptimalAllocation,
-  getDefaultRiskProfile
+  getDefaultRiskProfile,
 } from "./asset-allocation-algorithm";
 
 export * from "./types/asset-allocation-types";
@@ -78,32 +103,60 @@ export {
   AVNewsArticleSchema,
   AVNewsResponseSchema,
   // Alpaca schemas
-  AlpacaAccountDetailsSchema, AlpacaBarSchema, AlpacaCryptoBarsResponseSchema, AlpacaHistoricalBarsResponseSchema,
-  AlpacaLatestBarsResponseSchema, AlpacaLatestQuotesResponseSchema, AlpacaLatestTradesResponseSchema,
+  AlpacaAccountDetailsSchema,
+  AlpacaBarSchema,
+  AlpacaCryptoBarsResponseSchema,
+  AlpacaHistoricalBarsResponseSchema,
+  AlpacaLatestBarsResponseSchema,
+  AlpacaLatestQuotesResponseSchema,
+  AlpacaLatestTradesResponseSchema,
   AlpacaNewsArticleSchema,
-  AlpacaNewsResponseSchema, AlpacaOrderSchema,
-  AlpacaOrdersArraySchema, AlpacaPortfolioHistoryResponseSchema, AlpacaPositionSchema,
-  AlpacaPositionsArraySchema, AlpacaQuoteSchema, AlpacaTradeSchema,
+  AlpacaNewsResponseSchema,
+  AlpacaOrderSchema,
+  AlpacaOrdersArraySchema,
+  AlpacaPortfolioHistoryResponseSchema,
+  AlpacaPositionSchema,
+  AlpacaPositionsArraySchema,
+  AlpacaQuoteSchema,
+  AlpacaTradeSchema,
   // Alpha Vantage schemas
-  AlphaVantageQuoteResponseSchema, MassiveAggregatesResponseSchema, MassiveDailyOpenCloseSchema, MassiveErrorResponseSchema, MassiveGroupedDailyResponseSchema, MassiveLastTradeResponseSchema, MassiveTickerDetailsResponseSchema, MassiveTickerInfoSchema, MassiveTradeSchema as MassiveTradeZodSchema,
+  AlphaVantageQuoteResponseSchema,
+  MassiveAggregatesResponseSchema,
+  MassiveDailyOpenCloseSchema,
+  MassiveErrorResponseSchema,
+  MassiveGroupedDailyResponseSchema,
+  MassiveLastTradeResponseSchema,
+  MassiveTickerDetailsResponseSchema,
+  MassiveTickerInfoSchema,
+  MassiveTradeSchema as MassiveTradeZodSchema,
   MassiveTradesResponseSchema,
   // Massive schemas
-  RawMassivePriceDataSchema, ValidationResponseError, safeValidateResponse, validateResponse, type ValidateResponseOptions, type ValidationResult
+  RawMassivePriceDataSchema,
+  ValidationResponseError,
+  safeValidateResponse,
+  validateResponse,
+  type ValidateResponseOptions,
+  type ValidationResult,
 } from "./schemas";
 
 // Pagination utilities
 export {
   paginate,
   paginateAll,
-  type CursorPaginationConfig, type OffsetPaginationConfig,
-  type PaginationConfig, type UrlPaginationConfig
+  type CursorPaginationConfig,
+  type OffsetPaginationConfig,
+  type PaginationConfig,
+  type UrlPaginationConfig,
 } from "./utils/paginator";
 
 // HTTP connection pooling utilities
 export {
-  KEEP_ALIVE_DEFAULTS, getAgentPoolStatus, httpAgent,
-  httpsAgent, verifyFetchKeepAlive,
-  type ConnectionPoolStatus
+  KEEP_ALIVE_DEFAULTS,
+  getAgentPoolStatus,
+  httpAgent,
+  httpsAgent,
+  verifyFetchKeepAlive,
+  type ConnectionPoolStatus,
 } from "./utils/http-keep-alive";
 
 // Re-export all types
@@ -128,18 +181,32 @@ export const createAlpacaMarketDataAPI = () => {
 export * from "./alpaca";
 
 // Trading Policy schemas, types, enums, and defaults
-export * as tradingPolicy from './trading-policy';
+export * as tradingPolicy from "./trading-policy";
 export {
-  AutonomyMode, OverlayType, OverlaySeverity, OverlayStatus,
-  DecisionOutcome, DecisionRecordStatus, DecisionMemoryOutcome, LlmProvider,
-} from './trading-policy/enums';
+  AutonomyMode,
+  OverlayType,
+  OverlaySeverity,
+  OverlayStatus,
+  DecisionOutcome,
+  DecisionRecordStatus,
+  DecisionMemoryOutcome,
+  LlmProvider,
+} from "./trading-policy/enums";
 export type {
-  AutonomyPrefs, AssetUniversePrefs, RiskBudgetPrefs,
-  SignalConsumptionPrefs, ExecutionPrefs, PositionManagementPrefs,
-  PortfolioConstructionPrefs, OverlayResponsePrefs, ModelPrefs,
-  AuditNotificationPrefs, PolicyMutation, EffectiveTradingPolicy,
-} from './trading-policy/schemas';
-export { DEFAULT_TRADING_POLICY } from './trading-policy/defaults/default-trading-policy';
+  AutonomyPrefs,
+  AssetUniversePrefs,
+  RiskBudgetPrefs,
+  SignalConsumptionPrefs,
+  ExecutionPrefs,
+  PositionManagementPrefs,
+  PortfolioConstructionPrefs,
+  OverlayResponsePrefs,
+  ModelPrefs,
+  AuditNotificationPrefs,
+  PolicyMutation,
+  EffectiveTradingPolicy,
+} from "./trading-policy/schemas";
+export { DEFAULT_TRADING_POLICY } from "./trading-policy/defaults/default-trading-policy";
 
 // Export TokenProvider type for Apollo client auth
 export type { TokenProvider } from "./adaptic";

@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 /** Schema for a named no-trade window (e.g., lunch hour, FOMC). */
 const NoTradeWindowSchema = z.object({
@@ -37,15 +37,25 @@ export const SignalConsumptionPrefsObjectSchema = z.object({
   cooldownAfterStopOutSeconds: z.number().min(0).default(300),
   cooldownAfterFailedTradeSeconds: z.number().min(0).default(180),
   duplicateSignalSuppressionWindowSeconds: z.number().min(0).default(300),
-  reversalHandlingPolicy: z.enum([
-    'ignore_reversal', 'close_only', 'flatten_then_reverse', 'allow_full_reversal',
-  ]).default('close_only'),
-  conflictHandlingOpenOrders: z.enum([
-    'cancel_conflicting', 'replace_existing', 'keep_existing_skip', 'escalate',
-  ]).default('cancel_conflicting'),
-  conflictHandlingOpposingPosition: z.enum([
-    'reduce', 'close', 'flatten_then_reverse', 'hold',
-  ]).default('close'),
+  reversalHandlingPolicy: z
+    .enum([
+      "ignore_reversal",
+      "close_only",
+      "flatten_then_reverse",
+      "allow_full_reversal",
+    ])
+    .default("close_only"),
+  conflictHandlingOpenOrders: z
+    .enum([
+      "cancel_conflicting",
+      "replace_existing",
+      "keep_existing_skip",
+      "escalate",
+    ])
+    .default("cancel_conflicting"),
+  conflictHandlingOpposingPosition: z
+    .enum(["reduce", "close", "flatten_then_reverse", "hold"])
+    .default("close"),
   minConvictionDeltaToModify: z.number().min(0).max(100).default(10),
   strategyPriorityRules: z.array(StrategyPriorityRuleSchema).default([]),
   noTradeWindows: z.array(NoTradeWindowSchema).default([]),
@@ -59,7 +69,10 @@ export const SignalConsumptionPrefsObjectSchema = z.object({
   volumeThreshold: z.number().min(0).default(50000),
 });
 
-export const SignalConsumptionPrefsSchema = SignalConsumptionPrefsObjectSchema.default({});
+export const SignalConsumptionPrefsSchema =
+  SignalConsumptionPrefsObjectSchema.default({});
 
 /** Inferred TypeScript type for signal consumption preferences. */
-export type SignalConsumptionPrefs = z.infer<typeof SignalConsumptionPrefsSchema>;
+export type SignalConsumptionPrefs = z.infer<
+  typeof SignalConsumptionPrefsSchema
+>;

@@ -269,7 +269,9 @@ export async function getCryptoBars(
       }
     } else if (barsResponse && "then" in barsResponse) {
       // Handle Promise response (SDK returns thenable in some versions)
-      const response = await (barsResponse as unknown as Promise<{ bars?: Record<string, AlpacaCryptoBarSDKEntry[]> }>);
+      const response = await (barsResponse as unknown as Promise<{
+        bars?: Record<string, AlpacaCryptoBarSDKEntry[]>;
+      }>);
       if (response && response.bars) {
         for (const [symbol, bars] of Object.entries(response.bars)) {
           const barArray = bars as Array<{
@@ -814,7 +816,9 @@ export async function getCryptoTrades(
       }
     } else if (tradesResponse && "then" in tradesResponse) {
       // Handle Promise response (SDK returns thenable in some versions)
-      const response = await (tradesResponse as unknown as Promise<{ trades?: AlpacaCryptoTradeSDKEntry[] }>);
+      const response = await (tradesResponse as unknown as Promise<{
+        trades?: AlpacaCryptoTradeSDKEntry[];
+      }>);
       if (response && response.trades) {
         const tradeArray = response.trades as Array<{
           Price: number;

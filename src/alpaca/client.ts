@@ -262,7 +262,8 @@ export function createAlpacaClient(config: AlpacaClientConfig): AlpacaClient {
  */
 export function createClientFromEnv(): AlpacaClient {
   const apiKey = process.env.ALPACA_API_KEY;
-  const apiSecret = process.env.ALPACA_API_SECRET || process.env.ALPACA_SECRET_KEY;
+  const apiSecret =
+    process.env.ALPACA_API_SECRET || process.env.ALPACA_SECRET_KEY;
   const accountType =
     (process.env.ALPACA_ACCOUNT_TYPE as "PAPER" | "LIVE") || "PAPER";
 

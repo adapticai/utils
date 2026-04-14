@@ -103,15 +103,21 @@ export class AlpacaTradingAPI {
     // Initialize message handlers
     this.messageHandlers.set(
       "authorization",
-      this.handleAuthMessage.bind(this) as (data: AlpacaWebSocketMessage["data"]) => void,
+      this.handleAuthMessage.bind(this) as (
+        data: AlpacaWebSocketMessage["data"],
+      ) => void,
     );
     this.messageHandlers.set(
       "listening",
-      this.handleListenMessage.bind(this) as (data: AlpacaWebSocketMessage["data"]) => void,
+      this.handleListenMessage.bind(this) as (
+        data: AlpacaWebSocketMessage["data"],
+      ) => void,
     );
     this.messageHandlers.set(
       "trade_updates",
-      this.handleTradeUpdate.bind(this) as (data: AlpacaWebSocketMessage["data"]) => void,
+      this.handleTradeUpdate.bind(this) as (
+        data: AlpacaWebSocketMessage["data"],
+      ) => void,
     );
 
     this.debugLogging = options?.debugLogging || false;
@@ -476,6 +482,7 @@ export class AlpacaTradingAPI {
    * @param side (string) - the side of the order
    * @param trailPercent100 (number) - the trail percent of the order (scale 100, i.e. 0.5 = 0.5%)
    * @param position_intent (string) - the position intent of the order
+   * @returns The created AlpacaOrder with order ID and details
    */
   async createTrailingStop(
     symbol: string,
@@ -487,7 +494,7 @@ export class AlpacaTradingAPI {
       | "buy_to_close"
       | "sell_to_open"
       | "sell_to_close",
-  ): Promise<void> {
+  ): Promise<AlpacaOrder> {
     this.log(
       `Creating trailing stop ${side.toUpperCase()} ${qty} shares for ${symbol} with trail percent ${trailPercent100}%`,
       {
@@ -496,7 +503,7 @@ export class AlpacaTradingAPI {
     );
 
     try {
-      await this.makeRequest(`/orders`, "POST", {
+      const order = await this.makeRequest<AlpacaOrder>(`/orders`, "POST", {
         symbol,
         qty: Math.abs(qty),
         side,
@@ -506,6 +513,11 @@ export class AlpacaTradingAPI {
         trail_percent: trailPercent100, // Already in decimal form (e.g., 4 for 4%)
         time_in_force: "gtc",
       });
+      this.log(
+        `Trailing stop order created for ${symbol}: orderId=${order.id}, trailPercent=${trailPercent100}%`,
+        { symbol },
+      );
+      return order;
     } catch (error) {
       this.log(`Error creating trailing stop: ${error}`, {
         symbol,
@@ -611,11 +623,12 @@ export class AlpacaTradingAPI {
    * Update the trail percent for a trailing stop order
    * @param symbol (string) - the symbol of the order
    * @param trailPercent100 (number) - the trail percent of the order (scale 100, i.e. 0.5 = 0.5%)
+   * @returns The updated/replaced order from Alpaca, or null if no order found or no update needed
    */
   async updateTrailingStop(
     symbol: string,
     trailPercent100: number,
-  ): Promise<void> {
+  ): Promise<AlpacaOrder | null> {
     // First get all open orders for this symbol
     const orders = await this.getOrders({
       status: "open",
@@ -632,7 +645,7 @@ export class AlpacaTradingAPI {
         type: "error",
         symbol,
       });
-      return;
+      return null;
     }
 
     // Check if the trail_percent is already set to the desired value
@@ -652,20 +665,31 @@ export class AlpacaTradingAPI {
           symbol,
         },
       );
-      return;
+      return null;
     }
 
+    const originalOrderId = trailingStopOrder.id;
     this.log(
-      `Updating trailing stop for ${symbol} from ${currentTrailPercent}% to ${trailPercent100}%`,
+      `Updating trailing stop for ${symbol} from ${currentTrailPercent}% to ${trailPercent100}% (orderId=${originalOrderId})`,
       {
         symbol,
       },
     );
 
     try {
-      await this.makeRequest(`/orders/${trailingStopOrder.id}`, "PATCH", {
-        trail: trailPercent100.toString(), // Changed from trail_percent to trail
-      });
+      const updatedOrder = await this.makeRequest<AlpacaOrder>(
+        `/orders/${trailingStopOrder.id}`,
+        "PATCH",
+        {
+          trail: trailPercent100.toString(),
+        },
+      );
+      // Log the replacement: Alpaca replaces orders on PATCH, so new ID is returned
+      this.log(
+        `Trailing stop updated for ${symbol}: newOrderId=${updatedOrder.id}, replaces=${updatedOrder.replaces || originalOrderId}`,
+        { symbol },
+      );
+      return updatedOrder;
     } catch (error) {
       this.log(`Error updating trailing stop: ${error}`, {
         symbol,

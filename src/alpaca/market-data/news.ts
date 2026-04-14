@@ -3,10 +3,7 @@
  * Market news and analysis using Alpaca SDK
  */
 import { AlpacaClient } from "../client";
-import {
-  AlpacaNewsArticle,
-  SimpleNews,
-} from "../../types/alpaca-types";
+import { AlpacaNewsArticle, SimpleNews } from "../../types/alpaca-types";
 import { log as baseLog } from "../../logging";
 import { LogOptions } from "../../types/logging-types";
 

@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 /** Schema for trailing stop tightening rules that adjust stop distance at profit thresholds. */
 const TrailingStopTighteningRuleSchema = z.object({
@@ -15,10 +15,14 @@ const TrailingStopTighteningRuleSchema = z.object({
  * for use with `deepPartial()`, which requires a ZodObject (not ZodDefault).
  */
 export const PositionManagementPrefsObjectSchema = z.object({
-  defaultStopLossMethod: z.enum(['fixed_percent', 'atr_based', 'structure_based', 'trailing_stop']).default('trailing_stop'),
+  defaultStopLossMethod: z
+    .enum(["fixed_percent", "atr_based", "structure_based", "trailing_stop"])
+    .default("trailing_stop"),
   defaultStopLossPct: z.number().min(0).max(100).default(4),
   atrStopMultiplier: z.number().min(0).default(2),
-  defaultTakeProfitMethod: z.enum(['fixed_percent', 'atr_based', 'risk_reward_ratio', 'none']).default('risk_reward_ratio'),
+  defaultTakeProfitMethod: z
+    .enum(["fixed_percent", "atr_based", "risk_reward_ratio", "none"])
+    .default("risk_reward_ratio"),
   defaultTakeProfitPct: z.number().min(0).max(100).default(3),
   defaultRiskRewardRatio: z.number().min(0).default(2),
   breakEvenStopEnabled: z.boolean().default(true),
@@ -39,17 +43,22 @@ export const PositionManagementPrefsObjectSchema = z.object({
   addToLosersAllowed: z.boolean().default(false),
   stopWideningAllowed: z.boolean().default(false),
   trailingStopTighteningEnabled: z.boolean().default(true),
-  trailingStopTighteningRules: z.array(TrailingStopTighteningRuleSchema).default([
-    { profitThresholdPct: 3, newTrailPct: 2.0 },
-    { profitThresholdPct: 6, newTrailPct: 1.5 },
-    { profitThresholdPct: 10, newTrailPct: 1.0 },
-  ]),
+  trailingStopTighteningRules: z
+    .array(TrailingStopTighteningRuleSchema)
+    .default([
+      { profitThresholdPct: 3, newTrailPct: 2.0 },
+      { profitThresholdPct: 6, newTrailPct: 1.5 },
+      { profitThresholdPct: 10, newTrailPct: 1.0 },
+    ]),
   portfolioStopOverridesPositionStops: z.boolean().default(false),
   doNotReenterAfterStopOutMinutes: z.number().min(0).default(30),
   doNotReenterAfterForcedCloseMinutes: z.number().min(0).default(60),
 });
 
-export const PositionManagementPrefsSchema = PositionManagementPrefsObjectSchema.default({});
+export const PositionManagementPrefsSchema =
+  PositionManagementPrefsObjectSchema.default({});
 
 /** Inferred TypeScript type for position management preferences. */
-export type PositionManagementPrefs = z.infer<typeof PositionManagementPrefsSchema>;
+export type PositionManagementPrefs = z.infer<
+  typeof PositionManagementPrefsSchema
+>;

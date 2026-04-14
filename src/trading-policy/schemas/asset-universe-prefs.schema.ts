@@ -1,6 +1,6 @@
-import { z } from 'zod';
+import { z } from "zod";
 
-const DirectionSchema = z.enum(['long_only', 'long_short', 'market_neutral']);
+const DirectionSchema = z.enum(["long_only", "long_short", "market_neutral"]);
 
 /**
  * Asset universe preferences schema (section 7.2).
@@ -11,10 +11,10 @@ const DirectionSchema = z.enum(['long_only', 'long_short', 'market_neutral']);
  * for use with `deepPartial()`, which requires a ZodObject (not ZodDefault).
  */
 export const AssetUniversePrefsObjectSchema = z.object({
-  equitiesDirection: DirectionSchema.default('long_only'),
-  etfsDirection: z.enum(['long_only', 'long_short']).default('long_only'),
-  cryptoDirection: z.enum(['long_only', 'long_short']).default('long_only'),
-  optionsDirection: z.enum(['long_only', 'long_short']).default('long_only'),
+  equitiesDirection: DirectionSchema.default("long_only"),
+  etfsDirection: z.enum(["long_only", "long_short"]).default("long_only"),
+  cryptoDirection: z.enum(["long_only", "long_short"]).default("long_only"),
+  optionsDirection: z.enum(["long_only", "long_short"]).default("long_only"),
   allowedExchanges: z.array(z.string()).default([]),
   deniedExchanges: z.array(z.string()).default([]),
   allowedCountries: z.array(z.string()).default([]),
@@ -40,7 +40,9 @@ export const AssetUniversePrefsObjectSchema = z.object({
   maxBorrowFeePct: z.number().min(0).default(5),
 });
 
-export const AssetUniversePrefsSchema = AssetUniversePrefsObjectSchema.default({});
+export const AssetUniversePrefsSchema = AssetUniversePrefsObjectSchema.default(
+  {},
+);
 
 /** Inferred TypeScript type for asset universe preferences. */
 export type AssetUniversePrefs = z.infer<typeof AssetUniversePrefsSchema>;
