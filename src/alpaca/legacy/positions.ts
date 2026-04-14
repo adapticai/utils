@@ -95,15 +95,18 @@ export async function fetchPosition(
       ? symbolOrAssetId.replace(/[-/]/g, "")
       : symbolOrAssetId;
 
-    const response = await fetch(`${apiBaseUrl}/positions/${normalizedSymbol}`, {
-      method: "GET",
-      headers: {
-        "APCA-API-KEY-ID": APIKey,
-        "APCA-API-SECRET-KEY": APISecret,
-        "Content-Type": "application/json",
+    const response = await fetch(
+      `${apiBaseUrl}/positions/${normalizedSymbol}`,
+      {
+        method: "GET",
+        headers: {
+          "APCA-API-KEY-ID": APIKey,
+          "APCA-API-SECRET-KEY": APISecret,
+          "Content-Type": "application/json",
+        },
+        signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
       },
-      signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
-    });
+    );
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -132,7 +135,7 @@ export async function fetchPosition(
  * @param auth - The authentication details for Alpaca
  * @param symbolOrAssetId - The symbol or asset ID of the position to close
  * @param params - Optional parameters for closing the position
- * @returns The order created to close the position
+ * @returns The order created to close the position, or null if position doesn't exist (404)
  */
 export async function closePosition(
   auth: AlpacaAuth,
@@ -145,7 +148,7 @@ export async function closePosition(
     slippagePercent1?: number;
     extendedHours?: boolean;
   },
-): Promise<AlpacaOrder> {
+): Promise<AlpacaOrder | null> {
   try {
     const { APIKey, APISecret, type } = await validateAuth(auth);
     const apiBaseUrl = getTradingApiUrl(type as "PAPER" | "LIVE");
@@ -177,7 +180,10 @@ export async function closePosition(
       // orders without symbol filter and match client-side via normalization.
       const openOrders = isCryptoSymbol(symbolOrAssetId)
         ? await getOrders(auth, { status: "open" })
-        : await getOrders(auth, { status: "open", symbols: [normalizedSymbol] });
+        : await getOrders(auth, {
+            status: "open",
+            symbols: [normalizedSymbol],
+          });
 
       let cancelledCount = 0;
       for (const order of openOrders) {
@@ -185,7 +191,10 @@ export async function closePosition(
         if (orderSymbolNorm === normalizedSymbol) {
           getLogger().info(
             `Cancelling order ${order.id} (${order.symbol}) for ${normalizedSymbol}`,
-            { account: auth.adapticAccountId || "direct", symbol: normalizedSymbol },
+            {
+              account: auth.adapticAccountId || "direct",
+              symbol: normalizedSymbol,
+            },
           );
           await cancelOrder(auth, order.id);
           cancelledCount++;
@@ -194,7 +203,10 @@ export async function closePosition(
       if (cancelledCount > 0) {
         getLogger().info(
           `Cancelled ${cancelledCount} open orders for ${normalizedSymbol}`,
-          { account: auth.adapticAccountId || "direct", symbol: normalizedSymbol },
+          {
+            account: auth.adapticAccountId || "direct",
+            symbol: normalizedSymbol,
+          },
         );
       }
     }
@@ -230,7 +242,8 @@ export async function closePosition(
         }
 
         const side = position.side === "long" ? "sell" : "buy";
-        const positionIntent = side === "sell" ? "sell_to_close" : "buy_to_close";
+        const positionIntent =
+          side === "sell" ? "sell_to_close" : "buy_to_close";
         const currentPrice = side === "sell" ? quote.bp : quote.ap;
 
         if (!currentPrice) {
@@ -262,7 +275,10 @@ export async function closePosition(
       } catch (limitOrderError) {
         // Quote unavailable or invalid price — fall back to market order (DELETE)
         // so the position still gets closed rather than leaving it open
-        const errMsg = limitOrderError instanceof Error ? limitOrderError.message : String(limitOrderError);
+        const errMsg =
+          limitOrderError instanceof Error
+            ? limitOrderError.message
+            : String(limitOrderError);
         getLogger().warn(
           `Limit order closure failed for ${symbolOrAssetId} (${errMsg}), falling back to market order`,
           {
@@ -280,7 +296,10 @@ export async function closePosition(
     if (isCryptoSymbol(symbolOrAssetId)) {
       getLogger().info(
         `Closing crypto position ${normalizedSymbol} via market order (DELETE endpoint)`,
-        { account: auth.adapticAccountId || "direct", symbol: normalizedSymbol },
+        {
+          account: auth.adapticAccountId || "direct",
+          symbol: normalizedSymbol,
+        },
       );
     }
     const queryParams = new URLSearchParams();
@@ -304,6 +323,20 @@ export async function closePosition(
 
     if (!response.ok) {
       const errorText = await response.text();
+
+      // Handle 404 (position not found) gracefully - position may have already been closed
+      // or never existed. Return null instead of throwing to allow callers to handle this.
+      if (response.status === 404) {
+        getLogger().info(
+          `Position ${normalizedSymbol} not found in Alpaca (404) - may already be closed`,
+          {
+            account: auth.adapticAccountId || "direct",
+            symbol: normalizedSymbol,
+          },
+        );
+        return null;
+      }
+
       throw new Error(
         `Failed to close position: ${response.status} ${response.statusText} ${errorText}`,
       );
@@ -349,9 +382,12 @@ export async function closeAllPositions(
     if (cancel_orders) {
       try {
         await cancelAllOrders(auth);
-        getLogger().info("Canceled all open orders before placing limit close orders", {
-          account: auth.adapticAccountId || "direct",
-        });
+        getLogger().info(
+          "Canceled all open orders before placing limit close orders",
+          {
+            account: auth.adapticAccountId || "direct",
+          },
+        );
       } catch (cancelError) {
         getLogger().warn(
           `Failed to cancel orders before limit closure: ${cancelError instanceof Error ? cancelError.message : String(cancelError)}`,
@@ -374,8 +410,12 @@ export async function closeAllPositions(
     }
 
     // Separate crypto and equity positions — crypto cannot use SIP quotes or time_in_force="day"
-    const equityPositions = allPositions.filter((p) => !isCryptoSymbol(p.symbol));
-    const cryptoPositions = allPositions.filter((p) => isCryptoSymbol(p.symbol));
+    const equityPositions = allPositions.filter(
+      (p) => !isCryptoSymbol(p.symbol),
+    );
+    const cryptoPositions = allPositions.filter((p) =>
+      isCryptoSymbol(p.symbol),
+    );
 
     getLogger().info(
       `Found ${allPositions.length} positions to close (${equityPositions.length} equity, ${cryptoPositions.length} crypto)`,
@@ -396,21 +436,30 @@ export async function closeAllPositions(
           },
         });
         if (response.ok) {
-          getLogger().info(`Closed crypto position ${position.symbol} via market order`, {
-            account: auth.adapticAccountId || "direct",
-            symbol: position.symbol,
-          });
+          getLogger().info(
+            `Closed crypto position ${position.symbol} via market order`,
+            {
+              account: auth.adapticAccountId || "direct",
+              symbol: position.symbol,
+            },
+          );
         } else {
           const errorText = await response.text();
           getLogger().warn(
             `Failed to close crypto position ${position.symbol}: ${response.status} ${errorText}`,
-            { account: auth.adapticAccountId || "direct", symbol: position.symbol },
+            {
+              account: auth.adapticAccountId || "direct",
+              symbol: position.symbol,
+            },
           );
         }
       } catch (cryptoError) {
         getLogger().warn(
           `Error closing crypto position ${position.symbol}: ${cryptoError instanceof Error ? cryptoError.message : String(cryptoError)}`,
-          { account: auth.adapticAccountId || "direct", symbol: position.symbol },
+          {
+            account: auth.adapticAccountId || "direct",
+            symbol: position.symbol,
+          },
         );
       }
     }
@@ -578,15 +627,21 @@ export async function closeAllPositionsAfterHours(
         },
       });
       if (response.ok) {
-        getLogger().info(`Closed crypto position ${position.symbol} via market order`, {
-          account: auth.adapticAccountId || "direct",
-          symbol: position.symbol,
-        });
+        getLogger().info(
+          `Closed crypto position ${position.symbol} via market order`,
+          {
+            account: auth.adapticAccountId || "direct",
+            symbol: position.symbol,
+          },
+        );
       } else {
         const errorText = await response.text();
         getLogger().warn(
           `Failed to close crypto position ${position.symbol}: ${response.status} ${errorText}`,
-          { account: auth.adapticAccountId || "direct", symbol: position.symbol },
+          {
+            account: auth.adapticAccountId || "direct",
+            symbol: position.symbol,
+          },
         );
       }
     } catch (cryptoError) {

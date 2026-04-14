@@ -50,6 +50,85 @@ const massiveLimit = pLimit(MASSIVE_CONCURRENCY_LIMIT);
  */
 const fetchLastTradeInflight = new Map<string, Promise<MassiveQuote>>();
 
+/**
+ * Check if a symbol is a crypto pair based on common patterns.
+ * Crypto symbols typically end in USD, USDT, USDC, or contain a hyphen with USD.
+ * Examples: BTCUSD, BTC-USD, BTC/USD, LINKUSD, SOL-USD
+ *
+ * @param symbol - The ticker symbol to check
+ * @returns True if the symbol appears to be a crypto pair
+ */
+function isCryptoSymbol(symbol: string): boolean {
+  // Pattern: ends with USD/USDT/USDC and has 3-4 letter base (e.g., BTCUSD, LINKUSD)
+  if (/^[A-Z]{2,5}(USD[TC]?)$/i.test(symbol)) {
+    return true;
+  }
+  // Pattern: contains hyphen or slash with USD (e.g., BTC-USD, BTC/USD)
+  if (/^[A-Z]{2,5}[-/]USD[TC]?$/i.test(symbol)) {
+    return true;
+  }
+  // Pattern: already has X: prefix (e.g., X:BTC-USD)
+  if (symbol.startsWith("X:")) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Normalize a symbol for the Massive.com API.
+ * Crypto symbols must be prefixed with "X:" and use hyphen format (e.g., X:BTC-USD).
+ * Stock symbols are passed through unchanged.
+ *
+ * @param symbol - The raw ticker symbol
+ * @returns The symbol formatted for Massive.com API
+ */
+function normalizeMassiveSymbol(symbol: string): string {
+  // If already has X: prefix, ensure hyphen format
+  if (symbol.startsWith("X:")) {
+    return symbol;
+  }
+
+  // Check if it's a crypto symbol
+  if (!isCryptoSymbol(symbol)) {
+    return symbol; // Stock symbol - return unchanged
+  }
+
+  // Normalize crypto symbol to X:BASE-QUOTE format
+  // Handle formats: BTCUSD, BTC-USD, BTC/USD -> X:BTC-USD
+  let base: string;
+  let quote: string;
+
+  if (symbol.includes("-")) {
+    // Format: BTC-USD
+    const parts = symbol.split("-");
+    base = parts[0];
+    quote = parts.slice(1).join("-");
+  } else if (symbol.includes("/")) {
+    // Format: BTC/USD
+    const parts = symbol.split("/");
+    base = parts[0];
+    quote = parts.slice(1).join("/");
+  } else {
+    // Format: BTCUSD - need to extract base and quote
+    // Common quote currencies: USD, USDT, USDC
+    if (symbol.endsWith("USDT")) {
+      base = symbol.slice(0, -4);
+      quote = "USDT";
+    } else if (symbol.endsWith("USDC")) {
+      base = symbol.slice(0, -4);
+      quote = "USDC";
+    } else if (symbol.endsWith("USD")) {
+      base = symbol.slice(0, -3);
+      quote = "USD";
+    } else {
+      // Unknown format, return as-is
+      return symbol;
+    }
+  }
+
+  return `X:${base.toUpperCase()}-${quote.toUpperCase()}`;
+}
+
 // Use to update general information about stocks
 /**
  * Fetches general information about a stock ticker.
@@ -206,7 +285,9 @@ const fetchLastTradeImpl = async (
   const apiKey = options?.apiKey || MASSIVE_API_KEY!;
   validateMassiveApiKey(apiKey);
 
-  const baseUrl = `https://api.massive.com/v3/trades/${encodeURIComponent(symbol)}`;
+  // Normalize crypto symbols to Massive.com API format (e.g., LINK-USD -> X:LINK-USD)
+  const normalizedSymbol = normalizeMassiveSymbol(symbol);
+  const baseUrl = `https://api.massive.com/v3/trades/${encodeURIComponent(normalizedSymbol)}`;
   const params = new URLSearchParams({
     apiKey,
     limit: "1",
@@ -263,10 +344,11 @@ const fetchLastTradeImpl = async (
     } catch (error: unknown) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error occurred";
-      const contextualMessage = `Error fetching last trade for ${symbol}`;
+      const contextualMessage = `Error fetching last trade for ${symbol}${normalizedSymbol !== symbol ? ` (normalized: ${normalizedSymbol})` : ""}`;
 
       getLogger().error(`${contextualMessage}: ${errorMessage}`, {
         symbol,
+        normalizedSymbol,
         errorType:
           error instanceof Error && error.message.includes("AUTH_ERROR")
             ? "AUTH_ERROR"
@@ -618,7 +700,9 @@ export const fetchGroupedDaily = async (
       const data = await response.json();
 
       if (!MASSIVE_VALID_STATUSES.has(data.status)) {
-        throw new Error(`Massive.com API responded with status: ${data.status}`);
+        throw new Error(
+          `Massive.com API responded with status: ${data.status}`,
+        );
       }
 
       const groupedDaily = {
