@@ -41,6 +41,8 @@ export const DEFAULT_TRADING_POLICY: EffectiveTradingPolicy =
     maxSectorConcentrationPct: 30,
     maxOpenPositions: 20,
     maxOpenOrders: 50,
+    perTradeEquityAllocationPct: 5,
+    perTradeCryptoAllocationPct: 5,
     macroOverlayEnabled: false,
     sectorOverlayEnabled: false,
     volatilityOverlayEnabled: false,

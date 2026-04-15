@@ -39,6 +39,10 @@ export const EffectiveTradingPolicySchema = z.object({
   maxSectorConcentrationPct: z.number(),
   maxOpenPositions: z.number(),
   maxOpenOrders: z.number(),
+  /** Percentage of account equity (with leverage) allocated per equities trade. Canonical replacement for legacy AlpacaAccount.tradeAllocationPct. */
+  perTradeEquityAllocationPct: z.number(),
+  /** Percentage of the crypto allocation slice of account equity allocated per crypto trade. Canonical replacement for legacy AlpacaAccount.cryptoTradeAllocationPct. */
+  perTradeCryptoAllocationPct: z.number(),
   macroOverlayEnabled: z.boolean(),
   sectorOverlayEnabled: z.boolean(),
   volatilityOverlayEnabled: z.boolean(),
