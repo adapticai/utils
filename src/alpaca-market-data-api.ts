@@ -525,10 +525,32 @@ export class AlpacaMarketDataAPI extends EventEmitter {
           type: "debug",
         });
       }
+    } else if (ws && ws.readyState === WebSocket.CONNECTING) {
+      // WebSocket is still establishing. Subscriptions are already persisted
+      // in `subscriptions` and will be dispatched automatically by the
+      // auth-success handler once the stream authenticates. This is the
+      // expected transient state during startup / reconnect — not a failure.
+      const queuedTotal =
+        (subscriptions.trades?.length || 0) +
+        (subscriptions.quotes?.length || 0) +
+        (subscriptions.bars?.length || 0);
+      log(
+        `${streamType} subscription queued (${queuedTotal} channel entries); will dispatch after WebSocket authenticates`,
+        { type: "debug" },
+      );
     } else {
-      log(`Cannot send ${streamType} subscription: WebSocket not ready`, {
-        type: "warn",
-      });
+      const stateLabel =
+        ws === null
+          ? "null"
+          : ws.readyState === WebSocket.CLOSING
+            ? "CLOSING"
+            : ws.readyState === WebSocket.CLOSED
+              ? "CLOSED"
+              : `unknown(${ws.readyState})`;
+      log(
+        `Cannot send ${streamType} subscription: WebSocket in ${stateLabel} state`,
+        { type: "warn" },
+      );
     }
   }
 
