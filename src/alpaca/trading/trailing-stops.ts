@@ -25,6 +25,14 @@ import {
 const LOG_SOURCE = "TrailingStops";
 
 /**
+ * Alpaca's hard upper limit for `trail_percent` on trailing-stop orders.
+ * Submissions exceeding this value are rejected with HTTP 422 / code 42210000
+ * ("trail_percent must be <= 25"). See:
+ * https://docs.alpaca.markets/reference/postorder
+ */
+export const ALPACA_MAX_TRAIL_PERCENT = 25;
+
+/**
  * Internal logging helper with consistent source
  */
 const log = (message: string, options: LogOptions = { type: "info" }) => {
@@ -103,15 +111,17 @@ function validateTrailingStopParams(params: TrailingStopParams): void {
     );
   }
 
-  // Validate trailPercent range
+  // Validate trailPercent range — Alpaca rejects values > 25 with HTTP 422.
   if (params.trailPercent !== undefined) {
     if (params.trailPercent <= 0) {
       throw new TrailingStopValidationError(
         "trailPercent must be greater than 0",
       );
     }
-    if (params.trailPercent > 100) {
-      throw new TrailingStopValidationError("trailPercent cannot exceed 100");
+    if (params.trailPercent > ALPACA_MAX_TRAIL_PERCENT) {
+      throw new TrailingStopValidationError(
+        `trailPercent cannot exceed ${ALPACA_MAX_TRAIL_PERCENT} (Alpaca API limit)`,
+      );
     }
   }
 
