@@ -208,6 +208,48 @@ export async function closePosition(
             symbol: normalizedSymbol,
           },
         );
+
+        // Alpaca processes cancellations asynchronously — the cancel API returns
+        // immediately but the order may still be "open" for 50-500ms+. Closing a
+        // position while an opposing order is still active triggers a 403 "wash
+        // trade detected" rejection. Poll until cancelled orders are confirmed gone.
+        const maxVerifyAttempts = 5;
+        const verifyDelayMs = 500;
+        for (let attempt = 1; attempt <= maxVerifyAttempts; attempt++) {
+          await new Promise<void>((r) => setTimeout(r, verifyDelayMs));
+
+          const remainingOrders = isCryptoSymbol(symbolOrAssetId)
+            ? (await getOrders(auth, { status: "open" })).filter(
+                (o) => o.symbol.replace(/[-/]/g, "") === normalizedSymbol,
+              )
+            : await getOrders(auth, {
+                status: "open",
+                symbols: [normalizedSymbol],
+              });
+
+          if (remainingOrders.length === 0) {
+            getLogger().info(
+              `Cancel verification passed for ${normalizedSymbol} (attempt ${attempt}/${maxVerifyAttempts})`,
+              {
+                account: auth.adapticAccountId || "direct",
+                symbol: normalizedSymbol,
+              },
+            );
+            break;
+          }
+
+          if (attempt === maxVerifyAttempts) {
+            getLogger().warn(
+              `Cancel verification exhausted for ${normalizedSymbol}: ${remainingOrders.length} orders still open after ${maxVerifyAttempts * verifyDelayMs}ms`,
+              {
+                account: auth.adapticAccountId || "direct",
+                symbol: normalizedSymbol,
+                remainingOrderIds: remainingOrders.map((o) => o.id),
+                type: "warn",
+              },
+            );
+          }
+        }
       }
     }
 
