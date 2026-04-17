@@ -969,11 +969,17 @@ export class AlpacaMarketDataAPI extends EventEmitter {
     const date = referenceDate || new Date();
     const prevMarketDate = getLastFullTradingDate(date);
 
+    // Alpaca bars use inclusive-start, exclusive-end (t >= start AND t < end).
+    // When start === end the range is empty and zero bars are returned.
+    // Set end to the next calendar day to capture exactly one daily bar.
+    const endDate = new Date(prevMarketDate.date);
+    endDate.setDate(endDate.getDate() + 1);
+
     const response = await this.getHistoricalBars({
       symbols: [symbol],
       timeframe: "1Day",
       start: prevMarketDate.date.toISOString(),
-      end: prevMarketDate.date.toISOString(),
+      end: endDate.toISOString(),
       limit: 1,
     });
 
