@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import http from "http";
 import https from "https";
 
+type AgentWithKeepAlive = http.Agent & { keepAlive: boolean };
+
 import {
   KEEP_ALIVE_DEFAULTS,
   httpAgent,
@@ -38,7 +40,7 @@ describe("httpAgent", () => {
   });
 
   it("should have keepAlive enabled", () => {
-    expect((httpAgent as any).keepAlive).toBe(true);
+    expect((httpAgent as AgentWithKeepAlive).keepAlive).toBe(true);
   });
 
   it("should have correct maxSockets", () => {
@@ -56,7 +58,7 @@ describe("httpsAgent", () => {
   });
 
   it("should have keepAlive enabled", () => {
-    expect((httpsAgent as any).keepAlive).toBe(true);
+    expect((httpsAgent as AgentWithKeepAlive).keepAlive).toBe(true);
   });
 
   it("should have correct maxSockets", () => {
@@ -147,13 +149,13 @@ describe("Connection pooling documentation verification", () => {
 
   it("should confirm http.Agent supports keepAlive", () => {
     const agent = new http.Agent({ keepAlive: true });
-    expect((agent as any).keepAlive).toBe(true);
+    expect((agent as AgentWithKeepAlive).keepAlive).toBe(true);
     agent.destroy();
   });
 
   it("should confirm https.Agent supports keepAlive", () => {
     const agent = new https.Agent({ keepAlive: true });
-    expect((agent as any).keepAlive).toBe(true);
+    expect((agent as AgentWithKeepAlive).keepAlive).toBe(true);
     agent.destroy();
   });
 });
