@@ -49,6 +49,108 @@ const DEFAULT_RETRY_CONFIG: RetryConfig = {
 };
 
 /**
+ * Node.js / undici / system error codes that represent transient network
+ * conditions. Present on `error.code` for net/http/dns/undici errors.
+ */
+const RETRYABLE_ERROR_CODES = new Set<string>([
+  "ETIMEDOUT",
+  "ESOCKETTIMEDOUT",
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "EHOSTUNREACH",
+  "ENETUNREACH",
+  "EAI_AGAIN",
+  "EPIPE",
+  "ECONNABORTED",
+  "ENOTFOUND",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_HEADERS_TIMEOUT",
+  "UND_ERR_BODY_TIMEOUT",
+  "UND_ERR_SOCKET",
+  "UND_ERR_CLOSED",
+  "UND_ERR_REQ_CONTENT_LENGTH_MISMATCH",
+]);
+
+/**
+ * Error constructor names / `error.name` values that indicate transient
+ * abort / timeout conditions.
+ */
+const RETRYABLE_ERROR_NAMES = new Set<string>([
+  "AbortError",
+  "TimeoutError",
+  "FetchError",
+  "RequestTimeoutError",
+  "ConnectTimeoutError",
+  "HeadersTimeoutError",
+  "BodyTimeoutError",
+]);
+
+/**
+ * Message-pattern fallback for libraries that discard error codes/names but
+ * preserve text (e.g., some Apollo/axios wrappers).
+ */
+const RETRYABLE_MESSAGE_PATTERNS: RegExp[] = [
+  /aborted/i,
+  /timeout/i,
+  /timed out/i,
+  /network error/i,
+  /socket hang up/i,
+  /connection (reset|refused|closed)/i,
+  /ECONNRESET/,
+  /ETIMEDOUT/,
+  /ECONNREFUSED/,
+  /EAI_AGAIN/,
+  /UND_ERR_/,
+];
+
+interface ErrorLike {
+  name?: unknown;
+  code?: unknown;
+  message?: unknown;
+  cause?: unknown;
+}
+
+/**
+ * Walks the `error.cause` chain (capped to avoid cycles) and tests whether
+ * any link along the chain looks like a transient network error. Modern APIs
+ * (undici, fetch, Apollo Client 3.8+) wrap the root network failure as a
+ * `.cause`, so the surface `Error` may report a generic message while the
+ * actionable signal lives one or more levels deeper.
+ */
+function isTransientNetworkError(error: unknown): boolean {
+  const MAX_CAUSE_DEPTH = 6;
+  let current: unknown = error;
+
+  for (let depth = 0; depth < MAX_CAUSE_DEPTH && current; depth++) {
+    if (current instanceof Error || typeof current === "object") {
+      const err = current as ErrorLike;
+
+      if (typeof err.name === "string" && RETRYABLE_ERROR_NAMES.has(err.name)) {
+        return true;
+      }
+
+      if (typeof err.code === "string" && RETRYABLE_ERROR_CODES.has(err.code)) {
+        return true;
+      }
+
+      if (typeof err.message === "string") {
+        for (const pattern of RETRYABLE_MESSAGE_PATTERNS) {
+          if (pattern.test(err.message)) {
+            return true;
+          }
+        }
+      }
+
+      current = err.cause;
+    } else {
+      break;
+    }
+  }
+
+  return false;
+}
+
+/**
  * Analyzes an error and determines if it's retryable.
  * @param error - The error to analyze
  * @param response - Optional Response object for HTTP errors
@@ -118,6 +220,21 @@ function analyzeError(
     return {
       type: "NETWORK_ERROR",
       reason: "Network connectivity issue",
+      status: null,
+      isRetryable: config.retryOnNetworkError,
+    };
+  }
+
+  // Handle transient network conditions: AbortError, TimeoutError,
+  // Node/undici error codes (ETIMEDOUT, ECONNRESET, UND_ERR_*), and
+  // wrapped failures exposed via error.cause. This catches the broad class
+  // of infrastructure flakes that the TypeError-only check above misses.
+  if (isTransientNetworkError(error)) {
+    const reason =
+      error instanceof Error ? error.message : "Transient network error";
+    return {
+      type: "NETWORK_ERROR",
+      reason,
       status: null,
       isRetryable: config.retryOnNetworkError,
     };
