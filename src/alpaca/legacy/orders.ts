@@ -12,6 +12,7 @@ import {
 import { validateAuth } from "./auth";
 import { getTradingApiUrl } from "../../config/api-endpoints";
 import { getLogger } from "../../logger";
+import { isTransientNetworkError } from "../../utils/retry";
 import { createTimeoutSignal, DEFAULT_TIMEOUTS } from "../../http-timeout";
 
 const PAGINATION_DELAY_MS = 300;
@@ -198,7 +199,29 @@ export async function getOrders(
 
     return allOrders;
   } catch (error) {
-    getLogger().error("Error in getOrders:", error);
+    const isTransient = isTransientNetworkError(error);
+    const errMsg = error instanceof Error ? error.message : String(error);
+    const logMeta = {
+      source: "AlpacaLegacy.getOrders",
+      error: errMsg,
+      ...(isTransient
+        ? {
+            transient: true,
+            recoveryHint: "Upstream caller should retry on next cycle",
+          }
+        : {}),
+    };
+    // Transient network errors (fetch timeouts, ECONNRESET) are
+    // recoverable; log at WARN. Non-transient failures (4xx/auth)
+    // stay at ERROR. Previous call also passed the raw Error as the
+    // second argument, which Pino treats as context not as `err`,
+    // producing empty `err` fields in production logs — fix by
+    // serializing to an explicit string message.
+    if (isTransient) {
+      getLogger().warn(`Error in getOrders: ${errMsg}`, logMeta);
+    } else {
+      getLogger().error(`Error in getOrders: ${errMsg}`, logMeta);
+    }
     throw error;
   }
 }
