@@ -20,6 +20,7 @@ import {
 import { rateLimiters } from "./rate-limiter";
 import { createTimeoutSignal, DEFAULT_TIMEOUTS } from "./http-timeout";
 import { validateMassiveApiKey } from "./utils/auth-validator";
+import { isTransientNetworkError } from "./utils/retry";
 
 /**
  * Set of Massive API response statuses that indicate valid, usable data.
@@ -587,21 +588,38 @@ export const fetchPrices = async (
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error occurred";
       const contextualMessage = `Error fetching price data for ${ticker}`;
+      const isTransient = isTransientNetworkError(error);
+      const errorType =
+        error instanceof Error && error.message.includes("AUTH_ERROR")
+          ? "AUTH_ERROR"
+          : error instanceof Error && error.message.includes("RATE_LIMIT")
+            ? "RATE_LIMIT"
+            : isTransient
+              ? "NETWORK_ERROR"
+              : "UNKNOWN";
 
-      getLogger().error(`${contextualMessage}: ${errorMessage}`, {
+      // Transient network failures (undici timeouts, socket resets, DNS
+      // blips) are recoverable at the caller's next cycle — demote to
+      // WARN to avoid alert noise. Non-transient classes (auth, rate
+      // limits that have exhausted retries, unknown schema errors) stay
+      // at ERROR because they require operator attention.
+      const logMeta = {
         ticker,
-        errorType:
-          error instanceof Error && error.message.includes("AUTH_ERROR")
-            ? "AUTH_ERROR"
-            : error instanceof Error && error.message.includes("RATE_LIMIT")
-              ? "RATE_LIMIT"
-              : error instanceof Error &&
-                  error.message.includes("NETWORK_ERROR")
-                ? "NETWORK_ERROR"
-                : "UNKNOWN",
+        errorType,
         source: "MassiveAPI.fetchPrices",
         timestamp: new Date().toISOString(),
-      });
+        ...(isTransient
+          ? {
+              transient: true,
+              recoveryHint: "Upstream caller should retry on next cycle",
+            }
+          : {}),
+      };
+      if (isTransient) {
+        getLogger().warn(`${contextualMessage}: ${errorMessage}`, logMeta);
+      } else {
+        getLogger().error(`${contextualMessage}: ${errorMessage}`, logMeta);
+      }
 
       throw new Error(`${contextualMessage}: ${errorMessage}`);
     }

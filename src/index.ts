@@ -79,7 +79,12 @@ export {
 } from "./rate-limiter";
 
 // Retry utilities with exponential backoff
-export { API_RETRY_CONFIGS, withRetry, type RetryConfig } from "./utils/retry";
+export {
+  API_RETRY_CONFIGS,
+  isTransientNetworkError,
+  withRetry,
+  type RetryConfig,
+} from "./utils/retry";
 
 // HTTP timeout utilities
 export {

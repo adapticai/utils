@@ -27,6 +27,7 @@ import {
   getTradingWebSocketUrl,
 } from "./config/api-endpoints";
 import { validateAlpacaCredentials } from "./utils/auth-validator";
+import { isTransientNetworkError } from "./utils/retry";
 import { createTimeoutSignal, DEFAULT_TIMEOUTS } from "./http-timeout";
 
 const limitPriceSlippagePercent100 = 0.1; // 0.1%
@@ -412,9 +413,20 @@ export class AlpacaTradingAPI {
       return (textContent || null) as T;
     } catch (err) {
       const error = err as Error;
+      const isTransient = isTransientNetworkError(err);
+      // Transient fetch failures (timeouts, connection resets, undici
+      // aborts) are recoverable at the caller's next cycle; log at WARN
+      // and annotate for observability filters. Non-transient errors
+      // (4xx/auth/schema) stay at ERROR for operator attention.
       this.log(`Error in makeRequest: ${error.message}. Url: ${url}`, {
         source: "AlpacaAPI",
-        type: "error",
+        type: isTransient ? "warn" : "error",
+        metadata: isTransient
+          ? {
+              transient: true,
+              recoveryHint: "Upstream caller should retry on next cycle",
+            }
+          : undefined,
       });
       throw error;
     }

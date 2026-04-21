@@ -116,8 +116,14 @@ interface ErrorLike {
  * (undici, fetch, Apollo Client 3.8+) wrap the root network failure as a
  * `.cause`, so the surface `Error` may report a generic message while the
  * actionable signal lives one or more levels deeper.
+ *
+ * Exported for use by downstream consumers (engine services, per-call catch
+ * blocks, application-level loggers) that need to demote recoverable
+ * transient errors from ERROR to WARN. Aligns the whole stack on a single
+ * canonical classifier so MassiveAPI, AlpacaAPI, and application-layer
+ * retry handlers all treat the same network blips identically.
  */
-function isTransientNetworkError(error: unknown): boolean {
+export function isTransientNetworkError(error: unknown): boolean {
   const MAX_CAUSE_DEPTH = 6;
   let current: unknown = error;
 
@@ -391,15 +397,38 @@ export async function withRetry<T>(
     } catch (error: unknown) {
       lastError = error;
 
-      // If this is the last attempt, throw the error
+      // If this is the last attempt, throw the error.
+      // Transient network classes (undici/fetch timeouts, ECONNRESET,
+      // AbortError, etc.) are self-healing at the upstream retry layer —
+      // the caller re-invokes on the next refresh/poll tick. Logging them
+      // at ERROR produces alert noise that does not represent actionable
+      // failures. Demote the transient class to WARN with a recovery hint;
+      // reserve ERROR for non-transient final failures (auth, schema,
+      // contract violations, unknown classes).
       if (attempt === fullConfig.maxRetries) {
-        getLogger().error(
-          `[${label}] Failed after ${fullConfig.maxRetries} attempts`,
-          {
-            error: error instanceof Error ? error.message : String(error),
-            timestamp: new Date().toISOString(),
-          },
-        );
+        const isTransient = isTransientNetworkError(error);
+        const logMeta = {
+          error: error instanceof Error ? error.message : String(error),
+          attempts: fullConfig.maxRetries,
+          timestamp: new Date().toISOString(),
+          ...(isTransient
+            ? {
+                transient: true,
+                recoveryHint: "Upstream caller should retry on next cycle",
+              }
+            : {}),
+        };
+        if (isTransient) {
+          getLogger().warn(
+            `[${label}] Failed after ${fullConfig.maxRetries} attempts (transient)`,
+            logMeta,
+          );
+        } else {
+          getLogger().error(
+            `[${label}] Failed after ${fullConfig.maxRetries} attempts`,
+            logMeta,
+          );
+        }
         throw error;
       }
 
