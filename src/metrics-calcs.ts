@@ -218,9 +218,11 @@ export function calculateBetaFromReturns(
     variance += benchmarkDiff * benchmarkDiff;
   }
 
-  // Finalize calculations
-  covariance /= n;
-  variance /= n;
+  // Finalize calculations using sample (Bessel-corrected) estimators —
+  // divide by (n - 1), not n. The guard above (validIndices.length < 2)
+  // already ensures n >= 2, so (n - 1) is always safe.
+  covariance /= n - 1;
+  variance /= n - 1;
 
   // Handle zero variance case
   if (Math.abs(variance) < 1e-10) {
