@@ -205,7 +205,9 @@ export class AlpacaClient {
           // Classify error for retry logic
           if (statusCode === 429) {
             const retryAfter = response.headers.get("Retry-After");
-            throw new Error(`RATE_LIMIT: ${statusCode}${retryAfter ? `:${parseInt(retryAfter, 10) * 1000}` : ""}`);
+            throw new Error(
+              `RATE_LIMIT: ${statusCode}${retryAfter ? `:${parseInt(retryAfter, 10) * 1000}` : ""}`,
+            );
           }
           if ([500, 502, 503, 504].includes(statusCode)) {
             throw new Error(`SERVER_ERROR: ${statusCode}`);

@@ -62,9 +62,12 @@ export const computeTotalFees = async (trade: types.Trade): Promise<number> => {
 
   // Use the shared singleton Apollo client to avoid creating orphaned connections
   const client = await getSharedApolloClient();
-  const alpacaAccount = (await adaptic.alpacaAccount.get({
-    id: trade.alpacaAccountId,
-  } as types.AlpacaAccount, client)) as types.AlpacaAccount;
+  const alpacaAccount = (await adaptic.alpacaAccount.get(
+    {
+      id: trade.alpacaAccountId,
+    } as types.AlpacaAccount,
+    client,
+  )) as types.AlpacaAccount;
 
   if (!alpacaAccount) return totalFees;
 

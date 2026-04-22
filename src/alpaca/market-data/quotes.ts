@@ -79,9 +79,10 @@ export async function getLatestQuote(
 
     // Use SDK's getLatestQuote method
     const response = await client.executeWithRateLimit(
-      () => sdk.getLatestQuote(normalizedSymbol, {
-        feed: dataFeed,
-      } as unknown as AlpacaSDKConfig),
+      () =>
+        sdk.getLatestQuote(normalizedSymbol, {
+          feed: dataFeed,
+        } as unknown as AlpacaSDKConfig),
       "getLatestQuote",
     );
 
@@ -165,9 +166,10 @@ export async function getLatestQuotes(
 
     // Use SDK's getLatestQuotes method
     const response = await client.executeWithRateLimit(
-      () => sdk.getLatestQuotes(normalizedSymbols, {
-        feed: dataFeed,
-      } as unknown as AlpacaSDKConfig),
+      () =>
+        sdk.getLatestQuotes(normalizedSymbols, {
+          feed: dataFeed,
+        } as unknown as AlpacaSDKConfig),
       "getLatestQuotes",
     );
 

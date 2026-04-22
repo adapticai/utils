@@ -169,7 +169,11 @@ export async function getRiskFreeRate(): Promise<number> {
       if (cache !== null) {
         getLogger().warn(
           "Failed to refresh risk-free rate; using last-known-good cached value",
-          { error: message, cachedRate: cache.rate, cacheAgeMs: Date.now() - cache.fetchedAt },
+          {
+            error: message,
+            cachedRate: cache.rate,
+            cacheAgeMs: Date.now() - cache.fetchedAt,
+          },
         );
         return cache.rate;
       }

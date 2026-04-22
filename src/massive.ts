@@ -534,7 +534,12 @@ export const fetchPrices = async (
       while (nextUrl) {
         //getLogger().info(`Debug: Fetching ${nextUrl}`);
         await rateLimiters.massive.acquire();
-        const response = await fetchWithRetry(nextUrl, { signal: createTimeoutSignal(DEFAULT_TIMEOUTS.MASSIVE_API) }, 3, 1000);
+        const response = await fetchWithRetry(
+          nextUrl,
+          { signal: createTimeoutSignal(DEFAULT_TIMEOUTS.MASSIVE_API) },
+          3,
+          1000,
+        );
         const data = await response.json();
 
         if (!MASSIVE_VALID_STATUSES.has(data.status)) {
@@ -947,7 +952,12 @@ export const fetchTrades = async (
     const url = `${baseUrl}?${params.toString()}`;
     try {
       logIfDebug(`Fetching trades for ${symbol} from ${url}`);
-      const response = await fetchWithRetry(url, { signal: createTimeoutSignal(DEFAULT_TIMEOUTS.MASSIVE_API) }, 3, 1000);
+      const response = await fetchWithRetry(
+        url,
+        { signal: createTimeoutSignal(DEFAULT_TIMEOUTS.MASSIVE_API) },
+        3,
+        1000,
+      );
       const data = (await response.json()) as
         | MassiveTradesResponse
         | MassiveErrorResponse;

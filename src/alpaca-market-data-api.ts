@@ -69,8 +69,7 @@ const DEFAULT_ADJUSTMENT = "all" as const;
 // deployments with SIP entitlements set ALPACA_MARKET_DATA_FEED=sip in their
 // environment to restore full data access. Per-call overrides (the optional
 // `feed` argument on getOptions*/getLatestBars/etc.) still win.
-const DEFAULT_FEED = (process.env.ALPACA_MARKET_DATA_FEED ||
-  "iex") as DataFeed;
+const DEFAULT_FEED = (process.env.ALPACA_MARKET_DATA_FEED || "iex") as DataFeed;
 const DEFAULT_CURRENCY = "USD" as const;
 
 /**

@@ -226,9 +226,10 @@ export async function getLatestBars(
     const dataFeed = config.dataFeed || "iex";
 
     const response = await client.executeWithRateLimit(
-      () => sdk.getLatestBars(normalizedSymbols, {
-        feed: dataFeed,
-      } as unknown as AlpacaSDKConfig),
+      () =>
+        sdk.getLatestBars(normalizedSymbols, {
+          feed: dataFeed,
+        } as unknown as AlpacaSDKConfig),
       "getLatestBars",
     );
 

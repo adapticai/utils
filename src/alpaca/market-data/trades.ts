@@ -85,9 +85,10 @@ export async function getLatestTrade(
 
     // Use SDK's getLatestTrade method
     const response = await client.executeWithRateLimit(
-      () => sdk.getLatestTrade(normalizedSymbol, {
-        feed: dataFeed,
-      } as unknown as AlpacaSDKConfig),
+      () =>
+        sdk.getLatestTrade(normalizedSymbol, {
+          feed: dataFeed,
+        } as unknown as AlpacaSDKConfig),
       "getLatestTrade",
     );
 
@@ -169,9 +170,10 @@ export async function getLatestTrades(
 
     // Use SDK's getLatestTrades method
     const response = await client.executeWithRateLimit(
-      () => sdk.getLatestTrades(normalizedSymbols, {
-        feed: dataFeed,
-      } as unknown as AlpacaSDKConfig),
+      () =>
+        sdk.getLatestTrades(normalizedSymbols, {
+          feed: dataFeed,
+        } as unknown as AlpacaSDKConfig),
       "getLatestTrades",
     );
 

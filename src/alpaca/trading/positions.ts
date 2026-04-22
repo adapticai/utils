@@ -157,7 +157,10 @@ export async function getPositions(
 
   try {
     const sdk = client.getSDK();
-    const positions = (await client.executeWithRateLimit(() => sdk.getPositions(), "getPositions")) as AlpacaPosition[];
+    const positions = (await client.executeWithRateLimit(
+      () => sdk.getPositions(),
+      "getPositions",
+    )) as AlpacaPosition[];
     log(`Retrieved ${positions.length} positions`, { type: "info" });
     return positions;
   } catch (error) {
@@ -221,7 +224,10 @@ export async function getPosition(
 
   try {
     const sdk = client.getSDK();
-    const position = (await client.executeWithRateLimit(() => sdk.getPosition(symbol), "getPosition")) as AlpacaPosition;
+    const position = (await client.executeWithRateLimit(
+      () => sdk.getPosition(symbol),
+      "getPosition",
+    )) as AlpacaPosition;
     log(`Found position for ${symbol}: ${position.qty} shares`, {
       type: "info",
       symbol,
@@ -399,16 +405,20 @@ export async function closePosition(
     if (Object.keys(queryParams).length > 0) {
       // SDK doesn't support params, use sendRequest directly
       order = (await client.executeWithRateLimit(
-        () => sdk.sendRequest(
-          `/positions/${encodeURIComponent(normalizedSymbol)}`,
-          queryParams,
-          null,
-          "DELETE",
-        ),
+        () =>
+          sdk.sendRequest(
+            `/positions/${encodeURIComponent(normalizedSymbol)}`,
+            queryParams,
+            null,
+            "DELETE",
+          ),
         "closePosition",
       )) as AlpacaOrder;
     } else {
-      order = (await client.executeWithRateLimit(() => sdk.closePosition(normalizedSymbol), "closePosition")) as AlpacaOrder;
+      order = (await client.executeWithRateLimit(
+        () => sdk.closePosition(normalizedSymbol),
+        "closePosition",
+      )) as AlpacaOrder;
     }
 
     log(`Position close order created for ${normalizedSymbol}: ${order.id}`, {
@@ -461,12 +471,7 @@ export async function closeAllPositions(
 
     // Use sendRequest to pass the cancel_orders parameter
     const response = await client.executeWithRateLimit(
-      () => sdk.sendRequest(
-        "/positions",
-        queryParams,
-        null,
-        "DELETE",
-      ),
+      () => sdk.sendRequest("/positions", queryParams, null, "DELETE"),
       "closeAllPositions",
     );
 
@@ -514,7 +519,10 @@ export async function closeAllPositionsAfterHours(
     }
 
     // First cancel all open orders
-    await client.executeWithRateLimit(() => sdk.cancelAllOrders(), "cancelAllOrders");
+    await client.executeWithRateLimit(
+      () => sdk.cancelAllOrders(),
+      "cancelAllOrders",
+    );
     log("Cancelled all open orders", { type: "info" });
 
     const orders: AlpacaOrder[] = [];
@@ -546,15 +554,16 @@ export async function closeAllPositionsAfterHours(
 
       try {
         const order = (await client.executeWithRateLimit(
-          () => sdk.createOrder({
-            symbol: position.symbol,
-            qty: qty,
-            side: side,
-            type: "limit",
-            time_in_force: "day",
-            limit_price: limitPrice,
-            extended_hours: true,
-          }),
+          () =>
+            sdk.createOrder({
+              symbol: position.symbol,
+              qty: qty,
+              side: side,
+              type: "limit",
+              time_in_force: "day",
+              limit_price: limitPrice,
+              extended_hours: true,
+            }),
           `createOrder ${position.symbol}`,
         )) as AlpacaOrder;
 
