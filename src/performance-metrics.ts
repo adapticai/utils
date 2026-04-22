@@ -1000,8 +1000,12 @@ export function calculateBetaFromReturns(
     variance += benchmarkDiff ** 2;
   }
 
-  covariance /= n;
-  variance /= n;
+  // Use sample (Bessel-corrected) estimators — divide by (n - 1), not n.
+  // For n === 1 there is no degrees-of-freedom left; treat as zero variance
+  // so beta falls through to the zero-variance guard below.
+  const denom = n > 1 ? n - 1 : 1;
+  covariance /= denom;
+  variance /= denom;
 
   // Handle zero variance
   if (variance === 0) {

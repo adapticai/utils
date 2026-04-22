@@ -124,21 +124,48 @@ describe("Regression: Beta calculation against known values", () => {
     expect(result.averagePortfolioReturn).toBeCloseTo(avgP, 10);
     expect(result.averageBenchmarkReturn).toBeCloseTo(avgB, 10);
 
-    // Covariance = sum((Pi - avgP) * (Bi - avgB)) / n
+    // Sample covariance = sum((Pi - avgP) * (Bi - avgB)) / (n - 1)
+    // (Bessel-corrected — see risk-free-rate fix M-058.)
+    const n = 3;
     const cov =
       ((0.05 - avgP) * (0.03 - avgB) +
         (-0.02 - avgP) * (-0.01 - avgB) +
         (0.03 - avgP) * (0.02 - avgB)) /
-      3;
+      (n - 1);
     expect(result.covariance).toBeCloseTo(cov, 10);
 
-    // Variance = sum((Bi - avgB)^2) / n
+    // Sample variance = sum((Bi - avgB)^2) / (n - 1)
     const variance =
-      ((0.03 - avgB) ** 2 + (-0.01 - avgB) ** 2 + (0.02 - avgB) ** 2) / 3;
+      ((0.03 - avgB) ** 2 + (-0.01 - avgB) ** 2 + (0.02 - avgB) ** 2) /
+      (n - 1);
     expect(result.variance).toBeCloseTo(variance, 10);
 
-    // Beta = cov / var
+    // Beta = cov / var (ratio is invariant to the population vs sample
+    // denominator choice, but we still assert on the Bessel-corrected numbers
+    // above to prevent regression to the population formula.)
     expect(result.beta).toBeCloseTo(cov / variance, 10);
+  });
+
+  it("should use Bessel-corrected (n - 1) variance, not population (n)", () => {
+    // For a tiny series like [0, 1, 2] with mean 1, sum of squared diffs = 2.
+    // Population variance = 2 / 3 ≈ 0.6667.
+    // Sample   variance = 2 / 2 = 1.0.
+    // The two differ meaningfully, so we can catch an off-by-one at the
+    // denominator directly.
+    const portfolioReturns = [0, 1, 2];
+    const benchmarkReturns = [0, 1, 2];
+    const result = calculateBetaFromReturns(portfolioReturns, benchmarkReturns);
+
+    const populationVariance = 2 / 3;
+    const sampleVariance = 2 / 2;
+
+    expect(result.variance).toBeCloseTo(sampleVariance, 10);
+    expect(result.variance).not.toBeCloseTo(populationVariance, 3);
+    // Covariance of a series with itself equals its variance under the
+    // same denominator, so we assert the same property holds here.
+    expect(result.covariance).toBeCloseTo(sampleVariance, 10);
+    // Ratio is still 1 regardless of denominator.
+    expect(result.beta).toBeCloseTo(1, 10);
   });
 });
 
