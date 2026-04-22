@@ -5,6 +5,7 @@ import { Bar, BenchmarkBar } from "./types/alpaca-types";
 import { computeTotalFees } from "./price-utils";
 import { types } from "@adaptic/backend-legacy";
 import { CalculateBetaResult, TradeMetrics } from "./types";
+import { getRiskFreeRate } from "./risk-free-rate";
 /**
  * Calculates daily returns from an array of closing prices
  * @param prices - Array of closing prices (numbers)
@@ -340,8 +341,9 @@ async function calculateRiskAdjustedReturn(tradeBars: Bar[]): Promise<string> {
     return "N/A";
   }
 
-  // Assume a risk-free rate, e.g., 2%
-  const riskFreeRate = 0.02; // Annual risk-free rate (2%)
+  // Fetch live annualized risk-free rate (3-month T-Bill), cached daily.
+  // See src/risk-free-rate.ts for source + fallback behavior.
+  const riskFreeRate = await getRiskFreeRate();
 
   // Calculate Sharpe Ratio
   const sharpeRatio = (avgAnnualReturn - riskFreeRate) / stdDevAnnual;
@@ -416,7 +418,10 @@ async function calculateAlphaAndBeta(
     alignedBenchmarkReturns.reduce((sum, ret) => sum + ret, 0) /
     alignedBenchmarkReturns.length;
 
-  const riskFreeRateDaily = 0.02 / 252; // Assuming 2% annual risk-free rate
+  // Fetch live annualized risk-free rate (3-month T-Bill), cached daily.
+  // See src/risk-free-rate.ts for source + fallback behavior.
+  const riskFreeRateAnnual = await getRiskFreeRate();
+  const riskFreeRateDaily = riskFreeRateAnnual / 252;
 
   // Alpha calculation adjusts based on position direction
   const alpha =

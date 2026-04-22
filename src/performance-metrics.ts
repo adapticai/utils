@@ -21,6 +21,7 @@ import {
   FetchPerformanceMetricsProps,
 } from "./types/metrics-types";
 import { createTimeoutSignal, DEFAULT_TIMEOUTS } from "./http-timeout";
+import { getRiskFreeRate } from "./risk-free-rate";
 
 /**
  * Calculates the total return year-to-date (YTD) for a given portfolio history.
@@ -291,8 +292,9 @@ async function calculateRiskAdjustedReturn(
     return "N/A";
   }
 
-  // Assume a risk-free rate, e.g., 2%
-  const riskFreeRate = 0.02; // Annual risk-free rate (2%)
+  // Fetch live annualized risk-free rate (3-month T-Bill), cached daily.
+  // See src/risk-free-rate.ts for source + fallback behavior.
+  const riskFreeRate = await getRiskFreeRate();
 
   // Calculate Sharpe Ratio
   const sharpeRatio = (avgAnnualReturn - riskFreeRate) / stdDevAnnual;
@@ -547,7 +549,9 @@ export async function calculateAlphaAndBeta(
   }
 
   // **Calculate alpha**
-  const riskFreeRateAnnual = 0.02; // 2%
+  // Fetch live annualized risk-free rate (3-month T-Bill), cached daily.
+  // See src/risk-free-rate.ts for source + fallback behavior.
+  const riskFreeRateAnnual = await getRiskFreeRate();
   const tradingDaysPerYear = 252;
   const riskFreeRateDaily = riskFreeRateAnnual / tradingDaysPerYear;
 

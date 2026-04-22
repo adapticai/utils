@@ -164,6 +164,16 @@ export {
   type ConnectionPoolStatus,
 } from "./utils/http-keep-alive";
 
+// Risk-free rate utilities (live 3-month T-Bill, cached 24h)
+export {
+  DEFAULT_RISK_FREE_RATE,
+  RISK_FREE_RATE_TTL_MS,
+  getRiskFreeRate,
+  getCachedRiskFreeRateSync,
+  setRiskFreeRate,
+  resetRiskFreeRateCache,
+} from "./risk-free-rate";
+
 // Re-export all types
 export * from "./types";
 
