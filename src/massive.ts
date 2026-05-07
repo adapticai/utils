@@ -8,10 +8,12 @@ import { fetchWithRetry, hideApiKeyFromurl, logIfDebug } from "./misc-utils";
 import {
   MassiveDailyOpenClose,
   MassiveErrorResponse,
+  MassiveFreshness,
   MassiveGroupedDailyResponse,
   MassivePriceData,
   MassiveQuote,
   MassiveQuotesResponse,
+  MassiveResult,
   MassiveSpreadInfo,
   MassiveTickerInfo,
   MassiveTradesResponse,
@@ -530,6 +532,11 @@ export const fetchPrices = async (
     try {
       let allResults: RawMassivePriceData[] = [];
       let nextUrl = `${baseUrl}?${urlParams.toString()}`;
+      // DE-006: track upstream freshness across pagination. If any page
+      // reports DELAYED, the whole batch is treated as DELAYED — this is the
+      // safer default for downstream latency-sensitive logic (e.g., trade
+      // execution should refuse stale prices, not silently mix them).
+      let aggregatedStatus: "OK" | "DELAYED" = "OK";
 
       while (nextUrl) {
         //getLogger().info(`Debug: Fetching ${nextUrl}`);
@@ -549,6 +556,7 @@ export const fetchPrices = async (
         }
 
         if (data.status === "DELAYED") {
+          aggregatedStatus = "DELAYED";
           const now = Date.now();
           const lastWarn = delayedWarnTimestamps.get(params.ticker) ?? 0;
           if (now - lastWarn > DELAYED_WARN_COOLDOWN_MS) {
@@ -567,6 +575,15 @@ export const fetchPrices = async (
         // Check if there's a next page and append API key
         nextUrl = data.next_url ? `${data.next_url}&apiKey=${apiKey}` : "";
       }
+
+      // DE-006: stamp each bar with the upstream freshness so downstream
+      // consumers (engine pricing pipeline, performance metrics, risk gates)
+      // can branch on `bar._freshness?.status === "DELAYED"`.
+      const freshness: MassiveFreshness = {
+        status: aggregatedStatus,
+        receivedAt: new Date(),
+        ...(aggregatedStatus === "DELAYED" ? { delayedSince: null } : {}),
+      };
 
       return allResults.map((entry: RawMassivePriceData) => ({
         date: new Date(entry.t).toLocaleString("en-US", {
@@ -588,6 +605,7 @@ export const fetchPrices = async (
         vol: entry.v,
         vwap: entry.vw,
         trades: entry.n,
+        _freshness: freshness,
       })) as MassivePriceData[];
     } catch (error) {
       const errorMessage =
@@ -629,6 +647,57 @@ export const fetchPrices = async (
       throw new Error(`${contextualMessage}: ${errorMessage}`);
     }
   });
+};
+
+/**
+ * Variant of {@link fetchPrices} that returns a discriminated
+ * {@link MassiveResult} wrapper, surfacing the upstream feed status (`OK` vs
+ * `DELAYED`) at the result level. This is the preferred entry point for new
+ * code that needs to gate latency-sensitive decisions on freshness.
+ *
+ * The underlying bars are still stamped with `_freshness` so consumers that
+ * already destructure the array can branch per-bar; the wrapper simply
+ * promotes that information to the top of the result for clarity.
+ *
+ * DE-006: closes the loop for callers that need to know when the Massive feed
+ * is on a delayed plan (e.g. free tier, market-data outage downgrade).
+ *
+ * @param params - Same parameters accepted by {@link fetchPrices}.
+ * @param options - Same options accepted by {@link fetchPrices}.
+ * @returns A {@link MassiveResult} carrying the bar array plus freshness
+ *          metadata.
+ */
+export const fetchPricesWithFreshness = async (
+  params: {
+    ticker: string;
+    start: number;
+    end?: number;
+    multiplier: number;
+    timespan: string;
+    limit?: number;
+    adjusted?: boolean;
+  },
+  options?: { apiKey?: string },
+): Promise<MassiveResult<MassivePriceData[]>> => {
+  const data = await fetchPrices(params, options);
+
+  // Bars are stamped uniformly inside `fetchPrices`; reading the first one is
+  // sufficient. If the result is empty (no bars in the requested window) we
+  // default to OK with the current wall clock — there is no upstream signal
+  // to contradict it.
+  const sampleFreshness = data[0]?._freshness;
+  const status: "OK" | "DELAYED" = sampleFreshness?.status ?? "OK";
+  const receivedAt = sampleFreshness?.receivedAt ?? new Date();
+
+  if (status === "DELAYED") {
+    return {
+      status: "DELAYED",
+      data,
+      receivedAt,
+      delayedSince: sampleFreshness?.delayedSince ?? null,
+    };
+  }
+  return { status: "OK", data, receivedAt };
 };
 
 /**

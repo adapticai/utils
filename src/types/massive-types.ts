@@ -1,4 +1,49 @@
 /**
+ * Freshness metadata attached to Massive responses so consumers can distinguish
+ * real-time data ("OK") from delayed-feed data ("DELAYED", e.g. free-tier
+ * plans). Producers should set this whenever they have observed the upstream
+ * `status` field; consumers can branch on `status` to gate latency-sensitive
+ * decisions (e.g. trade execution should refuse DELAYED quotes).
+ *
+ * DE-006: previously the DELAYED status was only emitted as a throttled INFO
+ * log inside `fetchPrices`, which made it impossible for downstream callers to
+ * tell whether a price was live or delayed. The flag is exposed on every
+ * returned bar (and surfaced as the discriminator on {@link MassiveResult}).
+ */
+export interface MassiveFreshness {
+  /** Upstream status as reported by the Massive API. */
+  status: "OK" | "DELAYED";
+  /** Wall-clock time the response was received by this process. */
+  receivedAt: Date;
+  /**
+   * Best-effort time at which the upstream feed first started reporting
+   * DELAYED. May be `null` when not known (the Massive HTTP API does not
+   * currently return this; reserved for future enhancement).
+   */
+  delayedSince?: Date | null;
+}
+
+/**
+ * Discriminated wrapper that lets new consumers branch on freshness without
+ * inspecting the bar payload. Existing callers that consume
+ * {@link MassivePriceData} arrays directly are unaffected — see
+ * {@link MassivePriceData._freshness} for the non-breaking augmentation that
+ * propagates the same information.
+ */
+export type MassiveResult<T> =
+  | {
+      status: "OK";
+      data: T;
+      receivedAt: Date;
+    }
+  | {
+      status: "DELAYED";
+      data: T;
+      receivedAt: Date;
+      delayedSince: Date | null;
+    };
+
+/**
  * Represents a unit of price data for a specific symbol on a given date.
  */
 export type MassivePriceData = {
@@ -22,6 +67,16 @@ export type MassivePriceData = {
   vwap: number;
   /** The number of trades. */
   trades: number;
+  /**
+   * Optional freshness flag indicating whether the upstream feed reported the
+   * data as live ("OK") or delayed ("DELAYED"). Present when the response
+   * originated from an API endpoint that exposes a `status` field
+   * (e.g. `fetchPrices`, `fetchGroupedDaily`). Absent for legacy/hand-built
+   * fixtures and for endpoints that do not surface the status.
+   *
+   * @see MassiveFreshness
+   */
+  _freshness?: MassiveFreshness;
 };
 
 /**

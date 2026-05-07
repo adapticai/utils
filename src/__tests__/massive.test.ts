@@ -41,6 +41,7 @@ import {
   fetchLastQuote,
   fetchLastTrade,
   fetchPrices,
+  fetchPricesWithFreshness,
   fetchTickerInfo,
   fetchTrades,
   formatPriceData,
@@ -612,6 +613,238 @@ describe("fetchPrices", () => {
 
     expect(result).toHaveLength(2);
     expect(mockFetchWithRetry).toHaveBeenCalledTimes(2);
+  });
+
+  // DE-006: Massive `DELAYED` status must be propagated into the return shape
+  // so engine consumers (pricing pipeline, risk gates) can branch on freshness
+  // instead of treating delayed feeds as live.
+  describe("DELAYED status propagation (DE-006)", () => {
+    it("stamps each bar with _freshness.status = 'OK' on a live response", async () => {
+      mockFetchWithRetry.mockResolvedValueOnce({
+        json: () =>
+          Promise.resolve({
+            status: "OK",
+            results: [
+              {
+                T: "AAPL",
+                o: 150,
+                h: 155,
+                l: 149,
+                c: 153,
+                v: 10000,
+                vw: 152,
+                n: 500,
+                t: 1736510400000,
+              },
+              {
+                T: "AAPL",
+                o: 153,
+                h: 158,
+                l: 152,
+                c: 157,
+                v: 12000,
+                vw: 155,
+                n: 600,
+                t: 1736510460000,
+              },
+            ],
+          }),
+      } as Response);
+
+      const result = await fetchPrices(
+        { ticker: "AAPL", start: 1736424000000, multiplier: 1, timespan: "day" },
+        { apiKey: "test-key" },
+      );
+
+      expect(result).toHaveLength(2);
+      for (const bar of result) {
+        expect(bar._freshness).toBeDefined();
+        expect(bar._freshness?.status).toBe("OK");
+        expect(bar._freshness?.receivedAt).toBeInstanceOf(Date);
+      }
+    });
+
+    it("stamps each bar with _freshness.status = 'DELAYED' on a delayed response", async () => {
+      mockFetchWithRetry.mockResolvedValueOnce({
+        json: () =>
+          Promise.resolve({
+            status: "DELAYED",
+            results: [
+              {
+                T: "AAPL",
+                o: 150,
+                h: 155,
+                l: 149,
+                c: 153,
+                v: 10000,
+                vw: 152,
+                n: 500,
+                t: 1736510400000,
+              },
+            ],
+          }),
+      } as Response);
+
+      const result = await fetchPrices(
+        { ticker: "AAPL", start: 1736424000000, multiplier: 1, timespan: "day" },
+        { apiKey: "test-key" },
+      );
+
+      expect(result).toHaveLength(1);
+      expect(result[0]._freshness).toBeDefined();
+      expect(result[0]._freshness?.status).toBe("DELAYED");
+      expect(result[0]._freshness?.receivedAt).toBeInstanceOf(Date);
+      // delayedSince is reserved for a future enhancement; the function
+      // currently surfaces it as null but the field must be present so
+      // consumers can rely on its existence on DELAYED results.
+      expect(result[0]._freshness?.delayedSince).toBeNull();
+    });
+
+    it("aggregates DELAYED across paginated responses (any DELAYED page wins)", async () => {
+      mockFetchWithRetry
+        .mockResolvedValueOnce({
+          json: () =>
+            Promise.resolve({
+              status: "OK",
+              results: [
+                {
+                  T: "AAPL",
+                  o: 150,
+                  h: 155,
+                  l: 149,
+                  c: 153,
+                  v: 10000,
+                  vw: 152,
+                  n: 500,
+                  t: 1000,
+                },
+              ],
+              next_url: "https://api.massive.com/v2/aggs/next",
+            }),
+        } as Response)
+        .mockResolvedValueOnce({
+          json: () =>
+            Promise.resolve({
+              status: "DELAYED",
+              results: [
+                {
+                  T: "AAPL",
+                  o: 153,
+                  h: 158,
+                  l: 152,
+                  c: 157,
+                  v: 12000,
+                  vw: 155,
+                  n: 600,
+                  t: 2000,
+                },
+              ],
+            }),
+        } as Response);
+
+      const result = await fetchPrices(
+        { ticker: "AAPL", start: 1000, multiplier: 1, timespan: "day" },
+        { apiKey: "test-key" },
+      );
+
+      // Both bars must report DELAYED — the more conservative status wins so
+      // downstream gates do not silently mix live and delayed data.
+      expect(result).toHaveLength(2);
+      for (const bar of result) {
+        expect(bar._freshness?.status).toBe("DELAYED");
+      }
+    });
+  });
+});
+
+describe("fetchPricesWithFreshness (DE-006)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns a discriminated wrapper with status 'OK' on a live response", async () => {
+    mockFetchWithRetry.mockResolvedValueOnce({
+      json: () =>
+        Promise.resolve({
+          status: "OK",
+          results: [
+            {
+              T: "AAPL",
+              o: 150,
+              h: 155,
+              l: 149,
+              c: 153,
+              v: 10000,
+              vw: 152,
+              n: 500,
+              t: 1736510400000,
+            },
+          ],
+        }),
+    } as Response);
+
+    const result = await fetchPricesWithFreshness(
+      { ticker: "AAPL", start: 1736424000000, multiplier: 1, timespan: "day" },
+      { apiKey: "test-key" },
+    );
+
+    expect(result.status).toBe("OK");
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0].open).toBe(150);
+    expect(result.receivedAt).toBeInstanceOf(Date);
+  });
+
+  it("returns a discriminated wrapper with status 'DELAYED' on a delayed response", async () => {
+    mockFetchWithRetry.mockResolvedValueOnce({
+      json: () =>
+        Promise.resolve({
+          status: "DELAYED",
+          results: [
+            {
+              T: "AAPL",
+              o: 150,
+              h: 155,
+              l: 149,
+              c: 153,
+              v: 10000,
+              vw: 152,
+              n: 500,
+              t: 1736510400000,
+            },
+          ],
+        }),
+    } as Response);
+
+    const result = await fetchPricesWithFreshness(
+      { ticker: "AAPL", start: 1736424000000, multiplier: 1, timespan: "day" },
+      { apiKey: "test-key" },
+    );
+
+    expect(result.status).toBe("DELAYED");
+    if (result.status === "DELAYED") {
+      expect(result.data).toHaveLength(1);
+      expect(result.delayedSince).toBeNull();
+      expect(result.receivedAt).toBeInstanceOf(Date);
+    }
+  });
+
+  it("defaults to status 'OK' on an empty result set", async () => {
+    mockFetchWithRetry.mockResolvedValueOnce({
+      json: () =>
+        Promise.resolve({
+          status: "OK",
+          results: [],
+        }),
+    } as Response);
+
+    const result = await fetchPricesWithFreshness(
+      { ticker: "AAPL", start: 1736424000000, multiplier: 1, timespan: "day" },
+      { apiKey: "test-key" },
+    );
+
+    expect(result.status).toBe("OK");
+    expect(result.data).toHaveLength(0);
+    expect(result.receivedAt).toBeInstanceOf(Date);
   });
 });
 
