@@ -169,9 +169,13 @@ export {
   DEFAULT_RISK_FREE_RATE,
   RISK_FREE_RATE_TTL_MS,
   getRiskFreeRate,
+  getRiskFreeRateWithProvenance,
   getCachedRiskFreeRateSync,
+  getCachedRiskFreeRateSyncWithProvenance,
   setRiskFreeRate,
   resetRiskFreeRateCache,
+  type RiskFreeRateSource,
+  type RiskFreeRateResult,
 } from "./risk-free-rate";
 
 // Re-export all types

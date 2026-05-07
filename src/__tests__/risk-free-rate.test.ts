@@ -4,7 +4,9 @@ import {
   DEFAULT_RISK_FREE_RATE,
   RISK_FREE_RATE_TTL_MS,
   getRiskFreeRate,
+  getRiskFreeRateWithProvenance,
   getCachedRiskFreeRateSync,
+  getCachedRiskFreeRateSyncWithProvenance,
   setRiskFreeRate,
   resetRiskFreeRateCache,
 } from "../risk-free-rate";
@@ -223,6 +225,164 @@ describe("risk-free-rate", () => {
     it("returns the cached value once populated", () => {
       setRiskFreeRate(0.0475);
       expect(getCachedRiskFreeRateSync()).toBe(0.0475);
+    });
+  });
+
+  // DE-029: provenance-aware accessors. The numeric `getRiskFreeRate` /
+  // `getCachedRiskFreeRateSync` continue to behave identically (verified
+  // above) — these tests cover the new `*WithProvenance` siblings that
+  // surface where the rate value came from.
+  describe("getRiskFreeRateWithProvenance (DE-029)", () => {
+    it("returns source='live' when fetch returns valid data on cold cache", async () => {
+      fetchSpy.mockResolvedValueOnce(
+        mockTreasuryResponse([
+          {
+            record_date: "2026-04-21",
+            security_term_week_num: "13",
+            avg_inv_rate: "4.52",
+          },
+        ]),
+      );
+
+      const result = await getRiskFreeRateWithProvenance();
+
+      expect(result.source).toBe("live");
+      expect(result.rate).toBeCloseTo(0.0452, 6);
+      expect(result.fetchedAt).toBeInstanceOf(Date);
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("returns source='default' when fetch fails on first ever call", async () => {
+      fetchSpy.mockRejectedValueOnce(new Error("ECONNRESET"));
+
+      const result = await getRiskFreeRateWithProvenance();
+
+      expect(result.source).toBe("default");
+      expect(result.rate).toBe(DEFAULT_RISK_FREE_RATE);
+      expect(result.fetchedAt).toBeInstanceOf(Date);
+    });
+
+    it("returns source='default' on HTTP non-2xx with no prior cache", async () => {
+      fetchSpy.mockResolvedValueOnce(
+        mockTreasuryResponse([], {
+          ok: false,
+          status: 503,
+          statusText: "Service Unavailable",
+        }),
+      );
+
+      const result = await getRiskFreeRateWithProvenance();
+
+      expect(result.source).toBe("default");
+      expect(result.rate).toBe(DEFAULT_RISK_FREE_RATE);
+    });
+
+    it("returns source='cached' on a fresh cache hit (no network call)", async () => {
+      // Prime the cache with a live fetch.
+      fetchSpy.mockResolvedValueOnce(
+        mockTreasuryResponse([
+          {
+            record_date: "2026-04-21",
+            security_term_week_num: "13",
+            avg_inv_rate: "4.52",
+          },
+        ]),
+      );
+      const first = await getRiskFreeRateWithProvenance();
+      expect(first.source).toBe("live");
+
+      // Second call within the TTL must come from cache, no fetch.
+      const second = await getRiskFreeRateWithProvenance();
+      expect(second.source).toBe("cached");
+      expect(second.rate).toBeCloseTo(0.0452, 6);
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("returns source='cached' when refresh fails but a stale value is available", async () => {
+      // Step 1: prime cache with a successful live fetch.
+      fetchSpy.mockResolvedValueOnce(
+        mockTreasuryResponse([
+          {
+            record_date: "2026-04-21",
+            security_term_week_num: "13",
+            avg_inv_rate: "4.52",
+          },
+        ]),
+      );
+      await getRiskFreeRateWithProvenance();
+
+      // Step 2: advance time past the TTL so the cache is stale.
+      vi.useFakeTimers();
+      vi.setSystemTime(Date.now() + RISK_FREE_RATE_TTL_MS + 1000);
+
+      // Step 3: simulate upstream failure. The function should fall back to
+      // the stale cache and report source='cached', NOT 'default'.
+      fetchSpy.mockRejectedValueOnce(new Error("upstream down"));
+
+      const result = await getRiskFreeRateWithProvenance();
+
+      expect(result.source).toBe("cached");
+      expect(result.rate).toBeCloseTo(0.0452, 6);
+      vi.useRealTimers();
+    });
+
+    it("setRiskFreeRate populates the cache so subsequent calls report source='cached'", async () => {
+      setRiskFreeRate(0.042);
+
+      const result = await getRiskFreeRateWithProvenance();
+
+      expect(result.source).toBe("cached");
+      expect(result.rate).toBe(0.042);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("getCachedRiskFreeRateSyncWithProvenance (DE-029)", () => {
+    it("returns source='default' when no value is cached", () => {
+      const result = getCachedRiskFreeRateSyncWithProvenance();
+
+      expect(result.source).toBe("default");
+      expect(result.rate).toBe(DEFAULT_RISK_FREE_RATE);
+      expect(result.fetchedAt).toBeInstanceOf(Date);
+    });
+
+    it("returns source='cached' once a value has been cached", () => {
+      setRiskFreeRate(0.0475);
+
+      const result = getCachedRiskFreeRateSyncWithProvenance();
+
+      expect(result.source).toBe("cached");
+      expect(result.rate).toBe(0.0475);
+    });
+  });
+
+  // DE-029: regression — the legacy numeric accessors must keep returning a
+  // plain `number` so the ~20 existing engine call sites are not broken.
+  describe("backward-compatible numeric API (DE-029)", () => {
+    it("getRiskFreeRate still returns a plain number", async () => {
+      fetchSpy.mockResolvedValueOnce(
+        mockTreasuryResponse([
+          {
+            record_date: "2026-04-21",
+            security_term_week_num: "13",
+            avg_inv_rate: "4.52",
+          },
+        ]),
+      );
+
+      const rate = await getRiskFreeRate();
+
+      expect(typeof rate).toBe("number");
+      expect(rate).toBeCloseTo(0.0452, 6);
+    });
+
+    it("getCachedRiskFreeRateSync still returns a plain number", () => {
+      setRiskFreeRate(0.0475);
+
+      const rate = getCachedRiskFreeRateSync();
+
+      expect(typeof rate).toBe("number");
+      expect(rate).toBe(0.0475);
     });
   });
 });

@@ -14,6 +14,46 @@ import { createTimeoutSignal, DEFAULT_TIMEOUTS } from "./http-timeout";
 export const DEFAULT_RISK_FREE_RATE = 0.02;
 
 /**
+ * Provenance describing where a risk-free rate value came from.
+ *
+ * - `"live"`: Just fetched successfully from the Treasury Fiscal Data API.
+ * - `"cached"`: Returned from the in-process cache. May be from an earlier
+ *               successful fetch (the common case) OR from a stale cache that
+ *               survived a failed refresh attempt — callers that want to
+ *               distinguish these cases should compare `fetchedAt` against
+ *               {@link RISK_FREE_RATE_TTL_MS}.
+ * - `"default"`: The Treasury fetch failed AND no usable cached value was
+ *               available, so {@link DEFAULT_RISK_FREE_RATE} was returned.
+ *               Performance metrics computed against a `"default"` rate are
+ *               using a fictional 2% baseline and should be flagged in
+ *               downstream reporting.
+ *
+ * DE-029: previously the function returned only the numeric rate, so a fall
+ * back to the 2% default propagated through Sharpe/alpha/Sortino computations
+ * indistinguishable from a live observation. The provenance field closes that
+ * loop.
+ */
+export type RiskFreeRateSource = "live" | "cached" | "default";
+
+/**
+ * Result shape returned by the provenance-aware accessors.
+ *
+ * @see RiskFreeRateSource
+ */
+export interface RiskFreeRateResult {
+  /** Annualized decimal rate (e.g. 0.0452 for 4.52%). */
+  rate: number;
+  /** Where the rate value came from. See {@link RiskFreeRateSource}. */
+  source: RiskFreeRateSource;
+  /**
+   * Wall-clock time the rate was last sourced. For `"live"` this is the
+   * moment the fetch resolved. For `"cached"` this is the original fetch
+   * time. For `"default"` this is the time the fallback was selected.
+   */
+  fetchedAt: Date;
+}
+
+/**
  * Cache TTL for the risk-free rate: 24 hours. Treasury yields update daily
  * (auction + close), so refreshing more aggressively provides no useful signal
  * and risks rate-limiting the public endpoint.
@@ -61,7 +101,7 @@ interface RiskFreeRateCacheEntry {
 }
 
 let cache: RiskFreeRateCacheEntry | null = null;
-let inflight: Promise<number> | null = null;
+let inflight: Promise<RiskFreeRateResult> | null = null;
 
 /**
  * Clears the cached risk-free rate. Exported for tests and for callers that
@@ -134,6 +174,93 @@ async function fetchTreasuryBillRate(): Promise<number> {
 }
 
 /**
+ * Provenance-aware variant of {@link getRiskFreeRate} that returns the rate
+ * AND tells the caller where it came from. Use this in any code path that
+ * publishes performance metrics (Sharpe, alpha, Sortino) so downstream
+ * reports can flag computations made against a fictional fallback rate.
+ *
+ * Behavior is identical to {@link getRiskFreeRate} for the cache and
+ * deduplication semantics; only the return shape differs:
+ *
+ * - Fresh cache hit: `{ source: "cached", fetchedAt: <original fetch time> }`
+ * - Cold or stale cache + successful fetch: `{ source: "live", fetchedAt: <now> }`
+ * - Cold or stale cache + failed fetch but cached value present:
+ *   `{ source: "cached", fetchedAt: <original fetch time> }` — the stale
+ *   value is reused so existing alpha calculations keep working through a
+ *   transient outage. The provenance still says `cached`, not `live`.
+ * - Cold cache + failed fetch + no cached value:
+ *   `{ source: "default", fetchedAt: <now> }` — the 2% fallback is used. This
+ *   is the case downstream reports MUST flag, because Sharpe / alpha computed
+ *   against a 2% floor that was never observed in market data is a fiction.
+ *
+ * DE-029: closes the silent-failure loop where a first-fetch network failure
+ * propagated `DEFAULT_RISK_FREE_RATE` indistinguishable from a live
+ * observation.
+ *
+ * @returns The annualized risk-free rate plus its provenance.
+ */
+export async function getRiskFreeRateWithProvenance(): Promise<RiskFreeRateResult> {
+  // Snapshot the cache reference before the freshness check so the type
+  // narrows correctly without a non-null assertion (the check itself uses a
+  // mutable module-level variable, which TypeScript will not narrow across).
+  const snapshot = cache;
+  if (snapshot !== null && isFresh(snapshot)) {
+    return {
+      rate: snapshot.rate,
+      source: "cached",
+      fetchedAt: new Date(snapshot.fetchedAt),
+    };
+  }
+
+  if (inflight !== null) {
+    return inflight;
+  }
+
+  inflight = (async (): Promise<RiskFreeRateResult> => {
+    try {
+      const rate = await fetchTreasuryBillRate();
+      const fetchedAtMs = Date.now();
+      cache = { rate, fetchedAt: fetchedAtMs };
+      return {
+        rate,
+        source: "live",
+        fetchedAt: new Date(fetchedAtMs),
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (cache !== null) {
+        getLogger().warn(
+          "Failed to refresh risk-free rate; using last-known-good cached value",
+          {
+            error: message,
+            cachedRate: cache.rate,
+            cacheAgeMs: Date.now() - cache.fetchedAt,
+          },
+        );
+        return {
+          rate: cache.rate,
+          source: "cached",
+          fetchedAt: new Date(cache.fetchedAt),
+        };
+      }
+      getLogger().warn(
+        "Failed to fetch risk-free rate and no cached value available; falling back to DEFAULT_RISK_FREE_RATE",
+        { error: message, fallback: DEFAULT_RISK_FREE_RATE },
+      );
+      return {
+        rate: DEFAULT_RISK_FREE_RATE,
+        source: "default",
+        fetchedAt: new Date(),
+      };
+    } finally {
+      inflight = null;
+    }
+  })();
+
+  return inflight;
+}
+
+/**
  * Returns the current annualized risk-free rate (decimal, e.g. 0.0452 for
  * 4.52%), fetching from the US Treasury Fiscal Data API and caching for 24h.
  *
@@ -148,46 +275,15 @@ async function fetchTreasuryBillRate(): Promise<number> {
  * - Concurrent calls during a cold cache are deduplicated so only one network
  *   request is in flight at a time.
  *
+ * For provenance-aware callers (performance reports, audit logging) prefer
+ * {@link getRiskFreeRateWithProvenance}, which returns both the rate AND
+ * whether it came from a live fetch, the cache, or the fallback default.
+ *
  * @returns Annualized risk-free rate as a decimal.
  */
 export async function getRiskFreeRate(): Promise<number> {
-  if (isFresh(cache)) {
-    return cache!.rate;
-  }
-
-  if (inflight !== null) {
-    return inflight;
-  }
-
-  inflight = (async (): Promise<number> => {
-    try {
-      const rate = await fetchTreasuryBillRate();
-      cache = { rate, fetchedAt: Date.now() };
-      return rate;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (cache !== null) {
-        getLogger().warn(
-          "Failed to refresh risk-free rate; using last-known-good cached value",
-          {
-            error: message,
-            cachedRate: cache.rate,
-            cacheAgeMs: Date.now() - cache.fetchedAt,
-          },
-        );
-        return cache.rate;
-      }
-      getLogger().warn(
-        "Failed to fetch risk-free rate and no cached value available; falling back to DEFAULT_RISK_FREE_RATE",
-        { error: message, fallback: DEFAULT_RISK_FREE_RATE },
-      );
-      return DEFAULT_RISK_FREE_RATE;
-    } finally {
-      inflight = null;
-    }
-  })();
-
-  return inflight;
+  const result = await getRiskFreeRateWithProvenance();
+  return result.rate;
 }
 
 /**
@@ -204,20 +300,52 @@ export async function getRiskFreeRate(): Promise<number> {
  *          {@link DEFAULT_RISK_FREE_RATE} if no value has been cached yet.
  */
 export function getCachedRiskFreeRateSync(): number {
+  return getCachedRiskFreeRateSyncWithProvenance().rate;
+}
+
+/**
+ * Provenance-aware sibling of {@link getCachedRiskFreeRateSync}. Returns the
+ * cached rate plus a flag indicating whether a real value has been cached
+ * (`"cached"`) or whether the caller is being given the {@link DEFAULT_RISK_FREE_RATE}
+ * fallback (`"default"`).
+ *
+ * Use this in synchronous hot paths that nonetheless need to flag computations
+ * made against the fallback (e.g., real-time alpha streaming where async
+ * round-trips are not viable but downstream reports must still distinguish
+ * live from fictional rates).
+ *
+ * As with the original sync accessor, a stale cache triggers a fire-and-forget
+ * background refresh so the next synchronous call sees fresh data; the call
+ * itself remains synchronous and returns the last-known-good value.
+ *
+ * DE-029: closes the silent-failure loop where the synchronous fallback was
+ * indistinguishable from a real cache hit.
+ *
+ * @returns A {@link RiskFreeRateResult} carrying the rate and its provenance.
+ */
+export function getCachedRiskFreeRateSyncWithProvenance(): RiskFreeRateResult {
   if (cache === null) {
     // Kick off a background fetch so the next sync caller has a real number.
-    void getRiskFreeRate().catch(() => {
-      // Errors are already logged inside getRiskFreeRate; swallow here to
-      // keep this truly fire-and-forget.
+    void getRiskFreeRateWithProvenance().catch(() => {
+      // Errors are already logged inside getRiskFreeRateWithProvenance;
+      // swallow here to keep this truly fire-and-forget.
     });
-    return DEFAULT_RISK_FREE_RATE;
+    return {
+      rate: DEFAULT_RISK_FREE_RATE,
+      source: "default",
+      fetchedAt: new Date(),
+    };
   }
   if (!isFresh(cache)) {
     // Stale: trigger background refresh but still return the last-known-good
     // value so the call remains synchronous.
-    void getRiskFreeRate().catch(() => {
-      // Errors are already logged inside getRiskFreeRate.
+    void getRiskFreeRateWithProvenance().catch(() => {
+      // Errors are already logged inside getRiskFreeRateWithProvenance.
     });
   }
-  return cache.rate;
+  return {
+    rate: cache.rate,
+    source: "cached",
+    fetchedAt: new Date(cache.fetchedAt),
+  };
 }
