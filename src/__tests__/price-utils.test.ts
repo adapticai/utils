@@ -16,7 +16,9 @@ vi.mock("../alpaca/legacy", () => ({
   getOrder: vi.fn(),
 }));
 
-import { roundStockPrice } from "../price-utils";
+import { getEquityValues, roundStockPrice } from "../price-utils";
+import type { EquityPoint } from "../types";
+import type { Time } from "lightweight-charts";
 
 describe("roundStockPrice", () => {
   it("should round prices >= $1 to nearest cent", () => {
@@ -89,5 +91,91 @@ describe("roundStockPrice", () => {
     // Note: 1.015 * 100 = 101.49999... in IEEE 754, so Math.round gives 101
     expect(roundStockPrice(1.015)).toBe(1.01);
     expect(roundStockPrice(1.016)).toBe(1.02);
+  });
+});
+
+describe("getEquityValues — DE-005 regression", () => {
+  /**
+   * Builds a representative `EquityPoint[]` series with monotonically
+   * increasing UTC-second timestamps and known values. The resulting last
+   * value is the canonical answer for `latestEquity` so the regression test
+   * pins exact behaviour.
+   */
+  function buildEquitySeries(
+    values: number[],
+    startEpochSeconds = 1_736_510_400, // 2025-01-10T12:00Z, arbitrary
+  ): EquityPoint[] {
+    return values.map((value, idx) => ({
+      // Lightweight-charts `Time` accepts a UTC epoch-second `number`.
+      time: (startEpochSeconds + idx * 60) as Time,
+      value,
+    }));
+  }
+
+  it("returns a finite latestEquity (regression for un-invoked valueOf bug)", () => {
+    const series = buildEquitySeries([100_000, 100_500, 101_000, 101_750]);
+
+    const result = getEquityValues(series);
+
+    // Before the DE-005 fix, this expression read `Number(latestPoint.valueOf)`,
+    // which evaluated to NaN. We assert finiteness explicitly so a regression
+    // would be caught even if a future change reintroduced a similar bug.
+    expect(Number.isFinite(result.latestEquity)).toBe(true);
+    expect(Number.isNaN(result.latestEquity)).toBe(false);
+  });
+
+  it("returns the actual latest value, not NaN", () => {
+    const series = buildEquitySeries([100_000, 100_500, 101_000, 101_750]);
+
+    const result = getEquityValues(series);
+
+    // The known last value of the series.
+    expect(result.latestEquity).toBe(101_750);
+  });
+
+  it("returns the first value as initialEquity for an unspecified period", () => {
+    const series = buildEquitySeries([100_000, 100_500, 101_000, 101_750]);
+
+    const result = getEquityValues(series);
+
+    expect(result.initialEquity).toBe(100_000);
+  });
+
+  it("returns latestTimestamp matching the last point's time", () => {
+    const series = buildEquitySeries([1, 2, 3]);
+
+    const result = getEquityValues(series);
+
+    expect(result.latestTimestamp).toBe(series[series.length - 1].time);
+  });
+
+  it("handles a single-point series without producing NaN", () => {
+    const series = buildEquitySeries([42_000]);
+
+    const result = getEquityValues(series);
+
+    expect(Number.isFinite(result.latestEquity)).toBe(true);
+    expect(result.latestEquity).toBe(42_000);
+  });
+
+  it("returns 0/0 for an empty series (existing behaviour preserved)", () => {
+    const result = getEquityValues([]);
+
+    expect(result.latestEquity).toBe(0);
+    expect(result.initialEquity).toBe(0);
+  });
+
+  it("filters NaN/Infinity values from the input series", () => {
+    const series: EquityPoint[] = [
+      { time: 1_736_510_400 as Time, value: 100_000 },
+      { time: 1_736_510_460 as Time, value: Number.NaN },
+      { time: 1_736_510_520 as Time, value: Number.POSITIVE_INFINITY },
+      { time: 1_736_510_580 as Time, value: 101_500 },
+    ];
+
+    const result = getEquityValues(series);
+
+    expect(Number.isFinite(result.latestEquity)).toBe(true);
+    expect(result.latestEquity).toBe(101_500);
   });
 });
