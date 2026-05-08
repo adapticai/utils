@@ -447,6 +447,66 @@ describe("EffectiveTradingPolicySchema", () => {
     );
     expect(result.success).toBe(true);
   });
+
+  it("accepts equityWashTradeCooldownMs and maxDailyLossPercent overrides", () => {
+    const result = EffectiveTradingPolicySchema.safeParse({
+      ...DEFAULT_TRADING_POLICY,
+      equityWashTradeCooldownMs: 60_000,
+      maxDailyLossPercent: 0.05,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.equityWashTradeCooldownMs).toBe(60_000);
+      expect(result.data.maxDailyLossPercent).toBe(0.05);
+    }
+  });
+
+  it("treats equityWashTradeCooldownMs and maxDailyLossPercent as optional", () => {
+    // Construct a policy literal omitting the optional Wave 4.5 fields to
+    // confirm legacy snapshots still parse cleanly.
+    const policyLiteral = {
+      ...DEFAULT_TRADING_POLICY,
+    } as Record<string, unknown>;
+    delete policyLiteral.equityWashTradeCooldownMs;
+    delete policyLiteral.maxDailyLossPercent;
+
+    const result = EffectiveTradingPolicySchema.safeParse(policyLiteral);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.equityWashTradeCooldownMs).toBeUndefined();
+      expect(result.data.maxDailyLossPercent).toBeUndefined();
+    }
+  });
+
+  it("rejects negative equityWashTradeCooldownMs", () => {
+    const result = EffectiveTradingPolicySchema.safeParse({
+      ...DEFAULT_TRADING_POLICY,
+      equityWashTradeCooldownMs: -1,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects non-integer equityWashTradeCooldownMs", () => {
+    const result = EffectiveTradingPolicySchema.safeParse({
+      ...DEFAULT_TRADING_POLICY,
+      equityWashTradeCooldownMs: 30_000.5,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects maxDailyLossPercent outside [0, 1]", () => {
+    const tooHigh = EffectiveTradingPolicySchema.safeParse({
+      ...DEFAULT_TRADING_POLICY,
+      maxDailyLossPercent: 1.5,
+    });
+    expect(tooHigh.success).toBe(false);
+
+    const negative = EffectiveTradingPolicySchema.safeParse({
+      ...DEFAULT_TRADING_POLICY,
+      maxDailyLossPercent: -0.01,
+    });
+    expect(negative.success).toBe(false);
+  });
 });
 
 describe("DEFAULT_TRADING_POLICY", () => {
@@ -468,5 +528,18 @@ describe("DEFAULT_TRADING_POLICY", () => {
     expect(DEFAULT_TRADING_POLICY.riskBudgetPrefs.maxDrawdownFromPeakPct).toBe(
       20,
     );
+  });
+
+  it("mirrors backend-legacy TradingPolicy default for equityWashTradeCooldownMs", () => {
+    // Backend-legacy schema defines `Int @default(30000)` — keep the utils
+    // baseline aligned with the source of truth.
+    expect(DEFAULT_TRADING_POLICY.equityWashTradeCooldownMs).toBe(30_000);
+  });
+
+  it("mirrors defaultRiskConfig.dailyLossLimits.maxDailyLossPercent (3%)", () => {
+    // Engine's `defaultRiskConfig.dailyLossLimits.maxDailyLossPercent` is
+    // 0.03; this default keeps utils-derived snapshots aligned with the
+    // engine's static fallback.
+    expect(DEFAULT_TRADING_POLICY.maxDailyLossPercent).toBe(0.03);
   });
 });

@@ -43,6 +43,10 @@ export const DEFAULT_TRADING_POLICY: EffectiveTradingPolicy =
     maxOpenOrders: 50,
     perTradeEquityAllocationPct: 5,
     perTradeCryptoAllocationPct: 5,
+    // 30s wash-trade cooldown matches backend-legacy `TradingPolicy.equityWashTradeCooldownMs` default.
+    equityWashTradeCooldownMs: 30_000,
+    // Mirrors `defaultRiskConfig.dailyLossLimits.maxDailyLossPercent` (3% intraday loss limit).
+    maxDailyLossPercent: 0.03,
     macroOverlayEnabled: false,
     sectorOverlayEnabled: false,
     volatilityOverlayEnabled: false,

@@ -43,6 +43,26 @@ export const EffectiveTradingPolicySchema = z.object({
   perTradeEquityAllocationPct: z.number(),
   /** Percentage of the crypto allocation slice of account equity allocated per crypto trade. Canonical replacement for legacy AlpacaAccount.cryptoTradeAllocationPct. */
   perTradeCryptoAllocationPct: z.number(),
+  /**
+   * Wash-trade cooldown period in milliseconds for equities. Defines the
+   * minimum elapsed time between opposing-side fills on the same symbol per
+   * FINRA Rule 5210, mirroring the 30s default already enforced for crypto.
+   * Mirrors `TradingPolicy.equityWashTradeCooldownMs` in backend-legacy.
+   * Optional so that legacy snapshots that pre-date this field continue to
+   * parse cleanly; consumers should fall back to a 30_000ms static default
+   * when undefined.
+   */
+  equityWashTradeCooldownMs: z.number().int().nonnegative().optional(),
+  /**
+   * Maximum daily portfolio loss as a fraction of account equity, evaluated
+   * intraday from the broker's `equity` vs `last_equity` delta. Breach
+   * activates a 24h `BLOCK_NEW_OPENS` halt per Reg-T daily-loss-limit
+   * controls. Optional so legacy snapshots parse cleanly; consumers
+   * should fall back to the static default in `defaultRiskConfig.dailyLossLimits.maxDailyLossPercent`
+   * (3%) when undefined. Range constrained to [0, 1) — a 100% daily-loss
+   * threshold would be nonsensical.
+   */
+  maxDailyLossPercent: z.number().min(0).max(1).optional(),
   macroOverlayEnabled: z.boolean(),
   sectorOverlayEnabled: z.boolean(),
   volatilityOverlayEnabled: z.boolean(),
