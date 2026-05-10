@@ -18,21 +18,32 @@ export const PositionManagementPrefsObjectSchema = z.object({
   defaultStopLossMethod: z
     .enum(["fixed_percent", "atr_based", "structure_based", "trailing_stop"])
     .default("trailing_stop"),
-  defaultStopLossPct: z.number().min(0).max(100).default(4),
-  atrStopMultiplier: z.number().min(0).default(2),
+  // 50bps stop sized for 5-min bar scalp profiles (audit 2026-05-10).
+  defaultStopLossPct: z.number().min(0).max(100).default(0.5),
+  // 0.75x ATR multiplier — tighter than the previous 2x to keep ATR-based
+  // stops aligned with sub-percent intraday move ranges.
+  atrStopMultiplier: z.number().min(0).default(0.75),
   defaultTakeProfitMethod: z
     .enum(["fixed_percent", "atr_based", "risk_reward_ratio", "none"])
     .default("risk_reward_ratio"),
-  defaultTakeProfitPct: z.number().min(0).max(100).default(3),
-  defaultRiskRewardRatio: z.number().min(0).default(2),
+  // 100bps take-profit pairs with the 50bps stop at a 2:1 R:R via the
+  // explicit defaultRiskRewardRatio below; both serve different code paths
+  // (fixed-percent vs ratio-derived TP).
+  defaultTakeProfitPct: z.number().min(0).max(100).default(1.0),
+  defaultRiskRewardRatio: z.number().min(0).default(1.5),
   breakEvenStopEnabled: z.boolean().default(true),
-  breakEvenTriggerPct: z.number().min(0).max(100).default(2),
+  // Move stop to break-even after 1% of profit (vs 2%) — tighter to match
+  // scalping cadence.
+  breakEvenTriggerPct: z.number().min(0).max(100).default(1),
   scaleInEnabled: z.boolean().default(false),
   scaleInMaxAdds: z.number().min(0).default(2),
   scaleOutEnabled: z.boolean().default(true),
   scaleOutTrimPct: z.number().min(0).max(100).default(50),
-  scaleOutTriggerPct: z.number().min(0).max(100).default(5),
-  maxHoldingPeriodMinutes: z.number().min(0).default(0),
+  // Trim 50% at +0.5% — much earlier than the previous 5% for scalping.
+  scaleOutTriggerPct: z.number().min(0).max(100).default(0.5),
+  // Hard 30-min intraday hold cap. Previous default of 0 (unlimited) is
+  // wrong for scalping where stale positions accumulate undefined risk.
+  maxHoldingPeriodMinutes: z.number().min(0).default(30),
   maxHoldingPeriodByAssetClass: z.record(z.string(), z.number()).default({}),
   dayTradeOnly: z.boolean().default(false),
   autoCloseBeforeEarnings: z.boolean().default(false),
@@ -51,7 +62,9 @@ export const PositionManagementPrefsObjectSchema = z.object({
       { profitThresholdPct: 10, newTrailPct: 1.0 },
     ]),
   portfolioStopOverridesPositionStops: z.boolean().default(false),
-  doNotReenterAfterStopOutMinutes: z.number().min(0).default(30),
+  // 10-min stop-out cooldown (vs 30) — fast re-entry permitted once the
+  // adverse regime resolves.
+  doNotReenterAfterStopOutMinutes: z.number().min(0).default(10),
   doNotReenterAfterForcedCloseMinutes: z.number().min(0).default(60),
 });
 
