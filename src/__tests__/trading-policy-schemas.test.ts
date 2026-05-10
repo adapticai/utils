@@ -155,7 +155,8 @@ describe("RiskBudgetPrefsSchema", () => {
   it("accepts empty object and applies defaults", () => {
     const result = RiskBudgetPrefsSchema.parse({});
     expect(result.maxMarginUtilPct).toBe(50);
-    expect(result.maxRiskPerTradePct).toBe(2);
+    // Scalping default (audit 2026-05-10) — was 2 (swing).
+    expect(result.maxRiskPerTradePct).toBe(1.5);
     expect(result.maxDrawdownFromPeakPct).toBe(20);
     expect(result.gapRiskSensitivity).toBe("medium");
   });
@@ -181,9 +182,16 @@ describe("RiskBudgetPrefsSchema", () => {
 
   it("applies defaults for loss limits", () => {
     const result = RiskBudgetPrefsSchema.parse({});
-    expect(result.maxLossPerDayPct).toBe(5);
-    expect(result.maxLossPerWeekPct).toBe(10);
+    // Scalping defaults (audit 2026-05-10) — were 5 / 10 (swing).
+    expect(result.maxLossPerDayPct).toBe(2.0);
+    expect(result.maxLossPerWeekPct).toBe(5.0);
     expect(result.maxLossPerMonthPct).toBe(15);
+  });
+
+  it("applies scalping default for perTradeAllocationPct", () => {
+    const result = RiskBudgetPrefsSchema.parse({});
+    // Scalping default (audit 2026-05-10) — was 5 (swing).
+    expect(result.perTradeAllocationPct).toBe(2);
   });
 
   it("applies defaults for exposure caps", () => {
@@ -213,7 +221,8 @@ describe("RiskBudgetPrefsSchema", () => {
 describe("SignalConsumptionPrefsSchema", () => {
   it("accepts empty object and applies defaults", () => {
     const result = SignalConsumptionPrefsSchema.parse({});
-    expect(result.minConfidenceByDefault).toBe(60);
+    // Scalping default (audit 2026-05-10) — was 60 (swing).
+    expect(result.minConfidenceByDefault).toBe(65);
     expect(result.reversalHandlingPolicy).toBe("close_only");
     expect(result.conflictHandlingOpenOrders).toBe("cancel_conflicting");
     expect(result.noTradeWindows).toEqual([]);
@@ -237,19 +246,28 @@ describe("SignalConsumptionPrefsSchema", () => {
 
   it("applies defaults for cooldown timers", () => {
     const result = SignalConsumptionPrefsSchema.parse({});
-    expect(result.cooldownAfterEntrySeconds).toBe(60);
+    // Scalping defaults (audit 2026-05-10) — were 60 / 300 / 300 (swing).
+    expect(result.cooldownAfterEntrySeconds).toBe(5);
     expect(result.cooldownAfterExitSeconds).toBe(120);
-    expect(result.cooldownAfterStopOutSeconds).toBe(300);
+    expect(result.cooldownAfterStopOutSeconds).toBe(30);
     expect(result.cooldownAfterFailedTradeSeconds).toBe(180);
-    expect(result.duplicateSignalSuppressionWindowSeconds).toBe(300);
+    expect(result.duplicateSignalSuppressionWindowSeconds).toBe(10);
   });
 
   it("applies defaults for confidence and reward filters", () => {
     const result = SignalConsumptionPrefsSchema.parse({});
-    expect(result.minExpectedRewardRiskRatio).toBe(1.5);
+    // Scalping defaults (audit 2026-05-10) — were 1.5 / 300 (swing).
+    expect(result.minExpectedRewardRiskRatio).toBe(1.3);
     expect(result.minExpectedEdgePct).toBe(0);
-    expect(result.maxSignalAgeSeconds).toBe(300);
+    expect(result.maxSignalAgeSeconds).toBe(30);
     expect(result.minConvictionDeltaToModify).toBe(10);
+  });
+
+  it("applies scalping defaults for legacy AlpacaAccount replacements", () => {
+    const result = SignalConsumptionPrefsSchema.parse({});
+    // Scalping defaults (audit 2026-05-10) — were 0.5 / 50000 (swing).
+    expect(result.minPercentageChange).toBe(0.15);
+    expect(result.volumeThreshold).toBe(100000);
   });
 
   it("applies defaults for earnings blackout", () => {
@@ -292,9 +310,11 @@ describe("ExecutionPrefsSchema", () => {
   it("accepts empty object and applies defaults", () => {
     const result = ExecutionPrefsSchema.parse({});
     expect(result.preferredOrderType).toBe("limit");
-    expect(result.defaultTimeInForce).toBe("day");
-    expect(result.executionBias).toBe("neutral");
-    expect(result.maxSlippageTolerancePct).toBe(1.0);
+    // Scalping defaults (audit 2026-05-10) — were "day" / "neutral" / 1.0
+    // (swing). preferredOrderType remains "limit" — correct for scalping.
+    expect(result.defaultTimeInForce).toBe("ioc");
+    expect(result.executionBias).toBe("passive");
+    expect(result.maxSlippageTolerancePct).toBe(0.3);
     expect(result.failureBehavior).toBe("fail_safe");
   });
 
@@ -317,7 +337,8 @@ describe("ExecutionPrefsSchema", () => {
   it("applies defaults for price collar settings", () => {
     const result = ExecutionPrefsSchema.parse({});
     expect(result.priceCollarEnabled).toBe(true);
-    expect(result.priceCollarPct).toBe(2);
+    // Scalping default (audit 2026-05-10) — was 2 (swing).
+    expect(result.priceCollarPct).toBe(0.5);
   });
 
   it("applies defaults for reprice settings", () => {
@@ -365,6 +386,23 @@ describe("PositionManagementPrefsSchema", () => {
     expect(result.scaleInEnabled).toBe(false);
     expect(result.trailingStopTighteningRules).toHaveLength(3);
     expect(result.trailingStopTighteningRules[0].profitThresholdPct).toBe(3);
+  });
+
+  it("applies scalping-tuned defaults for stop / take-profit / hold", () => {
+    const result = PositionManagementPrefsSchema.parse({});
+    // Scalping defaults (audit 2026-05-10) — were 4 / 2 / 3 / 2 / 0 / 30 / 5
+    // (swing). 50bps stop sized for 5-min bars, 100bps TP, 0.75x ATR
+    // multiplier, 1.5 R:R, 30-min hard intraday cap (vs unlimited), 10-min
+    // post-stop-out cooldown (vs 30), 50bps scale-out trigger (vs 5%).
+    expect(result.defaultStopLossPct).toBe(0.5);
+    expect(result.atrStopMultiplier).toBe(0.75);
+    expect(result.defaultTakeProfitPct).toBe(1.0);
+    expect(result.defaultRiskRewardRatio).toBe(1.5);
+    expect(result.maxHoldingPeriodMinutes).toBe(30);
+    expect(result.doNotReenterAfterStopOutMinutes).toBe(10);
+    expect(result.scaleOutTriggerPct).toBe(0.5);
+    expect(result.breakEvenStopEnabled).toBe(true);
+    expect(result.breakEvenTriggerPct).toBe(1);
   });
 });
 
@@ -530,16 +568,18 @@ describe("DEFAULT_TRADING_POLICY", () => {
     );
   });
 
-  it("mirrors backend-legacy TradingPolicy default for equityWashTradeCooldownMs", () => {
-    // Backend-legacy schema defines `Int @default(30000)` — keep the utils
-    // baseline aligned with the source of truth.
-    expect(DEFAULT_TRADING_POLICY.equityWashTradeCooldownMs).toBe(30_000);
-  });
-
-  it("mirrors defaultRiskConfig.dailyLossLimits.maxDailyLossPercent (3%)", () => {
-    // Engine's `defaultRiskConfig.dailyLossLimits.maxDailyLossPercent` is
-    // 0.03; this default keeps utils-derived snapshots aligned with the
-    // engine's static fallback.
-    expect(DEFAULT_TRADING_POLICY.maxDailyLossPercent).toBe(0.03);
+  it("uses scalping-tuned top-level concurrency and sizing", () => {
+    // Audit 2026-05-10 — switched from swing (20 / 15 / 5 / 5 / 0.03) to
+    // scalping (8 / 8 / 2 / 2 / 0.02). Backend-legacy
+    // `TradingPolicy.equityWashTradeCooldownMs` row default of 30_000ms
+    // remains the canonical fallback for accounts that have not opted into
+    // the scalping profile; the package-level baseline now reflects the
+    // scalping calibration (5_000ms).
+    expect(DEFAULT_TRADING_POLICY.maxOpenPositions).toBe(8);
+    expect(DEFAULT_TRADING_POLICY.maxSymbolConcentrationPct).toBe(8);
+    expect(DEFAULT_TRADING_POLICY.perTradeEquityAllocationPct).toBe(2);
+    expect(DEFAULT_TRADING_POLICY.perTradeCryptoAllocationPct).toBe(2);
+    expect(DEFAULT_TRADING_POLICY.maxDailyLossPercent).toBe(0.02);
+    expect(DEFAULT_TRADING_POLICY.equityWashTradeCooldownMs).toBe(5_000);
   });
 });

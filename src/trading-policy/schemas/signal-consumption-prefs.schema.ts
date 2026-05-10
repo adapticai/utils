@@ -26,17 +26,30 @@ const StrategyPriorityRuleSchema = z.object({
 export const SignalConsumptionPrefsObjectSchema = z.object({
   enabledStrategies: z.array(z.string()).default([]),
   disabledStrategies: z.array(z.string()).default([]),
-  minConfidenceByDefault: z.number().min(0).max(100).default(60),
+  // Slightly higher confidence floor (65 vs 60) reflecting the precision
+  // demands of scalping — false positives compound rapidly at this cadence.
+  minConfidenceByDefault: z.number().min(0).max(100).default(65),
   minConfidenceByAssetClass: z.record(z.string(), z.number()).default({}),
   minConfidenceByStrategy: z.record(z.string(), z.number()).default({}),
-  minExpectedRewardRiskRatio: z.number().min(0).default(1.5),
+  // 1.3 R:R minimum — slightly tighter than the swing default (1.5) since
+  // scalp trades have quicker resolution and tolerate marginally lower
+  // expected R:R when win-rate is high.
+  minExpectedRewardRiskRatio: z.number().min(0).default(1.3),
   minExpectedEdgePct: z.number().min(0).default(0),
-  maxSignalAgeSeconds: z.number().min(0).default(300),
-  cooldownAfterEntrySeconds: z.number().min(0).default(60),
+  // 30s max signal age for scalping — anything older than that has likely
+  // been re-priced out of edge. Previous default (300s) was swing-suitable.
+  maxSignalAgeSeconds: z.number().min(0).default(30),
+  // 5s post-entry cooldown — minimum churn protection while still allowing
+  // rapid re-engagement if the setup persists.
+  cooldownAfterEntrySeconds: z.number().min(0).default(5),
   cooldownAfterExitSeconds: z.number().min(0).default(120),
-  cooldownAfterStopOutSeconds: z.number().min(0).default(300),
+  // 30s post-stop-out cooldown (vs 300s) — fast re-entry allowed once the
+  // setup re-presents.
+  cooldownAfterStopOutSeconds: z.number().min(0).default(30),
   cooldownAfterFailedTradeSeconds: z.number().min(0).default(180),
-  duplicateSignalSuppressionWindowSeconds: z.number().min(0).default(300),
+  // 10s duplicate-signal window — prevents same-second signal dedup but
+  // allows the same setup to trigger again within a minute.
+  duplicateSignalSuppressionWindowSeconds: z.number().min(0).default(10),
   reversalHandlingPolicy: z
     .enum([
       "ignore_reversal",
@@ -63,10 +76,18 @@ export const SignalConsumptionPrefsObjectSchema = z.object({
   earningsBlackoutHoursBefore: z.number().min(0).default(24),
   earningsBlackoutHoursAfter: z.number().min(0).default(2),
 
-  /** Minimum price movement % to qualify as a tradeable signal. Replaces legacy AlpacaAccount.minPercentageChange. */
-  minPercentageChange: z.number().min(0).default(0.5),
-  /** Minimum average daily volume to qualify a symbol for trading. Replaces legacy AlpacaAccount.volumeThreshold. */
-  volumeThreshold: z.number().min(0).default(50000),
+  /**
+   * Minimum price movement % to qualify as a tradeable signal. Replaces legacy AlpacaAccount.minPercentageChange.
+   * Tighter intraday move filter (15bps vs 50bps) — scalping captures
+   * sub-percent moves that the swing-trading default would have ignored.
+   */
+  minPercentageChange: z.number().min(0).default(0.15),
+  /**
+   * Minimum average daily volume to qualify a symbol for trading. Replaces legacy AlpacaAccount.volumeThreshold.
+   * Higher floor (100k vs 50k) — scalping requires consistent liquidity to
+   * keep slippage within the tightened maxSlippageTolerancePct (0.3%).
+   */
+  volumeThreshold: z.number().min(0).default(100000),
 });
 
 export const SignalConsumptionPrefsSchema =

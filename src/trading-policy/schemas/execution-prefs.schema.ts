@@ -24,13 +24,22 @@ export const ExecutionPrefsObjectSchema = z.object({
   preferredOrderTypeByAssetClass: z
     .record(z.string(), z.string())
     .default({ crypto: "market" }),
-  defaultTimeInForce: z.enum(["day", "gtc", "ioc", "fok"]).default("day"),
+  // IOC default (immediate-or-cancel) for scalping — orders that don't
+  // fill instantly should be killed, not parked on the book where they
+  // accumulate stale-price risk.
+  defaultTimeInForce: z.enum(["day", "gtc", "ioc", "fok"]).default("ioc"),
+  // Passive bias — scalping captures spread by posting on the book rather
+  // than paying it. Aggressive crossings are reserved for risk-off / unwind.
   executionBias: z
     .enum(["passive", "neutral", "aggressive"])
-    .default("neutral"),
-  maxSlippageTolerancePct: z.number().min(0).max(100).default(1.0),
+    .default("passive"),
+  // 30bps slippage tolerance (vs 100bps) — must be tighter than scalping
+  // edge magnitudes (typically ~50-100bps) to preserve PnL.
+  maxSlippageTolerancePct: z.number().min(0).max(100).default(0.3),
   priceCollarEnabled: z.boolean().default(true),
-  priceCollarPct: z.number().min(0).default(2),
+  // 50bps price collar (vs 200bps) — same logic as slippage tolerance:
+  // collar must sit inside the edge magnitude.
+  priceCollarPct: z.number().min(0).default(0.5),
   repriceEnabled: z.boolean().default(false),
   repriceMaxAttempts: z.number().min(0).default(3),
   repriceIntervalSeconds: z.number().min(0).default(30),

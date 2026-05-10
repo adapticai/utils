@@ -18,9 +18,15 @@ export const RiskBudgetPrefsObjectSchema = z.object({
   maxCorrelatedExposurePct: z.number().min(0).max(100).default(40),
   betaTarget: z.number().nullable().default(null),
   maxBeta: z.number().min(0).default(2),
-  maxRiskPerTradePct: z.number().min(0).max(100).default(2),
-  maxLossPerDayPct: z.number().min(0).max(100).default(5),
-  maxLossPerWeekPct: z.number().min(0).max(100).default(10),
+  // Tighter per-trade risk (1.5% vs 2%) for scalping — high turnover means
+  // many small risks compound; per-trade ceiling must be lower than the
+  // swing default to keep daily VAR bounded.
+  maxRiskPerTradePct: z.number().min(0).max(100).default(1.5),
+  // 2% daily loss circuit breaker (vs 5%) — tighter to fail fast when the
+  // regime turns against the scalping strategy.
+  maxLossPerDayPct: z.number().min(0).max(100).default(2.0),
+  // 5% weekly loss cap (vs 10%) — proportional to the daily reduction.
+  maxLossPerWeekPct: z.number().min(0).max(100).default(5.0),
   maxLossPerMonthPct: z.number().min(0).max(100).default(15),
   maxDrawdownFromPeakPct: z.number().min(0).max(100).default(20),
   maxSimultaneousSignalsPerStrategy: z.number().min(0).default(5),
@@ -30,8 +36,12 @@ export const RiskBudgetPrefsObjectSchema = z.object({
   eventRiskExposureCapPct: z.number().min(0).max(100).default(40),
   gapRiskSensitivity: z.enum(["low", "medium", "high"]).default("medium"),
 
-  /** Per-trade equity allocation as % of account equity. Replaces legacy AlpacaAccount.tradeAllocationPct. */
-  perTradeAllocationPct: z.number().min(0).max(100).default(5),
+  /**
+   * Per-trade equity allocation as % of account equity. Replaces legacy AlpacaAccount.tradeAllocationPct.
+   * Smaller per-trade size (2% vs 5%) for scalping — shorter holds + higher
+   * concurrency demand smaller per-position bets.
+   */
+  perTradeAllocationPct: z.number().min(0).max(100).default(2),
   /** Per-trade crypto allocation as % of account equity. Replaces legacy AlpacaAccount.cryptoTradeAllocationPct. */
   perTradeCryptoAllocationPct: z.number().min(0).max(100).default(5),
 

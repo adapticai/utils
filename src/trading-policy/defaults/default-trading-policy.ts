@@ -5,9 +5,14 @@ import {
 } from "../schemas/effective-policy.schema";
 
 /**
- * Conservative default trading policy used as the baseline when no
- * user-customized policy exists. All nested preference sub-objects are
- * passed as empty objects so Zod applies their field-level defaults.
+ * Default trading policy used as the baseline when no user-customized policy
+ * exists. Calibrated for short-horizon day trading / HFT-microstructuring /
+ * scalping (intraday holds, 5-min-bar-sized stops, fast cooldowns) per the
+ * 2026-05-10 audit, replacing the previous swing-trading calibration.
+ *
+ * All nested preference sub-objects are passed as empty objects so Zod applies
+ * their field-level defaults (which are themselves tuned for scalping in their
+ * respective schema files).
  *
  * Key choices:
  * - Advisory-only autonomy (no autonomous execution)
@@ -16,6 +21,14 @@ import {
  * - No shorting or margin (user must opt-in)
  * - All protective overlays disabled (user must opt-in)
  * - No LLM providers pre-configured
+ * - Tighter per-trade allocation (2% vs 5%) and concurrency (8 positions vs 20)
+ *   reflecting the increased turnover and decreased per-position conviction
+ *   characteristic of scalping
+ * - Faster equity wash-trade cooldown (5s vs 30s) — FINRA Rule 5210 governs
+ *   opposing-side wash trades; same-side intraday re-entry can be much faster
+ * - Tighter daily-loss circuit breaker (2% vs 3%) reflecting that scalping
+ *   strategies should fail fast rather than burn the day's risk budget on
+ *   one bad regime
  */
 export const DEFAULT_TRADING_POLICY: EffectiveTradingPolicy =
   EffectiveTradingPolicySchema.parse({
@@ -37,16 +50,23 @@ export const DEFAULT_TRADING_POLICY: EffectiveTradingPolicy =
     maxGrossExposurePct: 100,
     maxNetExposurePct: 100,
     maxLeverage: 1,
-    maxSymbolConcentrationPct: 15,
+    maxSymbolConcentrationPct: 8,
     maxSectorConcentrationPct: 30,
-    maxOpenPositions: 20,
+    maxOpenPositions: 8,
     maxOpenOrders: 50,
-    perTradeEquityAllocationPct: 5,
-    perTradeCryptoAllocationPct: 5,
-    // 30s wash-trade cooldown matches backend-legacy `TradingPolicy.equityWashTradeCooldownMs` default.
-    equityWashTradeCooldownMs: 30_000,
-    // Mirrors `defaultRiskConfig.dailyLossLimits.maxDailyLossPercent` (3% intraday loss limit).
-    maxDailyLossPercent: 0.03,
+    perTradeEquityAllocationPct: 2,
+    perTradeCryptoAllocationPct: 2,
+    // 5s same-side intraday re-entry cooldown for scalping. FINRA Rule 5210
+    // governs opposing-side wash trades; same-side rapid re-entry off the
+    // same setup is permitted within tighter bounds suited to 5-min-bar
+    // strategies. Backend-legacy `TradingPolicy.equityWashTradeCooldownMs`
+    // default of 30_000 ms remains the canonical row-level fallback for
+    // accounts that have not opted into the scalping profile.
+    equityWashTradeCooldownMs: 5_000,
+    // 2% daily loss cap: tighter than the engine's 3% defaultRiskConfig
+    // because scalping strategies should fail fast — three bad regimes at 3%
+    // each is a 9% intraday burn before the kill-switch fires.
+    maxDailyLossPercent: 0.02,
     macroOverlayEnabled: false,
     sectorOverlayEnabled: false,
     volatilityOverlayEnabled: false,
