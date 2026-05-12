@@ -63,3 +63,48 @@ Do not behave like a task-completion assistant. Behave like an owner, an archite
 - **Documentation**: JSDoc comments for public functions/interfaces
 
 Always maintain the existing code style when making changes. Follow TypeScript's strict mode guidelines.
+
+## Backend-Legacy CRUD & Field Availability
+
+This package depends on `@adaptic/backend-legacy` for database CRUD operations (`adaptic.<model>.<op>()`). The fields available on returned objects are **curated via GQL inline comments** in `~/adapticai/backend-legacy/prisma/schema.prisma` — that file is the single source of truth.
+
+If a field you expect is missing from CRUD results, check the schema for `GQL.SKIP=true`, `GQL.EXCLUDE`, or `GQL.INCLUDE` directives on that field or its parent relation. To make a previously excluded field available: update the inline comment in `schema.prisma`, run `npm run build` in backend-legacy, publish the package, then update the dependency here.
+
+Similarly, `typeStrings` (string representations of model types for LLM context) are controlled by `TYPESTRING.SKIP=true` and `TYPESTRING.INCLUDE` directives in the same schema file.
+
+## GitNexus — Cross-Repo Awareness
+
+`@adaptic/utils` is a published npm package consumed by `engine`, `backend-legacy`, `lumic-utils`, `platform`, and `app`. A change here that requires a version bump must be coordinated across consumers. Use the [GitNexus CLI](../gitnexus/README.md) for that visibility.
+
+### Required moments
+
+```bash
+# Before any cross-package change:
+gitnexus status
+gitnexus map           # see who depends on @adaptic/utils
+
+# Before commit and before push:
+gitnexus guard
+
+# Before bumping version + publishing:
+gitnexus repo utils    # confirm clean working tree, intended branch
+```
+
+### Publish workflow
+
+After making changes here:
+
+1. `gitnexus guard` — must be clean before commit.
+2. `npm run build && npm test`.
+3. Bump version in `package.json`, commit, push.
+4. `npm publish` (waits for npm to propagate).
+5. `gitnexus map` — review which downstream repos consume `@adaptic/utils`.
+6. In each consumer (`engine`, `app`, `platform`), update the dependency, run their build, commit, push.
+
+### Stop signals
+
+Do not publish if `gitnexus guard` reports `DIRTY_TREE`, `WRONG_BRANCH`, `AHEAD_BEHIND`, or `NO_UPSTREAM` for `utils`.
+
+### Final-response requirements
+
+Final response must list: new utils version, consumer repos updated, validation per repo, and explicit confirmation that the publish completed before downstream consumers were updated.
