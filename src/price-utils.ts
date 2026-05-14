@@ -222,7 +222,11 @@ export function getEquityValues(
   }
 
   return {
-    latestEquity: Number(latestPoint.valueOf),
+    // DE-005: previously `Number(latestPoint.valueOf)`, which read the
+    // un-invoked function reference and silently returned NaN. `latestPoint`
+    // is already a number (see assignment above; sourced from `point.value`
+    // which is typed `number` in EquityPoint), so use it directly.
+    latestEquity: latestPoint,
     initialEquity,
     latestTimestamp: validData[validData.length - 1].time,
     initialTimestamp: validData[0].time,
