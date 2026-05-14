@@ -1,5 +1,4 @@
-import { LRUCache } from 'lru-cache';
-
+import { LRUCache } from "lru-cache";
 
 /**
  * Cache entry with metadata for stale-while-revalidate and probabilistic expiration
@@ -325,7 +324,8 @@ export class StampedeProtectedCache<T> {
   constructor(options: StampedeProtectedCacheOptions) {
     this.options = {
       ...options,
-      staleWhileRevalidateTtl: options.staleWhileRevalidateTtl ?? options.defaultTtl * 2,
+      staleWhileRevalidateTtl:
+        options.staleWhileRevalidateTtl ?? options.defaultTtl * 2,
       minJitter: options.minJitter ?? 0.9,
       maxJitter: options.maxJitter ?? 1.1,
       enableBackgroundRefresh: options.enableBackgroundRefresh ?? true,
@@ -345,7 +345,7 @@ export class StampedeProtectedCache<T> {
       updateAgeOnHas: false,
     });
 
-    this.options.logger.info('StampedeProtectedCache initialized', {
+    this.options.logger.info("StampedeProtectedCache initialized", {
       maxSize: this.options.maxSize,
       defaultTtl: this.options.defaultTtl,
       staleWhileRevalidateTtl: this.options.staleWhileRevalidateTtl,
@@ -416,20 +416,24 @@ export class StampedeProtectedCache<T> {
       if (now < jitteredExpiresAt) {
         // Fresh hit
         this.stats.hits++;
-        this.options.logger.debug('Cache hit (fresh)', { key, age: now - cached.createdAt });
+        this.options.logger.debug("Cache hit (fresh)", {
+          key,
+          age: now - cached.createdAt,
+        });
         return cached.value;
       }
 
       // Check if we can serve stale while revalidating
-      const staleExpiresAt = cached.createdAt + this.options.staleWhileRevalidateTtl;
+      const staleExpiresAt =
+        cached.createdAt + this.options.staleWhileRevalidateTtl;
 
       if (now < staleExpiresAt && !cached.isRefreshing) {
         // Serve stale and trigger background refresh
         this.stats.staleHits++;
-        this.options.logger.debug('Cache hit (stale-while-revalidate)', {
+        this.options.logger.debug("Cache hit (stale-while-revalidate)", {
           key,
           age: now - cached.createdAt,
-          staleAge: now - cached.expiresAt
+          staleAge: now - cached.expiresAt,
         });
 
         if (this.options.enableBackgroundRefresh) {
@@ -442,7 +446,7 @@ export class StampedeProtectedCache<T> {
 
     // Cache miss or expired - need to load
     this.stats.misses++;
-    this.options.logger.debug('Cache miss', { key, hadCached: !!cached });
+    this.options.logger.debug("Cache miss", { key, hadCached: !!cached });
 
     return this.loadWithCoalescing(key, loader, effectiveTtl);
   }
@@ -484,7 +488,7 @@ export class StampedeProtectedCache<T> {
     };
 
     this.cache.set(key, entry);
-    this.options.logger.debug('Cache set', { key, ttl: effectiveTtl });
+    this.options.logger.debug("Cache set", { key, ttl: effectiveTtl });
   }
 
   /**
@@ -528,7 +532,7 @@ export class StampedeProtectedCache<T> {
   delete(key: string): boolean {
     const deleted = this.cache.delete(key);
     if (deleted) {
-      this.options.logger.debug('Cache entry deleted', { key });
+      this.options.logger.debug("Cache entry deleted", { key });
     }
     return deleted;
   }
@@ -573,7 +577,7 @@ export class StampedeProtectedCache<T> {
     const sizeBefore = this.cache.size;
     this.cache.clear();
     this.pendingRefreshes.clear();
-    this.options.logger.info('Cache cleared', { entriesRemoved: sizeBefore });
+    this.options.logger.info("Cache cleared", { entriesRemoved: sizeBefore });
   }
 
   /**
@@ -605,7 +609,8 @@ export class StampedeProtectedCache<T> {
       hits: this.stats.hits,
       misses: this.stats.misses,
       staleHits: this.stats.staleHits,
-      hitRatio: this.stats.totalGets > 0 ? this.stats.hits / this.stats.totalGets : 0,
+      hitRatio:
+        this.stats.totalGets > 0 ? this.stats.hits / this.stats.totalGets : 0,
       size: this.cache.size,
       maxSize: this.options.maxSize,
       activeRefreshes: this.pendingRefreshes.size,
@@ -657,12 +662,16 @@ export class StampedeProtectedCache<T> {
   /**
    * Load data with request coalescing to prevent duplicate requests
    */
-  private async loadWithCoalescing(key: string, loader: CacheLoader<T>, ttl: number): Promise<T> {
+  private async loadWithCoalescing(
+    key: string,
+    loader: CacheLoader<T>,
+    ttl: number,
+  ): Promise<T> {
     // Check if there's already a pending refresh for this key
     const existingPromise = this.pendingRefreshes.get(key);
     if (existingPromise) {
       this.stats.coalescedRequests++;
-      this.options.logger.debug('Request coalesced', { key });
+      this.options.logger.debug("Request coalesced", { key });
       return existingPromise;
     }
 
@@ -682,24 +691,32 @@ export class StampedeProtectedCache<T> {
   /**
    * Load data and cache it
    */
-  private async loadAndCache(key: string, loader: CacheLoader<T>, ttl: number): Promise<T> {
+  private async loadAndCache(
+    key: string,
+    loader: CacheLoader<T>,
+    ttl: number,
+  ): Promise<T> {
     const startTime = Date.now();
 
     try {
-      this.options.logger.debug('Loading data', { key });
+      this.options.logger.debug("Loading data", { key });
       const value = await loader(key);
 
       // Cache the loaded value
       this.set(key, value, ttl);
 
       const loadTime = Date.now() - startTime;
-      this.options.logger.debug('Data loaded and cached', { key, loadTime });
+      this.options.logger.debug("Data loaded and cached", { key, loadTime });
 
       return value;
     } catch (error) {
       this.stats.refreshErrors++;
       const loadTime = Date.now() - startTime;
-      this.options.logger.error('Failed to load data', { key, error, loadTime });
+      this.options.logger.error("Failed to load data", {
+        key,
+        error,
+        loadTime,
+      });
 
       // Update cached entry with error if it exists
       const cached = this.cache.get(key);
@@ -715,7 +732,11 @@ export class StampedeProtectedCache<T> {
   /**
    * Refresh data in the background
    */
-  private refreshInBackground(key: string, loader: CacheLoader<T>, ttl: number): void {
+  private refreshInBackground(
+    key: string,
+    loader: CacheLoader<T>,
+    ttl: number,
+  ): void {
     // Mark the entry as refreshing
     const cached = this.cache.get(key);
     if (cached) {
@@ -726,10 +747,10 @@ export class StampedeProtectedCache<T> {
     this.loadWithCoalescing(key, loader, ttl)
       .then(() => {
         this.stats.backgroundRefreshes++;
-        this.options.logger.debug('Background refresh completed', { key });
+        this.options.logger.debug("Background refresh completed", { key });
       })
       .catch((error) => {
-        this.options.logger.warn('Background refresh failed', { key, error });
+        this.options.logger.warn("Background refresh failed", { key, error });
       })
       .finally(() => {
         // Mark as no longer refreshing
@@ -745,7 +766,7 @@ export class StampedeProtectedCache<T> {
    */
   private applyJitter(originalExpiresAt: number): number {
     const range = this.options.maxJitter - this.options.minJitter;
-    const jitter = this.options.minJitter + (Math.random() * range);
+    const jitter = this.options.minJitter + Math.random() * range;
     const createdAt = originalExpiresAt - this.options.defaultTtl;
     const jitteredTtl = this.options.defaultTtl * jitter;
     return createdAt + jitteredTtl;
@@ -797,7 +818,7 @@ export class StampedeProtectedCache<T> {
  * ```
  */
 export function createStampedeProtectedCache<T>(
-  options: StampedeProtectedCacheOptions
+  options: StampedeProtectedCacheOptions,
 ): StampedeProtectedCache<T> {
   return new StampedeProtectedCache<T>(options);
 }

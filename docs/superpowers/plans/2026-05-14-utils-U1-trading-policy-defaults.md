@@ -16,18 +16,18 @@
 
 ### Files to create
 
-| Path | Responsibility |
-|------|----------------|
+| Path                                        | Responsibility                                                                                                                                |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | `src/tests/trading-policy-defaults.test.ts` | Round-trip assertion: `DEFAULT_TRADING_POLICY` parses cleanly into `TradingPolicyJson`; all SR field tunings preserved at correct JSON paths. |
 
 ### Files to modify
 
-| Path | Modification |
-|------|--------------|
-| `src/trading-policy/defaults.ts` (or wherever `DEFAULT_TRADING_POLICY` lives — locate via grep) | Replace flat SR shape with `TradingPolicyJson` shape; migrate all SR tunings to JSON paths. |
-| `src/trading-policy/*.ts` (any helper that reads the flat shape) | Path-address reads (`policy.allocation.perTradeEquityPct` instead of `policy.tradeAllocationPct`). |
-| `src/index.ts` | Re-export `TradingPolicyJson` and `DEFAULT_TRADING_POLICY` (passthrough from backend-legacy, plus the utils-tuned defaults as `DEFAULT_TRADING_POLICY_UTILS_TUNED`). |
-| `package.json` | Bump `@adaptic/backend-legacy` to `"next"`. |
+| Path                                                                                            | Modification                                                                                                                                                         |
+| ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/trading-policy/defaults.ts` (or wherever `DEFAULT_TRADING_POLICY` lives — locate via grep) | Replace flat SR shape with `TradingPolicyJson` shape; migrate all SR tunings to JSON paths.                                                                          |
+| `src/trading-policy/*.ts` (any helper that reads the flat shape)                                | Path-address reads (`policy.allocation.perTradeEquityPct` instead of `policy.tradeAllocationPct`).                                                                   |
+| `src/index.ts`                                                                                  | Re-export `TradingPolicyJson` and `DEFAULT_TRADING_POLICY` (passthrough from backend-legacy, plus the utils-tuned defaults as `DEFAULT_TRADING_POLICY_UTILS_TUNED`). |
+| `package.json`                                                                                  | Bump `@adaptic/backend-legacy` to `"next"`.                                                                                                                          |
 
 ---
 
@@ -63,7 +63,7 @@ Run: `yarn install` (utils uses npm? confirm with `cat package.json | grep packa
 Add a temporary scratch file `src/scratch-policy-import.ts`:
 
 ```typescript
-import type { TradingPolicyJson } from '@adaptic/backend-legacy';
+import type { TradingPolicyJson } from "@adaptic/backend-legacy";
 const _: TradingPolicyJson = {};
 export { _ };
 ```
@@ -106,24 +106,25 @@ Read both versions side-by-side; identify every field on SR not yet on main's sh
 ## Task 3: Write failing tests
 
 **Files:**
+
 - Create: `src/tests/trading-policy-defaults.test.ts`
 
 - [ ] **Step 1: Write the failing tests**
 
 ```typescript
 // src/tests/trading-policy-defaults.test.ts
-import { describe, it, expect } from 'vitest';
-import type { TradingPolicyJson } from '@adaptic/backend-legacy';
-import { DEFAULT_TRADING_POLICY } from '../trading-policy/defaults';
+import { describe, it, expect } from "vitest";
+import type { TradingPolicyJson } from "@adaptic/backend-legacy";
+import { DEFAULT_TRADING_POLICY } from "../trading-policy/defaults";
 
-describe('DEFAULT_TRADING_POLICY (utils-tuned)', () => {
-  it('conforms to TradingPolicyJson shape', () => {
+describe("DEFAULT_TRADING_POLICY (utils-tuned)", () => {
+  it("conforms to TradingPolicyJson shape", () => {
     // Type-only assertion: this line fails to compile if shape diverges
     const _typed: Required<TradingPolicyJson> = DEFAULT_TRADING_POLICY;
     expect(_typed).toBeDefined();
   });
 
-  it('encodes scalping defaults tuned for short-horizon day trading (SR commit 074a505)', () => {
+  it("encodes scalping defaults tuned for short-horizon day trading (SR commit 074a505)", () => {
     expect(DEFAULT_TRADING_POLICY.scalping?.enableScalping).toBe(true);
     expect(DEFAULT_TRADING_POLICY.scalping?.minHoldSeconds).toBeGreaterThan(0);
     expect(DEFAULT_TRADING_POLICY.scalping?.maxHoldSeconds).toBeGreaterThan(
@@ -133,29 +134,35 @@ describe('DEFAULT_TRADING_POLICY (utils-tuned)', () => {
     expect(DEFAULT_TRADING_POLICY.scalping?.stopLossBps).toBeGreaterThan(0);
   });
 
-  it('surfaces equityWashTradeCooldownMs (FINRA 5210, SR commit 82cb633)', () => {
-    expect(DEFAULT_TRADING_POLICY.compliance?.equityWashTradeCooldownMs).toBeGreaterThan(0);
+  it("surfaces equityWashTradeCooldownMs (FINRA 5210, SR commit 82cb633)", () => {
+    expect(
+      DEFAULT_TRADING_POLICY.compliance?.equityWashTradeCooldownMs,
+    ).toBeGreaterThan(0);
   });
 
-  it('surfaces per-trade allocation percentages at canonical paths (SR commit 883e2a9)', () => {
-    expect(DEFAULT_TRADING_POLICY.allocation?.perTradeEquityPct).toBeGreaterThan(0);
-    expect(DEFAULT_TRADING_POLICY.allocation?.perTradeCryptoPct).toBeGreaterThan(0);
+  it("surfaces per-trade allocation percentages at canonical paths (SR commit 883e2a9)", () => {
+    expect(
+      DEFAULT_TRADING_POLICY.allocation?.perTradeEquityPct,
+    ).toBeGreaterThan(0);
+    expect(
+      DEFAULT_TRADING_POLICY.allocation?.perTradeCryptoPct,
+    ).toBeGreaterThan(0);
   });
 
-  it('enables all asset classes by default (SR commit 97c0814)', () => {
+  it("enables all asset classes by default (SR commit 97c0814)", () => {
     expect(DEFAULT_TRADING_POLICY.assetClasses?.equity).toBe(true);
     expect(DEFAULT_TRADING_POLICY.assetClasses?.crypto).toBe(true);
     expect(DEFAULT_TRADING_POLICY.assetClasses?.options).toBe(true);
   });
 
-  it('does NOT carry the SR-flat field names anymore (mapping rule applied)', () => {
+  it("does NOT carry the SR-flat field names anymore (mapping rule applied)", () => {
     const flat = DEFAULT_TRADING_POLICY as unknown as Record<string, unknown>;
     expect(flat.tradeAllocationPct).toBeUndefined();
     expect(flat.cryptoTradeAllocationPct).toBeUndefined();
     expect(flat.equityWashTradeCooldownMs).toBeUndefined();
   });
 
-  it('extends without losing required keys (Required<TradingPolicyJson>)', () => {
+  it("extends without losing required keys (Required<TradingPolicyJson>)", () => {
     // Lists every top-level group that must be defined for Required<> shape
     expect(DEFAULT_TRADING_POLICY.autonomy).toBeDefined();
     expect(DEFAULT_TRADING_POLICY.risk).toBeDefined();
@@ -179,6 +186,7 @@ Expected: tests fail because `DEFAULT_TRADING_POLICY` on `main` is still flat-sh
 ## Task 4: Migrate `DEFAULT_TRADING_POLICY` to the JSON shape
 
 **Files:**
+
 - Modify: `src/trading-policy/defaults.ts` (or path identified in Task 2)
 
 - [ ] **Step 1: Replace the constant with the JSON-shape version**
@@ -187,7 +195,7 @@ Apply the full mapping using the canonical `TradingPolicyJson` interface from `@
 
 ```typescript
 // src/trading-policy/defaults.ts
-import type { TradingPolicyJson } from '@adaptic/backend-legacy';
+import type { TradingPolicyJson } from "@adaptic/backend-legacy";
 
 /**
  * Canonical fund-scope-ready default trading policy, utils-tuned for
@@ -209,18 +217,19 @@ export const DEFAULT_TRADING_POLICY: Required<TradingPolicyJson> = {
   },
   risk: {
     maxPortfolioVarPct: 0.05,
-    maxSinglePositionPct: 0.10,
-    maxSectorExposurePct: 0.30,
-    maxAssetClassPct: { equity: 1.0, crypto: 0.25, options: 0.20 },
+    maxSinglePositionPct: 0.1,
+    maxSectorExposurePct: 0.3,
+    maxAssetClassPct: { equity: 1.0, crypto: 0.25, options: 0.2 },
     minBuyingPowerReservePct: 0.05,
   },
   allocation: {
-    perTradeEquityPct: 0.05,         // SR commit 883e2a9
-    perTradeCryptoPct: 0.05,         // SR commit 3cd7e79 (wider crypto)
+    perTradeEquityPct: 0.05, // SR commit 883e2a9
+    perTradeCryptoPct: 0.05, // SR commit 3cd7e79 (wider crypto)
     perTradeOptionsPct: 0.02,
     autoAllocation: true,
   },
-  scalping: {                         // SR commit 074a505
+  scalping: {
+    // SR commit 074a505
     enableScalping: true,
     maxConcurrentScalps: 5,
     minHoldSeconds: 30,
@@ -249,10 +258,10 @@ export const DEFAULT_TRADING_POLICY: Required<TradingPolicyJson> = {
   backtest: {
     defaultUniverse: [],
     defaultPeriodDays: 30,
-    defaultStrategyId: '',
+    defaultStrategyId: "",
   },
   runtime: {
-    enginePersonalityProfile: 'balanced',
+    enginePersonalityProfile: "balanced",
     signalRoutingRules: null,
     manualOverrideAllowlist: [],
     riskOverrideJustifications: [],
@@ -286,11 +295,11 @@ For each file flagged in Task 2's Step 2 audit:
 
 Example transformations:
 
-| SR-flat read | JSON-path read |
-|--------------|----------------|
-| `policy.tradeAllocationPct` | `policy.allocation?.perTradeEquityPct` |
-| `policy.cryptoTradeAllocationPct` | `policy.allocation?.perTradeCryptoPct` |
-| `policy.enableScalping` | `policy.scalping?.enableScalping` |
+| SR-flat read                       | JSON-path read                                 |
+| ---------------------------------- | ---------------------------------------------- |
+| `policy.tradeAllocationPct`        | `policy.allocation?.perTradeEquityPct`         |
+| `policy.cryptoTradeAllocationPct`  | `policy.allocation?.perTradeCryptoPct`         |
+| `policy.enableScalping`            | `policy.scalping?.enableScalping`              |
 | `policy.equityWashTradeCooldownMs` | `policy.compliance?.equityWashTradeCooldownMs` |
 
 When a consumer needs a guaranteed-defined value, do **not** add a local default — call the `effectivePolicy()` helper from `@adaptic/backend-legacy` instead. That's the single source of precedence.
@@ -313,14 +322,15 @@ Repeat for every audited consumer. Typical count: 5–10 files.
 ## Task 6: Re-export the type + tuned default from the package root
 
 **Files:**
+
 - Modify: `src/index.ts`
 
 - [ ] **Step 1: Add exports**
 
 ```typescript
 // src/index.ts (additions)
-export type { TradingPolicyJson } from '@adaptic/backend-legacy';
-export { DEFAULT_TRADING_POLICY } from './trading-policy/defaults';
+export type { TradingPolicyJson } from "@adaptic/backend-legacy";
+export { DEFAULT_TRADING_POLICY } from "./trading-policy/defaults";
 ```
 
 (Re-exporting the type from backend-legacy gives utils consumers a single import path: `import type { TradingPolicyJson } from '@adaptic/utils'`.)
@@ -395,6 +405,7 @@ git push -u origin port/trading-policy
 - [ ] **Step 2: Open PR `port(utils/trading-policy): U1 align DEFAULT_TRADING_POLICY to TradingPolicyJson shape`**
 
 PR body must reference:
+
 - Parent spec §4.1.
 - Charter §2 mapping rules.
 - The audited consumer list from Task 2.
