@@ -1,4 +1,12 @@
-export type LogType = 'info' | 'warn' | 'error' | 'debug' | 'major' | 'table' | 'system' | 'cost';
+export type LogType =
+  | "info"
+  | "warn"
+  | "error"
+  | "debug"
+  | "major"
+  | "table"
+  | "system"
+  | "cost";
 
 export interface LogOptions {
   source?: string;

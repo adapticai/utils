@@ -2,21 +2,27 @@
  * AlphaVantage calls
  **********************************************************************************/
 
-import { AlphaVantageQuoteResponse, AVNewsResponse, AVNewsArticle } from './types';
-import pLimit from 'p-limit';
-import { logIfDebug } from './misc-utils';
+import {
+  AlphaVantageQuoteResponse,
+  AVNewsResponse,
+  AVNewsArticle,
+} from "./types";
+import pLimit from "p-limit";
+import { logIfDebug } from "./misc-utils";
 // Constants from environment variables
 const ALPHA_VANTAGE_API_KEY = process.env.ALPHA_VANTAGE_API_KEY;
 
 function checkEnvironment(apiKey?: string) {
   if (!apiKey && !ALPHA_VANTAGE_API_KEY) {
-    throw new Error('ALPHA_VANTAGE_API_KEY is not defined in environment variables or options.');
+    throw new Error(
+      "ALPHA_VANTAGE_API_KEY is not defined in environment variables or options.",
+    );
   }
 }
 
 // Define concurrency limits per API
 const ALPHA_VANTAGE_CONCURRENCY_LIMIT = 5;
-const AVBaseUrl = 'https://www.alphavantage.co/query?function=';
+const AVBaseUrl = "https://www.alphavantage.co/query?function=";
 
 const alphaVantageLimit = pLimit(ALPHA_VANTAGE_CONCURRENCY_LIMIT);
 
@@ -29,10 +35,14 @@ const alphaVantageLimit = pLimit(ALPHA_VANTAGE_CONCURRENCY_LIMIT);
  * @returns {Promise<AlphaVantageQuoteResponse>} The current quote response.
  */
 
-export const fetchQuote = async (ticker: string, options?: { apiKey?: string }): Promise<AlphaVantageQuoteResponse> => {
+export const fetchQuote = async (
+  ticker: string,
+  options?: { apiKey?: string },
+): Promise<AlphaVantageQuoteResponse> => {
   checkEnvironment(options?.apiKey);
-  const endpoint = `${AVBaseUrl}GLOBAL_QUOTE&symbol=${ticker.replace('.', '-')}&entitlement=realtime&apikey=${options?.apiKey || ALPHA_VANTAGE_API_KEY
-    }`;
+  const endpoint = `${AVBaseUrl}GLOBAL_QUOTE&symbol=${ticker.replace(".", "-")}&entitlement=realtime&apikey=${
+    options?.apiKey || ALPHA_VANTAGE_API_KEY
+  }`;
 
   return alphaVantageLimit(async () => {
     const response = await fetch(endpoint);
@@ -51,7 +61,7 @@ export const fetchQuote = async (ticker: string, options?: { apiKey?: string }):
  */
 
 export function convertDateToYYYYMMDDTHHMM(date: Date): string {
-  const pad = (n: number) => n.toString().padStart(2, '0');
+  const pad = (n: number) => n.toString().padStart(2, "0");
 
   const year = date.getFullYear();
   const month = pad(date.getMonth() + 1); // Months are zero-based
@@ -91,26 +101,37 @@ export function convertYYYYMMDDTHHMMSSToDate(dateString: string): Date {
  */
 export const fetchTickerNews = async (
   ticker: string,
-  options: { start?: Date; end?: Date; limit?: number; apiKey?: string; sort?: 'LATEST' | 'EARLIEST' | 'RELEVANCE' } = {
+  options: {
+    start?: Date;
+    end?: Date;
+    limit?: number;
+    apiKey?: string;
+    sort?: "LATEST" | "EARLIEST" | "RELEVANCE";
+  } = {
     start: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
     end: new Date(),
     limit: 10,
-    sort: 'LATEST'
-  }
+    sort: "LATEST",
+  },
 ): Promise<AVNewsArticle[]> => {
   checkEnvironment(options?.apiKey);
   // Format start date as YYYYMMDDTHHMM
-  const formattedStart = convertDateToYYYYMMDDTHHMM(options.start ?? new Date(Date.now() - 7 * 24 * 60 * 60 * 1000));
+  const formattedStart = convertDateToYYYYMMDDTHHMM(
+    options.start ?? new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+  );
   const formattedEnd = convertDateToYYYYMMDDTHHMM(options.end ?? new Date());
 
   // Construct the API endpoint
-  const endpoint = `${AVBaseUrl}NEWS_SENTIMENT&tickers=${ticker}&time_from=${formattedStart}&time_to=${formattedEnd}&sort=${options.sort}&limit=${options.limit}&apikey=${options?.apiKey || ALPHA_VANTAGE_API_KEY
-    }`;
+  const endpoint = `${AVBaseUrl}NEWS_SENTIMENT&tickers=${ticker}&time_from=${formattedStart}&time_to=${formattedEnd}&sort=${options.sort}&limit=${options.limit}&apikey=${
+    options?.apiKey || ALPHA_VANTAGE_API_KEY
+  }`;
 
   return alphaVantageLimit(async () => {
     const response = await fetch(endpoint);
     if (!response.ok) {
-      throw new Error(`Failed to fetch news for ticker ${ticker} from AlphaVantage`);
+      throw new Error(
+        `Failed to fetch news for ticker ${ticker} from AlphaVantage`,
+      );
     }
 
     const data = (await response.json()) as AVNewsResponse;
@@ -120,21 +141,31 @@ export const fetchTickerNews = async (
     } else {
       logIfDebug(`Fetched ${data.items} news items for ticker ${ticker}`);
       // Filter articles within date range
-      const startTime = options.start?.getTime() ?? new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).getTime();
+      const startTime =
+        options.start?.getTime() ??
+        new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).getTime();
       const endTime = options.end?.getTime() ?? new Date().getTime();
 
-      newsItems = data && data.feed && data.feed.length > 0 ? data.feed.filter(article => {
-        const articleDate = convertYYYYMMDDTHHMMSSToDate(article.time_published);
-        return articleDate.getTime() >= startTime && articleDate.getTime() <= endTime;
-      }) : [];
+      newsItems =
+        data && data.feed && data.feed.length > 0
+          ? data.feed.filter((article) => {
+              const articleDate = convertYYYYMMDDTHHMMSSToDate(
+                article.time_published,
+              );
+              return (
+                articleDate.getTime() >= startTime &&
+                articleDate.getTime() <= endTime
+              );
+            })
+          : [];
 
       // Sort articles based on the sort parameter
       newsItems.sort((a, b) => {
         const dateA = convertYYYYMMDDTHHMMSSToDate(a.time_published).getTime();
         const dateB = convertYYYYMMDDTHHMMSSToDate(b.time_published).getTime();
-        if (options.sort === 'LATEST') {
+        if (options.sort === "LATEST") {
           return dateB - dateA;
-        } else if (options.sort === 'EARLIEST') {
+        } else if (options.sort === "EARLIEST") {
           return dateA - dateB;
         }
         return 0; // For RELEVANCE, maintain API's order

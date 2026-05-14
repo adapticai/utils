@@ -17,7 +17,7 @@ export interface PolygonIndicesBaseResponse {
  */
 export interface PolygonIndicesErrorResponse extends PolygonIndicesBaseResponse {
   /** The status of the error response. */
-  status: 'ERROR' | 'NOT_AUTHORIZED' | string;
+  status: "ERROR" | "NOT_AUTHORIZED" | string;
   /** The error message. */
   message: string;
 }
@@ -145,9 +145,9 @@ export interface PolygonIndicesSnapshotResult {
   /** Ticker of the index. */
   ticker: string;
   /** The time relevance of the data. */
-  timeframe?: 'DELAYED' | 'REAL-TIME';
+  timeframe?: "DELAYED" | "REAL-TIME";
   /** The type of the asset. */
-  type?: 'indices';
+  type?: "indices";
   /** Value of the index. */
   value?: number;
   /** Error message if there was an issue with this ticker. */
@@ -175,13 +175,13 @@ export interface PolygonIndicesAggregatesParams {
   /** The size of the timespan multiplier. */
   multiplier: number;
   /** The size of the time window (minute, hour, day, week, month, quarter, year). */
-  timespan: 'minute' | 'hour' | 'day' | 'week' | 'month' | 'quarter' | 'year';
+  timespan: "minute" | "hour" | "day" | "week" | "month" | "quarter" | "year";
   /** The start of the aggregate time window (YYYY-MM-DD or millisecond timestamp). */
   from: string | number;
   /** The end of the aggregate time window (YYYY-MM-DD or millisecond timestamp). */
   to: string | number;
   /** Sort the results by timestamp (asc or desc). */
-  sort?: 'asc' | 'desc';
+  sort?: "asc" | "desc";
   /** Limits the number of base aggregates queried. */
   limit?: number;
 }
@@ -193,9 +193,9 @@ export interface PolygonIndicesSnapshotParams {
   /** Comma separated list of tickers. */
   tickers?: string[];
   /** Order results based on the sort field. */
-  order?: 'asc' | 'desc';
+  order?: "asc" | "desc";
   /** Limit the number of results returned. */
   limit?: number;
   /** Sort field used for ordering. */
   sort?: string;
-} 
+}

@@ -44,15 +44,15 @@ Full substantive list is committed as `~/adapticai/utils/docs/superpowers/specs/
 
 ## 3. Area grouping
 
-| # | Area | Commits | Branch | Depends on |
-|---|------|---------|--------|------------|
-| U1 | Trading-policy defaults aligned to `TradingPolicyJson` (charter §4.2) | ~12 | `port/trading-policy` | sub-project 2 publishes `@next` |
-| U2 | Alpaca API improvements (positions, trailing-stops, crypto symbol normalization) | ~35 | `port/alpaca-api` | — |
-| U3 | Alpaca market-data WebSocket + feed-fallback (IEX/SIP) | ~12 | `port/alpaca-marketdata` | U2 |
-| U4 | Massive market-data + rate-limiter + retry classification | ~20 | `port/massive-rate-retry` | — (independent) |
-| U5 | Performance metrics correctness (Bessel variance, live risk-free rate) | ~6 | `port/perf-metrics` | — (independent) |
-| U6 | Pino logging integration + log-level demotion of transient errors | ~10 | `port/logging` | — (independent) |
-| U7 | ESLint institutional-grade + lint-fix sweep | ~5 | `port/lint` | U1–U6 (lint runs after substantive porting) |
+| #   | Area                                                                             | Commits | Branch                    | Depends on                                  |
+| --- | -------------------------------------------------------------------------------- | ------- | ------------------------- | ------------------------------------------- |
+| U1  | Trading-policy defaults aligned to `TradingPolicyJson` (charter §4.2)            | ~12     | `port/trading-policy`     | sub-project 2 publishes `@next`             |
+| U2  | Alpaca API improvements (positions, trailing-stops, crypto symbol normalization) | ~35     | `port/alpaca-api`         | —                                           |
+| U3  | Alpaca market-data WebSocket + feed-fallback (IEX/SIP)                           | ~12     | `port/alpaca-marketdata`  | U2                                          |
+| U4  | Massive market-data + rate-limiter + retry classification                        | ~20     | `port/massive-rate-retry` | — (independent)                             |
+| U5  | Performance metrics correctness (Bessel variance, live risk-free rate)           | ~6      | `port/perf-metrics`       | — (independent)                             |
+| U6  | Pino logging integration + log-level demotion of transient errors                | ~10     | `port/logging`            | — (independent)                             |
+| U7  | ESLint institutional-grade + lint-fix sweep                                      | ~5      | `port/lint`               | U1–U6 (lint runs after substantive porting) |
 
 Areas U2, U4, U5, U6 are independent of each other and of U1; they can run in parallel via worktrees. U3 depends on U2 (shared Alpaca client code). U7 runs last.
 

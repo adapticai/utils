@@ -1,9 +1,9 @@
 // Utility function for debug logging
 
 // Define the possible log types as a const array for better type inference
-const LOG_TYPES = ['info', 'warn', 'error', 'debug', 'trace'] as const;
+const LOG_TYPES = ["info", "warn", "error", "debug", "trace"] as const;
 // Create a union type from the array
-type LogType = typeof LOG_TYPES[number];
+type LogType = (typeof LOG_TYPES)[number];
 
 /**
  * Debug logging utility that respects environment debug flags.
@@ -21,29 +21,32 @@ type LogType = typeof LOG_TYPES[number];
 export const logIfDebug = (
   message: string,
   data?: unknown,
-  type: LogType = 'info'
+  type: LogType = "info",
 ) => {
-  const debugMode = process.env.LUMIC_DEBUG === 'true' || process.env.lumic_debug === 'true' || false;
+  const debugMode =
+    process.env.LUMIC_DEBUG === "true" ||
+    process.env.lumic_debug === "true" ||
+    false;
 
   if (!debugMode) return;
 
   const prefix = `[DEBUG][${type.toUpperCase()}]`;
-  const formattedData = data !== undefined ? JSON.stringify(data, null, 2) : '';
+  const formattedData = data !== undefined ? JSON.stringify(data, null, 2) : "";
 
   switch (type) {
-    case 'error':
+    case "error":
       console.error(prefix, message, formattedData);
       break;
-    case 'warn':
+    case "warn":
       console.warn(prefix, message, formattedData);
       break;
-    case 'debug':
+    case "debug":
       console.debug(prefix, message, formattedData);
       break;
-    case 'trace':
+    case "trace":
       console.trace(prefix, message, formattedData);
       break;
-    case 'info':
+    case "info":
     default:
       console.info(prefix, message, formattedData);
   }
@@ -85,7 +88,7 @@ export function hideApiKeyFromurl(url: string): string {
 
     // We iterate over all search params and look for one named 'apikey' (case-insensitive)
     for (const [key, value] of parsedUrl.searchParams.entries()) {
-      if (key.toLowerCase() === 'apikey') {
+      if (key.toLowerCase() === "apikey") {
         const masked = maskApiKey(value);
         parsedUrl.searchParams.set(key, masked);
       }
@@ -112,29 +115,56 @@ interface ErrorDetails {
  * @returns Structured error details.
  */
 function extractErrorDetails(error: any, response?: Response): ErrorDetails {
-  if (error.name === 'TypeError' && error.message.includes('fetch')) {
-    return { type: 'NETWORK_ERROR', reason: 'Network connectivity issue', status: null };
+  if (error.name === "TypeError" && error.message.includes("fetch")) {
+    return {
+      type: "NETWORK_ERROR",
+      reason: "Network connectivity issue",
+      status: null,
+    };
   }
-  if (error.message.includes('HTTP error: 429')) {
+  if (error.message.includes("HTTP error: 429")) {
     const match = error.message.match(/RATE_LIMIT: 429:(\d+)/);
     const retryAfter = match ? parseInt(match[1]) : undefined;
-    return { type: 'RATE_LIMIT', reason: 'Rate limit exceeded', status: 429, retryAfter };
+    return {
+      type: "RATE_LIMIT",
+      reason: "Rate limit exceeded",
+      status: 429,
+      retryAfter,
+    };
   }
-  if (error.message.includes('HTTP error: 401') || error.message.includes('AUTH_ERROR: 401')) {
-    return { type: 'AUTH_ERROR', reason: 'Authentication failed - invalid API key', status: 401 };
+  if (
+    error.message.includes("HTTP error: 401") ||
+    error.message.includes("AUTH_ERROR: 401")
+  ) {
+    return {
+      type: "AUTH_ERROR",
+      reason: "Authentication failed - invalid API key",
+      status: 401,
+    };
   }
-  if (error.message.includes('HTTP error: 403') || error.message.includes('AUTH_ERROR: 403')) {
-    return { type: 'AUTH_ERROR', reason: 'Access forbidden - insufficient permissions', status: 403 };
+  if (
+    error.message.includes("HTTP error: 403") ||
+    error.message.includes("AUTH_ERROR: 403")
+  ) {
+    return {
+      type: "AUTH_ERROR",
+      reason: "Access forbidden - insufficient permissions",
+      status: 403,
+    };
   }
-  if (error.message.includes('SERVER_ERROR:')) {
-    const status = parseInt(error.message.split('SERVER_ERROR: ')[1]) || 500;
-    return { type: 'SERVER_ERROR', reason: `Server error (${status})`, status };
+  if (error.message.includes("SERVER_ERROR:")) {
+    const status = parseInt(error.message.split("SERVER_ERROR: ")[1]) || 500;
+    return { type: "SERVER_ERROR", reason: `Server error (${status})`, status };
   }
-  if (error.message.includes('CLIENT_ERROR:')) {
-    const status = parseInt(error.message.split('CLIENT_ERROR: ')[1]) || 400;
-    return { type: 'CLIENT_ERROR', reason: `Client error (${status})`, status };
+  if (error.message.includes("CLIENT_ERROR:")) {
+    const status = parseInt(error.message.split("CLIENT_ERROR: ")[1]) || 400;
+    return { type: "CLIENT_ERROR", reason: `Client error (${status})`, status };
   }
-  return { type: 'UNKNOWN', reason: error.message || 'Unknown error', status: null };
+  return {
+    type: "UNKNOWN",
+    reason: error.message || "Unknown error",
+    status: null,
+  };
 }
 
 /**
@@ -153,10 +183,10 @@ export async function fetchWithRetry(
   url: string,
   options: RequestInit = {},
   retries: number = 3,
-  initialBackoff: number = 1000
+  initialBackoff: number = 1000,
 ): Promise<Response> {
   let backoff = initialBackoff;
-  
+
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       const response = await fetch(url, options);
@@ -164,10 +194,12 @@ export async function fetchWithRetry(
         // Enhanced HTTP error handling with specific error types
         if (response.status === 429) {
           // Check for Retry-After header
-          const retryAfter = response.headers.get('Retry-After');
+          const retryAfter = response.headers.get("Retry-After");
           const retryDelay = retryAfter ? parseInt(retryAfter) * 1000 : null;
-          
-          throw new Error(`RATE_LIMIT: ${response.status}${retryDelay ? `:${retryDelay}` : ''}`);
+
+          throw new Error(
+            `RATE_LIMIT: ${response.status}${retryDelay ? `:${retryDelay}` : ""}`,
+          );
         }
         if ([500, 502, 503, 504].includes(response.status)) {
           throw new Error(`SERVER_ERROR: ${response.status}`);
@@ -186,60 +218,69 @@ export async function fetchWithRetry(
       if (attempt === retries) {
         throw error;
       }
-      
+
       // Extract meaningful error information
       const errorDetails = extractErrorDetails(error);
       let adaptiveBackoff = backoff;
-      
+
       // Adaptive backoff based on error type
-      if (errorDetails.type === 'RATE_LIMIT') {
+      if (errorDetails.type === "RATE_LIMIT") {
         // Use Retry-After header if available, otherwise use minimum 5s for rate limits
         if (errorDetails.retryAfter) {
           adaptiveBackoff = errorDetails.retryAfter;
         } else {
           adaptiveBackoff = Math.max(backoff, 5000);
         }
-      } else if (errorDetails.type === 'AUTH_ERROR') {
+      } else if (errorDetails.type === "AUTH_ERROR") {
         // Don't retry auth errors - fail fast
-        console.error(`Authentication error for ${hideApiKeyFromurl(url)}: ${errorDetails.reason}`, {
-          attemptNumber: attempt,
-          errorType: errorDetails.type,
-          httpStatus: errorDetails.status,
-          url: hideApiKeyFromurl(url),
-          source: 'fetchWithRetry',
-          timestamp: new Date().toISOString()
-        });
+        console.error(
+          `Authentication error for ${hideApiKeyFromurl(url)}: ${errorDetails.reason}`,
+          {
+            attemptNumber: attempt,
+            errorType: errorDetails.type,
+            httpStatus: errorDetails.status,
+            url: hideApiKeyFromurl(url),
+            source: "fetchWithRetry",
+            timestamp: new Date().toISOString(),
+          },
+        );
         throw error;
-      } else if (errorDetails.type === 'CLIENT_ERROR') {
+      } else if (errorDetails.type === "CLIENT_ERROR") {
         // Don't retry client errors (except 429 which is handled above)
-        console.error(`Client error for ${hideApiKeyFromurl(url)}: ${errorDetails.reason}`, {
-          attemptNumber: attempt,
-          errorType: errorDetails.type,
-          httpStatus: errorDetails.status,
-          url: hideApiKeyFromurl(url),
-          source: 'fetchWithRetry',
-          timestamp: new Date().toISOString()
-        });
+        console.error(
+          `Client error for ${hideApiKeyFromurl(url)}: ${errorDetails.reason}`,
+          {
+            attemptNumber: attempt,
+            errorType: errorDetails.type,
+            httpStatus: errorDetails.status,
+            url: hideApiKeyFromurl(url),
+            source: "fetchWithRetry",
+            timestamp: new Date().toISOString(),
+          },
+        );
         throw error;
       }
-      
+
       // Enhanced error logging with structured data
-      console.warn(`Fetch attempt ${attempt} of ${retries} for ${hideApiKeyFromurl(url)} failed: ${errorDetails.reason}. Retrying in ${adaptiveBackoff}ms...`, {
-        attemptNumber: attempt,
-        totalRetries: retries,
-        errorType: errorDetails.type,
-        httpStatus: errorDetails.status,
-        retryDelay: adaptiveBackoff,
-        url: hideApiKeyFromurl(url),
-        source: 'fetchWithRetry',
-        timestamp: new Date().toISOString()
-      });
-      
+      console.warn(
+        `Fetch attempt ${attempt} of ${retries} for ${hideApiKeyFromurl(url)} failed: ${errorDetails.reason}. Retrying in ${adaptiveBackoff}ms...`,
+        {
+          attemptNumber: attempt,
+          totalRetries: retries,
+          errorType: errorDetails.type,
+          httpStatus: errorDetails.status,
+          retryDelay: adaptiveBackoff,
+          url: hideApiKeyFromurl(url),
+          source: "fetchWithRetry",
+          timestamp: new Date().toISOString(),
+        },
+      );
+
       await new Promise((resolve) => setTimeout(resolve, adaptiveBackoff));
       backoff = Math.min(backoff * 2, 30000); // Cap at 30 seconds
     }
   }
-  throw new Error('Failed to fetch after multiple attempts');
+  throw new Error("Failed to fetch after multiple attempts");
 }
 
 /**
@@ -249,17 +290,20 @@ export async function fetchWithRetry(
  */
 export async function validatePolygonApiKey(apiKey: string): Promise<boolean> {
   try {
-    const response = await fetch(`https://api.polygon.io/v1/meta/symbols?apikey=${apiKey}&limit=1`);
+    const response = await fetch(
+      `https://api.polygon.io/v1/meta/symbols?apikey=${apiKey}&limit=1`,
+    );
     if (response.status === 401) {
-      throw new Error('Invalid or expired Polygon.io API key');
+      throw new Error("Invalid or expired Polygon.io API key");
     }
     if (response.status === 403) {
-      throw new Error('Polygon.io API key lacks required permissions');
+      throw new Error("Polygon.io API key lacks required permissions");
     }
     return response.ok;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-    console.error('Polygon.io API key validation failed:', errorMessage);
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error occurred";
+    console.error("Polygon.io API key validation failed:", errorMessage);
     return false;
   }
 }

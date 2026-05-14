@@ -3,7 +3,7 @@
 Last updated: 2025-07-07
 
 ```ts
-import { marketDataAPI } from '@/src/alpaca-market-data-api';
+import { marketDataAPI } from "@/src/alpaca-market-data-api";
 ```
 
 ---
@@ -23,26 +23,26 @@ const current = marketDataAPI.getMode(); // 'sandbox'|'test'|'production'
 
 ```ts
 interface HistoricalBarsParams {
-  symbols: string[];           // e.g. ['AAPL','MSFT']
-  timeframe: TimeFrame;        // '1Min'|'5Min'|'1Hour'|'1Day'|…
-  start?: string;              // ISO timestamp
-  end?: string;                // ISO timestamp
-  limit?: number;              // 1–10000
-  page_token?: string;         // pagination
-  sort?: 'asc'|'desc';         // default 'asc'
+  symbols: string[]; // e.g. ['AAPL','MSFT']
+  timeframe: TimeFrame; // '1Min'|'5Min'|'1Hour'|'1Day'|…
+  start?: string; // ISO timestamp
+  end?: string; // ISO timestamp
+  limit?: number; // 1–10000
+  page_token?: string; // pagination
+  sort?: "asc" | "desc"; // default 'asc'
 }
 
 interface HistoricalBarsResponse {
   bars: Record<string, Bar[]>; // symbol→Bar[]
-  next_page_token: string|null;
-  currency: string;            // e.g. 'USD'
+  next_page_token: string | null;
+  currency: string; // e.g. 'USD'
 }
 
 const resp = await marketDataAPI.getHistoricalBars({
-  symbols: ['AAPL'],
-  timeframe: '1Hour',
-  start: '2024-01-01T00:00:00Z',
-  end:   '2024-01-02T00:00:00Z',
+  symbols: ["AAPL"],
+  timeframe: "1Hour",
+  start: "2024-01-01T00:00:00Z",
+  end: "2024-01-02T00:00:00Z",
 });
 ```
 
@@ -54,11 +54,11 @@ const resp = await marketDataAPI.getHistoricalBars({
 // symbols: string[],
 // currency?: string
 interface LatestBarsResponse {
-  bars: Record<string, Bar>;   // symbol→Bar
+  bars: Record<string, Bar>; // symbol→Bar
   currency: string;
 }
 
-const latest = await marketDataAPI.getLatestBars(['AAPL','MSFT']);
+const latest = await marketDataAPI.getLatestBars(["AAPL", "MSFT"]);
 ```
 
 ---
@@ -71,13 +71,18 @@ interface LastTradeResponse {
   status: string;
   symbol: string;
   last: {
-    price: number; size: number; exchange: number;
-    cond1: number; cond2: number; cond3: number; cond4: number;
+    price: number;
+    size: number;
+    exchange: number;
+    cond1: number;
+    cond2: number;
+    cond3: number;
+    cond4: number;
     timestamp: number;
   };
 }
 
-const lastTrade = await marketDataAPI.getLastTrade('AAPL');
+const lastTrade = await marketDataAPI.getLastTrade("AAPL");
 ```
 
 ---
@@ -91,7 +96,7 @@ interface LatestTradesResponse {
   currency: string;
 }
 
-const trades = await marketDataAPI.getLatestTrades(['AAPL']);
+const trades = await marketDataAPI.getLatestTrades(["AAPL"]);
 
 // getLatestQuotes(symbols: string[], feed?: DataFeed, currency?: string)
 interface LatestQuotesResponse {
@@ -99,7 +104,7 @@ interface LatestQuotesResponse {
   currency: string;
 }
 
-const quotes = await marketDataAPI.getLatestQuotes(['AAPL']);
+const quotes = await marketDataAPI.getLatestQuotes(["AAPL"]);
 ```
 
 ---
@@ -108,8 +113,8 @@ const quotes = await marketDataAPI.getLatestQuotes(['AAPL']);
 
 ```ts
 // symbol: string, feed?: DataFeed, currency?: string
-Promise<{ quote: Quote; symbol: string; currency: string }>
-const single = await marketDataAPI.getLatestQuote('AAPL');
+Promise<{ quote: Quote; symbol: string; currency: string }>;
+const single = await marketDataAPI.getLatestQuote("AAPL");
 ```
 
 ---
@@ -170,8 +175,8 @@ static getExchangeName(code: string, map: OptionsExchangeCodesResponse): string
 
 ```ts
 // symbol: string, params?: { start?: Date|string; end?: Date|string; limit?: number; sort?: 'asc'|'desc'; include_content?: boolean; }
-Promise<SimpleNews[]>
-const news = await marketDataAPI.fetchNews('AAPL', { limit: 5 });
+Promise<SimpleNews[]>;
+const news = await marketDataAPI.fetchNews("AAPL", { limit: 5 });
 ```
 
 ---
@@ -195,11 +200,17 @@ unsubscribe(streamType, { trades, quotes, bars }): void
 ### Events
 
 ```ts
-type StockEvent = 'stock-trade' | 'stock-quote' | 'stock-bar' | 'stock-data';
-type OptionEvent = 'option-trade' | 'option-quote' | 'option-bar' | 'option-data';
+type StockEvent = "stock-trade" | "stock-quote" | "stock-bar" | "stock-data";
+type OptionEvent =
+  | "option-trade"
+  | "option-quote"
+  | "option-bar"
+  | "option-data";
 
-marketDataAPI.on('stock-trade', (msg: AlpacaStockStreamMessage) => { /*…*/ });
-marketDataAPI.subscribe('stock', { trades: ['AAPL'] });
+marketDataAPI.on("stock-trade", (msg: AlpacaStockStreamMessage) => {
+  /*…*/
+});
+marketDataAPI.subscribe("stock", { trades: ["AAPL"] });
 marketDataAPI.connectStockStream();
 ```
 

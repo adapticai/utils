@@ -1,7 +1,16 @@
 // market-time.ts
 
-import { set, isBefore, sub, add, startOfDay, endOfDay, format, differenceInMilliseconds } from 'date-fns';
-import { toZonedTime, fromZonedTime, formatInTimeZone } from 'date-fns-tz';
+import {
+  set,
+  isBefore,
+  sub,
+  add,
+  startOfDay,
+  endOfDay,
+  format,
+  differenceInMilliseconds,
+} from "date-fns";
+import { toZonedTime, fromZonedTime, formatInTimeZone } from "date-fns-tz";
 import {
   Period,
   IntradayReporting,
@@ -11,8 +20,8 @@ import {
   MarketOpenCloseResult,
   MarketStatus,
   MarketTimesConfig,
-} from './types/market-time-types';
-import { marketHolidays, marketEarlyCloses } from './market-hours.js';
+} from "./types/market-time-types";
+import { marketHolidays, marketEarlyCloses } from "./market-hours.js";
 
 /**
  * Market times for NYSE
@@ -23,13 +32,31 @@ import { marketHolidays, marketEarlyCloses } from './market-hours.js';
  * Early extended market hours are 1:00pm-5:00pm on early close days
  */
 export const MARKET_TIMES: MarketTimesConfig = {
-  TIMEZONE: 'America/New_York',
-  PRE: { START: { HOUR: 4, MINUTE: 0, MINUTES: 240 }, END: { HOUR: 9, MINUTE: 30, MINUTES: 570 } },
-  EARLY_MORNING: { START: { HOUR: 9, MINUTE: 30, MINUTES: 570 }, END: { HOUR: 10, MINUTE: 0, MINUTES: 600 } }, // early market trading
-  EARLY_CLOSE_BEFORE_HOLIDAY: { START: { HOUR: 9, MINUTE: 30, MINUTES: 570 }, END: { HOUR: 13, MINUTE: 0, MINUTES: 780 } }, // early market trading end
-  EARLY_EXTENDED_BEFORE_HOLIDAY: { START: { HOUR: 13, MINUTE: 0, MINUTES: 780 }, END: { HOUR: 17, MINUTE: 0, MINUTES: 1020 } }, // extended hours trading on early close days
-  REGULAR: { START: { HOUR: 9, MINUTE: 30, MINUTES: 570 }, END: { HOUR: 16, MINUTE: 0, MINUTES: 960 } },
-  EXTENDED: { START: { HOUR: 4, MINUTE: 0, MINUTES: 240 }, END: { HOUR: 20, MINUTE: 0, MINUTES: 1200 } },
+  TIMEZONE: "America/New_York",
+  PRE: {
+    START: { HOUR: 4, MINUTE: 0, MINUTES: 240 },
+    END: { HOUR: 9, MINUTE: 30, MINUTES: 570 },
+  },
+  EARLY_MORNING: {
+    START: { HOUR: 9, MINUTE: 30, MINUTES: 570 },
+    END: { HOUR: 10, MINUTE: 0, MINUTES: 600 },
+  }, // early market trading
+  EARLY_CLOSE_BEFORE_HOLIDAY: {
+    START: { HOUR: 9, MINUTE: 30, MINUTES: 570 },
+    END: { HOUR: 13, MINUTE: 0, MINUTES: 780 },
+  }, // early market trading end
+  EARLY_EXTENDED_BEFORE_HOLIDAY: {
+    START: { HOUR: 13, MINUTE: 0, MINUTES: 780 },
+    END: { HOUR: 17, MINUTE: 0, MINUTES: 1020 },
+  }, // extended hours trading on early close days
+  REGULAR: {
+    START: { HOUR: 9, MINUTE: 30, MINUTES: 570 },
+    END: { HOUR: 16, MINUTE: 0, MINUTES: 960 },
+  },
+  EXTENDED: {
+    START: { HOUR: 4, MINUTE: 0, MINUTES: 240 },
+    END: { HOUR: 20, MINUTE: 0, MINUTES: 1200 },
+  },
 };
 
 /**
@@ -44,7 +71,10 @@ export class MarketTimeUtil {
    * @param {string} [timezone='America/New_York'] - The timezone to use for market time calculations
    * @param {IntradayReporting} [intradayReporting='market_hours'] - The intraday reporting mode
    */
-  constructor(timezone: string = MARKET_TIMES.TIMEZONE, intradayReporting: IntradayReporting = 'market_hours') {
+  constructor(
+    timezone: string = MARKET_TIMES.TIMEZONE,
+    intradayReporting: IntradayReporting = "market_hours",
+  ) {
     this.validateTimezone(timezone);
     this.timezone = timezone;
     this.intradayReporting = intradayReporting;
@@ -64,16 +94,23 @@ export class MarketTimeUtil {
     }
   }
 
-  private formatDate(date: Date, outputFormat: OutputFormat = 'iso'): string | number {
+  private formatDate(
+    date: Date,
+    outputFormat: OutputFormat = "iso",
+  ): string | number {
     switch (outputFormat) {
-      case 'unix-seconds':
+      case "unix-seconds":
         return Math.floor(date.getTime() / 1000);
-      case 'unix-ms':
+      case "unix-ms":
         return date.getTime();
-      case 'iso':
+      case "iso":
       default:
         // return with timezone offset
-        return formatInTimeZone(date, this.timezone, "yyyy-MM-dd'T'HH:mm:ssXXX")
+        return formatInTimeZone(
+          date,
+          this.timezone,
+          "yyyy-MM-dd'T'HH:mm:ssXXX",
+        );
     }
   }
 
@@ -83,7 +120,7 @@ export class MarketTimeUtil {
   }
 
   private isHoliday(date: Date): boolean {
-    const formattedDate = format(date, 'yyyy-MM-dd');
+    const formattedDate = format(date, "yyyy-MM-dd");
     const yearHolidays = marketHolidays[date.getFullYear()];
 
     for (const holiday in yearHolidays) {
@@ -95,7 +132,7 @@ export class MarketTimeUtil {
   }
 
   public isEarlyCloseDay(date: Date): boolean {
-    const formattedDate = format(date, 'yyyy-MM-dd');
+    const formattedDate = format(date, "yyyy-MM-dd");
     const yearEarlyCloses = marketEarlyCloses[date.getFullYear()];
     return yearEarlyCloses && yearEarlyCloses[formattedDate] !== undefined;
   }
@@ -106,11 +143,13 @@ export class MarketTimeUtil {
    * @returns The early close time in minutes from midnight, or null if there is no early close
    */
   public getEarlyCloseTime(date: Date): number | null {
-    const formattedDate = format(date, 'yyyy-MM-dd');
+    const formattedDate = format(date, "yyyy-MM-dd");
     const yearEarlyCloses = marketEarlyCloses[date.getFullYear()];
 
     if (yearEarlyCloses && yearEarlyCloses[formattedDate]) {
-      const [hours, minutes] = yearEarlyCloses[formattedDate].time.split(':').map(Number);
+      const [hours, minutes] = yearEarlyCloses[formattedDate].time
+        .split(":")
+        .map(Number);
       return hours * 60 + minutes;
     }
     return null;
@@ -152,26 +191,39 @@ export class MarketTimeUtil {
     // Regular market hours logic
     let returner: boolean;
     switch (this.intradayReporting) {
-      case 'extended_hours': {
-        const extendedStartMinutes = MARKET_TIMES.EXTENDED.START.HOUR * 60 + MARKET_TIMES.EXTENDED.START.MINUTE;
-        const extendedEndMinutes = MARKET_TIMES.EXTENDED.END.HOUR * 60 + MARKET_TIMES.EXTENDED.END.MINUTE;
+      case "extended_hours": {
+        const extendedStartMinutes =
+          MARKET_TIMES.EXTENDED.START.HOUR * 60 +
+          MARKET_TIMES.EXTENDED.START.MINUTE;
+        const extendedEndMinutes =
+          MARKET_TIMES.EXTENDED.END.HOUR * 60 +
+          MARKET_TIMES.EXTENDED.END.MINUTE;
 
         // Comprehensive handling of times crossing midnight
-        const adjustedDate = timeInMinutes < extendedStartMinutes ? sub(date, { days: 1 }) : date;
+        const adjustedDate =
+          timeInMinutes < extendedStartMinutes ? sub(date, { days: 1 }) : date;
 
-        const adjustedTimeInMinutes = adjustedDate.getHours() * 60 + adjustedDate.getMinutes();
+        const adjustedTimeInMinutes =
+          adjustedDate.getHours() * 60 + adjustedDate.getMinutes();
 
-        returner = adjustedTimeInMinutes >= extendedStartMinutes && adjustedTimeInMinutes <= extendedEndMinutes;
+        returner =
+          adjustedTimeInMinutes >= extendedStartMinutes &&
+          adjustedTimeInMinutes <= extendedEndMinutes;
         break;
       }
-      case 'continuous':
+      case "continuous":
         returner = true;
         break;
       default: {
         // market_hours
-        const regularStartMinutes = MARKET_TIMES.REGULAR.START.HOUR * 60 + MARKET_TIMES.REGULAR.START.MINUTE;
-        const regularEndMinutes = MARKET_TIMES.REGULAR.END.HOUR * 60 + MARKET_TIMES.REGULAR.END.MINUTE;
-        returner = timeInMinutes >= regularStartMinutes && timeInMinutes <= regularEndMinutes;
+        const regularStartMinutes =
+          MARKET_TIMES.REGULAR.START.HOUR * 60 +
+          MARKET_TIMES.REGULAR.START.MINUTE;
+        const regularEndMinutes =
+          MARKET_TIMES.REGULAR.END.HOUR * 60 + MARKET_TIMES.REGULAR.END.MINUTE;
+        returner =
+          timeInMinutes >= regularStartMinutes &&
+          timeInMinutes <= regularEndMinutes;
         break;
       }
     }
@@ -186,9 +238,11 @@ export class MarketTimeUtil {
   private isBeforeMarketHours(date: Date): boolean {
     const timeInMinutes = date.getHours() * 60 + date.getMinutes();
     const startMinutes =
-      this.intradayReporting === 'extended_hours'
-        ? MARKET_TIMES.EXTENDED.START.HOUR * 60 + MARKET_TIMES.EXTENDED.START.MINUTE
-        : MARKET_TIMES.REGULAR.START.HOUR * 60 + MARKET_TIMES.REGULAR.START.MINUTE;
+      this.intradayReporting === "extended_hours"
+        ? MARKET_TIMES.EXTENDED.START.HOUR * 60 +
+          MARKET_TIMES.EXTENDED.START.MINUTE
+        : MARKET_TIMES.REGULAR.START.HOUR * 60 +
+          MARKET_TIMES.REGULAR.START.MINUTE;
 
     return timeInMinutes < startMinutes;
   }
@@ -204,7 +258,8 @@ export class MarketTimeUtil {
     const isMarketDayToday = this.isMarketDay(nowET);
 
     const currentMinutes = nowET.getHours() * 60 + nowET.getMinutes();
-    const marketOpenMinutes = MARKET_TIMES.REGULAR.START.HOUR * 60 + MARKET_TIMES.REGULAR.START.MINUTE;
+    const marketOpenMinutes =
+      MARKET_TIMES.REGULAR.START.HOUR * 60 + MARKET_TIMES.REGULAR.START.MINUTE;
 
     if (isMarketDayToday && currentMinutes >= marketOpenMinutes) {
       // After market open on a market day, return today
@@ -234,12 +289,16 @@ export class MarketTimeUtil {
     // then return today since it's a completed trading day
     if (this.isMarketDay(nowET)) {
       const timeInMinutes = nowET.getHours() * 60 + nowET.getMinutes();
-      const extendedEndMinutes = MARKET_TIMES.EXTENDED.END.HOUR * 60 + MARKET_TIMES.EXTENDED.END.MINUTE;
+      const extendedEndMinutes =
+        MARKET_TIMES.EXTENDED.END.HOUR * 60 + MARKET_TIMES.EXTENDED.END.MINUTE;
 
       // Check if we're after market close (including extended hours)
       if (timeInMinutes >= extendedEndMinutes) {
         // Set to midnight ET while preserving the date
-        return fromZonedTime(set(nowET, { hours: 0, minutes: 0, seconds: 0, milliseconds: 0 }), this.timezone);
+        return fromZonedTime(
+          set(nowET, { hours: 0, minutes: 0, seconds: 0, milliseconds: 0 }),
+          this.timezone,
+        );
       }
     }
 
@@ -248,7 +307,10 @@ export class MarketTimeUtil {
     let lastFullDate = this.getLastMarketDay(nowET);
 
     // Set to midnight ET while preserving the date
-    return fromZonedTime(set(lastFullDate, { hours: 0, minutes: 0, seconds: 0, milliseconds: 0 }), this.timezone);
+    return fromZonedTime(
+      set(lastFullDate, { hours: 0, minutes: 0, seconds: 0, milliseconds: 0 }),
+      this.timezone,
+    );
   }
 
   /**
@@ -273,7 +335,7 @@ export class MarketTimeUtil {
     let end: Date;
 
     switch (this.intradayReporting) {
-      case 'extended_hours': {
+      case "extended_hours": {
         start = set(date, {
           hours: MARKET_TIMES.EXTENDED.START.HOUR,
           minutes: MARKET_TIMES.EXTENDED.START.MINUTE,
@@ -288,7 +350,7 @@ export class MarketTimeUtil {
         });
         break;
       }
-      case 'continuous': {
+      case "continuous": {
         start = startOfDay(date);
         end = endOfDay(date);
         break;
@@ -334,31 +396,31 @@ export class MarketTimeUtil {
   private calculatePeriodStartDate(endDate: Date, period: Period): Date {
     let startDate: Date;
     switch (period) {
-      case 'YTD':
+      case "YTD":
         startDate = set(endDate, { month: 0, date: 1 });
         break;
-      case '1D':
+      case "1D":
         startDate = this.getLastMarketDay(endDate);
         break;
-      case '3D':
+      case "3D":
         startDate = sub(endDate, { days: 3 });
         break;
-      case '1W':
+      case "1W":
         startDate = sub(endDate, { weeks: 1 });
         break;
-      case '2W':
+      case "2W":
         startDate = sub(endDate, { weeks: 2 });
         break;
-      case '1M':
+      case "1M":
         startDate = sub(endDate, { months: 1 });
         break;
-      case '3M':
+      case "3M":
         startDate = sub(endDate, { months: 3 });
         break;
-      case '6M':
+      case "6M":
         startDate = sub(endDate, { months: 6 });
         break;
-      case '1Y':
+      case "1Y":
         startDate = sub(endDate, { years: 1 });
         break;
       default:
@@ -376,10 +438,10 @@ export class MarketTimeUtil {
     period,
     end = new Date(),
     intraday_reporting,
-    outputFormat = 'iso',
+    outputFormat = "iso",
   }: MarketTimeParams): PeriodDates {
     if (!period) {
-      throw new Error('Period is required');
+      throw new Error("Period is required");
     }
     if (intraday_reporting) {
       this.intradayReporting = intraday_reporting;
@@ -428,7 +490,7 @@ export class MarketTimeUtil {
 
     // Ensure start is not after end
     if (isBefore(utcEnd, utcStart)) {
-      throw new Error('Start date cannot be after end date');
+      throw new Error("Start date cannot be after end date");
     }
 
     return {
@@ -437,7 +499,9 @@ export class MarketTimeUtil {
     };
   }
 
-  public getMarketOpenClose(options: { date?: Date } = {}): MarketOpenCloseResult {
+  public getMarketOpenClose(
+    options: { date?: Date } = {},
+  ): MarketOpenCloseResult {
     const { date = new Date() } = options;
     const zonedDate = toZonedTime(date, this.timezone);
 
@@ -479,20 +543,32 @@ export class MarketTimeUtil {
     }
 
     const open = fromZonedTime(
-      set(dayStart, { hours: regularOpenTime.HOUR, minutes: regularOpenTime.MINUTE }),
-      this.timezone
+      set(dayStart, {
+        hours: regularOpenTime.HOUR,
+        minutes: regularOpenTime.MINUTE,
+      }),
+      this.timezone,
     );
     const close = fromZonedTime(
-      set(dayStart, { hours: regularCloseTime.HOUR, minutes: regularCloseTime.MINUTE }),
-      this.timezone
+      set(dayStart, {
+        hours: regularCloseTime.HOUR,
+        minutes: regularCloseTime.MINUTE,
+      }),
+      this.timezone,
     );
     const openExt = fromZonedTime(
-      set(dayStart, { hours: extendedOpenTime.HOUR, minutes: extendedOpenTime.MINUTE }),
-      this.timezone
+      set(dayStart, {
+        hours: extendedOpenTime.HOUR,
+        minutes: extendedOpenTime.MINUTE,
+      }),
+      this.timezone,
     );
     const closeExt = fromZonedTime(
-      set(dayStart, { hours: extendedCloseTime.HOUR, minutes: extendedCloseTime.MINUTE }),
-      this.timezone
+      set(dayStart, {
+        hours: extendedCloseTime.HOUR,
+        minutes: extendedCloseTime.MINUTE,
+      }),
+      this.timezone,
     );
 
     return {
@@ -511,7 +587,10 @@ export class MarketTimeUtil {
  * @param {IntradayReporting} [intraday_reporting] - The intraday reporting mode
  * @returns {MarketTimeUtil} A new MarketTimeUtil instance
  */
-export function createMarketTimeUtil(timezone?: string, intraday_reporting?: IntradayReporting): MarketTimeUtil {
+export function createMarketTimeUtil(
+  timezone?: string,
+  intraday_reporting?: IntradayReporting,
+): MarketTimeUtil {
   return new MarketTimeUtil(timezone, intraday_reporting);
 }
 
@@ -520,7 +599,9 @@ export function createMarketTimeUtil(timezone?: string, intraday_reporting?: Int
  * @param {MarketTimeParams} [params] - The market time parameters
  * @returns {PeriodDates} The start and end timestamps
  */
-export function getStartAndEndTimestamps(params: MarketTimeParams = {}): PeriodDates {
+export function getStartAndEndTimestamps(
+  params: MarketTimeParams = {},
+): PeriodDates {
   const util = createMarketTimeUtil(params.timezone, params.intraday_reporting);
   const effectiveParams = {
     ...params,
@@ -535,7 +616,9 @@ export function getStartAndEndTimestamps(params: MarketTimeParams = {}): PeriodD
  * @param {Date} [options.date] - The date to check (defaults to current date)
  * @returns {MarketOpenCloseResult} The market open/close times
  */
-export function getMarketOpenClose(options: { date?: Date } = {}): MarketOpenCloseResult {
+export function getMarketOpenClose(
+  options: { date?: Date } = {},
+): MarketOpenCloseResult {
   const marketTimeUtil = new MarketTimeUtil();
   return marketTimeUtil.getMarketOpenClose(options);
 }
@@ -547,7 +630,10 @@ export function getMarketOpenClose(options: { date?: Date } = {}): MarketOpenClo
  * @property {Date} start - The start date
  * @property {Date} end - The end date
  */
-export function getStartAndEndDates(params: MarketTimeParams = {}): { start: Date; end: Date } {
+export function getStartAndEndDates(params: MarketTimeParams = {}): {
+  start: Date;
+  end: Date;
+} {
   const util = createMarketTimeUtil(params.timezone, params.intraday_reporting);
   const effectiveParams = {
     ...params,
@@ -569,7 +655,7 @@ export function getStartAndEndDates(params: MarketTimeParams = {}): { start: Dat
 export function getLastTradingDateYYYYMMDD(): string {
   const util = new MarketTimeUtil();
   const lastTradingDate = util.getLastTradingDate();
-  return format(lastTradingDate, 'yyyy-MM-dd');
+  return format(lastTradingDate, "yyyy-MM-dd");
 }
 
 /**
@@ -579,13 +665,16 @@ export function getLastTradingDateYYYYMMDD(): string {
  * @property {Date} date - The date object
  * @property {string} YYYYMMDD - The date in YYYY-MM-DD format
  */
-export function getLastFullTradingDate(currentDate: Date = new Date()): { date: Date; YYYYMMDD: string } {
+export function getLastFullTradingDate(currentDate: Date = new Date()): {
+  date: Date;
+  YYYYMMDD: string;
+} {
   const util = new MarketTimeUtil();
   const date = util.getLastFullTradingDate(currentDate);
   // Format the date in NY timezone to ensure consistency
   return {
     date,
-    YYYYMMDD: formatInTimeZone(date, MARKET_TIMES.TIMEZONE, 'yyyy-MM-dd'),
+    YYYYMMDD: formatInTimeZone(date, MARKET_TIMES.TIMEZONE, "yyyy-MM-dd"),
   };
 }
 
@@ -598,7 +687,9 @@ export function getLastFullTradingDate(currentDate: Date = new Date()): { date: 
  * @property {string} yyyymmdd - The date in YYYY-MM-DD format
  * @property {string} dateISOString - Full ISO date string
  */
-export function getNextMarketDay({ referenceDate }: { referenceDate?: Date } = {}): {
+export function getNextMarketDay({
+  referenceDate,
+}: { referenceDate?: Date } = {}): {
   date: Date;
   yyyymmdd: string;
   dateISOString: string;
@@ -613,8 +704,8 @@ export function getNextMarketDay({ referenceDate }: { referenceDate?: Date } = {
 
   return {
     date: dateInET,
-    yyyymmdd: formatInTimeZone(dateInET, MARKET_TIMES.TIMEZONE, 'yyyy-MM-dd'),
-    dateISOString: dateInET.toISOString()
+    yyyymmdd: formatInTimeZone(dateInET, MARKET_TIMES.TIMEZONE, "yyyy-MM-dd"),
+    dateISOString: dateInET.toISOString(),
   };
 }
 
@@ -631,16 +722,22 @@ export const currentTimeET = (): Date => {
  * @param {number|string|Date} time - The time to convert
  * @returns {Date} The date in New York timezone
  */
-export function getDateInNY(time: number | string | { year: number; month: number; day: number }): Date {
+export function getDateInNY(
+  time: number | string | { year: number; month: number; day: number },
+): Date {
   let date: Date;
-  if (typeof time === 'number' || typeof time === 'string' || time instanceof Date) {
+  if (
+    typeof time === "number" ||
+    typeof time === "string" ||
+    time instanceof Date
+  ) {
     // Assuming Unix timestamp in epoch milliseconds, string date, or Date object
     date = new Date(time);
   } else {
     // Assuming object with year, month, and day
     date = new Date(time.year, time.month - 1, time.day);
   }
-  return toZonedTime(date, 'America/New_York');
+  return toZonedTime(date, "America/New_York");
 }
 
 /**
@@ -650,17 +747,17 @@ export function getDateInNY(time: number | string | { year: number; month: numbe
  */
 export function getTradingDate(time: string | number | Date): string {
   let date: Date;
-  if (typeof time === 'number') {
+  if (typeof time === "number") {
     // Assuming Unix timestamp in milliseconds
     date = new Date(time);
-  } else if (typeof time === 'string') {
+  } else if (typeof time === "string") {
     date = new Date(time);
   } else {
     date = time;
   }
-  
+
   // Convert to NY timezone and format as YYYY-MM-DD
-  return formatInTimeZone(date, MARKET_TIMES.TIMEZONE, 'yyyy-MM-dd');
+  return formatInTimeZone(date, MARKET_TIMES.TIMEZONE, "yyyy-MM-dd");
 }
 
 /**
@@ -668,40 +765,46 @@ export function getTradingDate(time: string | number | Date): string {
  * @param dateString - The date string to check
  * @returns "-04:00" during daylight savings (EDT) or "-05:00" during standard time (EST)
  */
-export const getNYTimeZone = (date?: Date): '-04:00' | '-05:00' => {
+export const getNYTimeZone = (date?: Date): "-04:00" | "-05:00" => {
   if (!date) {
     date = new Date();
   }
 
-  const dtf = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
-    timeZoneName: 'shortOffset',
+  const dtf = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    timeZoneName: "shortOffset",
   });
   const parts = dtf.formatToParts(date);
-  const tz = parts.find((p) => p.type === 'timeZoneName')?.value;
+  const tz = parts.find((p) => p.type === "timeZoneName")?.value;
   // tz will be "GMT-5" or "GMT-4"
   if (!tz) {
-    throw new Error('Could not determine New York offset');
+    throw new Error("Could not determine New York offset");
   }
   // extract the -4 or -5 from the string
-  const shortOffset = tz.replace('GMT', '');
+  const shortOffset = tz.replace("GMT", "");
   // return the correct offset
-  if (shortOffset === '-4') {
+  if (shortOffset === "-4") {
     console.log(
-      `New York is on EDT; using -04:00. Full date: ${date.toLocaleString('en-US', {
-        timeZone: 'America/New_York',
-      })}, time zone part: ${tz}`
+      `New York is on EDT; using -04:00. Full date: ${date.toLocaleString(
+        "en-US",
+        {
+          timeZone: "America/New_York",
+        },
+      )}, time zone part: ${tz}`,
     );
-    return '-04:00';
-  } else if (shortOffset === '-5') {
+    return "-04:00";
+  } else if (shortOffset === "-5") {
     console.log(
-      `New York is on EST; using -05:00. Full date: ${date.toLocaleString('en-US', {
-        timeZone: 'America/New_York',
-      })}, time zone part: ${tz}`
+      `New York is on EST; using -05:00. Full date: ${date.toLocaleString(
+        "en-US",
+        {
+          timeZone: "America/New_York",
+        },
+      )}, time zone part: ${tz}`,
     );
-    return '-05:00';
+    return "-05:00";
   } else {
-    throw new Error('Could not determine New York offset');
+    throw new Error("Could not determine New York offset");
   }
 };
 
@@ -728,19 +831,19 @@ export function getMarketStatus(options: { date?: Date } = {}): MarketStatus {
     ? MARKET_TIMES.EARLY_EXTENDED_BEFORE_HOLIDAY.END.MINUTES
     : MARKET_TIMES.EXTENDED.END.MINUTES;
 
-  let status: MarketStatus['status'];
-  let nextStatus: MarketStatus['nextStatus'];
+  let status: MarketStatus["status"];
+  let nextStatus: MarketStatus["nextStatus"];
   let nextStatusTime: Date;
-  let marketPeriod: MarketStatus['marketPeriod'];
+  let marketPeriod: MarketStatus["marketPeriod"];
 
   const nextMarketDay = util.getNextMarketDay(nyTime);
 
   // Determine current status and market period
   if (!util.isMarketDay(nyTime)) {
     // Not a market day! market is closed
-    marketPeriod = 'closed';
-    status = 'closed';
-    nextStatus = 'extended hours';
+    marketPeriod = "closed";
+    status = "closed";
+    nextStatus = "extended hours";
     // Find next market day and set to extended hours start time
 
     nextStatusTime = set(nextMarketDay, {
@@ -749,62 +852,74 @@ export function getMarketStatus(options: { date?: Date } = {}): MarketStatus {
     });
   } // check if the market isn't in extended hours yet
   else if (timeInMinutes >= 0 && timeInMinutes < extendedStartMinutes) {
-    marketPeriod = 'closed';
-    status = 'closed';
-    nextStatus = 'extended hours';
+    marketPeriod = "closed";
+    status = "closed";
+    nextStatus = "extended hours";
     nextStatusTime = set(nyTime, {
       hours: MARKET_TIMES.EXTENDED.START.HOUR,
       minutes: MARKET_TIMES.EXTENDED.START.MINUTE,
     });
     // check if we're in pre-market hours
-  } else if (timeInMinutes >= extendedStartMinutes && timeInMinutes < marketStartMinutes) {
-    marketPeriod = 'preMarket';
-    status = 'extended hours';
-    nextStatus = 'open';
+  } else if (
+    timeInMinutes >= extendedStartMinutes &&
+    timeInMinutes < marketStartMinutes
+  ) {
+    marketPeriod = "preMarket";
+    status = "extended hours";
+    nextStatus = "open";
     nextStatusTime = set(nyTime, {
       hours: MARKET_TIMES.REGULAR.START.HOUR,
       minutes: MARKET_TIMES.REGULAR.START.MINUTE,
     });
     // check if market is open
-  } else if (timeInMinutes >= marketStartMinutes && timeInMinutes < marketRegularCloseMinutes) {
-    status = 'open';
-    nextStatus = 'extended hours';
+  } else if (
+    timeInMinutes >= marketStartMinutes &&
+    timeInMinutes < marketRegularCloseMinutes
+  ) {
+    status = "open";
+    nextStatus = "extended hours";
     // market is open, but just check the marketPeriod - could be earlyMarket or regularMarket
-    marketPeriod = timeInMinutes < MARKET_TIMES.EARLY_MORNING.END.MINUTES ? 'earlyMarket' : 'regularMarket';
+    marketPeriod =
+      timeInMinutes < MARKET_TIMES.EARLY_MORNING.END.MINUTES
+        ? "earlyMarket"
+        : "regularMarket";
     nextStatusTime = isEarlyCloseDay
       ? set(nyTime, {
-        hours: MARKET_TIMES.EARLY_CLOSE_BEFORE_HOLIDAY.END.HOUR,
-        minutes: MARKET_TIMES.EARLY_CLOSE_BEFORE_HOLIDAY.END.MINUTE,
-      })
+          hours: MARKET_TIMES.EARLY_CLOSE_BEFORE_HOLIDAY.END.HOUR,
+          minutes: MARKET_TIMES.EARLY_CLOSE_BEFORE_HOLIDAY.END.MINUTE,
+        })
       : set(nyTime, {
-        hours: MARKET_TIMES.REGULAR.END.HOUR,
-        minutes: MARKET_TIMES.REGULAR.END.MINUTE,
-      });
+          hours: MARKET_TIMES.REGULAR.END.HOUR,
+          minutes: MARKET_TIMES.REGULAR.END.MINUTE,
+        });
     // check if it's after-market extended hours
-  } else if (timeInMinutes >= marketRegularCloseMinutes && timeInMinutes < extendedEndMinutes) {
-    status = 'extended hours';
-    nextStatus = 'closed';
-    marketPeriod = 'afterMarket';
+  } else if (
+    timeInMinutes >= marketRegularCloseMinutes &&
+    timeInMinutes < extendedEndMinutes
+  ) {
+    status = "extended hours";
+    nextStatus = "closed";
+    marketPeriod = "afterMarket";
     nextStatusTime = isEarlyCloseDay
       ? set(nyTime, {
-        hours: MARKET_TIMES.EARLY_EXTENDED_BEFORE_HOLIDAY.END.HOUR,
-        minutes: MARKET_TIMES.EARLY_EXTENDED_BEFORE_HOLIDAY.END.MINUTE,
-      })
+          hours: MARKET_TIMES.EARLY_EXTENDED_BEFORE_HOLIDAY.END.HOUR,
+          minutes: MARKET_TIMES.EARLY_EXTENDED_BEFORE_HOLIDAY.END.MINUTE,
+        })
       : set(nyTime, {
-        hours: MARKET_TIMES.EXTENDED.END.HOUR,
-        minutes: MARKET_TIMES.EXTENDED.END.MINUTE,
-      });
+          hours: MARKET_TIMES.EXTENDED.END.HOUR,
+          minutes: MARKET_TIMES.EXTENDED.END.MINUTE,
+        });
     // otherwise, the market is closed
   } else {
-    status = 'closed';
-    nextStatus = 'extended hours';
-    marketPeriod = 'closed';
+    status = "closed";
+    nextStatus = "extended hours";
+    marketPeriod = "closed";
     nextStatusTime = set(nextMarketDay, {
       hours: MARKET_TIMES.EXTENDED.START.HOUR,
       minutes: MARKET_TIMES.EXTENDED.START.MINUTE,
     });
   }
-  const dateFormat = 'MMMM dd, yyyy, HH:mm:ss a';
+  const dateFormat = "MMMM dd, yyyy, HH:mm:ss a";
   return {
     time: now,
     timeString: format(nyTime, dateFormat),

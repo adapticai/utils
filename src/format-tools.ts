@@ -9,7 +9,7 @@
  * capitalize(123) // 123
  */
 export function capitalize(str: string): string {
-  if (!str || typeof str !== 'string') return str;
+  if (!str || typeof str !== "string") return str;
   return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
@@ -21,11 +21,11 @@ export function capitalize(str: string): string {
  * formatEnum('STOCK_TICKER') // 'Stock Ticker'
  */
 export function formatEnum(value: string): string {
-  if (!value) return '';
+  if (!value) return "";
   return value
-    .split('_')
+    .split("_")
     .map((word) => capitalize(word.toLowerCase()))
-    .join(' ');
+    .join(" ");
 }
 
 /**
@@ -38,12 +38,12 @@ export function formatEnum(value: string): string {
  */
 export function formatCurrency(value: number): string {
   if (isNaN(value)) {
-    return '$0.00';
+    return "$0.00";
   }
 
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
   }).format(value);
 }
 
@@ -57,10 +57,10 @@ export function formatCurrency(value: number): string {
  */
 export function formatNumber(value: number): string {
   if (isNaN(value)) {
-    return '0';
+    return "0";
   }
 
-  return new Intl.NumberFormat('en-US').format(value);
+  return new Intl.NumberFormat("en-US").format(value);
 }
 
 /**
@@ -72,12 +72,15 @@ export function formatNumber(value: number): string {
  * formatPercentage(0.75) // '75.00%'
  * formatPercentage(0.753, 1) // '75.3%'
  */
-export function formatPercentage(value: number, decimalPlaces: number = 2): string {
+export function formatPercentage(
+  value: number,
+  decimalPlaces: number = 2,
+): string {
   if (isNaN(value)) {
-    return '0%';
+    return "0%";
   }
-  return new Intl.NumberFormat('en-US', {
-    style: 'percent',
+  return new Intl.NumberFormat("en-US", {
+    style: "percent",
     minimumFractionDigits: decimalPlaces,
   }).format(value);
 }
@@ -91,14 +94,14 @@ export function formatPercentage(value: number, decimalPlaces: number = 2): stri
  */
 export function dateTimeForGS(date: Date): string {
   return date
-    .toLocaleString('en-AU', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
+    .toLocaleString("en-AU", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
       hour12: false,
     })
-    .replace(/\./g, '/');
+    .replace(/\./g, "/");
 }

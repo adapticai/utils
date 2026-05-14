@@ -17,7 +17,7 @@ npm install @adaptic/utils
 Import the functions from the library:
 
 ```typescript
-import { adaptic } from '@adaptic/utils';
+import { adaptic } from "@adaptic/utils";
 ```
 
 ## Environment Variables
@@ -38,18 +38,26 @@ import { adaptic } from '@adaptic/utils';
 Asynchronously retrieves detailed information about a specific Alpaca trading account.
 
 **Parameters:**
+
 - `accountId: string` - The Alpaca account ID
 
 **Returns:**
+
 - `Promise<AccountDetails>` - Comprehensive account details including:
   ```typescript
   {
     id: string;
     account_number: string;
-    status: 'ONBOARDING' | 'SUBMISSION_FAILED' | 'SUBMITTED' | 'ACCOUNT_UPDATED' | 'APPROVAL_PENDING' | 'ACTIVE' | 'REJECTED';
+    status: "ONBOARDING" |
+      "SUBMISSION_FAILED" |
+      "SUBMITTED" |
+      "ACCOUNT_UPDATED" |
+      "APPROVAL_PENDING" |
+      "ACTIVE" |
+      "REJECTED";
     currency: string;
     cash: string;
-    portfolio_value: string;  // deprecated, equivalent to equity
+    portfolio_value: string; // deprecated, equivalent to equity
     equity: string;
     buying_power: string;
     initial_margin: string;
@@ -63,8 +71,10 @@ Asynchronously retrieves detailed information about a specific Alpaca trading ac
   ```
 
 **Example:**
+
 ```typescript
-const accountDetails = await adaptic.alpaca.fetchAccountDetails('your-account-id');
+const accountDetails =
+  await adaptic.alpaca.fetchAccountDetails("your-account-id");
 console.log(`Account equity: ${accountDetails.equity}`);
 ```
 
@@ -73,6 +83,7 @@ console.log(`Account equity: ${accountDetails.equity}`);
 Asynchronously retrieves historical portfolio data including equity and profit/loss information from either the Adaptic backend or directly from an Alpaca account.
 
 **Parameters:**
+
 - `FetchPortfolioHistoryProps`:
   ```typescript
   {
@@ -95,6 +106,7 @@ Asynchronously retrieves historical portfolio data including equity and profit/l
   ```
 
 **Returns:**
+
 - `Promise<PortfolioHistoryResponse>`:
   ```typescript
   {
@@ -110,24 +122,25 @@ Asynchronously retrieves historical portfolio data including equity and profit/l
   ```
 
 **Example:**
+
 ```typescript
 // Using accountId
 const history = await adaptic.alpaca.fetchPortfolioHistory({
-  accountId: 'your-account-id',
+  accountId: "your-account-id",
   params: {
-    period: '1M',
-    timeframe: '1D'
-  }
+    period: "1M",
+    timeframe: "1D",
+  },
 });
 
 // Using direct Alpaca account object
 const history = await adaptic.alpaca.fetchPortfolioHistory({
   alpacaAccount: yourAlpacaAccount,
   params: {
-    start: '2025-01-01T00:00:00Z',
-    end: '2025-01-31T00:00:00Z',
-    timeframe: '1D'
-  }
+    start: "2025-01-01T00:00:00Z",
+    end: "2025-01-31T00:00:00Z",
+    timeframe: "1D",
+  },
 });
 ```
 
@@ -136,6 +149,7 @@ const history = await adaptic.alpaca.fetchPortfolioHistory({
 Asynchronously fetches all current open positions for an Alpaca trading account.
 
 **Parameters:**
+
 - `auth: AlpacaAuth` - Authentication details:
   ```typescript
   {
@@ -146,6 +160,7 @@ Asynchronously fetches all current open positions for an Alpaca trading account.
   ```
 
 **Returns:**
+
 - `Promise<Position[]>` - Array of positions with the following type:
   ```typescript
   {
@@ -157,7 +172,7 @@ Asynchronously fetches all current open positions for an Alpaca trading account.
     qty: string;
     qty_available: string;
     avg_entry_price: string;
-    side: 'long' | 'short';
+    side: "long" | "short";
     market_value: string;
     cost_basis: string;
     unrealized_pl: string;
@@ -171,16 +186,17 @@ Asynchronously fetches all current open positions for an Alpaca trading account.
   ```
 
 **Example:**
+
 ```typescript
 // Using adapticAccountId
 const positions = await adaptic.position.fetchAll({
-  adapticAccountId: 'your-account-id'
+  adapticAccountId: "your-account-id",
 });
 
 // Using direct API keys
 const positions = await adaptic.position.fetchAll({
-  alpacaApiKey: 'your-api-key',
-  alpacaApiSecret: 'your-api-secret'
+  alpacaApiKey: "your-api-key",
+  alpacaApiSecret: "your-api-secret",
 });
 ```
 
@@ -189,16 +205,19 @@ const positions = await adaptic.position.fetchAll({
 Asynchronously fetches a specific position for an Alpaca trading account.
 
 **Parameters:**
+
 - `symbolOrAssetId: string` - The symbol or asset ID to fetch the position for
 - `auth: AlpacaAuth` - Authentication details (same as above)
 
 **Returns:**
+
 - `Promise<Position>` - Single position details with the same type as in `fetchAll`
 
 **Example:**
+
 ```typescript
-const position = await adaptic.position.fetch('AAPL', {
-  adapticAccountId: 'your-account-id'
+const position = await adaptic.position.fetch("AAPL", {
+  adapticAccountId: "your-account-id",
 });
 ```
 
@@ -207,6 +226,7 @@ const position = await adaptic.position.fetch('AAPL', {
 Closes a specific position in an Alpaca trading account.
 
 **Parameters:**
+
 - `symbolOrAssetId: string` - The symbol or asset ID of the position to close
 - `auth: AlpacaAuth` - Authentication details (same as above)
 - `params?: ClosePositionParams` - Optional closing parameters:
@@ -218,21 +238,27 @@ Closes a specific position in an Alpaca trading account.
   ```
 
 **Returns:**
+
 - `Promise<Order>` - The order created to close the position
 
 **Example:**
+
 ```typescript
 // Close entire position
-const order = await adaptic.position.close('AAPL', {
-  adapticAccountId: 'your-account-id'
+const order = await adaptic.position.close("AAPL", {
+  adapticAccountId: "your-account-id",
 });
 
 // Close 50% of position
-const order = await adaptic.position.close('AAPL', {
-  adapticAccountId: 'your-account-id'
-}, {
-  percentage: 50
-});
+const order = await adaptic.position.close(
+  "AAPL",
+  {
+    adapticAccountId: "your-account-id",
+  },
+  {
+    percentage: 50,
+  },
+);
 ```
 
 ### `adaptic.position.closeAll(auth: AlpacaAuth, params?: CloseAllPositionsParams): Promise<Array<{ symbol: string; status: number; body?: Order }>>`
@@ -240,6 +266,7 @@ const order = await adaptic.position.close('AAPL', {
 Closes all positions in an Alpaca trading account.
 
 **Parameters:**
+
 - `auth: AlpacaAuth` - Authentication details (same as above)
 - `params?: CloseAllPositionsParams` - Optional parameters:
   ```typescript
@@ -249,24 +276,29 @@ Closes all positions in an Alpaca trading account.
   ```
 
 **Returns:**
+
 - `Promise<Array<{ symbol: string; status: number; body?: Order }>>` - Status of each position closure attempt:
   - `symbol: string` - The symbol of the position
   - `status: number` - HTTP status code for the attempt
   - `body?: Order` - The order created to close the position (if successful)
 
 **Example:**
+
 ```typescript
 // Close all positions
 const results = await adaptic.position.closeAll({
-  adapticAccountId: 'your-account-id'
+  adapticAccountId: "your-account-id",
 });
 
 // Close all positions and cancel pending orders
-const results = await adaptic.position.closeAll({
-  adapticAccountId: 'your-account-id'
-}, {
-  cancelOrders: true
-});
+const results = await adaptic.position.closeAll(
+  {
+    adapticAccountId: "your-account-id",
+  },
+  {
+    cancelOrders: true,
+  },
+);
 ```
 
 ### `createOrder(params: CreateOrderParams): Promise<Order>`
@@ -274,6 +306,7 @@ const results = await adaptic.position.closeAll({
 Creates a new order for trading.
 
 **Parameters:**
+
 - `params: CreateOrderParams`:
   ```typescript
   {
@@ -305,6 +338,7 @@ Creates a new order for trading.
   ```
 
 **Returns:**
+
 - `Promise<Order>` - Created order details with full order type information
 
 ## Crypto Functions
@@ -314,6 +348,7 @@ Creates a new order for trading.
 Fetches historical bar data for crypto trading pairs.
 
 **Parameters:**
+
 - `params: CryptoBarsParams`:
   ```typescript
   {
@@ -328,6 +363,7 @@ Fetches historical bar data for crypto trading pairs.
   ```
 
 **Returns:**
+
 - `Promise<CryptoBarsResponse>`:
   ```typescript
   {
@@ -340,12 +376,12 @@ Fetches historical bar data for crypto trading pairs.
   where `CryptoBar` is:
   ```typescript
   {
-    t: number;  // timestamp
-    o: number;  // open
-    h: number;  // high
-    l: number;  // low
-    c: number;  // close
-    v: number;  // volume
+    t: number; // timestamp
+    o: number; // open
+    h: number; // high
+    l: number; // low
+    c: number; // close
+    v: number; // volume
   }
   ```
 
@@ -356,10 +392,12 @@ Fetches historical bar data for crypto trading pairs.
 Fetches historical price data from Polygon.io.
 
 **Parameters:**
+
 - `symbol: string` - The trading symbol
 - `params: object` - Query parameters for the data fetch
 
 **Returns:**
+
 - `Promise<PolygonPriceData[]>`:
   ```typescript
   {
@@ -371,7 +409,8 @@ Fetches historical price data from Polygon.io.
     close: number;
     vol: number;
     vwap: number;
-  }[]
+  }
+  [];
   ```
 
 ## Performance Metrics
@@ -381,10 +420,12 @@ Fetches historical price data from Polygon.io.
 Calculates beta and related statistics for a portfolio against a benchmark.
 
 **Parameters:**
+
 - `returns: number[]` - Array of portfolio returns
 - `benchmarkReturns: number[]` - Array of benchmark returns
 
 **Returns:**
+
 - `CalculateBetaResult`:
   ```typescript
   {
@@ -401,9 +442,11 @@ Calculates beta and related statistics for a portfolio against a benchmark.
 Calculates the maximum drawdown from peak for a series of portfolio values.
 
 **Parameters:**
+
 - `portfolioValues: number[]` - Array of portfolio values over time
 
 **Returns:**
+
 - `number` - Maximum drawdown as a decimal (e.g., 0.25 for 25% drawdown)
 
 ### `calculateDailyReturns(portfolioValues: number[]): number[]`
@@ -411,9 +454,11 @@ Calculates the maximum drawdown from peak for a series of portfolio values.
 Computes daily returns from a series of portfolio values.
 
 **Parameters:**
+
 - `portfolioValues: number[]` - Array of portfolio values
 
 **Returns:**
+
 - `number[]` - Array of daily returns as decimals
 
 ## News Functions
@@ -423,6 +468,7 @@ Computes daily returns from a series of portfolio values.
 Fetches financial news articles.
 
 **Parameters:**
+
 - `params: NewsParams`:
   ```typescript
   {
@@ -436,6 +482,7 @@ Fetches financial news articles.
   ```
 
 **Returns:**
+
 - `Promise<NewsResponse>`:
   ```typescript
   {
@@ -468,8 +515,8 @@ The following types are used throughout the market time utilities:
 ```typescript
 type Period = "1D" | "3D" | "1W" | "1M" | "3M" | "6M" | "1Y" | "YTD";
 type Timeframe = "1Min" | "5Min" | "15Min" | "1H" | "1D";
-type IntradayReporting = 'market_hours' | 'extended_hours' | 'continuous';
-type OutputFormat = 'iso' | 'unix-seconds' | 'unix-ms';
+type IntradayReporting = "market_hours" | "extended_hours" | "continuous";
+type OutputFormat = "iso" | "unix-seconds" | "unix-ms";
 
 interface MarketTimeParams {
   period?: Period;
@@ -503,6 +550,7 @@ interface MarketOpenCloseResult {
 Creates a utility for market time-related operations.
 
 **Parameters:**
+
 - `timezone?: string` - Optional timezone (default: 'America/New_York')
 - `intraday_reporting?: IntradayReporting` - Optional intraday reporting mode:
   - `'market_hours'` - Regular market hours (9:30 AM - 4:00 PM ET)
@@ -510,6 +558,7 @@ Creates a utility for market time-related operations.
   - `'continuous'` - All day, 24/7
 
 **Returns:**
+
 - `MarketTimeUtil` - Market time utility object
 
 ### `getMarketOpenClose(options?: MarketOpenCloseOptions): MarketOpenCloseResult`
@@ -517,26 +566,30 @@ Creates a utility for market time-related operations.
 Gets market open/close times for both regular and extended hours for a given date.
 
 **Parameters:**
+
 - `options?: MarketOpenCloseOptions` - Optional parameters:
   - `date?: Date` - The date to check (default: current date)
 
 **Returns:**
+
 - `MarketOpenCloseResult`:
   ```typescript
   {
-    marketOpen: boolean;      // Whether the market is open on this date
-    open: Date | null;        // Regular market hours open time
-    close: Date | null;       // Regular market hours close time
-    openExt: Date | null;     // Extended hours open time
-    closeExt: Date | null;    // Extended hours close time
+    marketOpen: boolean; // Whether the market is open on this date
+    open: Date | null; // Regular market hours open time
+    close: Date | null; // Regular market hours close time
+    openExt: Date | null; // Extended hours open time
+    closeExt: Date | null; // Extended hours close time
   }
   ```
 
 **Example:**
+
 ```typescript
-const { marketOpen, open, close, openExt, closeExt } = adaptic.time.getMarketOpenClose({
-  date: new Date('2024-12-24')
-});
+const { marketOpen, open, close, openExt, closeExt } =
+  adaptic.time.getMarketOpenClose({
+    date: new Date("2024-12-24"),
+  });
 ```
 
 ### `getMarketStatus(options?: { date?: Date }): MarketStatus`
@@ -544,25 +597,32 @@ const { marketOpen, open, close, openExt, closeExt } = adaptic.time.getMarketOpe
 Gets the current market status and detailed information about market periods.
 
 **Parameters:**
+
 - `options?: object` - Optional parameters:
   - `date?: Date` - The date to check (default: current date)
 
 **Returns:**
+
 - `MarketStatus`:
   ```typescript
   {
-    time: Date;                // Current time
-    timeString: string;        // Formatted time string
-    status: "closed" | "extended hours" | "open";  // Current market status
-    nextStatus: "closed" | "extended hours" | "open";  // Next market status
-    marketPeriod: "preMarket" | "earlyMarket" | "regularMarket" | "afterMarket" | "closed";  // Detailed market period
-    nextStatusTime: Date;      // Time when next status begins
-    nextStatusTimeDifference: number;  // Milliseconds until next status
-    nextStatusTimeString: string;      // Formatted next status time
+    time: Date; // Current time
+    timeString: string; // Formatted time string
+    status: "closed" | "extended hours" | "open"; // Current market status
+    nextStatus: "closed" | "extended hours" | "open"; // Next market status
+    marketPeriod: "preMarket" |
+      "earlyMarket" |
+      "regularMarket" |
+      "afterMarket" |
+      "closed"; // Detailed market period
+    nextStatusTime: Date; // Time when next status begins
+    nextStatusTimeDifference: number; // Milliseconds until next status
+    nextStatusTimeString: string; // Formatted next status time
   }
   ```
 
 The `marketPeriod` field indicates the specific trading period:
+
 - `preMarket`: 4:00 AM - 9:30 AM ET
 - `earlyMarket`: 9:30 AM - 10:00 AM ET
 - `regularMarket`: 10:00 AM - Market Close (typically 4:00 PM ET)
@@ -570,6 +630,7 @@ The `marketPeriod` field indicates the specific trading period:
 - `closed`: Outside of all trading hours
 
 **Example:**
+
 ```typescript
 const status = adaptic.time.getMarketStatus();
 console.log(`Current market period: ${status.marketPeriod}`);
@@ -580,9 +641,11 @@ console.log(`Current market period: ${status.marketPeriod}`);
 Converts a date to Unix timestamp.
 
 **Parameters:**
+
 - `date: Date` - The date to convert
 
 **Returns:**
+
 - `number` - Unix timestamp
 
 ### `getTimeAgo(date: Date): string`
@@ -590,9 +653,11 @@ Converts a date to Unix timestamp.
 Returns a human-readable time difference from now.
 
 **Parameters:**
+
 - `date: Date` - The date to calculate from
 
 **Returns:**
+
 - `string` - Human-readable time difference (e.g., '1 minute ago')
 
 ### `normalizeDate(date: Date): string`
@@ -600,9 +665,11 @@ Returns a human-readable time difference from now.
 Standardizes a date to a consistent format.
 
 **Parameters:**
+
 - `date: Date` - The date to standardize
 
 **Returns:**
+
 - `string` - Standardized date string (e.g., '2024-11-09')
 
 ### `getDateInNY(time: number | string | { year: number; month: number; day: number }): Date`
@@ -610,9 +677,11 @@ Standardizes a date to a consistent format.
 Returns the current date in New York timezone.
 
 **Parameters:**
+
 - `time: number | string | { year: number; month: number; day: number }` - The time or date to convert
 
 **Returns:**
+
 - `Date` - Date in New York timezone
 
 ### `getStartAndEndTimestamps(params: MarketTimeParams = {}): PeriodDates`
@@ -620,9 +689,11 @@ Returns the current date in New York timezone.
 Generates start and end timestamps for a given period.
 
 **Parameters:**
+
 - `params: MarketTimeParams` - Optional parameters for the period
 
 **Returns:**
+
 - `PeriodDates` - Start and end timestamps for the period
 
 ### `getStartAndEndDates(params: MarketTimeParams = {}): { start: Date; end: Date }`
@@ -630,9 +701,11 @@ Generates start and end timestamps for a given period.
 Gets the start and end dates for a given period.
 
 **Parameters:**
+
 - `params: MarketTimeParams` - Optional parameters for the period
 
 **Returns:**
+
 - `{ start: Date; end: Date }` - Start and end dates for the period
 
 ### `getLastTradingDateYYYYMMDD(): string`
@@ -640,6 +713,7 @@ Gets the start and end dates for a given period.
 Gets the last trading date in YYYY-MM-DD format.
 
 **Returns:**
+
 - `string` - Last trading date in YYYY-MM-DD format
 
 ### `getLastFullTradingDate(currentDate?: Date): { date: Date; YYYYMMDD: string }`
@@ -647,9 +721,11 @@ Gets the last trading date in YYYY-MM-DD format.
 Gets the last full trading date, considering market hours and holidays.
 
 **Parameters:**
+
 - `currentDate?: Date` - Optional reference date (defaults to current date)
 
 **Returns:**
+
 - Object containing:
   - `date: Date` - The last full trading date
   - `YYYYMMDD: string` - The date formatted as YYYY-MM-DD
@@ -659,21 +735,26 @@ Gets the last full trading date, considering market hours and holidays.
 Gets the next market day from a reference date.
 
 **Parameters:**
+
 - `referenceDate?: Date` - Optional reference date (defaults to current date)
 
 **Returns:**
+
 - Object containing:
   - `date: Date` - The next market day (start of day in NY time)
   - `yyyymmdd: string` - The date formatted as YYYY-MM-DD
   - `dateISOString: string` - Full ISO date string
 
 **Example:**
+
 ```typescript
 const nextMarketDay = adaptic.time.getNextMarketDay();
 console.log(`Next market day: ${nextMarketDay.yyyymmdd}`);
 
 // With reference date
-const nextMarketDay = adaptic.time.getNextMarketDay({ referenceDate: new Date('2025-01-01') });
+const nextMarketDay = adaptic.time.getNextMarketDay({
+  referenceDate: new Date("2025-01-01"),
+});
 ```
 
 ### `currentTimeET(): Date`
@@ -681,6 +762,7 @@ const nextMarketDay = adaptic.time.getNextMarketDay({ referenceDate: new Date('2
 Gets the current time in Eastern Time.
 
 **Returns:**
+
 - `Date` - Current time in Eastern Time
 
 ## Formatting Utilities
@@ -690,9 +772,11 @@ Gets the current time in Eastern Time.
 Capitalizes the first letter of a string.
 
 **Parameters:**
+
 - `string: string` - The string to capitalize
 
 **Returns:**
+
 - `string` - Capitalized string
 
 ### `formatEnum(enumValue: any): string`
@@ -700,9 +784,11 @@ Capitalizes the first letter of a string.
 Formats an enum value for display.
 
 **Parameters:**
+
 - `enumValue: any` - The enum value to format
 
 **Returns:**
+
 - `string` - Formatted enum value
 
 ### `formatCurrency(value: number): string`
@@ -710,9 +796,11 @@ Formats an enum value for display.
 Formats a number as currency.
 
 **Parameters:**
+
 - `value: number` - The number to format
 
 **Returns:**
+
 - `string` - Formatted currency string
 
 ### `formatPercentage(value: number): string`
@@ -720,9 +808,11 @@ Formats a number as currency.
 Formats a number as a percentage.
 
 **Parameters:**
+
 - `value: number` - The number to format
 
 **Returns:**
+
 - `string` - Formatted percentage string
 
 ## Misc utilities
@@ -732,6 +822,7 @@ Formats a number as a percentage.
 Debug logging utility that respects environment debug flags.
 
 **Parameters:**
+
 - `message: string` - The log message
 - `data?: unknown` - Optional data to log
 - `type: LogType` - Optional log type (default: 'info')
@@ -741,10 +832,12 @@ Debug logging utility that respects environment debug flags.
 Fetches data from a URL with retry logic.
 
 **Parameters:**
+
 - `url: string` - The URL to fetch
 - `options: RequestInit` - Optional fetch options
 
 **Returns:**
+
 - `Promise<Response>` - Fetched response
 
 ## Alpaca API Utilities
@@ -758,7 +851,7 @@ The `fetchNews` function retrieves news articles for specified symbols from the 
 #### Usage
 
 ```typescript
-import { fetchNews } from './alpaca';
+import { fetchNews } from "./alpaca";
 
 // Example: Fetch news for a single symbol or multiple symbols (comma-separated)
 const symbols = "AAPL,MSFT,GOOG"; // For multiple symbols, use a comma-separated string
@@ -774,7 +867,7 @@ const symbols = "AAPL,MSFT,GOOG"; // For multiple symbols, use a comma-separated
       start: new Date(Date.now() - 24 * 60 * 60 * 1000), // Default: last 24 hours
       end: new Date(),
       limit: 10,
-      sort: 'desc',
+      sort: "desc",
     });
     console.log(newsData.news);
 
@@ -783,14 +876,13 @@ const symbols = "AAPL,MSFT,GOOG"; // For multiple symbols, use a comma-separated
       start: new Date(Date.now() - 24 * 60 * 60 * 1000),
       end: new Date(),
       limit: 10,
-      sort: 'desc',
+      sort: "desc",
     });
     console.log(newsDataEnv.news);
 
     // Pagination
     // fetchNews automatically fetches all pages if a next_page_token is provided by the API.
     // The final returned result contains all aggregated news articles along with a `nextPageToken` (if any remain).
-
   } catch (error) {
     console.error(`Error fetching news: ${error}`);
   }
