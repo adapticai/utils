@@ -1,0 +1,74 @@
+name: Auto Publish NPM Package (main branch → @next)
+
+# Auto-publishes @adaptic/utils from the `main` branch under the
+# `@next` npm dist-tag so downstream consumers on main (notably
+# engine main) can consume the org/fund/brokerageAccount-aware
+# build before it's promoted to `@latest`.
+#
+# Rationale: the `master` branch is the historical default and
+# auto-publishes to `@latest`. The `stable-release` branch is
+# the production-blessed code path. `main` is the new
+# architectural pivot (org/fund/BA-centric model) and must be
+# consumable by engine/platform main before charter §6.1
+# parity is declared. Publishing under `@next` keeps it out of
+# the default install path while still being addressable via
+# explicit version specifier or `npm install @adaptic/utils@next`.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "src/**"
+      - "package.json"
+      - "tsconfig.json"
+      - "rollup.config.js"
+      - "*.mjs"
+      - "types/**"
+
+jobs:
+  publish-npm-package-main:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: "https://registry.npmjs.org"
+          scope: "@adaptic"
+
+      - name: Configure git for version bumps
+        env:
+          GIT_ACTOR: ${{ github.actor }}
+        run: |
+          git config user.name "$GIT_ACTOR"
+          git config user.email "$GIT_ACTOR@users.noreply.github.com"
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Build package
+        run: npm run build
+
+      - name: Bump patch version
+        id: bump
+        run: |
+          NEW_VERSION=$(npm version patch --no-git-tag-version)
+          echo "version=${NEW_VERSION#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish to npm under @next dist-tag
+        run: npm publish --tag next
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Commit version bump back to main
+        env:
+          NEW_VERSION: ${{ steps.bump.outputs.version }}
+        run: |
+          git add package.json
+          git commit -m "chore(release): publish v$NEW_VERSION from main → npm @next [skip ci]"
+          git push origin main
