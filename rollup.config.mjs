@@ -52,6 +52,12 @@ export default [
       typescript(mainTsConfig),
       resolve({
         extensions: [".ts", ".js", ".json"],
+        // Node core modules ('events', 'buffer', 'http', 'https', etc.) must
+        // resolve to the runtime built-in, never to the npm polyfill package
+        // — silences the "preferring built-in module" warning surfaced by
+        // @rollup/plugin-node-resolve when an npm polyfill is hoisted into
+        // node_modules transitively (e.g. via `events` or `buffer` deps).
+        preferBuiltins: true,
       }),
       commonjs({
         ignoreDynamicRequires: true,
@@ -74,6 +80,12 @@ export default [
       typescript(testTsConfig),
       resolve({
         extensions: [".ts", ".js", ".json"],
+        // Node core modules ('events', 'buffer', 'http', 'https', etc.) must
+        // resolve to the runtime built-in, never to the npm polyfill package
+        // — silences the "preferring built-in module" warning surfaced by
+        // @rollup/plugin-node-resolve when an npm polyfill is hoisted into
+        // node_modules transitively (e.g. via `events` or `buffer` deps).
+        preferBuiltins: true,
       }),
       commonjs({
         ignoreDynamicRequires: true,
