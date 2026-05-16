@@ -7,6 +7,8 @@ export * from "./alphavantage-types";
 export * from "./adaptic-types";
 export * from "./ta-types";
 export * from "./metrics-types";
+export * from "./massive-types";
+export * from "./massive-indices-types";
 
 export interface EquityPoint {
   time: Time;

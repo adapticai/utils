@@ -53,6 +53,22 @@ export {
 export { AlpacaTradingAPI } from "./alpaca-trading-api";
 export { AlpacaMarketDataAPI } from "./alpaca-market-data-api";
 
+// Synchronous credential validators + HTTP keep-alive helpers (ported from
+// stable-release; pure utilities with no coupling to any domain model).
+export {
+  validateAlpacaCredentials,
+  validateMassiveApiKey,
+  validateAlphaVantageApiKey,
+} from "./utils/auth-validator";
+export {
+  KEEP_ALIVE_DEFAULTS,
+  httpAgent,
+  httpsAgent,
+  getAgentPoolStatus,
+  verifyFetchKeepAlive,
+  type ConnectionPoolStatus,
+} from "./utils/http-keep-alive";
+
 // Export factory functions for easier instantiation
 export const createAlpacaTradingAPI = (
   credentials: Types.AlpacaCredentials,
