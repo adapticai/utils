@@ -1,0 +1,585 @@
+import { describe, it, expect } from "vitest";
+import {
+  AutonomyPrefsSchema,
+  AssetUniversePrefsSchema,
+  RiskBudgetPrefsSchema,
+  SignalConsumptionPrefsSchema,
+  ExecutionPrefsSchema,
+  PositionManagementPrefsSchema,
+  PortfolioConstructionPrefsSchema,
+  OverlayResponsePrefsSchema,
+  ModelPrefsSchema,
+  AuditNotificationPrefsSchema,
+  PolicyMutationSchema,
+  EffectiveTradingPolicySchema,
+} from "../trading-policy/schemas";
+import { DEFAULT_TRADING_POLICY } from "../trading-policy/defaults/default-trading-policy";
+import {
+  AutonomyMode,
+  OverlayType,
+  LlmProvider,
+} from "../trading-policy/enums";
+
+describe("AutonomyPrefsSchema", () => {
+  it("accepts empty object and applies defaults", () => {
+    const result = AutonomyPrefsSchema.parse({});
+    expect(result.autoPauseOnIncident).toBe(true);
+    expect(result.autoPauseOnBlackSwan).toBe(true);
+    expect(result.requireHumanApprovalFor.reversals).toBe(false);
+    expect(result.requireHumanApprovalFor.shortSales).toBe(true);
+    expect(result.allowedSessions.regular).toBe(true);
+    expect(result.allowedSessions.premarket).toBe(false);
+  });
+
+  it("accepts partial overrides", () => {
+    const result = AutonomyPrefsSchema.parse({
+      autoPauseOnIncident: false,
+      requireHumanApprovalFor: { reversals: true },
+    });
+    expect(result.autoPauseOnIncident).toBe(false);
+    expect(result.requireHumanApprovalFor.reversals).toBe(true);
+    expect(result.requireHumanApprovalFor.shortSales).toBe(true);
+  });
+
+  it("rejects invalid types", () => {
+    expect(() =>
+      AutonomyPrefsSchema.parse({ autoPauseOnIncident: "yes" }),
+    ).toThrow();
+  });
+
+  it("applies defaults for nested requireHumanApprovalFor fields", () => {
+    const result = AutonomyPrefsSchema.parse({});
+    expect(result.requireHumanApprovalFor.firstTradeInSymbol).toBe(false);
+    expect(result.requireHumanApprovalFor.leverageIncreases).toBe(true);
+    expect(result.requireHumanApprovalFor.concentratedPositions).toBe(true);
+    expect(result.requireHumanApprovalFor.largeNotionalOrders).toBe(true);
+    expect(result.requireHumanApprovalFor.largeNotionalThreshold).toBe(50000);
+    expect(result.requireHumanApprovalFor.portfolioLiquidation).toBe(true);
+    expect(result.requireHumanApprovalFor.closeAllOrdersAndPositions).toBe(
+      true,
+    );
+    expect(result.requireHumanApprovalFor.policyMutations).toBe(true);
+    expect(result.requireHumanApprovalFor.advancedModelEscalations).toBe(false);
+  });
+
+  it("applies defaults for allowedSessions", () => {
+    const result = AutonomyPrefsSchema.parse({});
+    expect(result.allowedSessions.afterHours).toBe(false);
+    expect(result.allowedSessions.overnight).toBe(false);
+    expect(result.allowedSessions.weekends).toBe(false);
+  });
+
+  it("applies defaults for auto-pause thresholds", () => {
+    const result = AutonomyPrefsSchema.parse({});
+    expect(result.excessSlippageThresholdPct).toBe(2);
+    expect(result.modelConfidenceCollapseThreshold).toBe(30);
+    expect(result.autoPauseOnExcessSlippage).toBe(false);
+    expect(result.autoPauseOnModelConfidenceCollapse).toBe(false);
+  });
+
+  it("rejects out-of-range slippage threshold", () => {
+    expect(() =>
+      AutonomyPrefsSchema.parse({ excessSlippageThresholdPct: -1 }),
+    ).toThrow();
+    expect(() =>
+      AutonomyPrefsSchema.parse({ excessSlippageThresholdPct: 101 }),
+    ).toThrow();
+  });
+});
+
+describe("AssetUniversePrefsSchema", () => {
+  it("accepts empty object and applies defaults", () => {
+    const result = AssetUniversePrefsSchema.parse({});
+    expect(result.equitiesDirection).toBe("long_only");
+    expect(result.cryptoSpotOnly).toBe(true);
+    expect(result.leveragedEtfsEnabled).toBe(false);
+    expect(result.deniedSymbols).toEqual([]);
+  });
+
+  it("accepts string arrays", () => {
+    const result = AssetUniversePrefsSchema.parse({
+      deniedSymbols: ["MEME1", "MEME2"],
+      allowedSectors: ["Technology"],
+    });
+    expect(result.deniedSymbols).toEqual(["MEME1", "MEME2"]);
+    expect(result.allowedSectors).toEqual(["Technology"]);
+  });
+
+  it("validates direction enum", () => {
+    expect(() =>
+      AssetUniversePrefsSchema.parse({ equitiesDirection: "yolo" }),
+    ).toThrow();
+  });
+
+  it("applies defaults for all direction fields", () => {
+    const result = AssetUniversePrefsSchema.parse({});
+    expect(result.etfsDirection).toBe("long_only");
+    expect(result.cryptoDirection).toBe("long_only");
+    expect(result.optionsDirection).toBe("long_only");
+  });
+
+  it("accepts market_neutral for equities", () => {
+    const result = AssetUniversePrefsSchema.parse({
+      equitiesDirection: "market_neutral",
+    });
+    expect(result.equitiesDirection).toBe("market_neutral");
+  });
+
+  it("applies defaults for liquidity filters", () => {
+    const result = AssetUniversePrefsSchema.parse({});
+    expect(result.minMarketCapMillions).toBe(0);
+    expect(result.minAvgDailyVolume).toBe(0);
+    expect(result.minPrice).toBe(0);
+    expect(result.maxPrice).toBe(0);
+    expect(result.maxSpreadPct).toBe(0);
+    expect(result.minLiquidityScore).toBe(0);
+  });
+
+  it("applies defaults for product flags", () => {
+    const result = AssetUniversePrefsSchema.parse({});
+    expect(result.inverseEtfsEnabled).toBe(false);
+    expect(result.memeStocksEnabled).toBe(false);
+    expect(result.ipoParticipationEnabled).toBe(false);
+    expect(result.borrowAvailabilityRequired).toBe(true);
+    expect(result.maxBorrowFeePct).toBe(5);
+  });
+
+  it("rejects negative minMarketCapMillions", () => {
+    expect(() =>
+      AssetUniversePrefsSchema.parse({ minMarketCapMillions: -10 }),
+    ).toThrow();
+  });
+});
+
+describe("RiskBudgetPrefsSchema", () => {
+  it("accepts empty object and applies defaults", () => {
+    const result = RiskBudgetPrefsSchema.parse({});
+    expect(result.maxMarginUtilPct).toBe(50);
+    // Scalping default (audit 2026-05-10) — was 2 (swing).
+    expect(result.maxRiskPerTradePct).toBe(1.5);
+    expect(result.maxDrawdownFromPeakPct).toBe(20);
+    expect(result.gapRiskSensitivity).toBe("medium");
+  });
+
+  it("rejects out-of-range percentages", () => {
+    expect(() =>
+      RiskBudgetPrefsSchema.parse({ maxMarginUtilPct: 150 }),
+    ).toThrow();
+    expect(() =>
+      RiskBudgetPrefsSchema.parse({ maxRiskPerTradePct: -5 }),
+    ).toThrow();
+  });
+
+  it("applies defaults for concentration limits", () => {
+    const result = RiskBudgetPrefsSchema.parse({});
+    expect(result.maxIssuerConcentrationPct).toBe(20);
+    expect(result.maxThemeConcentrationPct).toBe(25);
+    expect(result.maxAssetClassConcentrationPct).toBe(50);
+    expect(result.maxCountryConcentrationPct).toBe(40);
+    expect(result.maxCurrencyExposurePct).toBe(30);
+    expect(result.maxCorrelatedExposurePct).toBe(40);
+  });
+
+  it("applies defaults for loss limits", () => {
+    const result = RiskBudgetPrefsSchema.parse({});
+    // Scalping defaults (audit 2026-05-10) — were 5 / 10 (swing).
+    expect(result.maxLossPerDayPct).toBe(2.0);
+    expect(result.maxLossPerWeekPct).toBe(5.0);
+    expect(result.maxLossPerMonthPct).toBe(15);
+  });
+
+  it("applies scalping default for perTradeAllocationPct", () => {
+    const result = RiskBudgetPrefsSchema.parse({});
+    // Scalping default (audit 2026-05-10) — was 5 (swing).
+    expect(result.perTradeAllocationPct).toBe(2);
+  });
+
+  it("applies defaults for exposure caps", () => {
+    const result = RiskBudgetPrefsSchema.parse({});
+    expect(result.overnightExposureCapPct).toBe(50);
+    expect(result.weekendExposureCapPct).toBe(30);
+    expect(result.eventRiskExposureCapPct).toBe(40);
+  });
+
+  it("allows betaTarget to be null", () => {
+    const result = RiskBudgetPrefsSchema.parse({});
+    expect(result.betaTarget).toBeNull();
+  });
+
+  it("allows betaTarget to be a number", () => {
+    const result = RiskBudgetPrefsSchema.parse({ betaTarget: 1.0 });
+    expect(result.betaTarget).toBe(1.0);
+  });
+
+  it("validates gapRiskSensitivity enum", () => {
+    expect(() =>
+      RiskBudgetPrefsSchema.parse({ gapRiskSensitivity: "extreme" }),
+    ).toThrow();
+  });
+});
+
+describe("SignalConsumptionPrefsSchema", () => {
+  it("accepts empty object and applies defaults", () => {
+    const result = SignalConsumptionPrefsSchema.parse({});
+    // Scalping default (audit 2026-05-10) — was 60 (swing).
+    expect(result.minConfidenceByDefault).toBe(65);
+    expect(result.reversalHandlingPolicy).toBe("close_only");
+    expect(result.conflictHandlingOpenOrders).toBe("cancel_conflicting");
+    expect(result.noTradeWindows).toEqual([]);
+  });
+
+  it("accepts no-trade window configuration", () => {
+    const result = SignalConsumptionPrefsSchema.parse({
+      noTradeWindows: [{ name: "Lunch", startTime: "12:00", endTime: "13:00" }],
+    });
+    expect(result.noTradeWindows).toHaveLength(1);
+    expect(result.noTradeWindows[0].name).toBe("Lunch");
+    expect(result.noTradeWindows[0].enabled).toBe(true);
+    expect(result.noTradeWindows[0].daysOfWeek).toEqual([]);
+  });
+
+  it("validates reversal policy enum", () => {
+    expect(() =>
+      SignalConsumptionPrefsSchema.parse({ reversalHandlingPolicy: "yolo" }),
+    ).toThrow();
+  });
+
+  it("applies defaults for cooldown timers", () => {
+    const result = SignalConsumptionPrefsSchema.parse({});
+    // Scalping defaults (audit 2026-05-10) — were 60 / 300 / 300 (swing).
+    expect(result.cooldownAfterEntrySeconds).toBe(5);
+    expect(result.cooldownAfterExitSeconds).toBe(120);
+    expect(result.cooldownAfterStopOutSeconds).toBe(30);
+    expect(result.cooldownAfterFailedTradeSeconds).toBe(180);
+    expect(result.duplicateSignalSuppressionWindowSeconds).toBe(10);
+  });
+
+  it("applies defaults for confidence and reward filters", () => {
+    const result = SignalConsumptionPrefsSchema.parse({});
+    // Scalping defaults (audit 2026-05-10) — were 1.5 / 300 (swing).
+    expect(result.minExpectedRewardRiskRatio).toBe(1.3);
+    expect(result.minExpectedEdgePct).toBe(0);
+    expect(result.maxSignalAgeSeconds).toBe(30);
+    expect(result.minConvictionDeltaToModify).toBe(10);
+  });
+
+  it("applies scalping defaults for legacy AlpacaAccount replacements", () => {
+    const result = SignalConsumptionPrefsSchema.parse({});
+    // Scalping defaults (audit 2026-05-10) — were 0.5 / 50000 (swing).
+    expect(result.minPercentageChange).toBe(0.15);
+    expect(result.volumeThreshold).toBe(100000);
+  });
+
+  it("applies defaults for earnings blackout", () => {
+    const result = SignalConsumptionPrefsSchema.parse({});
+    expect(result.earningsBlackoutEnabled).toBe(false);
+    expect(result.earningsBlackoutHoursBefore).toBe(24);
+    expect(result.earningsBlackoutHoursAfter).toBe(2);
+  });
+
+  it("accepts strategy priority rules", () => {
+    const result = SignalConsumptionPrefsSchema.parse({
+      strategyPriorityRules: [
+        { strategy: "momentum", priority: 1 },
+        { strategy: "mean_reversion", priority: 2 },
+      ],
+    });
+    expect(result.strategyPriorityRules).toHaveLength(2);
+    expect(result.strategyPriorityRules[0].strategy).toBe("momentum");
+  });
+
+  it("validates conflict handling enum", () => {
+    expect(() =>
+      SignalConsumptionPrefsSchema.parse({
+        conflictHandlingOpenOrders: "invalid",
+      }),
+    ).toThrow();
+  });
+
+  it("accepts record-based confidence overrides", () => {
+    const result = SignalConsumptionPrefsSchema.parse({
+      minConfidenceByAssetClass: { equity: 70, crypto: 80 },
+      minConfidenceByStrategy: { momentum: 65 },
+    });
+    expect(result.minConfidenceByAssetClass["equity"]).toBe(70);
+    expect(result.minConfidenceByStrategy["momentum"]).toBe(65);
+  });
+});
+
+describe("ExecutionPrefsSchema", () => {
+  it("accepts empty object and applies defaults", () => {
+    const result = ExecutionPrefsSchema.parse({});
+    expect(result.preferredOrderType).toBe("limit");
+    // Scalping defaults (audit 2026-05-10) — were "day" / "neutral" / 1.0
+    // (swing). preferredOrderType remains "limit" — correct for scalping.
+    expect(result.defaultTimeInForce).toBe("ioc");
+    expect(result.executionBias).toBe("passive");
+    expect(result.maxSlippageTolerancePct).toBe(0.3);
+    expect(result.failureBehavior).toBe("fail_safe");
+  });
+
+  it("validates order type enum", () => {
+    expect(() =>
+      ExecutionPrefsSchema.parse({ preferredOrderType: "twap" }),
+    ).toThrow();
+  });
+
+  it("applies defaults for allowed order types", () => {
+    const result = ExecutionPrefsSchema.parse({});
+    expect(result.allowedOrderTypes).toEqual([
+      "market",
+      "limit",
+      "stop",
+      "trailing_stop",
+    ]);
+  });
+
+  it("applies defaults for price collar settings", () => {
+    const result = ExecutionPrefsSchema.parse({});
+    expect(result.priceCollarEnabled).toBe(true);
+    // Scalping default (audit 2026-05-10) — was 2 (swing).
+    expect(result.priceCollarPct).toBe(0.5);
+  });
+
+  it("applies defaults for reprice settings", () => {
+    const result = ExecutionPrefsSchema.parse({});
+    expect(result.repriceEnabled).toBe(false);
+    expect(result.repriceMaxAttempts).toBe(3);
+    expect(result.repriceIntervalSeconds).toBe(30);
+    expect(result.cancelReplaceTimeoutSeconds).toBe(60);
+  });
+
+  it("applies defaults for sizing and rounding", () => {
+    const result = ExecutionPrefsSchema.parse({});
+    expect(result.sizingMethod).toBe("notional");
+    expect(result.lotRoundingBehavior).toBe("round_down");
+  });
+
+  it("applies defaults for session behavior", () => {
+    const result = ExecutionPrefsSchema.parse({});
+    expect(result.afterHoursExecutionBehavior).toBe("limit_only");
+    expect(result.partialFillPolicy).toBe("accept_partial");
+  });
+
+  it("rejects invalid time in force", () => {
+    expect(() =>
+      ExecutionPrefsSchema.parse({ defaultTimeInForce: "until_cancelled" }),
+    ).toThrow();
+  });
+
+  it("accepts custom slippage tolerance", () => {
+    const result = ExecutionPrefsSchema.parse({ maxSlippageTolerancePct: 1.5 });
+    expect(result.maxSlippageTolerancePct).toBe(1.5);
+  });
+
+  it("rejects negative slippage tolerance", () => {
+    expect(() =>
+      ExecutionPrefsSchema.parse({ maxSlippageTolerancePct: -0.5 }),
+    ).toThrow();
+  });
+});
+
+describe("PositionManagementPrefsSchema", () => {
+  it("accepts empty object and applies defaults", () => {
+    const result = PositionManagementPrefsSchema.parse({});
+    expect(result.defaultStopLossMethod).toBe("trailing_stop");
+    expect(result.scaleInEnabled).toBe(false);
+    expect(result.trailingStopTighteningRules).toHaveLength(3);
+    expect(result.trailingStopTighteningRules[0].profitThresholdPct).toBe(3);
+  });
+
+  it("applies scalping-tuned defaults for stop / take-profit / hold", () => {
+    const result = PositionManagementPrefsSchema.parse({});
+    // Scalping defaults (audit 2026-05-10) — were 4 / 2 / 3 / 2 / 0 / 30 / 5
+    // (swing). 50bps stop sized for 5-min bars, 100bps TP, 0.75x ATR
+    // multiplier, 1.5 R:R, 30-min hard intraday cap (vs unlimited), 10-min
+    // post-stop-out cooldown (vs 30), 50bps scale-out trigger (vs 5%).
+    expect(result.defaultStopLossPct).toBe(0.5);
+    expect(result.atrStopMultiplier).toBe(0.75);
+    expect(result.defaultTakeProfitPct).toBe(1.0);
+    expect(result.defaultRiskRewardRatio).toBe(1.5);
+    expect(result.maxHoldingPeriodMinutes).toBe(30);
+    expect(result.doNotReenterAfterStopOutMinutes).toBe(10);
+    expect(result.scaleOutTriggerPct).toBe(0.5);
+    expect(result.breakEvenStopEnabled).toBe(true);
+    expect(result.breakEvenTriggerPct).toBe(1);
+  });
+});
+
+describe("PortfolioConstructionPrefsSchema", () => {
+  it("accepts empty object and applies defaults", () => {
+    const result = PortfolioConstructionPrefsSchema.parse({});
+    expect(result.driftThresholdPct).toBe(5);
+    expect(result.autonomousRebalancing).toBe(false);
+    expect(result.portfolioCircuitBreakerEnabled).toBe(true);
+  });
+});
+
+describe("OverlayResponsePrefsSchema", () => {
+  it("accepts empty object", () => {
+    const result = OverlayResponsePrefsSchema.parse({});
+    expect(result.overlayResponses).toEqual({});
+  });
+
+  it("accepts a valid overlay type config", () => {
+    const result = OverlayResponsePrefsSchema.parse({
+      overlayResponses: {
+        [OverlayType.BLACK_SWAN]: {
+          pauseRealtimeTrading: true,
+          cancelAllOpenOrders: true,
+        },
+      },
+    });
+    expect(
+      result.overlayResponses[OverlayType.BLACK_SWAN]?.pauseRealtimeTrading,
+    ).toBe(true);
+  });
+});
+
+describe("ModelPrefsSchema", () => {
+  it("accepts empty object and applies defaults", () => {
+    const result = ModelPrefsSchema.parse({});
+    expect(result.maxCostPerDayUsd).toBe(10);
+    expect(result.latencyTargetMs).toBe(5000);
+    expect(result.toolUsePermissionsByTier.advanced?.writeTools).toBe(true);
+    expect(result.toolUsePermissionsByTier.mini?.writeTools).toBe(false);
+  });
+});
+
+describe("AuditNotificationPrefsSchema", () => {
+  it("accepts empty object and applies defaults", () => {
+    const result = AuditNotificationPrefsSchema.parse({});
+    expect(result.notifyOnAutonomousActions).toBe(true);
+    expect(result.auditDetailLevel).toBe("standard");
+    expect(result.retainDecisionArtifactsDays).toBe(90);
+  });
+});
+
+describe("PolicyMutationSchema", () => {
+  it("accepts empty object", () => {
+    const result = PolicyMutationSchema.parse({});
+    expect(result).toEqual({});
+  });
+
+  it("accepts partial policy fields", () => {
+    const result = PolicyMutationSchema.parse({
+      realtimeTradingEnabled: false,
+      riskBudgetPrefs: { maxLossPerDayPct: 2 },
+    });
+    expect(result.realtimeTradingEnabled).toBe(false);
+  });
+
+  it("accepts model provider fields", () => {
+    const result = PolicyMutationSchema.parse({
+      miniModelProvider: LlmProvider.ANTHROPIC,
+      miniModelId: "claude-sonnet-4-6",
+    });
+    expect(result.miniModelProvider).toBe("ANTHROPIC");
+  });
+});
+
+describe("EffectiveTradingPolicySchema", () => {
+  it("validates a full effective policy", () => {
+    const result = EffectiveTradingPolicySchema.safeParse(
+      DEFAULT_TRADING_POLICY,
+    );
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts equityWashTradeCooldownMs and maxDailyLossPercent overrides", () => {
+    const result = EffectiveTradingPolicySchema.safeParse({
+      ...DEFAULT_TRADING_POLICY,
+      equityWashTradeCooldownMs: 60_000,
+      maxDailyLossPercent: 0.05,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.equityWashTradeCooldownMs).toBe(60_000);
+      expect(result.data.maxDailyLossPercent).toBe(0.05);
+    }
+  });
+
+  it("treats equityWashTradeCooldownMs and maxDailyLossPercent as optional", () => {
+    // Construct a policy literal omitting the optional Wave 4.5 fields to
+    // confirm legacy snapshots still parse cleanly.
+    const policyLiteral = {
+      ...DEFAULT_TRADING_POLICY,
+    } as Record<string, unknown>;
+    delete policyLiteral.equityWashTradeCooldownMs;
+    delete policyLiteral.maxDailyLossPercent;
+
+    const result = EffectiveTradingPolicySchema.safeParse(policyLiteral);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.equityWashTradeCooldownMs).toBeUndefined();
+      expect(result.data.maxDailyLossPercent).toBeUndefined();
+    }
+  });
+
+  it("rejects negative equityWashTradeCooldownMs", () => {
+    const result = EffectiveTradingPolicySchema.safeParse({
+      ...DEFAULT_TRADING_POLICY,
+      equityWashTradeCooldownMs: -1,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects non-integer equityWashTradeCooldownMs", () => {
+    const result = EffectiveTradingPolicySchema.safeParse({
+      ...DEFAULT_TRADING_POLICY,
+      equityWashTradeCooldownMs: 30_000.5,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects maxDailyLossPercent outside [0, 1]", () => {
+    const tooHigh = EffectiveTradingPolicySchema.safeParse({
+      ...DEFAULT_TRADING_POLICY,
+      maxDailyLossPercent: 1.5,
+    });
+    expect(tooHigh.success).toBe(false);
+
+    const negative = EffectiveTradingPolicySchema.safeParse({
+      ...DEFAULT_TRADING_POLICY,
+      maxDailyLossPercent: -0.01,
+    });
+    expect(negative.success).toBe(false);
+  });
+});
+
+describe("DEFAULT_TRADING_POLICY", () => {
+  it("has conservative defaults", () => {
+    expect(DEFAULT_TRADING_POLICY.autonomyMode).toBe(
+      AutonomyMode.ADVISORY_ONLY,
+    );
+    expect(DEFAULT_TRADING_POLICY.realtimeTradingEnabled).toBe(true);
+    expect(DEFAULT_TRADING_POLICY.shortingEnabled).toBe(false);
+    expect(DEFAULT_TRADING_POLICY.cryptoEnabled).toBe(true);
+    expect(DEFAULT_TRADING_POLICY.miniModelProvider).toBeNull();
+  });
+
+  it("has fully expanded nested defaults", () => {
+    expect(DEFAULT_TRADING_POLICY.autonomyPrefs.autoPauseOnIncident).toBe(true);
+    expect(DEFAULT_TRADING_POLICY.executionPrefs.preferredOrderType).toBe(
+      "limit",
+    );
+    expect(DEFAULT_TRADING_POLICY.riskBudgetPrefs.maxDrawdownFromPeakPct).toBe(
+      20,
+    );
+  });
+
+  it("uses scalping-tuned top-level concurrency and sizing", () => {
+    // Audit 2026-05-10 — switched from swing (20 / 15 / 5 / 5 / 0.03) to
+    // scalping (8 / 8 / 2 / 2 / 0.02). Backend-legacy
+    // `TradingPolicy.equityWashTradeCooldownMs` row default of 30_000ms
+    // remains the canonical fallback for accounts that have not opted into
+    // the scalping profile; the package-level baseline now reflects the
+    // scalping calibration (5_000ms).
+    expect(DEFAULT_TRADING_POLICY.maxOpenPositions).toBe(8);
+    expect(DEFAULT_TRADING_POLICY.maxSymbolConcentrationPct).toBe(8);
+    expect(DEFAULT_TRADING_POLICY.perTradeEquityAllocationPct).toBe(2);
+    expect(DEFAULT_TRADING_POLICY.perTradeCryptoAllocationPct).toBe(2);
+    expect(DEFAULT_TRADING_POLICY.maxDailyLossPercent).toBe(0.02);
+    expect(DEFAULT_TRADING_POLICY.equityWashTradeCooldownMs).toBe(5_000);
+  });
+});

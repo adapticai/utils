@@ -136,8 +136,7 @@ describe("Regression: Beta calculation against known values", () => {
 
     // Sample variance = sum((Bi - avgB)^2) / (n - 1)
     const variance =
-      ((0.03 - avgB) ** 2 + (-0.01 - avgB) ** 2 + (0.02 - avgB) ** 2) /
-      (n - 1);
+      ((0.03 - avgB) ** 2 + (-0.01 - avgB) ** 2 + (0.02 - avgB) ** 2) / (n - 1);
     expect(result.variance).toBeCloseTo(variance, 10);
 
     // Beta = cov / var (ratio is invariant to the population vs sample

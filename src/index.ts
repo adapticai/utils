@@ -53,6 +53,24 @@ export {
 export { AlpacaTradingAPI } from "./alpaca-trading-api";
 export { AlpacaMarketDataAPI } from "./alpaca-market-data-api";
 
+// New SDK-based Alpaca module (ported from stable-release).
+// Wraps @alpacahq/alpaca-trade-api directly for client/market-data/
+// options/streams/trading. Coexists with the flat alpaca-*-api files
+// above; consumers can migrate incrementally.
+export * as alpacaSdk from "./alpaca";
+
+// Standalone broker-API Zod schemas (ported from stable-release).
+export * as schemas from "./schemas";
+
+// Standalone utility modules ported from stable-release.
+export * from "./errors";
+export * from "./logger";
+export * from "./rate-limiter";
+export * from "./http-timeout";
+export * from "./risk-free-rate";
+export * as paginator from "./utils/paginator";
+export * as retry from "./utils/retry";
+
 // Synchronous credential validators + HTTP keep-alive helpers (ported from
 // stable-release; pure utilities with no coupling to any domain model).
 export {

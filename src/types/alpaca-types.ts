@@ -5,6 +5,40 @@ import {
   NormalizedCacheObject,
 } from "@adaptic/backend-legacy";
 import { types } from "@adaptic/backend-legacy";
+import type Alpaca from "@alpacahq/alpaca-trade-api";
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Alpaca SDK adapter types
+// The @alpacahq/alpaca-trade-api SDK uses `any` throughout its own typings.
+// These types are derived directly from the SDK class to stay in sync.
+// Use with double-cast pattern: `value as unknown as AlpacaSDKConfig`
+// ──────────────────────────────────────────────────────────────────────────────
+
+/** Config parameter type for Alpaca SDK market data methods (getLatestQuote, etc.) */
+export type AlpacaSDKConfig = NonNullable<
+  Parameters<Alpaca["getLatestQuote"]>[1]
+>;
+
+/** Parameter type for Alpaca SDK getOrders method */
+export type AlpacaSDKOrderParams = NonNullable<
+  Parameters<Alpaca["getOrders"]>[0]
+>;
+
+/** Parameter type for Alpaca SDK getPortfolioHistory method */
+export type AlpacaSDKPortfolioHistoryParams = NonNullable<
+  Parameters<Alpaca["getPortfolioHistory"]>[0]
+>;
+
+/** Socket type for Alpaca SDK crypto data stream */
+export type AlpacaSDKCryptoStreamSocket = Alpaca["crypto_stream_v1beta3"];
+
+/** Socket type for Alpaca SDK stock data stream */
+export type AlpacaSDKStockStreamSocket = Alpaca["data_stream_v2"];
+
+/** Socket type for Alpaca SDK option data stream */
+export type AlpacaSDKOptionStreamSocket = Alpaca["option_stream"];
+
+// ──────────────────────────────────────────────────────────────────────────────
 
 /**
  * Represents the authentication details for Alpaca.
@@ -22,7 +56,7 @@ export interface AlpacaAuth {
 export interface AlpacaAccountGetOptions {
   accountId?: string; // Optional account ID
   client?: ApolloClientType<NormalizedCacheObject>; // Apollo client instance
-  alpacaAccount?: types.BrokerageAccount; // Optional Alpaca account object
+  alpacaAccount?: types.AlpacaAccount; // Optional Alpaca account object
 }
 
 /**
@@ -217,10 +251,14 @@ export interface TakeProfitParams {
 
 /**
  * Parameters for stop loss orders.
+ * Supports standard stop, stop-limit, and trailing stop variants.
+ * For trailing stops, use trail_percent or trail_price instead of stop_price.
  */
 export interface StopLossParams {
-  stop_price: string; // Stop price for stop loss
-  limit_price?: string; // Optional limit price
+  stop_price?: string; // Stop price (required for stop/stop-limit, omitted for trailing)
+  limit_price?: string; // Optional limit price (stop-limit orders)
+  trail_percent?: string; // Trailing stop percentage
+  trail_price?: string; // Trailing stop dollar amount
   order_class?: OrderClass; // Optional order class
 }
 
@@ -272,6 +310,27 @@ export interface GetOrdersParams {
   nested?: boolean; // Optional nested parameter
   symbols?: string[]; // Optional symbols to filter orders
   side?: OrderSide; // Optional side to filter orders
+}
+
+/**
+ * SDK-compatible parameters for getting orders (with symbols as string)
+ */
+export interface SDKGetOrdersParams {
+  status?: "open" | "closed" | "all";
+  limit?: number;
+  after?: string;
+  until?: string;
+  direction?: "asc" | "desc";
+  nested?: boolean;
+  symbols?: string; // SDK expects comma-separated string
+  side?: OrderSide;
+}
+
+/**
+ * SDK options for market data requests with feed parameter
+ */
+export interface SDKMarketDataOptions {
+  feed?: DataFeed;
 }
 
 /**
@@ -516,7 +575,7 @@ export interface FetchPortfolioHistoryProps {
   params: PortfolioHistoryParams; // Parameters for fetching portfolio history
   accountId?: string; // Optional account ID
   client?: ApolloClientType<NormalizedCacheObject>; // Apollo client instance
-  alpacaAccount?: types.BrokerageAccount; // Optional Alpaca account object
+  alpacaAccount?: types.AlpacaAccount; // Optional Alpaca account object
 }
 
 /**
@@ -535,9 +594,10 @@ export interface PortfolioHistoryResponse {
  * Parameters for fetching account details.
  */
 export interface FetchAccountDetailsProps {
+  auth?: AlpacaAuth; // Optional Alpaca authentication details
   accountId?: string; // Optional account ID
   client?: ApolloClientType<NormalizedCacheObject>; // Apollo client instance
-  alpacaAccount?: types.BrokerageAccount; // Optional Alpaca account object
+  alpacaAccount?: types.AlpacaAccount; // Optional Alpaca account object
 }
 
 /**
@@ -1306,74 +1366,74 @@ export interface OptionStreamEventMap {
  * Format: wss://stream.data.alpaca.markets/v1beta3/crypto/us
  */
 export interface AlpacaCryptoTradeStream {
-  T: 't';          // Message type: trade
-  S: string;       // Symbol (e.g., "BTC/USD")
-  p: number;       // Trade price
-  s: number;       // Trade size
-  t: string;       // Timestamp (RFC-3339)
-  i: number;       // Trade ID
-  tks: 'B' | 'S';  // Taker side: B=buy, S=sell
+  T: "t"; // Message type: trade
+  S: string; // Symbol (e.g., "BTC/USD")
+  p: number; // Trade price
+  s: number; // Trade size
+  t: string; // Timestamp (RFC-3339)
+  i: number; // Trade ID
+  tks: "B" | "S"; // Taker side: B=buy, S=sell
 }
 
 /**
  * Crypto quote stream message from Alpaca WebSocket
  */
 export interface AlpacaCryptoQuoteStream {
-  T: 'q';          // Message type: quote
-  S: string;       // Symbol (e.g., "BTC/USD")
-  bp: number;      // Bid price
-  bs: number;      // Bid size
-  ap: number;      // Ask price
-  as: number;      // Ask size
-  t: string;       // Timestamp (RFC-3339)
+  T: "q"; // Message type: quote
+  S: string; // Symbol (e.g., "BTC/USD")
+  bp: number; // Bid price
+  bs: number; // Bid size
+  ap: number; // Ask price
+  as: number; // Ask size
+  t: string; // Timestamp (RFC-3339)
 }
 
 /**
  * Crypto bar stream message from Alpaca WebSocket
  */
 export interface AlpacaCryptoBarStream {
-  T: 'b';          // Message type: bar
-  S: string;       // Symbol (e.g., "BTC/USD")
-  o: number;       // Open price
-  h: number;       // High price
-  l: number;       // Low price
-  c: number;       // Close price
-  v: number;       // Volume
-  t: string;       // Timestamp (RFC-3339)
-  n: number;       // Number of trades
-  vw: number;      // Volume weighted average price
+  T: "b"; // Message type: bar
+  S: string; // Symbol (e.g., "BTC/USD")
+  o: number; // Open price
+  h: number; // High price
+  l: number; // Low price
+  c: number; // Close price
+  v: number; // Volume
+  t: string; // Timestamp (RFC-3339)
+  n: number; // Number of trades
+  vw: number; // Volume weighted average price
 }
 
 /**
  * Crypto daily bar stream message from Alpaca WebSocket
  */
 export interface AlpacaCryptoDailyBarStream {
-  T: 'd';          // Message type: daily bar
-  S: string;       // Symbol
-  o: number;       // Open price
-  h: number;       // High price
-  l: number;       // Low price
-  c: number;       // Close price
-  v: number;       // Volume
-  t: string;       // Timestamp (RFC-3339)
-  n: number;       // Number of trades
-  vw: number;      // Volume weighted average price
+  T: "d"; // Message type: daily bar
+  S: string; // Symbol
+  o: number; // Open price
+  h: number; // High price
+  l: number; // Low price
+  c: number; // Close price
+  v: number; // Volume
+  t: string; // Timestamp (RFC-3339)
+  n: number; // Number of trades
+  vw: number; // Volume weighted average price
 }
 
 /**
  * Crypto updated bar stream message from Alpaca WebSocket
  */
 export interface AlpacaCryptoUpdatedBarStream {
-  T: 'u';          // Message type: updated bar
-  S: string;       // Symbol
-  o: number;       // Open price
-  h: number;       // High price
-  l: number;       // Low price
-  c: number;       // Close price
-  v: number;       // Volume
-  t: string;       // Timestamp (RFC-3339)
-  n: number;       // Number of trades
-  vw: number;      // Volume weighted average price
+  T: "u"; // Message type: updated bar
+  S: string; // Symbol
+  o: number; // Open price
+  h: number; // High price
+  l: number; // Low price
+  c: number; // Close price
+  v: number; // Volume
+  t: string; // Timestamp (RFC-3339)
+  n: number; // Number of trades
+  vw: number; // Volume weighted average price
 }
 
 /**
@@ -1390,21 +1450,87 @@ export type AlpacaCryptoStreamMessage =
  * Type-safe event names for crypto market data streams
  */
 export type CryptoStreamEventName =
-  | 'crypto-t'    // Trade events
-  | 'crypto-q'    // Quote events
-  | 'crypto-b'    // Minute bar events
-  | 'crypto-d'    // Daily bar events
-  | 'crypto-u'    // Updated bar events
-  | 'crypto-data'; // Generic data event
+  | "crypto-t" // Trade events
+  | "crypto-q" // Quote events
+  | "crypto-b" // Minute bar events
+  | "crypto-d" // Daily bar events
+  | "crypto-u" // Updated bar events
+  | "crypto-data"; // Generic data event
 
 /**
  * Event payload mapping for crypto streams
  */
 export interface CryptoStreamEventMap {
-  'crypto-t': AlpacaCryptoTradeStream;
-  'crypto-q': AlpacaCryptoQuoteStream;
-  'crypto-b': AlpacaCryptoBarStream;
-  'crypto-d': AlpacaCryptoDailyBarStream;
-  'crypto-u': AlpacaCryptoUpdatedBarStream;
-  'crypto-data': AlpacaCryptoStreamMessage;
+  "crypto-t": AlpacaCryptoTradeStream;
+  "crypto-q": AlpacaCryptoQuoteStream;
+  "crypto-b": AlpacaCryptoBarStream;
+  "crypto-d": AlpacaCryptoDailyBarStream;
+  "crypto-u": AlpacaCryptoUpdatedBarStream;
+  "crypto-data": AlpacaCryptoStreamMessage;
 }
+
+// ===== WEBSOCKET MESSAGE TYPES =====
+
+/**
+ * WebSocket authorization response message
+ */
+export interface AlpacaAuthMessage {
+  stream: "authorization";
+  data: {
+    status: "authorized" | "unauthorized";
+    action: "authenticate";
+    message?: string;
+  };
+}
+
+/**
+ * WebSocket listening response message
+ */
+export interface AlpacaListenMessage {
+  stream: "listening";
+  data: {
+    streams: string[];
+  };
+}
+
+/**
+ * Generic WebSocket message structure
+ */
+export interface AlpacaWebSocketMessage {
+  stream: string;
+  data: AlpacaAuthMessage["data"] | AlpacaListenMessage["data"] | TradeUpdate;
+}
+
+/**
+ * Response from exercising an option
+ */
+export interface ExerciseOptionResponse {
+  id: string;
+  symbol: string;
+  side: "long" | "short";
+  qty: string;
+  asset_class: "us_option";
+  status: "pending" | "complete" | "failed";
+}
+
+/**
+ * Account with allocation configuration
+ * Extends the base AlpacaAccount from backend-legacy with optional allocation fields
+ */
+export interface AlpacaAccountWithAllocation {
+  allocation?: AllocationConfig;
+  autoAllocation?: boolean;
+  marketOpen?: boolean;
+  realTime?: boolean;
+  tradeAllocationPct?: number;
+  minPercentageChange?: number;
+  volumeThreshold?: number;
+  cryptoTradingEnabled?: boolean;
+  cryptoTradingPairs?: string[];
+  cryptoTradeAllocationPct?: number;
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Alpaca SDK Stream Socket Interfaces
+// These type the SDK stream objects (data_stream_v2, crypto_stream_v1beta3, etc.)
+// ──────────────────────────────────────────────────────────────────────────────
