@@ -3,6 +3,7 @@ import { AlpacaMarketDataAPI } from "./alpaca-market-data-api";
 import { AlpacaTradingAPI } from "./alpaca-trading-api";
 import * as Alpaca from "./alpaca/legacy";
 import * as av from "./alphavantage";
+import * as atrNs from "./atr";
 import * as crypto from "./crypto";
 import * as ft from "./format-tools";
 import * as mt from "./market-time";
@@ -13,9 +14,12 @@ import * as misc from "./misc-utils";
 import * as pm from "./performance-metrics";
 import * as pu from "./price-utils";
 import { TokenBucketRateLimiter, rateLimiters } from "./rate-limiter";
+import * as riskNs from "./risk-metrics";
+import * as strategyNs from "./strategy-metrics";
 import * as ta from "./technical-analysis";
 import * as tu from "./time-utils";
 import * as Types from "./types";
+import * as volatilityNs from "./volatility";
 
 // New modular Alpaca SDK imports
 import { alpaca as alpacaSDK } from "./alpaca";
@@ -201,6 +205,12 @@ export * from "./alpaca";
 
 // Trading Policy schemas, types, enums, and defaults
 export * as tradingPolicy from "./trading-policy";
+
+// Risk-protection math primitives (P0 Wave)
+export * as atr from "./atr";
+export * as volatility from "./volatility";
+export * as risk from "./risk-metrics";
+export * as strategy from "./strategy-metrics";
 export {
   AutonomyMode,
   OverlayType,
@@ -232,6 +242,10 @@ export type { TokenProvider } from "./adaptic";
 
 export const adaptic = {
   types: Types,
+  atr: atrNs,
+  risk: riskNs,
+  strategy: strategyNs,
+  volatility: volatilityNs,
   backend: {
     fetchAssetOverview: backend.fetchAssetOverview,
     getApolloClient: backend.getSharedApolloClient,
