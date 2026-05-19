@@ -90,6 +90,10 @@ export {
   type RetryConfig,
 } from "./utils/retry";
 
+// Per-host circuit-breaker error used by fetchWithRetry to fail-fast
+// during sustained upstream outages.
+export { CircuitOpenError } from "./misc-utils";
+
 // HTTP timeout utilities
 export {
   DEFAULT_TIMEOUTS,
@@ -432,6 +436,17 @@ export const adaptic = {
     logIfDebug: misc.logIfDebug,
     fetchWithRetry: misc.fetchWithRetry,
     validateMassiveApiKey: misc.validateMassiveApiKey,
+    /**
+     * Force-close a stuck-open per-host circuit breaker. Operator
+     * runbook utility — see {@link misc.resetCircuitBreaker}.
+     */
+    resetCircuitBreaker: misc.resetCircuitBreaker,
+    /**
+     * Read-only snapshot of all per-host circuit-breaker states for
+     * use in operational-truth endpoints. See
+     * {@link misc.getCircuitBreakerSnapshot}.
+     */
+    getCircuitBreakerSnapshot: misc.getCircuitBreakerSnapshot,
   },
   rateLimiter: {
     TokenBucketRateLimiter,
