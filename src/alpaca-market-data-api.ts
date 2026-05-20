@@ -217,6 +217,49 @@ export class AlpacaMarketDataAPI extends EventEmitter {
   private reconnectAttempts: Record<string, number> = {};
   private reconnectTimers: Record<string, ReturnType<typeof setTimeout>> = {};
 
+  /**
+   * Wall-clock timestamp of the most recent Alpaca app-level error code
+   * 406 ("connection limit exceeded") received on each stream. Used by
+   * {@link scheduleReconnect} to apply a long backoff with jitter rather
+   * than the normal sub-second exponential ramp — without this, hitting
+   * Alpaca's account-wide concurrent-connection cap (typical for blue/green
+   * deploy rollovers where the old pod's WS slots haven't been released
+   * yet) produced a 10-attempt retry storm that compounded the slot
+   * pressure and consumed the per-account connection quota across the
+   * organisation.
+   *
+   * Cleared once the long-backoff retry is scheduled so that subsequent
+   * normal failures fall back to the standard sub-second exponential.
+   *
+   * @see CONNECTION_LIMIT_BACKOFF_MS / CONNECTION_LIMIT_BACKOFF_JITTER_MS
+   */
+  private lastConnectionLimitAt: Record<string, number> = {};
+  /**
+   * Five-minute base backoff after Alpaca's app-level 406. Long enough
+   * for Alpaca's server-side cleanup to release stale slots in typical
+   * rollover scenarios; short enough that an operator doesn't need to
+   * intervene. Mirrors the equivalent MassiveClient
+   * `MAX_CONNECTIONS_RETRY_DELAY_MS` (engine v1.0.59) so both providers
+   * behave identically under the same failure mode.
+   */
+  private readonly CONNECTION_LIMIT_BACKOFF_MS = 5 * 60_000;
+  /**
+   * ±30 s of uniform jitter on the connection-limit backoff. Prevents
+   * a thundering-herd retry when all three streams (stock / option /
+   * crypto) hit 406 simultaneously during a deploy rollover — without
+   * jitter they'd all retry at the same wall-clock instant and could
+   * re-trip the account cap together.
+   */
+  private readonly CONNECTION_LIMIT_BACKOFF_JITTER_MS = 30_000;
+  /**
+   * Recency window within which a 406 is considered "still applicable"
+   * to a subsequent reconnect-schedule call. The 406 message handler
+   * stamps {@link lastConnectionLimitAt} and the `close` handler fires
+   * shortly afterwards (sub-second typically) — the window is wide
+   * enough to absorb scheduling delays without false-positives.
+   */
+  private readonly CONNECTION_LIMIT_RECENCY_MS = 30_000;
+
   public setMode(mode: "sandbox" | "test" | "production" = "production"): void {
     if (mode === "sandbox") {
       // sandbox mode
@@ -394,6 +437,20 @@ export class AlpacaMarketDataAPI extends EventEmitter {
             `${streamType} stream error: ${message.msg} (code: ${message.code}, raw: ${JSON.stringify(message)})`,
             { type: "error" },
           );
+          // Alpaca code 406: "connection limit exceeded" — account-wide
+          // concurrent-WS cap reached. The Alpaca server will close the
+          // socket immediately after this frame, which would normally
+          // trigger our standard sub-second exponential reconnect chain
+          // (1 s, 2 s, 4 s, 8 s, 16 s, 30 s × 5) — exactly the wrong
+          // behaviour against a rate-limit response. Stamp the recency
+          // marker so {@link scheduleReconnect} switches to the
+          // 5-minute jittered backoff instead.
+          if (
+            typeof message.code === "number" &&
+            message.code === 406
+          ) {
+            this.lastConnectionLimitAt[streamType] = Date.now();
+          }
         } else if (message.S) {
           super.emit(`${streamType}-${message.T}`, message);
           super.emit(
@@ -436,6 +493,53 @@ export class AlpacaMarketDataAPI extends EventEmitter {
   }
 
   private scheduleReconnect(streamType: "stock" | "option" | "crypto"): void {
+    // 406-recovery fast path. When the most recent close was preceded
+    // by an Alpaca app-level 406 ("connection limit exceeded"), the
+    // standard sub-second exponential ramp is exactly wrong — it
+    // hammers the rate-limit endpoint and prolongs the slot pressure.
+    // Use a 5-minute jittered backoff instead and reset the normal
+    // attempt counter so we don't fall off the end of maxAttempts
+    // and permanently give up on a transient rollover blip.
+    const connectionLimitAt = this.lastConnectionLimitAt[streamType];
+    const isRecentConnectionLimit =
+      typeof connectionLimitAt === "number" &&
+      Date.now() - connectionLimitAt <= this.CONNECTION_LIMIT_RECENCY_MS;
+
+    if (isRecentConnectionLimit) {
+      const jitter = Math.floor(
+        (Math.random() - 0.5) *
+          2 *
+          this.CONNECTION_LIMIT_BACKOFF_JITTER_MS,
+      );
+      const delayMs = this.CONNECTION_LIMIT_BACKOFF_MS + jitter;
+
+      // Reset normal attempt counter so the next 406 retry doesn't
+      // inherit a stale exponential cap.
+      this.reconnectAttempts[streamType] = 0;
+      // Consume the recency marker — subsequent reconnects fall back
+      // to the standard exponential path unless a new 406 arrives.
+      delete this.lastConnectionLimitAt[streamType];
+
+      log(
+        `${streamType} stream: Alpaca 406 connection-limit recovery — backing off ${Math.round(
+          delayMs / 1000,
+        )}s before retry to allow account-wide slot release`,
+        { type: "warn" },
+      );
+
+      if (this.reconnectTimers[streamType]) {
+        clearTimeout(this.reconnectTimers[streamType]);
+      }
+      this.reconnectTimers[streamType] = setTimeout(() => {
+        log(
+          `${streamType} stream: attempting reconnect after 406-recovery backoff`,
+          { type: "info" },
+        );
+        this.connect(streamType);
+      }, delayMs);
+      return;
+    }
+
     const attempts = this.reconnectAttempts[streamType] ?? 0;
     const maxAttempts = 10;
 
