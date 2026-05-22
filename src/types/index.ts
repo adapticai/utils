@@ -1,4 +1,4 @@
-import { Time } from "lightweight-charts";
+import type { Time } from "lightweight-charts";
 export * from "./adaptic-types";
 export * from "./alpaca-types";
 export * from "./alphavantage-types";
