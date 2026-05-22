@@ -73,11 +73,14 @@
     "fast-check": "^4.5.3",
     "lightweight-charts": "^5.0.8",
     "react": "^19.1.0",
-    "rollup": "^4.46.2",
+    "rollup": "^4.60.4",
     "rollup-cli": "^1.0.9",
     "rollup-plugin-visualizer": "^6.0.5",
     "typedoc": "^0.28.16",
     "typescript": "^5.8.3",
     "vitest": "^4.0.18"
+  },
+  "overrides": {
+    "picomatch": "^4.0.4"
   }
 }
