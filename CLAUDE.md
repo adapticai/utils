@@ -42,12 +42,57 @@ Communicate with precision and intellectual honesty. Explain tradeoffs, root cau
 
 Do not behave like a task-completion assistant. Behave like an owner, an architect, a systems thinker, and a long-term steward of a mission-critical platform.
 
+## Branch Model
+
+`@adaptic/utils` has two parallel publish lineages on GitHub:
+
+| Branch           | npm versions     | npm dist-tag      | Consumed by                                     |
+| ---------------- | ---------------- | ----------------- | ----------------------------------------------- |
+| `master`         | `0.1.x`          | `latest`          | External / unpinned `npm install @adaptic/utils` |
+| `stable-release` | `0.0.x` (0.0.992+)| `stable`          | `engine`, `backend-legacy` (pinned)             |
+
+**All new work lands on `stable-release`.** Engine and backend-legacy pin a
+specific `0.0.x` via `@adaptic/utils` in their `package.json`. `master` is only
+updated when intentionally publishing a 0.1.x patch for legacy external
+consumers.
+
+The two branches have diverged: `stable-release` carries trading-policy,
+ATR/risk/volatility/strategy primitives, multi-broker crypto, and many
+production-hardening fixes that are not on `master`.
+
+When auditing or refactoring this package, always work against
+`stable-release` unless you have an explicit reason to touch the legacy
+0.1.x publish line. The meta-repo registry at
+`~/adapticai/gitnexus.config.json` records this convention.
+
 ## Build/Test Commands
 
 - Build: `npm run build`
 - Clean: `npm run clean`
 - Test: `npm run test`
+- Lint: `npm run lint`
 - Single test: First build with `npm run build`, then run with `node dist/path/to/your/test.js`
+
+## Linting
+
+ESLint is configured in `eslint.config.mjs` (flat config, ESLint 9) with three
+file groups:
+
+1. **Production source** (`src/**/*.ts` excluding tests/examples/testing):
+   `@typescript-eslint/no-explicit-any: error`, `no-floating-promises: error`,
+   `no-misused-promises: error`, `no-console: error` (allows `warn`/`error`),
+   `prefer-const: error`, `consistent-type-assertions: error`. Unsafe-* rules
+   are `warn` to flag SDK type-gap legacy without blocking PRs.
+2. **Example/testing/logger files** (`src/examples/**`, `src/testing/**`,
+   `src/alpaca/test-imports.ts`, `src/logger.ts`, `src/display-manager.ts`):
+   same rules but `no-console: off`.
+3. **Tests** (`__tests__/**`, `*.test.ts`, `*.spec.ts`, `test.ts`): relaxed
+   to `warn` on `any` and `no-unused-vars`.
+
+Run `npm run lint` before commit. PRs should target 0 errors. Existing
+warnings (~368) come from SDK type gaps in `@alpacahq/alpaca-trade-api`'s
+weak surface — track via the `no-unsafe-*` family and fix opportunistically
+by declaring strict local types in `src/types/`.
 
 ## Code Style Guidelines
 
