@@ -18,8 +18,14 @@ import {
   MassiveIndicesSnapshotResponse,
 } from "./types";
 
-// Constants from environment variables
-const { ALPACA_INDICES_API_KEY } = process.env as Record<string, string>;
+// Constants from environment variables.
+// Backward-compat: ALPACA_INDICES_API_KEY is the pre-2026-Q2 name (vendor was
+// renamed Alpaca → Massive); MASSIVE_INDICES_API_KEY is preferred. The fallback
+// stays so consumers that haven't migrated env vars don't break.
+const { MASSIVE_INDICES_API_KEY, ALPACA_INDICES_API_KEY } = process.env as Record<
+  string,
+  string
+>;
 
 // Define concurrency limits for API
 const MASSIVE_INDICES_CONCURRENCY_LIMIT = 5;
@@ -34,7 +40,7 @@ const MASSIVE_API_BASE_URL = "https://api.massive.com";
  * @throws {Error} If no API key is available
  */
 const validateApiKey = (apiKey?: string): string => {
-  const key = apiKey || ALPACA_INDICES_API_KEY;
+  const key = apiKey || MASSIVE_INDICES_API_KEY || ALPACA_INDICES_API_KEY;
   if (!key) {
     throw new Error("Massive Indices API key is missing");
   }
