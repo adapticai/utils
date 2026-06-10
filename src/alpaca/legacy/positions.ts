@@ -196,8 +196,42 @@ export async function closePosition(
               symbol: normalizedSymbol,
             },
           );
-          await cancelOrder(auth, order.id);
-          cancelledCount++;
+          try {
+            await cancelOrder(auth, order.id);
+            cancelledCount++;
+          } catch (cancelError) {
+            // Alpaca rejects DELETE on an order that is already in
+            // pending_cancel / pending_replace with HTTP 422 code
+            // 42210000 ("order pending cancel"). The order is already
+            // dying — which is exactly what this sweep wants — so
+            // aborting the entire position close here is wrong: it
+            // left REDUCE/EXIT risk actions permanently blocked when a
+            // protective stop wedged in pending_cancel at the broker
+            // (observed live 2026-06-10: an 8-day-old pending_cancel
+            // trailing stop on a naked short made every exit attempt
+            // throw). Treat already-cancelling as success-in-progress
+            // and let the subsequent close attempt get the broker's
+            // authoritative answer on held quantity. Any other cancel
+            // failure still aborts the close as before.
+            const message =
+              cancelError instanceof Error
+                ? cancelError.message
+                : String(cancelError);
+            const alreadyCancelling =
+              message.includes("42210000") ||
+              message.includes("order pending cancel");
+            if (!alreadyCancelling) {
+              throw cancelError;
+            }
+            getLogger().warn(
+              `Order ${order.id} (${order.symbol}) is already pending cancel at the broker — proceeding with position close without it`,
+              {
+                account: auth.adapticAccountId || "direct",
+                symbol: normalizedSymbol,
+                type: "warn",
+              },
+            );
+          }
         }
       }
       if (cancelledCount > 0) {
@@ -218,7 +252,7 @@ export async function closePosition(
         for (let attempt = 1; attempt <= maxVerifyAttempts; attempt++) {
           await new Promise<void>((r) => setTimeout(r, verifyDelayMs));
 
-          const remainingOrders = isCryptoSymbol(symbolOrAssetId)
+          const allRemainingOrders = isCryptoSymbol(symbolOrAssetId)
             ? (await getOrders(auth, { status: "open" })).filter(
                 (o) => o.symbol.replace(/[-/]/g, "") === normalizedSymbol,
               )
@@ -226,6 +260,15 @@ export async function closePosition(
                 status: "open",
                 symbols: [normalizedSymbol],
               });
+
+          // Orders stuck in pending_cancel / pending_replace are already
+          // terminalising (or wedged — see the 42210000 handling above);
+          // waiting longer will not change them, so they must not make
+          // the verification spin to exhaustion on every close attempt.
+          const remainingOrders = allRemainingOrders.filter(
+            (o) =>
+              o.status !== "pending_cancel" && o.status !== "pending_replace",
+          );
 
           if (remainingOrders.length === 0) {
             getLogger().info(
