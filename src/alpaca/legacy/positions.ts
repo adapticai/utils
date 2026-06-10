@@ -261,14 +261,35 @@ export async function closePosition(
                 symbols: [normalizedSymbol],
               });
 
-          // Orders stuck in pending_cancel / pending_replace are already
-          // terminalising (or wedged — see the 42210000 handling above);
-          // waiting longer will not change them, so they must not make
-          // the verification spin to exhaustion on every close attempt.
-          const remainingOrders = allRemainingOrders.filter(
-            (o) =>
-              o.status !== "pending_cancel" && o.status !== "pending_replace",
-          );
+          // pending_cancel / pending_replace handling needs an age split
+          // (2026-06-10 live evidence, both directions):
+          //   - FRESH pending (entered the state < 30s ago): the broker is
+          //     mid-terminalisation and STILL HOLDS the order's quantity.
+          //     Treating it as done made the close fire early and bounce
+          //     with 403 40310000 "insufficient qty available" (META/WFC
+          //     closes at 17:07Z), so it must stay in `remainingOrders`
+          //     and keep the verification loop waiting.
+          //   - STALE pending (>= 30s): a wedged zombie (observed 8 days
+          //     on one order) that will never terminalise — waiting spins
+          //     the loop to exhaustion on every close attempt, so it is
+          //     excluded and the close proceeds; the broker arbitrates the
+          //     held quantity.
+          const WEDGED_PENDING_AGE_MS = 30_000;
+          const remainingOrders = allRemainingOrders.filter((o) => {
+            if (
+              o.status !== "pending_cancel" &&
+              o.status !== "pending_replace"
+            ) {
+              return true;
+            }
+            const updatedAtMs = Date.parse(o.updated_at ?? "");
+            if (!Number.isFinite(updatedAtMs)) {
+              // No usable timestamp — conservatively treat as fresh so the
+              // loop waits rather than racing the broker's qty release.
+              return true;
+            }
+            return Date.now() - updatedAtMs < WEDGED_PENDING_AGE_MS;
+          });
 
           if (remainingOrders.length === 0) {
             getLogger().info(
