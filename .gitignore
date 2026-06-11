@@ -18,3 +18,5 @@ docs/
 # Bundle analysis reports
 dist/bundle-stats.html
 dist/bundle-stats.json
+
+.claude/worktrees/
