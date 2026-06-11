@@ -32,6 +32,17 @@ import { createTimeoutSignal, DEFAULT_TIMEOUTS } from "./http-timeout";
 
 const limitPriceSlippagePercent100 = 0.1; // 0.1%
 
+/**
+ * Alpaca's maximum page size for GET /orders — also our explicit default.
+ * Alpaca's silent server-side default is 50, which truncates order
+ * visibility on protective-stop / qty-reservation paths; we never let it
+ * apply (mirrors ORDER_CHUNK_SIZE in src/alpaca/legacy/orders.ts).
+ */
+const ORDER_PAGE_LIMIT = 500;
+
+/** Delay between order pagination pages to stay clear of rate limits. */
+const ORDER_PAGINATION_DELAY_MS = 300;
+
 /** 
 Websocket example
   const alpacaAPI = createAlpacaTradingAPI(credentials); // type AlpacaCredentials
@@ -445,10 +456,25 @@ export class AlpacaTradingAPI {
   }
 
   /**
-   * Get all orders
+   * Get all orders, with explicit paging.
+   *
+   * When `params.limit` is provided it is treated as a caller-controlled cap
+   * and a single request is made (preserves the previous contract for
+   * callers that run their own page walks, e.g. phantom-order lookup).
+   *
+   * When `limit` is omitted, Alpaca's silent server-side default of 50
+   * records is NOT allowed to apply — that default truncated open-order
+   * visibility on protective-stop and qty-reservation paths. Instead the
+   * API maximum (500) is requested explicitly and, whenever a full page
+   * comes back, the result is paginated with a `submitted_at` cursor walk
+   * (`until` for desc — the default — or `after` for asc) until a short
+   * page indicates the window is exhausted. Pages are deduplicated by
+   * order id so same-timestamp boundary orders can never be double
+   * counted, and the walk terminates if a full page yields no new orders.
+   *
    * @param params (GetOrdersParams) - optional parameters to filter the orders
    * - status: 'open' | 'closed' | 'all'
-   * - limit: number
+   * - limit: number — caller-controlled cap; disables pagination
    * - after: string
    * - until: string
    * - direction: 'asc' | 'desc'
@@ -458,10 +484,65 @@ export class AlpacaTradingAPI {
    * @returns all orders
    */
   async getOrders(params: GetOrdersParams = {}): Promise<AlpacaOrder[]> {
+    if (params.limit !== undefined) {
+      return this.fetchOrdersPage(params, params.limit);
+    }
+
+    const isAsc = params.direction === "asc";
+    const allOrders: AlpacaOrder[] = [];
+    const seenOrderIds = new Set<string>();
+    // Moving cursor: `until` walks backwards for desc (the default),
+    // `after` walks forwards for asc. Both are exclusive on Alpaca's side.
+    let cursor = isAsc ? params.after : params.until;
+
+    while (true) {
+      const pageParams: GetOrdersParams = {
+        ...params,
+        ...(isAsc ? { after: cursor } : { until: cursor }),
+      };
+      const page = await this.fetchOrdersPage(pageParams, ORDER_PAGE_LIMIT);
+
+      let addedCount = 0;
+      for (const order of page) {
+        if (!seenOrderIds.has(order.id)) {
+          seenOrderIds.add(order.id);
+          allOrders.push(order);
+          addedCount++;
+        }
+      }
+
+      // Short page = window exhausted (same termination as legacy getOrders).
+      if (page.length < ORDER_PAGE_LIMIT) break;
+
+      const lastOrder = page[page.length - 1];
+      // No usable cursor, or a full page of already-seen orders (cursor not
+      // advancing): stop rather than risk an unbounded walk.
+      if (!lastOrder.submitted_at || addedCount === 0) break;
+      cursor = lastOrder.submitted_at;
+
+      await new Promise((resolve) =>
+        setTimeout(resolve, ORDER_PAGINATION_DELAY_MS),
+      );
+    }
+
+    return allOrders;
+  }
+
+  /**
+   * Issues a single GET /orders request with an explicit `limit` so
+   * Alpaca's silent 50-record server default can never apply.
+   * @param params - order filter parameters (limit is supplied separately)
+   * @param limit - explicit page size to request
+   * @returns one page of orders
+   */
+  private async fetchOrdersPage(
+    params: GetOrdersParams,
+    limit: number,
+  ): Promise<AlpacaOrder[]> {
     const queryParams = new URLSearchParams();
 
     if (params.status) queryParams.append("status", params.status);
-    if (params.limit) queryParams.append("limit", params.limit.toString());
+    queryParams.append("limit", limit.toString());
     if (params.after) queryParams.append("after", params.after);
     if (params.until) queryParams.append("until", params.until);
     if (params.direction) queryParams.append("direction", params.direction);
@@ -469,9 +550,10 @@ export class AlpacaTradingAPI {
     if (params.symbols) queryParams.append("symbols", params.symbols.join(","));
     if (params.side) queryParams.append("side", params.side);
 
-    const endpoint = `/orders${queryParams.toString() ? `?${queryParams.toString()}` : ""}`;
+    const endpoint = `/orders?${queryParams.toString()}`;
     try {
-      return await this.makeRequest(endpoint);
+      const orders = await this.makeRequest<AlpacaOrder[]>(endpoint);
+      return orders ?? [];
     } catch (error) {
       this.log(`Error getting orders: ${error}`, { type: "error" });
       throw error;
