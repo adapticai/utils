@@ -1,6 +1,6 @@
 /**
  * Polygon Indices API Implementation
- * 
+ *
  * This module provides functions to interact with the Polygon.io Indices API.
  */
 
@@ -24,7 +24,7 @@ const POLYGON_INDICES_CONCURRENCY_LIMIT = 5;
 const polygonIndicesLimit = pLimit(POLYGON_INDICES_CONCURRENCY_LIMIT);
 
 // Base URL for Polygon API
-const POLYGON_API_BASE_URL = 'https://api.polygon.io';
+const POLYGON_API_BASE_URL = 'https://api.massive.com';
 
 /**
  * Validates that an API key is available
@@ -41,7 +41,7 @@ const validateApiKey = (apiKey?: string): string => {
 
 /**
  * Fetches aggregate bars for an index over a given date range in custom time window sizes.
- * 
+ *
  * @param {PolygonIndicesAggregatesParams} params - Parameters for the aggregates request
  * @param {Object} [options] - Optional parameters
  * @param {string} [options.apiKey] - API key to use for the request
@@ -52,33 +52,33 @@ export const fetchIndicesAggregates = async (
   options?: { apiKey?: string }
 ): Promise<PolygonIndicesAggregatesResponse> => {
   const apiKey = validateApiKey(options?.apiKey);
-  
+
   const { indicesTicker, multiplier, timespan, from, to, sort = 'asc', limit } = params;
-  
+
   const url = new URL(`${POLYGON_API_BASE_URL}/v2/aggs/ticker/${encodeURIComponent(indicesTicker)}/range/${multiplier}/${timespan}/${from}/${to}`);
-  
+
   const queryParams = new URLSearchParams();
   queryParams.append('apiKey', apiKey);
-  
+
   if (sort) {
     queryParams.append('sort', sort);
   }
-  
+
   if (limit) {
     queryParams.append('limit', limit.toString());
   }
-  
+
   url.search = queryParams.toString();
-  
+
   return polygonIndicesLimit(async () => {
     try {
       const response = await fetchWithRetry(url.toString(), {}, 3, 300);
       const data = await response.json();
-      
+
       if (data.status === 'ERROR') {
         throw new Error(`Polygon API Error: ${data.error}`);
       }
-      
+
       return data as PolygonIndicesAggregatesResponse;
     } catch (error) {
       console.error('Error fetching indices aggregates:', error);
@@ -89,7 +89,7 @@ export const fetchIndicesAggregates = async (
 
 /**
  * Gets the previous day's open, high, low, and close (OHLC) for the specified index.
- * 
+ *
  * @param {string} indicesTicker - The ticker symbol of the index
  * @param {Object} [options] - Optional parameters
  * @param {string} [options.apiKey] - API key to use for the request
@@ -100,23 +100,23 @@ export const fetchIndicesPreviousClose = async (
   options?: { apiKey?: string }
 ): Promise<PolygonIndicesPrevCloseResponse> => {
   const apiKey = validateApiKey(options?.apiKey);
-  
+
   const url = new URL(`${POLYGON_API_BASE_URL}/v2/aggs/ticker/${encodeURIComponent(indicesTicker)}/prev`);
-  
+
   const queryParams = new URLSearchParams();
   queryParams.append('apiKey', apiKey);
-  
+
   url.search = queryParams.toString();
-  
+
   return polygonIndicesLimit(async () => {
     try {
       const response = await fetchWithRetry(url.toString(), {}, 3, 300);
       const data = await response.json();
-      
+
       if (data.status === 'ERROR') {
         throw new Error(`Polygon API Error: ${data.error}`);
       }
-      
+
       return data as PolygonIndicesPrevCloseResponse;
     } catch (error) {
       console.error('Error fetching indices previous close:', error);
@@ -127,7 +127,7 @@ export const fetchIndicesPreviousClose = async (
 
 /**
  * Gets the open, close and afterhours values of an index symbol on a certain date.
- * 
+ *
  * @param {string} indicesTicker - The ticker symbol of the index
  * @param {string} date - The date in YYYY-MM-DD format
  * @param {Object} [options] - Optional parameters
@@ -140,23 +140,23 @@ export const fetchIndicesDailyOpenClose = async (
   options?: { apiKey?: string }
 ): Promise<PolygonIndicesDailyOpenCloseResponse> => {
   const apiKey = validateApiKey(options?.apiKey);
-  
+
   const url = new URL(`${POLYGON_API_BASE_URL}/v1/open-close/${encodeURIComponent(indicesTicker)}/${date}`);
-  
+
   const queryParams = new URLSearchParams();
   queryParams.append('apiKey', apiKey);
-  
+
   url.search = queryParams.toString();
-  
+
   return polygonIndicesLimit(async () => {
     try {
       const response = await fetchWithRetry(url.toString(), {}, 3, 300);
       const data = await response.json();
-      
+
       if (data.status === 'ERROR') {
         throw new Error(`Polygon API Error: ${data.error}`);
       }
-      
+
       return data as PolygonIndicesDailyOpenCloseResponse;
     } catch (error) {
       console.error('Error fetching indices daily open/close:', error);
@@ -167,7 +167,7 @@ export const fetchIndicesDailyOpenClose = async (
 
 /**
  * Gets a snapshot of indices data for specified tickers.
- * 
+ *
  * @param {PolygonIndicesSnapshotParams} [params] - Parameters for the snapshot request
  * @param {Object} [options] - Optional parameters
  * @param {string} [options.apiKey] - API key to use for the request
@@ -178,39 +178,39 @@ export const fetchIndicesSnapshot = async (
   options?: { apiKey?: string }
 ): Promise<PolygonIndicesSnapshotResponse> => {
   const apiKey = validateApiKey(options?.apiKey);
-  
+
   const url = new URL(`${POLYGON_API_BASE_URL}/v3/snapshot/indices`);
-  
+
   const queryParams = new URLSearchParams();
   queryParams.append('apiKey', apiKey);
-  
+
   if (params?.tickers?.length) {
     queryParams.append('ticker.any_of', params.tickers.join(','));
   }
-  
+
   if (params?.order) {
     queryParams.append('order', params.order);
   }
-  
+
   if (params?.limit) {
     queryParams.append('limit', params.limit.toString());
   }
-  
+
   if (params?.sort) {
     queryParams.append('sort', params.sort);
   }
-  
+
   url.search = queryParams.toString();
-  
+
   return polygonIndicesLimit(async () => {
     try {
       const response = await fetchWithRetry(url.toString(), {}, 3, 300);
       const data = await response.json();
-      
+
       if (data.status === 'ERROR') {
         throw new Error(`Polygon API Error: ${data.error}`);
       }
-      
+
       return data as PolygonIndicesSnapshotResponse;
     } catch (error) {
       console.error('Error fetching indices snapshot:', error);
@@ -221,7 +221,7 @@ export const fetchIndicesSnapshot = async (
 
 /**
  * Gets snapshots for assets of all types, including indices.
- * 
+ *
  * @param {string[]} tickers - Array of tickers to fetch snapshots for
  * @param {Object} [options] - Optional parameters
  * @param {string} [options.apiKey] - API key to use for the request
@@ -242,43 +242,43 @@ export const fetchUniversalSnapshot = async (
   }
 ): Promise<any> => {
   const apiKey = validateApiKey(options?.apiKey);
-  
+
   const url = new URL(`${POLYGON_API_BASE_URL}/v3/snapshot`);
-  
+
   const queryParams = new URLSearchParams();
   queryParams.append('apiKey', apiKey);
-  
+
   if (tickers.length) {
     queryParams.append('ticker.any_of', tickers.join(','));
   }
-  
+
   if (options?.type) {
     queryParams.append('type', options.type);
   }
-  
+
   if (options?.order) {
     queryParams.append('order', options.order);
   }
-  
+
   if (options?.limit) {
     queryParams.append('limit', options.limit.toString());
   }
-  
+
   if (options?.sort) {
     queryParams.append('sort', options.sort);
   }
-  
+
   url.search = queryParams.toString();
-  
+
   return polygonIndicesLimit(async () => {
     try {
       const response = await fetchWithRetry(url.toString(), {}, 3, 300);
       const data = await response.json();
-      
+
       if (data.status === 'ERROR') {
         throw new Error(`Polygon API Error: ${data.error}`);
       }
-      
+
       return data;
     } catch (error) {
       console.error('Error fetching universal snapshot:', error);
@@ -289,7 +289,7 @@ export const fetchUniversalSnapshot = async (
 
 /**
  * Converts Polygon Indices bar data to a more standardized format
- * 
+ *
  * @param {PolygonIndicesAggregatesResponse} data - The raw aggregates response
  * @returns {Array<{date: string, open: number, high: number, low: number, close: number, timestamp: number}>} Formatted bar data
  */
@@ -312,4 +312,4 @@ export const formatIndicesBarData = (data: PolygonIndicesAggregatesResponse): Ar
       timestamp: bar.t,
     };
   });
-}; 
+};

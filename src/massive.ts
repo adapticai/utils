@@ -39,7 +39,7 @@ export const fetchTickerInfo = async (
   if (!options?.apiKey && !POLYGON_API_KEY) {
     throw new Error('Polygon API key is missing');
   }
-  const baseUrl = `https://api.polygon.io/v3/reference/tickers/${encodeURIComponent(symbol)}`;
+  const baseUrl = `https://api.massive.com/v3/reference/tickers/${encodeURIComponent(symbol)}`;
   const params = new URLSearchParams({
     apiKey: options?.apiKey || POLYGON_API_KEY!,
   });
@@ -100,17 +100,17 @@ export const fetchTickerInfo = async (
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       const contextualMessage = `Error fetching ticker info for ${symbol}`;
-      
+
       console.error(`${contextualMessage}: ${errorMessage}`, {
         symbol,
-        errorType: error instanceof Error && error.message.includes('AUTH_ERROR') ? 'AUTH_ERROR' : 
-                   error instanceof Error && error.message.includes('RATE_LIMIT') ? 'RATE_LIMIT' : 
+        errorType: error instanceof Error && error.message.includes('AUTH_ERROR') ? 'AUTH_ERROR' :
+                   error instanceof Error && error.message.includes('RATE_LIMIT') ? 'RATE_LIMIT' :
                    error instanceof Error && error.message.includes('NETWORK_ERROR') ? 'NETWORK_ERROR' : 'UNKNOWN',
         url: hideApiKeyFromurl(`${baseUrl}?${params.toString()}`),
         source: 'PolygonAPI.fetchTickerInfo',
         timestamp: new Date().toISOString()
       });
-      
+
       throw new Error(`${contextualMessage}: ${errorMessage}`);
     }
   });
@@ -129,7 +129,7 @@ export const fetchLastTrade = async (symbol: string, options?: { apiKey?: string
   if (!options?.apiKey && !POLYGON_API_KEY) {
     throw new Error('Polygon API key is missing');
   }
-  const baseUrl = `https://api.polygon.io/v2/last/trade/${encodeURIComponent(symbol)}`;
+  const baseUrl = `https://api.massive.com/v2/last/trade/${encodeURIComponent(symbol)}`;
   const params = new URLSearchParams({
     apiKey: options?.apiKey || POLYGON_API_KEY!,
   });
@@ -156,17 +156,17 @@ export const fetchLastTrade = async (symbol: string, options?: { apiKey?: string
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       const contextualMessage = `Error fetching last trade for ${symbol}`;
-      
+
       console.error(`${contextualMessage}: ${errorMessage}`, {
         symbol,
-        errorType: error instanceof Error && error.message.includes('AUTH_ERROR') ? 'AUTH_ERROR' : 
-                   error instanceof Error && error.message.includes('RATE_LIMIT') ? 'RATE_LIMIT' : 
+        errorType: error instanceof Error && error.message.includes('AUTH_ERROR') ? 'AUTH_ERROR' :
+                   error instanceof Error && error.message.includes('RATE_LIMIT') ? 'RATE_LIMIT' :
                    error instanceof Error && error.message.includes('NETWORK_ERROR') ? 'NETWORK_ERROR' : 'UNKNOWN',
         url: hideApiKeyFromurl(`${baseUrl}?${params.toString()}`),
         source: 'PolygonAPI.fetchLastTrade',
         timestamp: new Date().toISOString()
       });
-      
+
       throw new Error(`${contextualMessage}: ${errorMessage}`);
     }
   });
@@ -203,7 +203,7 @@ export const fetchPrices = async (
   }
   const { ticker, start, end = Date.now().valueOf(), multiplier, timespan, limit = 1000 } = params;
 
-  const baseUrl = `https://api.polygon.io/v2/aggs/ticker/${encodeURIComponent(
+  const baseUrl = `https://api.massive.com/v2/aggs/ticker/${encodeURIComponent(
     ticker
   )}/range/${multiplier}/${timespan}/${start}/${end}`;
 
@@ -260,16 +260,16 @@ export const fetchPrices = async (
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       const contextualMessage = `Error fetching price data for ${ticker}`;
-      
+
       console.error(`${contextualMessage}: ${errorMessage}`, {
         ticker,
-        errorType: error instanceof Error && error.message.includes('AUTH_ERROR') ? 'AUTH_ERROR' : 
-                   error instanceof Error && error.message.includes('RATE_LIMIT') ? 'RATE_LIMIT' : 
+        errorType: error instanceof Error && error.message.includes('AUTH_ERROR') ? 'AUTH_ERROR' :
+                   error instanceof Error && error.message.includes('RATE_LIMIT') ? 'RATE_LIMIT' :
                    error instanceof Error && error.message.includes('NETWORK_ERROR') ? 'NETWORK_ERROR' : 'UNKNOWN',
         source: 'PolygonAPI.fetchPrices',
         timestamp: new Date().toISOString()
       });
-      
+
       throw new Error(`${contextualMessage}: ${errorMessage}`);
     }
   });
@@ -345,7 +345,7 @@ export const fetchGroupedDaily = async (
     throw new Error('Polygon API key is missing');
   }
 
-  const baseUrl = `https://api.polygon.io/v2/aggs/grouped/locale/us/market/stocks/${date}`;
+  const baseUrl = `https://api.massive.com/v2/aggs/grouped/locale/us/market/stocks/${date}`;
   const params = new URLSearchParams({
     apiKey: options?.apiKey || POLYGON_API_KEY!,
     adjusted: options?.adjusted !== false ? 'true' : 'false',
@@ -382,17 +382,17 @@ export const fetchGroupedDaily = async (
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       const contextualMessage = `Error fetching grouped daily data for ${date}`;
-      
+
       console.error(`${contextualMessage}: ${errorMessage}`, {
         date,
-        errorType: error instanceof Error && error.message.includes('AUTH_ERROR') ? 'AUTH_ERROR' : 
-                   error instanceof Error && error.message.includes('RATE_LIMIT') ? 'RATE_LIMIT' : 
+        errorType: error instanceof Error && error.message.includes('AUTH_ERROR') ? 'AUTH_ERROR' :
+                   error instanceof Error && error.message.includes('RATE_LIMIT') ? 'RATE_LIMIT' :
                    error instanceof Error && error.message.includes('NETWORK_ERROR') ? 'NETWORK_ERROR' : 'UNKNOWN',
         url: hideApiKeyFromurl(`${baseUrl}?${params.toString()}`),
         source: 'PolygonAPI.fetchGroupedDaily',
         timestamp: new Date().toISOString()
       });
-      
+
       throw new Error(`${contextualMessage}: ${errorMessage}`);
     }
   });
@@ -447,7 +447,7 @@ export const fetchDailyOpenClose = async (
   }
 
   const formattedDate = date.toISOString().split('T')[0]; // Format as YYYY-MM-DD
-  const baseUrl = `https://api.polygon.io/v1/open-close/${encodeURIComponent(symbol)}/${formattedDate}`;
+  const baseUrl = `https://api.massive.com/v1/open-close/${encodeURIComponent(symbol)}/${formattedDate}`;
   const params = new URLSearchParams({
     apiKey: options?.apiKey || POLYGON_API_KEY!,
     adjusted: (options?.adjusted ?? true).toString(),
@@ -520,7 +520,7 @@ export const fetchTrades = async (
     throw new Error('Polygon API key is missing');
   }
 
-  const baseUrl = `https://api.polygon.io/v3/trades/${encodeURIComponent(symbol)}`;
+  const baseUrl = `https://api.massive.com/v3/trades/${encodeURIComponent(symbol)}`;
   const params = new URLSearchParams({
     apiKey: options?.apiKey || POLYGON_API_KEY!,
   });
@@ -551,17 +551,17 @@ export const fetchTrades = async (
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       const contextualMessage = `Error fetching trades for ${symbol}`;
-      
+
       console.error(`${contextualMessage}: ${errorMessage}`, {
         symbol,
-        errorType: error instanceof Error && error.message.includes('AUTH_ERROR') ? 'AUTH_ERROR' : 
-                   error instanceof Error && error.message.includes('RATE_LIMIT') ? 'RATE_LIMIT' : 
+        errorType: error instanceof Error && error.message.includes('AUTH_ERROR') ? 'AUTH_ERROR' :
+                   error instanceof Error && error.message.includes('RATE_LIMIT') ? 'RATE_LIMIT' :
                    error instanceof Error && error.message.includes('NETWORK_ERROR') ? 'NETWORK_ERROR' : 'UNKNOWN',
         url: hideApiKeyFromurl(url),
         source: 'PolygonAPI.fetchTrades',
         timestamp: new Date().toISOString()
       });
-      
+
       throw new Error(`${contextualMessage}: ${errorMessage}`);
     }
   });

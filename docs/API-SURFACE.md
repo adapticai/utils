@@ -1638,8 +1638,8 @@ async function validatePolygonApiKey(apiKey: string): Promise<boolean>
 
 // Hide API key from URL (for logging)
 function hideApiKeyFromurl(url: string): string
-// Example: 'https://api.polygon.io?apiKey=12341239856677'
-//       → 'https://api.polygon.io?apiKey=12****77'
+// Example: 'https://api.massive.com?apiKey=12341239856677'
+//       → 'https://api.massive.com?apiKey=12****77'
 ```
 
 ### Price Utilities

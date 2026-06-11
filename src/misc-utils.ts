@@ -156,7 +156,7 @@ export async function fetchWithRetry(
   initialBackoff: number = 1000
 ): Promise<Response> {
   let backoff = initialBackoff;
-  
+
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       const response = await fetch(url, options);
@@ -166,7 +166,7 @@ export async function fetchWithRetry(
           // Check for Retry-After header
           const retryAfter = response.headers.get('Retry-After');
           const retryDelay = retryAfter ? parseInt(retryAfter) * 1000 : null;
-          
+
           throw new Error(`RATE_LIMIT: ${response.status}${retryDelay ? `:${retryDelay}` : ''}`);
         }
         if ([500, 502, 503, 504].includes(response.status)) {
@@ -186,11 +186,11 @@ export async function fetchWithRetry(
       if (attempt === retries) {
         throw error;
       }
-      
+
       // Extract meaningful error information
       const errorDetails = extractErrorDetails(error);
       let adaptiveBackoff = backoff;
-      
+
       // Adaptive backoff based on error type
       if (errorDetails.type === 'RATE_LIMIT') {
         // Use Retry-After header if available, otherwise use minimum 5s for rate limits
@@ -222,7 +222,7 @@ export async function fetchWithRetry(
         });
         throw error;
       }
-      
+
       // Enhanced error logging with structured data
       console.warn(`Fetch attempt ${attempt} of ${retries} for ${hideApiKeyFromurl(url)} failed: ${errorDetails.reason}. Retrying in ${adaptiveBackoff}ms...`, {
         attemptNumber: attempt,
@@ -234,7 +234,7 @@ export async function fetchWithRetry(
         source: 'fetchWithRetry',
         timestamp: new Date().toISOString()
       });
-      
+
       await new Promise((resolve) => setTimeout(resolve, adaptiveBackoff));
       backoff = Math.min(backoff * 2, 30000); // Cap at 30 seconds
     }
@@ -249,7 +249,7 @@ export async function fetchWithRetry(
  */
 export async function validatePolygonApiKey(apiKey: string): Promise<boolean> {
   try {
-    const response = await fetch(`https://api.polygon.io/v1/meta/symbols?apikey=${apiKey}&limit=1`);
+    const response = await fetch(`https://api.massive.com/v1/meta/symbols?apikey=${apiKey}&limit=1`);
     if (response.status === 401) {
       throw new Error('Invalid or expired Polygon.io API key');
     }
