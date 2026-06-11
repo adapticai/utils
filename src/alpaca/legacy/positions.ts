@@ -425,6 +425,10 @@ export async function closePosition(
         "APCA-API-KEY-ID": APIKey,
         "APCA-API-SECRET-KEY": APISecret,
       },
+      // The close submission must never hang indefinitely (hung sockets on
+      // NAT idle-reap stall the exit in exactly the fast-tape scenario
+      // where it matters) — bound it like every other call in this file.
+      signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
     });
 
     if (!response.ok) {
@@ -540,6 +544,7 @@ export async function closeAllPositions(
             "APCA-API-KEY-ID": APIKey,
             "APCA-API-SECRET-KEY": APISecret,
           },
+          signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
         });
         if (response.ok) {
           getLogger().info(
@@ -731,6 +736,7 @@ export async function closeAllPositionsAfterHours(
           "APCA-API-KEY-ID": APIKey,
           "APCA-API-SECRET-KEY": APISecret,
         },
+        signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
       });
       if (response.ok) {
         getLogger().info(

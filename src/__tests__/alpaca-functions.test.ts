@@ -43,6 +43,7 @@ import {
   replaceOrder,
   fetchAllPositions,
   fetchPosition,
+  closePosition,
   fetchAccountDetails,
   getLatestQuotes,
   getAsset,
@@ -319,6 +320,48 @@ describe("fetchAllPositions", () => {
     const result = await fetchAllPositions(testAuth);
     expect(result).toHaveLength(2);
     expect(result[0].symbol).toBe("AAPL");
+  });
+});
+
+describe("closePosition", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("submits the close DELETE with a timeout abort signal so exits can never hang indefinitely", async () => {
+    const mockOrder = { id: "close-order-1", symbol: "AAPL", side: "sell" };
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve(mockOrder),
+    });
+
+    const result = await closePosition(testAuth, "AAPL", {
+      cancelOrders: false,
+    });
+
+    expect(result).toEqual(mockOrder);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const [url, init] = mockFetch.mock.calls[0];
+    expect(String(url)).toContain("/positions/AAPL");
+    expect(init.method).toBe("DELETE");
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("returns null for a 404 (position already closed) and still sends the signal", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+      statusText: "Not Found",
+      text: () => Promise.resolve("position does not exist"),
+    });
+
+    const result = await closePosition(testAuth, "AAPL", {
+      cancelOrders: false,
+    });
+
+    expect(result).toBeNull();
+    const [, init] = mockFetch.mock.calls[0];
+    expect(init.signal).toBeInstanceOf(AbortSignal);
   });
 });
 
