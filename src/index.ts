@@ -1,31 +1,106 @@
-import * as Alpaca from "./alpaca-functions";
-import * as pm from "./performance-metrics";
-import * as tu from "./time-utils";
-import * as mt from "./market-time";
-import fetchTradeMetrics from "./metrics-calcs";
-import * as pu from "./price-utils";
-import * as ft from "./format-tools";
-import * as Types from "./types";
-import * as misc from "./misc-utils";
-import * as polygon from "./polygon";
-import * as polygonIndices from "./polygon-indices";
-import * as av from "./alphavantage";
 import * as backend from "./adaptic";
-import * as crypto from "./crypto";
-import * as ta from "./technical-analysis";
-import { AlpacaTradingAPI } from "./alpaca-trading-api";
 import { AlpacaMarketDataAPI } from "./alpaca-market-data-api";
+import { AlpacaTradingAPI } from "./alpaca-trading-api";
+import * as Alpaca from "./alpaca/legacy";
+import * as av from "./alphavantage";
+import * as atrNs from "./atr";
+import * as crypto from "./crypto";
+import * as ft from "./format-tools";
+import * as mt from "./market-time";
+import * as massive from "./massive";
+import * as massiveIndices from "./massive-indices";
+import fetchTradeMetrics from "./metrics-calcs";
+import * as misc from "./misc-utils";
+import * as pm from "./performance-metrics";
+import * as pu from "./price-utils";
+import { TokenBucketRateLimiter, rateLimiters } from "./rate-limiter";
+import * as riskNs from "./risk-metrics";
+import * as strategyNs from "./strategy-metrics";
+import * as ta from "./technical-analysis";
+import * as tu from "./time-utils";
+import * as Types from "./types";
+import * as volatilityNs from "./volatility";
+
+// New modular Alpaca SDK imports
+import { alpaca as alpacaSDK } from "./alpaca";
+
+// Logger utilities
+export { getLogger, resetLogger, setLogger, type Logger } from "./logger";
+
+// Error utilities
+export {
+  AdapticUtilsError,
+  AlpacaApiError,
+  AlphaVantageError,
+  AuthenticationError,
+  DataFormatError,
+  HttpClientError,
+  HttpServerError,
+  MassiveApiError,
+  NetworkError,
+  RateLimitError,
+  TimeoutError,
+  ValidationError,
+  WebSocketError,
+} from "./errors";
+
+// Auth validation utilities
+export {
+  validateAlpacaCredentials,
+  validateAlphaVantageApiKey,
+  validateMassiveApiKey,
+} from "./utils/auth-validator";
+
+// API Endpoints Configuration
+export {
+  MARKET_DATA_API,
+  TRADING_API,
+  WEBSOCKET_STREAMS,
+  getCryptoStreamUrl,
+  getOptionsStreamUrl,
+  getStockStreamUrl,
+  getTradingApiUrl,
+  getTradingWebSocketUrl,
+  type AccountType,
+} from "./config/api-endpoints";
 
 // Cache utilities
 export {
+  DEFAULT_CACHE_OPTIONS,
   StampedeProtectedCache,
   createStampedeProtectedCache,
-  DEFAULT_CACHE_OPTIONS,
-  type StampedeProtectedCacheOptions,
   type CacheEntry,
-  type CacheStats,
   type CacheLoader,
+  type CacheStats,
+  type StampedeProtectedCacheOptions,
 } from "./cache/stampede-protected-cache";
+
+// Rate limiting utilities
+export {
+  TokenBucketRateLimiter,
+  rateLimiters,
+  type RateLimiterConfig,
+} from "./rate-limiter";
+
+// Retry utilities with exponential backoff
+export {
+  API_RETRY_CONFIGS,
+  isTransientNetworkError,
+  withRetry,
+  type RetryConfig,
+} from "./utils/retry";
+
+// Per-host circuit-breaker error used by fetchWithRetry to fail-fast
+// during sustained upstream outages.
+export { CircuitOpenError } from "./misc-utils";
+
+// HTTP timeout utilities
+export {
+  DEFAULT_TIMEOUTS,
+  createTimeoutSignal,
+  getTimeout,
+  withTimeout,
+} from "./http-timeout";
 
 // Asset Allocation utilities
 export {
@@ -36,56 +111,87 @@ export {
 
 export * from "./types/asset-allocation-types";
 
-// Re-export all types
-export * from "./types";
-
-// Trading-policy: canonical JSON shape (from @adaptic/backend-legacy) +
-// utils-tuned scalping defaults. See src/trading-policy/defaults.ts.
-export * as tradingPolicy from "./trading-policy";
+// API Response Validation Schemas
 export {
-  DEFAULT_TRADING_POLICY,
-  DEFAULT_TRADING_POLICY_UTILS_TUNED,
-  getUtilsTunedTradingPolicy,
-  type TradingPolicyJson,
-} from "./trading-policy";
+  AVNewsArticleSchema,
+  AVNewsResponseSchema,
+  // Alpaca schemas
+  AlpacaAccountDetailsSchema,
+  AlpacaBarSchema,
+  AlpacaCryptoBarsResponseSchema,
+  AlpacaHistoricalBarsResponseSchema,
+  AlpacaLatestBarsResponseSchema,
+  AlpacaLatestQuotesResponseSchema,
+  AlpacaLatestTradesResponseSchema,
+  AlpacaNewsArticleSchema,
+  AlpacaNewsResponseSchema,
+  AlpacaOrderSchema,
+  AlpacaOrdersArraySchema,
+  AlpacaPortfolioHistoryResponseSchema,
+  AlpacaPositionSchema,
+  AlpacaPositionsArraySchema,
+  AlpacaQuoteSchema,
+  AlpacaTradeSchema,
+  // Alpha Vantage schemas
+  AlphaVantageQuoteResponseSchema,
+  MassiveAggregatesResponseSchema,
+  MassiveDailyOpenCloseSchema,
+  MassiveErrorResponseSchema,
+  MassiveGroupedDailyResponseSchema,
+  MassiveLastTradeResponseSchema,
+  MassiveTickerDetailsResponseSchema,
+  MassiveTickerInfoSchema,
+  MassiveTradeSchema as MassiveTradeZodSchema,
+  MassiveTradesResponseSchema,
+  // Massive schemas
+  RawMassivePriceDataSchema,
+  ValidationResponseError,
+  safeValidateResponse,
+  validateResponse,
+  type ValidateResponseOptions,
+  type ValidationResult,
+} from "./schemas";
 
-// Export key classes directly for easier access
-export { AlpacaTradingAPI } from "./alpaca-trading-api";
-export { AlpacaMarketDataAPI } from "./alpaca-market-data-api";
-
-// New SDK-based Alpaca module (ported from stable-release).
-// Wraps @alpacahq/alpaca-trade-api directly for client/market-data/
-// options/streams/trading. Coexists with the flat alpaca-*-api files
-// above; consumers can migrate incrementally.
-export * as alpacaSdk from "./alpaca";
-
-// Standalone broker-API Zod schemas (ported from stable-release).
-export * as schemas from "./schemas";
-
-// Standalone utility modules ported from stable-release.
-export * from "./errors";
-export * from "./logger";
-export * from "./rate-limiter";
-export * from "./http-timeout";
-export * from "./risk-free-rate";
-export * as paginator from "./utils/paginator";
-export * as retry from "./utils/retry";
-
-// Synchronous credential validators + HTTP keep-alive helpers (ported from
-// stable-release; pure utilities with no coupling to any domain model).
+// Pagination utilities
 export {
-  validateAlpacaCredentials,
-  validateMassiveApiKey,
-  validateAlphaVantageApiKey,
-} from "./utils/auth-validator";
+  paginate,
+  paginateAll,
+  type CursorPaginationConfig,
+  type OffsetPaginationConfig,
+  type PaginationConfig,
+  type UrlPaginationConfig,
+} from "./utils/paginator";
+
+// HTTP connection pooling utilities
 export {
   KEEP_ALIVE_DEFAULTS,
+  getAgentPoolStatus,
   httpAgent,
   httpsAgent,
-  getAgentPoolStatus,
   verifyFetchKeepAlive,
   type ConnectionPoolStatus,
 } from "./utils/http-keep-alive";
+
+// Risk-free rate utilities (live 3-month T-Bill, cached 24h)
+export {
+  DEFAULT_RISK_FREE_RATE,
+  RISK_FREE_RATE_TTL_MS,
+  getRiskFreeRate,
+  getRiskFreeRateWithProvenance,
+  getCachedRiskFreeRateSync,
+  getCachedRiskFreeRateSyncWithProvenance,
+  setRiskFreeRate,
+  resetRiskFreeRateCache,
+  type RiskFreeRateSource,
+  type RiskFreeRateResult,
+} from "./risk-free-rate";
+
+// Re-export all types
+export * from "./types";
+
+// Export key classes directly for easier access
+export { AlpacaMarketDataAPI } from "./alpaca-market-data-api";
+export { AlpacaTradingAPI } from "./alpaca-trading-api";
 
 // Export factory functions for easier instantiation
 export const createAlpacaTradingAPI = (
@@ -98,34 +204,79 @@ export const createAlpacaMarketDataAPI = () => {
   return AlpacaMarketDataAPI.getInstance();
 };
 
+// Export new modular Alpaca SDK wrappers
+export * from "./alpaca";
+
+// Trading Policy schemas, types, enums, and defaults
+export * as tradingPolicy from "./trading-policy";
+
+// Risk-protection math primitives (P0 Wave)
+export * as atr from "./atr";
+export * as volatility from "./volatility";
+export * as risk from "./risk-metrics";
+export * as strategy from "./strategy-metrics";
+export {
+  AutonomyMode,
+  OverlayType,
+  OverlaySeverity,
+  OverlayStatus,
+  DecisionOutcome,
+  DecisionRecordStatus,
+  DecisionMemoryOutcome,
+  LlmProvider,
+} from "./trading-policy/enums";
+export type {
+  AutonomyPrefs,
+  AssetUniversePrefs,
+  RiskBudgetPrefs,
+  SignalConsumptionPrefs,
+  ExecutionPrefs,
+  PositionManagementPrefs,
+  PortfolioConstructionPrefs,
+  OverlayResponsePrefs,
+  ModelPrefs,
+  AuditNotificationPrefs,
+  PolicyMutation,
+  EffectiveTradingPolicy,
+} from "./trading-policy/schemas";
+export { DEFAULT_TRADING_POLICY } from "./trading-policy/defaults/default-trading-policy";
+
 // Export TokenProvider type for Apollo client auth
 export type { TokenProvider } from "./adaptic";
 
 export const adaptic = {
   types: Types,
+  atr: atrNs,
+  risk: riskNs,
+  strategy: strategyNs,
+  volatility: volatilityNs,
   backend: {
     fetchAssetOverview: backend.fetchAssetOverview,
     getApolloClient: backend.getSharedApolloClient,
     configureAuth: backend.configureAuth,
     isAuthConfigured: backend.isAuthConfigured,
+    disconnectClient: backend.disconnectClient,
   },
   alpaca: {
-    TradingAPI: AlpacaTradingAPI,
-    MarketDataAPI: AlpacaMarketDataAPI,
-    makeRequest: Alpaca.makeRequest,
-    accountDetails: Alpaca.fetchAccountDetails,
-    positions: Alpaca.fetchAllPositions, // to be deprecated
-    position: {
-      fetch: Alpaca.fetchPosition,
-      close: Alpaca.closePosition,
-      fetchAll: Alpaca.fetchAllPositions,
-      closeAll: Alpaca.closeAllPositions,
-      closeAllAfterHours: Alpaca.closeAllPositionsAfterHours,
-    },
-    portfolioHistory: Alpaca.fetchPortfolioHistory,
-    getConfig: Alpaca.getConfiguration,
-    updateConfig: Alpaca.updateConfiguration,
-    news: Alpaca.fetchNews,
+    // New SDK-based client factory (RECOMMENDED)
+    createClient: alpacaSDK.createClient,
+    createClientFromEnv: alpacaSDK.createClientFromEnv,
+    clearClientCache: alpacaSDK.clearClientCache,
+
+    // New SDK-based modules (RECOMMENDED)
+    /** @description Smart orders: brackets, OCO, OTO, trailing stops */
+    smartOrders: alpacaSDK.smartOrders,
+    /** @description Standard order operations - SDK-based (requires AlpacaClient) */
+    sdkOrders: alpacaSDK.orders,
+    /** @description Position management - SDK-based (requires AlpacaClient) */
+    sdkPositions: alpacaSDK.positions,
+    /** @description Account information and configuration - SDK-based (requires AlpacaClient) */
+    sdkAccount: alpacaSDK.account,
+    /** @description Market clock and trading calendar - SDK-based (requires AlpacaClient) */
+    sdkClock: alpacaSDK.clock,
+
+    // Legacy API (with original signatures for backward compatibility)
+    /** @description Standard order operations - Legacy API (uses AlpacaAuth) */
     orders: {
       create: Alpaca.createOrder,
       createLimitOrder: Alpaca.createLimitOrder,
@@ -135,9 +286,53 @@ export const adaptic = {
       cancel: Alpaca.cancelOrder,
       cancelAll: Alpaca.cancelAllOrders,
     },
+    /** @description Position management - Legacy API (uses AlpacaAuth) */
+    positions: {
+      fetch: Alpaca.fetchPosition,
+      close: Alpaca.closePosition,
+      fetchAll: Alpaca.fetchAllPositions,
+      closeAll: Alpaca.closeAllPositions,
+      closeAllAfterHours: Alpaca.closeAllPositionsAfterHours,
+    },
+    /** @description Account information - Legacy API (uses AlpacaAuth) */
+    account: Alpaca.fetchAccountDetails,
+    /** @description Real-time and historical quotes */
+    quotes: alpacaSDK.quotes,
+    /** @description Historical price bars (OHLCV) */
+    bars: alpacaSDK.bars,
+    /** @description Trade data */
+    trades: alpacaSDK.trades,
+    /** @description Market news */
+    news: alpacaSDK.news,
+    /** @description Options trading and data */
+    options: alpacaSDK.options,
+    /** @description Cryptocurrency trading and data */
+    crypto: alpacaSDK.crypto,
+    /** @description Real-time WebSocket streams */
+    streams: alpacaSDK.streams,
+
+    // Backward-compatible aliases (engine still references these directly)
+    /** @deprecated Use positions module instead */
+    position: {
+      fetch: Alpaca.fetchPosition,
+      close: Alpaca.closePosition,
+      fetchAll: Alpaca.fetchAllPositions,
+      closeAll: Alpaca.closeAllPositions,
+      closeAllAfterHours: Alpaca.closeAllPositionsAfterHours,
+    },
+    /** @deprecated Use account() instead */
+    accountDetails: Alpaca.fetchAccountDetails,
+    /** @deprecated Use sdkAccount.getPortfolioHistory() instead */
+    portfolioHistory: Alpaca.fetchPortfolioHistory,
+    /** @deprecated Use sdkAccount.getAccountConfiguration() instead */
+    getConfig: Alpaca.getConfiguration,
+    /** @deprecated Use sdkAccount.updateAccountConfiguration() instead */
+    updateConfig: Alpaca.updateConfiguration,
+    /** @deprecated Use SDK asset functions instead */
     asset: {
       get: Alpaca.getAsset,
     },
+    /** @deprecated Use quotes module instead */
     quote: {
       getLatest: Alpaca.getLatestQuotes,
     },
@@ -174,24 +369,26 @@ export const adaptic = {
     infoRatio: pm.calculateInformationRatio,
     allpm: pm.fetchPerformanceMetrics,
   },
-  polygon: {
-    fetchTickerInfo: polygon.fetchTickerInfo,
-    fetchGroupedDaily: polygon.fetchGroupedDaily,
-    fetchLastTrade: polygon.fetchLastTrade,
-    fetchTrades: polygon.fetchTrades,
-    fetchPrices: polygon.fetchPrices,
-    analysePolygonPriceData: polygon.analysePolygonPriceData,
-    formatPriceData: polygon.formatPriceData,
-    fetchDailyOpenClose: polygon.fetchDailyOpenClose,
-    getPreviousClose: polygon.getPreviousClose,
+  massive: {
+    fetchTickerInfo: massive.fetchTickerInfo,
+    fetchGroupedDaily: massive.fetchGroupedDaily,
+    fetchLastTrade: massive.fetchLastTrade,
+    fetchLastQuote: massive.fetchLastQuote,
+    fetchTrades: massive.fetchTrades,
+    fetchPrices: massive.fetchPrices,
+    fetchPricesWithFreshness: massive.fetchPricesWithFreshness,
+    analyseMassivePriceData: massive.analyseMassivePriceData,
+    formatPriceData: massive.formatPriceData,
+    fetchDailyOpenClose: massive.fetchDailyOpenClose,
+    getPreviousClose: massive.getPreviousClose,
   },
   indices: {
-    fetchAggregates: polygonIndices.fetchIndicesAggregates,
-    fetchPreviousClose: polygonIndices.fetchIndicesPreviousClose,
-    fetchDailyOpenClose: polygonIndices.fetchIndicesDailyOpenClose,
-    fetchSnapshot: polygonIndices.fetchIndicesSnapshot,
-    fetchUniversalSnapshot: polygonIndices.fetchUniversalSnapshot,
-    formatBarData: polygonIndices.formatIndicesBarData,
+    fetchAggregates: massiveIndices.fetchIndicesAggregates,
+    fetchPreviousClose: massiveIndices.fetchIndicesPreviousClose,
+    fetchDailyOpenClose: massiveIndices.fetchIndicesDailyOpenClose,
+    fetchSnapshot: massiveIndices.fetchIndicesSnapshot,
+    fetchUniversalSnapshot: massiveIndices.fetchUniversalSnapshot,
+    formatBarData: massiveIndices.formatIndicesBarData,
   },
   price: {
     roundUp: pu.roundStockPrice,
@@ -238,7 +435,22 @@ export const adaptic = {
   utils: {
     logIfDebug: misc.logIfDebug,
     fetchWithRetry: misc.fetchWithRetry,
-    validatePolygonApiKey: misc.validatePolygonApiKey,
+    validateMassiveApiKey: misc.validateMassiveApiKey,
+    /**
+     * Force-close a stuck-open per-host circuit breaker. Operator
+     * runbook utility — see {@link misc.resetCircuitBreaker}.
+     */
+    resetCircuitBreaker: misc.resetCircuitBreaker,
+    /**
+     * Read-only snapshot of all per-host circuit-breaker states for
+     * use in operational-truth endpoints. See
+     * {@link misc.getCircuitBreakerSnapshot}.
+     */
+    getCircuitBreakerSnapshot: misc.getCircuitBreakerSnapshot,
+  },
+  rateLimiter: {
+    TokenBucketRateLimiter,
+    limiters: rateLimiters,
   },
 };
 

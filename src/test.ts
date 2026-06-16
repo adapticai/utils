@@ -1,7 +1,9 @@
-import { createAlpacaTradingAPI } from "./index";
-import { TradeUpdate, AlpacaCredentials } from "./types/alpaca-types";
 import { marketDataAPI, AlpacaMarketDataAPI } from "./alpaca-market-data-api";
 import { formatCurrency, formatNumber } from "./format-tools";
+import {
+  DEFAULT_TRADING_POLICY,
+  EffectiveTradingPolicySchema,
+} from "./trading-policy";
 
 const log = (message: string) => {
   console.log(
@@ -9,257 +11,214 @@ const log = (message: string) => {
   );
 };
 
-// async function testCreateEquitiesTrade() {
-//   try {
-//     log('Starting createEquitiesTrade test...');
+/**
+ * Lock-in test for the scalping-tuned defaults landed by the 2026-05-10 audit.
+ * Re-parses an empty policy and asserts the new defaults hold for every field
+ * that was tightened. Prints the full parsed object so any future drift is
+ * immediately visible in test output. Throws on the first mismatch so this
+ * surfaces as a non-zero exit code under `npm run test:legacy`.
+ */
+function testScalpingDefaultsLockedIn(): void {
+  log("Verifying DEFAULT_TRADING_POLICY scalping calibration...");
 
-//     // Create credentials using environment variables
-//     const credentials: AlpacaCredentials = {
-//       accountName: 'test',
-//       apiKey: process.env.ALPACA_API_KEY || '',
-//       apiSecret: process.env.ALPACA_SECRET_KEY || '',
-//       type: 'PAPER',
-//       orderType: 'market',
-//       engine: 'quant'
-//     };
+  const policy = EffectiveTradingPolicySchema.parse({});
 
-//     if (!credentials.apiKey || !credentials.apiSecret) {
-//       throw new Error('ALPACA_API_KEY and ALPACA_SECRET_KEY environment variables must be set');
-//     }
+  const expectations: Array<[string, unknown, unknown]> = [
+    // Top-level scalars
+    ["maxOpenPositions", policy.maxOpenPositions, 8],
+    ["maxSymbolConcentrationPct", policy.maxSymbolConcentrationPct, 8],
+    ["equityWashTradeCooldownMs", policy.equityWashTradeCooldownMs, 5_000],
+    ["maxDailyLossPercent", policy.maxDailyLossPercent, 0.02],
+    [
+      "perTradeEquityAllocationPct",
+      policy.perTradeEquityAllocationPct,
+      2,
+    ],
+    [
+      "perTradeCryptoAllocationPct",
+      policy.perTradeCryptoAllocationPct,
+      2,
+    ],
+    // positionManagementPrefs
+    [
+      "positionManagementPrefs.defaultStopLossPct",
+      policy.positionManagementPrefs.defaultStopLossPct,
+      0.5,
+    ],
+    [
+      "positionManagementPrefs.defaultTakeProfitPct",
+      policy.positionManagementPrefs.defaultTakeProfitPct,
+      1.0,
+    ],
+    [
+      "positionManagementPrefs.atrStopMultiplier",
+      policy.positionManagementPrefs.atrStopMultiplier,
+      0.75,
+    ],
+    [
+      "positionManagementPrefs.maxHoldingPeriodMinutes",
+      policy.positionManagementPrefs.maxHoldingPeriodMinutes,
+      30,
+    ],
+    [
+      "positionManagementPrefs.doNotReenterAfterStopOutMinutes",
+      policy.positionManagementPrefs.doNotReenterAfterStopOutMinutes,
+      10,
+    ],
+    [
+      "positionManagementPrefs.scaleOutTriggerPct",
+      policy.positionManagementPrefs.scaleOutTriggerPct,
+      0.5,
+    ],
+    [
+      "positionManagementPrefs.defaultRiskRewardRatio",
+      policy.positionManagementPrefs.defaultRiskRewardRatio,
+      1.5,
+    ],
+    [
+      "positionManagementPrefs.breakEvenStopEnabled",
+      policy.positionManagementPrefs.breakEvenStopEnabled,
+      true,
+    ],
+    [
+      "positionManagementPrefs.breakEvenTriggerPct",
+      policy.positionManagementPrefs.breakEvenTriggerPct,
+      1,
+    ],
+    // signalConsumptionPrefs
+    [
+      "signalConsumptionPrefs.minConfidenceByDefault",
+      policy.signalConsumptionPrefs.minConfidenceByDefault,
+      65,
+    ],
+    [
+      "signalConsumptionPrefs.minPercentageChange",
+      policy.signalConsumptionPrefs.minPercentageChange,
+      0.15,
+    ],
+    [
+      "signalConsumptionPrefs.volumeThreshold",
+      policy.signalConsumptionPrefs.volumeThreshold,
+      100_000,
+    ],
+    [
+      "signalConsumptionPrefs.minExpectedRewardRiskRatio",
+      policy.signalConsumptionPrefs.minExpectedRewardRiskRatio,
+      1.3,
+    ],
+    [
+      "signalConsumptionPrefs.cooldownAfterEntrySeconds",
+      policy.signalConsumptionPrefs.cooldownAfterEntrySeconds,
+      5,
+    ],
+    [
+      "signalConsumptionPrefs.cooldownAfterStopOutSeconds",
+      policy.signalConsumptionPrefs.cooldownAfterStopOutSeconds,
+      30,
+    ],
+    [
+      "signalConsumptionPrefs.duplicateSignalSuppressionWindowSeconds",
+      policy.signalConsumptionPrefs.duplicateSignalSuppressionWindowSeconds,
+      10,
+    ],
+    [
+      "signalConsumptionPrefs.maxSignalAgeSeconds",
+      policy.signalConsumptionPrefs.maxSignalAgeSeconds,
+      30,
+    ],
+    // riskBudgetPrefs
+    [
+      "riskBudgetPrefs.maxRiskPerTradePct",
+      policy.riskBudgetPrefs.maxRiskPerTradePct,
+      1.5,
+    ],
+    [
+      "riskBudgetPrefs.maxLossPerDayPct",
+      policy.riskBudgetPrefs.maxLossPerDayPct,
+      2.0,
+    ],
+    [
+      "riskBudgetPrefs.maxLossPerWeekPct",
+      policy.riskBudgetPrefs.maxLossPerWeekPct,
+      5.0,
+    ],
+    [
+      "riskBudgetPrefs.perTradeAllocationPct",
+      policy.riskBudgetPrefs.perTradeAllocationPct,
+      2,
+    ],
+    // executionPrefs
+    [
+      "executionPrefs.maxSlippageTolerancePct",
+      policy.executionPrefs.maxSlippageTolerancePct,
+      0.3,
+    ],
+    [
+      "executionPrefs.priceCollarPct",
+      policy.executionPrefs.priceCollarPct,
+      0.5,
+    ],
+    [
+      "executionPrefs.executionBias",
+      policy.executionPrefs.executionBias,
+      "passive",
+    ],
+    [
+      "executionPrefs.defaultTimeInForce",
+      policy.executionPrefs.defaultTimeInForce,
+      "ioc",
+    ],
+    [
+      "executionPrefs.preferredOrderType",
+      policy.executionPrefs.preferredOrderType,
+      "limit",
+    ],
+    [
+      "executionPrefs.partialFillPolicy",
+      policy.executionPrefs.partialFillPolicy,
+      "accept_partial",
+    ],
+  ];
 
-//     // Create a new instance of the trading API
-//     const alpacaAPI = createAlpacaTradingAPI(credentials);
+  let mismatches = 0;
+  for (const [path, actual, expected] of expectations) {
+    if (actual !== expected) {
+      mismatches += 1;
+      log(
+        `MISMATCH: ${path} = ${JSON.stringify(actual)} (expected ${JSON.stringify(expected)})`,
+      );
+    }
+  }
 
-//     // Get current account details
-//     const accountDetails = await alpacaAPI.getAccountDetails();
-//     log(`Account equity: $${parseFloat(accountDetails.equity).toFixed(2)}`);
-//     log(`Buying power: $${parseFloat(accountDetails.buying_power).toFixed(2)}`);
+  if (mismatches > 0) {
+    log(`${mismatches} default(s) drifted from scalping calibration.`);
+    log("Full parsed policy follows for debugging:");
+    console.log(JSON.stringify(policy, null, 2));
+    throw new Error(
+      `Scalping default lock-in failed: ${mismatches} mismatches.`,
+    );
+  }
 
-//     const testSymbols = ['AAPL', 'MSFT', 'GOOGL', 'TSLA', 'NVDA', 'META', 'AMZN']; // Multiple symbols to avoid wash trade detection
-//     const referencePrice = 150.00; // Mock reference price for testing
+  // Also confirm DEFAULT_TRADING_POLICY (which is the parsed object built
+  // with explicit top-level scalars) agrees with the schema-derived policy
+  // on every nested field that came from defaults — this catches any case
+  // where someone passes a stale literal in default-trading-policy.ts that
+  // overrides what the schema is now producing.
+  if (
+    DEFAULT_TRADING_POLICY.maxOpenPositions !== 8 ||
+    DEFAULT_TRADING_POLICY.equityWashTradeCooldownMs !== 5_000 ||
+    DEFAULT_TRADING_POLICY.maxDailyLossPercent !== 0.02
+  ) {
+    throw new Error(
+      "DEFAULT_TRADING_POLICY top-level scalars drifted from scalping calibration.",
+    );
+  }
 
-//     log('=== Testing createEquitiesTrade function ===');
-
-//     // Test 1: Simple market order (long position)
-//     log('\n1. Testing simple market order (long)...');
-//     try {
-//       const order1 = await alpacaAPI.createEquitiesTrade(
-//         { symbol: testSymbols[0], qty: 1, side: 'buy' }
-//       );
-//       log(`✅ Created simple market buy order: ${order1.id}`);
-//     } catch (error) {
-//       log(`❌ Failed to create simple market order: ${error}`);
-//     }
-
-//     // Test 2: Simple market order (short position)
-//     log('\n2. Testing simple market order (short)...');
-//     try {
-//       const order2 = await alpacaAPI.createEquitiesTrade(
-//         { symbol: testSymbols[1], qty: 1, side: 'sell' }
-//       );
-//       log(`✅ Created simple market sell order: ${order2.id}`);
-//     } catch (error) {
-//       log(`❌ Failed to create simple market sell order: ${error}`);
-//     }
-
-//     // Test 3: Limit order with percentage-based stop loss (long)
-//     log('\n3. Testing limit order with percentage-based stop loss (long)...');
-//     try {
-//       const order3 = await alpacaAPI.createEquitiesTrade(
-//         { symbol: testSymbols[2], qty: 1, side: 'buy', referencePrice },
-//         {
-//           type: 'limit',
-//           limitPrice: 149.50,
-//           useStopLoss: true,
-//           stopPercent100: 3.0 // 3% stop loss
-//         }
-//       );
-//       log(`✅ Created limit buy order with stop loss: ${order3.id}`);
-//     } catch (error) {
-//       log(`❌ Failed to create limit order with stop loss: ${error}`);
-//     }
-
-//     // Test 4: Limit order with percentage-based take profit (short)
-//     log('\n4. Testing limit order with percentage-based take profit (short)...');
-//     try {
-//       const order4 = await alpacaAPI.createEquitiesTrade(
-//         { symbol: testSymbols[3], qty: 1, side: 'sell', referencePrice },
-//         {
-//           type: 'limit',
-//           limitPrice: 150.50,
-//           useTakeProfit: true,
-//           takeProfitPercent100: 2.5 // 2.5% take profit
-//         }
-//       );
-//       log(`✅ Created limit sell order with take profit: ${order4.id}`);
-//     } catch (error) {
-//       log(`❌ Failed to create limit order with take profit: ${error}`);
-//     }
-
-//     // Test 5: Bracket order with both stop loss and take profit (long)
-//     log('\n5. Testing bracket order with both stop loss and take profit (long)...');
-//     try {
-//       const order5 = await alpacaAPI.createEquitiesTrade(
-//         { symbol: testSymbols[4], qty: 1, side: 'buy', referencePrice },
-//         {
-//           type: 'limit',
-//           limitPrice: 149.00,
-//           useStopLoss: true,
-//           stopPercent100: 4.0, // 4% stop loss
-//           useTakeProfit: true,
-//           takeProfitPercent100: 6.0 // 6% take profit
-//         }
-//       );
-//       log(`✅ Created bracket order (long): ${order5.id}`);
-//     } catch (error) {
-//       log(`❌ Failed to create bracket order: ${error}`);
-//     }
-
-//     // Test 6: Bracket order with fixed prices (short)
-//     log('\n6. Testing bracket order with fixed prices (short)...');
-//     try {
-//       const order6 = await alpacaAPI.createEquitiesTrade(
-//         { symbol: testSymbols[5], qty: 1, side: 'sell' },
-//         {
-//           type: 'limit',
-//           limitPrice: 151.00,
-//           useStopLoss: true,
-//           stopPrice: 155.00, // Fixed stop price
-//           useTakeProfit: true,
-//           takeProfitPrice: 145.00 // Fixed take profit price
-//         }
-//       );
-//       log(`✅ Created bracket order with fixed prices (short): ${order6.id}`);
-//     } catch (error) {
-//       log(`❌ Failed to create bracket order with fixed prices: ${error}`);
-//     }
-
-//     // Test 7: Extended hours limit order
-//     log('\n7. Testing extended hours limit order...');
-//     try {
-//       const order7 = await alpacaAPI.createEquitiesTrade(
-//         { symbol: testSymbols[6], qty: 1, side: 'buy' },
-//         {
-//           type: 'limit',
-//           limitPrice: 148.00,
-//           extendedHours: true
-//         }
-//       );
-//       log(`✅ Created extended hours limit order: ${order7.id}`);
-//     } catch (error) {
-//       log(`❌ Failed to create extended hours order: ${error}`);
-//     }
-
-//     // Test 8: Error condition - market order with extended hours (should fail)
-//     log('\n8. Testing error condition - market order with extended hours (should fail)...');
-//     try {
-//       await alpacaAPI.createEquitiesTrade(
-//         { symbol: testSymbols[0], qty: 1, side: 'buy' },
-//         {
-//           type: 'market',
-//           extendedHours: true // This should trigger an error
-//         }
-//       );
-//       log(`❌ Unexpected success - should have failed!`);
-//     } catch (error) {
-//       log(`✅ Correctly caught error: ${error instanceof Error ? error.message : error}`);
-//     }
-
-//     // Test 9: Error condition - missing referencePrice for percentage (should fail)
-//     log('\n9. Testing error condition - missing referencePrice for percentage (should fail)...');
-//     try {
-//       await alpacaAPI.createEquitiesTrade(
-//         { symbol: testSymbols[0], qty: 1, side: 'buy' }, // No referencePrice
-//         {
-//           useStopLoss: true,
-//           stopPercent100: 3.0 // Requires referencePrice
-//         }
-//       );
-//       log(`❌ Unexpected success - should have failed!`);
-//     } catch (error) {
-//       log(`✅ Correctly caught error: ${error instanceof Error ? error.message : error}`);
-//     }
-
-//     // Wait a moment for all orders to process
-//     await new Promise(resolve => setTimeout(resolve, 2000));
-
-//     // Get all orders to see what was created
-//     log('\n=== Checking created orders ===');
-//     const orders = await alpacaAPI.getOrders({ status: 'open', limit: 20 });
-//     log(`Found ${orders.length} open orders`);
-
-//     orders.forEach((order, index) => {
-//       log(`Order ${index + 1}: ${order.order_class} ${order.type} ${order.side} ${order.qty} ${order.symbol} @ $${order.limit_price || 'market'}`);
-//       if (order.legs && order.legs.length > 0) {
-//         log(`  Stop Loss: $${order.legs.find(leg => leg.type === 'stop')?.stop_price || 'N/A'}`);
-//         log(`  Take Profit: $${order.legs.find(leg => leg.type === 'limit')?.limit_price || 'N/A'}`);
-//       }
-//     });
-
-//     // Cancel all orders to clean up
-//     log('\n=== Cleaning up - canceling all orders ===');
-//     await alpacaAPI.cancelAllOrders();
-//     log('✅ All orders canceled');
-
-//     log('\n=== Test completed successfully! ===');
-
-//   } catch (error) {
-//     log(`❌ Error in createEquitiesTrade test: ${error instanceof Error ? error.message : 'Unknown error'}`);
-//     process.exit(1);
-//   }
-// }
-
-// async function testAlpacaWebSocket() {
-//   try {
-//     log('Starting Alpaca WebSocket test...');
-
-//     // Create credentials using environment variables
-//     const credentials: AlpacaCredentials = {
-//       accountName: 'test',
-//       apiKey: process.env.ALPACA_API_KEY || '',
-//       apiSecret: process.env.ALPACA_SECRET_KEY || '',
-//       type: 'PAPER',
-//       orderType: 'market',
-//       engine: 'quant'
-//     };
-
-//     if (!credentials.apiKey || !credentials.apiSecret) {
-//       throw new Error('ALPACA_API_KEY and ALPACA_SECRET_KEY environment variables must be set');
-//     }
-
-//     // Create a new instance of the trading API
-//     const alpacaAPI = createAlpacaTradingAPI(credentials); // type AlpacaCredentials
-//     // Set up trade update callback
-//     alpacaAPI.onTradeUpdate((update: TradeUpdate) => {
-//       log(`Received trade update: event ${update.event} for an order to ${update.order.side} ${update.order.qty} of ${update.order.symbol}`);
-//     });
-//     // Connect to WebSocket
-//     alpacaAPI.connectWebsocket(); // necessary to connect to the WebSocket
-
-//     // create an order
-//     const order = await alpacaAPI.createMarketOrder('AAPL', 1, 'buy', 'buy_to_open');
-//     // cancel the order
-//     await alpacaAPI.cancelAllOrders();
-
-//     // Keep the process running
-//     log('WebSocket connected and listening for trade updates...');
-//     log('Press Ctrl+C to exit');
-
-//     // Keep the process running
-//     await new Promise(() => {});
-//   } catch (error) {
-//     log(`Error in WebSocket test: ${error instanceof Error ? error.message : 'Unknown error'}`);
-//     process.exit(1);
-//   }
-// }
-
-// // Run the test
-// testAlpacaWebSocket();
-
-// Run the createEquitiesTrade test
-//testCreateEquitiesTrade();
-
-// testing retrieving pre-market data (just 9:00am to 9:30am on 1 july 2025 for SPY) using the market data api
+  log(
+    `Scalping defaults locked in (${expectations.length} fields verified). Full policy:`,
+  );
+  console.log(JSON.stringify(policy, null, 2));
+}
 
 async function testPreMarketData() {
   try {
@@ -309,5 +268,8 @@ async function testPreMarketData() {
     );
   }
 }
+
+// Lock-in scalping defaults first so any drift fails fast with exit 1.
+testScalpingDefaultsLockedIn();
 
 testPreMarketData();

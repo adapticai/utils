@@ -53,7 +53,6 @@ export function calculateBollingerBands(
     });
   }
 
-  // logIfDebug(`Calculated Bollinger Bands for ${result.length} periods`);
   return result;
 }
 
@@ -134,7 +133,6 @@ export function calculateEMA(
     result.push(entry);
   }
 
-  // logIfDebug(`Calculated EMA for ${result.length} periods`);
   return result;
 }
 
@@ -222,7 +220,6 @@ export function calculateFibonacciLevels(
     });
   }
 
-  // logIfDebug(`Calculated Fibonacci levels for ${result.length} periods`);
   return result;
 }
 
@@ -301,7 +298,6 @@ export function calculateMACD(
     });
   }
 
-  // logIfDebug(`Calculated MACD for ${result.length} periods`);
   return result;
 }
 
@@ -374,7 +370,6 @@ export function calculateRSI(
     });
   }
 
-  // logIfDebug(`Calculated RSI for ${result.length} periods`);
   return result;
 }
 
@@ -447,7 +442,6 @@ export function calculateStochasticOscillator(
     }
   }
 
-  // logIfDebug(`Calculated Stochastic Oscillator for ${result.length} periods`);
   return result;
 }
 

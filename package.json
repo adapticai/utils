@@ -1,6 +1,6 @@
 {
   "name": "@adaptic/utils",
-  "version": "0.1.50",
+  "version": "0.0.999",
   "author": "Adaptic.ai",
   "description": "Utility functions used in Adaptic app and Lambda functions",
   "always-build-npm": true,
@@ -15,18 +15,30 @@
       "types": "./dist/types/index.d.ts"
     }
   },
+  "publishConfig": {
+    "tag": "stable"
+  },
   "files": [
     "dist"
   ],
   "scripts": {
     "clean": "rm -rf dist",
     "build": "npm run clean && rollup -c",
+    "prepare": "npm run build",
     "prepublishOnly": "npm run build",
-    "test": "npm run build && node dist/test.js"
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:legacy": "npm run build && node dist/test.js",
+    "build:analyze": "ANALYZE_BUNDLE=true npm run build",
+    "docs": "typedoc",
+    "docs:watch": "typedoc --watch",
+    "changelog": "conventional-changelog -p angular -i CHANGELOG.md -s"
   },
   "dependencies": {
-    "@adaptic/backend-legacy": "^0.0.84",
-    "@adaptic/lumic-utils": "^1.0.10",
+    "@adaptic/backend-legacy": "0.0.977",
     "@alpacahq/alpaca-trade-api": "^3.1.3",
     "@apollo/client": "^3.13.8",
     "chalk": "^5.4.1",
@@ -35,13 +47,17 @@
     "lru-cache": "^11.2.2",
     "ms": "^2.1.3",
     "p-limit": "^6.2.0",
-    "ws": "^8.18.3"
+    "zod": "^3.25.76"
   },
   "peerDependencies": {
     "react": "^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0"
   },
   "license": "ISC",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "devDependencies": {
+    "@eslint/js": "^9.18.0",
     "@rollup/plugin-commonjs": "^28.0.6",
     "@rollup/plugin-json": "^6.1.0",
     "@rollup/plugin-node-resolve": "^16.0.1",
@@ -49,16 +65,22 @@
     "@types/date-fns": "^2.6.3",
     "@types/ms": "^2.1.0",
     "@types/ws": "^8.18.1",
-    "@typescript-eslint/eslint-plugin": "^8.59.3",
-    "@typescript-eslint/parser": "^8.59.3",
-    "eslint-plugin-prettier": "^5.5.5",
+    "@typescript-eslint/eslint-plugin": "^8.22.0",
+    "@typescript-eslint/parser": "^8.22.0",
+    "@vitest/coverage-v8": "^4.0.18",
+    "conventional-changelog-cli": "^5.0.0",
+    "eslint": "^9.18.0",
+    "fast-check": "^4.5.3",
     "lightweight-charts": "^5.0.8",
     "react": "^19.1.0",
-    "rollup": "^4.46.2",
+    "rollup": "^4.60.4",
     "rollup-cli": "^1.0.9",
-    "typescript": "^5.8.3"
+    "rollup-plugin-visualizer": "^6.0.5",
+    "typedoc": "^0.28.16",
+    "typescript": "^5.8.3",
+    "vitest": "^4.0.18"
   },
-  "keywords": [
-    "next-dist-tag"
-  ]
+  "overrides": {
+    "picomatch": "^4.0.4"
+  }
 }

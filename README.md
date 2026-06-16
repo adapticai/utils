@@ -1,15 +1,27 @@
 # @adaptic/utils
 
-Last updated: 20 Feb 2025
-
 A comprehensive utility library for financial data processing, time manipulation, and formatting.
 
 NPM repo: https://www.npmjs.com/package/@adaptic/utils
 
+## Branch Model
+
+This repo has two publish lineages:
+
+- `master` -> `@adaptic/utils@0.1.x` on npm dist-tag `latest`. What external
+  unpinned `npm install @adaptic/utils` will pull.
+- `stable-release` -> `@adaptic/utils@0.0.x` (0.0.992+) on npm dist-tag
+  `stable`. What `engine` and `backend-legacy` actually consume via pinned
+  versions.
+
+All new work lands on `stable-release`. `master` is only updated when
+intentionally cutting a 0.1.x patch for legacy external consumers.
+
 ## Installation
 
 ```bash
-npm install @adaptic/utils
+npm install @adaptic/utils       # 0.1.x from master
+npm install @adaptic/utils@stable # 0.0.x from stable-release (engine pins this)
 ```
 
 ## Usage
