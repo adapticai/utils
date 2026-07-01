@@ -652,12 +652,7 @@ describe("fetchPrices", () => {
       } as Response);
 
       const result = await fetchPrices(
-        {
-          ticker: "AAPL",
-          start: 1736424000000,
-          multiplier: 1,
-          timespan: "day",
-        },
+        { ticker: "AAPL", start: 1736424000000, multiplier: 1, timespan: "day" },
         { apiKey: "test-key" },
       );
 
@@ -691,12 +686,7 @@ describe("fetchPrices", () => {
       } as Response);
 
       const result = await fetchPrices(
-        {
-          ticker: "AAPL",
-          start: 1736424000000,
-          multiplier: 1,
-          timespan: "day",
-        },
+        { ticker: "AAPL", start: 1736424000000, multiplier: 1, timespan: "day" },
         { apiKey: "test-key" },
       );
 

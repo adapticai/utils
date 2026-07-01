@@ -1,19 +1,21 @@
 /**
- * Polygon Indices API Implementation
+ * Massive Indices API Implementation
  *
- * This module provides functions to interact with the Polygon.io Indices API.
+ * This module provides functions to interact with the Massive.com Indices API.
  */
 
-import { fetchWithRetry } from "./misc-utils";
 import pLimit from "p-limit";
+import { getLogger } from "./logger";
+import { fetchWithRetry } from "./misc-utils";
+import { rateLimiters } from "./rate-limiter";
+import { createTimeoutSignal, DEFAULT_TIMEOUTS } from "./http-timeout";
 import {
-  PolygonIndicesAggregatesParams,
-  PolygonIndicesAggregatesResponse,
-  PolygonIndicesPrevCloseResponse,
-  PolygonIndicesDailyOpenCloseResponse,
-  PolygonIndicesSnapshotParams,
-  PolygonIndicesSnapshotResponse,
-  PolygonIndicesErrorResponse,
+  MassiveIndicesAggregatesParams,
+  MassiveIndicesAggregatesResponse,
+  MassiveIndicesDailyOpenCloseResponse,
+  MassiveIndicesPrevCloseResponse,
+  MassiveIndicesSnapshotParams,
+  MassiveIndicesSnapshotResponse,
 } from "./types";
 
 // Constants from environment variables.
@@ -26,11 +28,11 @@ const { MASSIVE_INDICES_API_KEY, ALPACA_INDICES_API_KEY } = process.env as Recor
 >;
 
 // Define concurrency limits for API
-const POLYGON_INDICES_CONCURRENCY_LIMIT = 5;
-const polygonIndicesLimit = pLimit(POLYGON_INDICES_CONCURRENCY_LIMIT);
+const MASSIVE_INDICES_CONCURRENCY_LIMIT = 5;
+const massiveIndicesLimit = pLimit(MASSIVE_INDICES_CONCURRENCY_LIMIT);
 
-// Base URL for Polygon API
-const POLYGON_API_BASE_URL = "https://api.polygon.io";
+// Base URL for Massive API
+const MASSIVE_API_BASE_URL = "https://api.massive.com";
 
 /**
  * Validates that an API key is available
@@ -40,7 +42,7 @@ const POLYGON_API_BASE_URL = "https://api.polygon.io";
 const validateApiKey = (apiKey?: string): string => {
   const key = apiKey || MASSIVE_INDICES_API_KEY || ALPACA_INDICES_API_KEY;
   if (!key) {
-    throw new Error("Polygon Indices API key is missing");
+    throw new Error("Massive Indices API key is missing");
   }
   return key;
 };
@@ -48,15 +50,15 @@ const validateApiKey = (apiKey?: string): string => {
 /**
  * Fetches aggregate bars for an index over a given date range in custom time window sizes.
  *
- * @param {PolygonIndicesAggregatesParams} params - Parameters for the aggregates request
+ * @param {MassiveIndicesAggregatesParams} params - Parameters for the aggregates request
  * @param {Object} [options] - Optional parameters
  * @param {string} [options.apiKey] - API key to use for the request
- * @returns {Promise<PolygonIndicesAggregatesResponse>} The aggregates response
+ * @returns {Promise<MassiveIndicesAggregatesResponse>} The aggregates response
  */
 export const fetchIndicesAggregates = async (
-  params: PolygonIndicesAggregatesParams,
+  params: MassiveIndicesAggregatesParams,
   options?: { apiKey?: string },
-): Promise<PolygonIndicesAggregatesResponse> => {
+): Promise<MassiveIndicesAggregatesResponse> => {
   const apiKey = validateApiKey(options?.apiKey);
 
   const {
@@ -70,7 +72,7 @@ export const fetchIndicesAggregates = async (
   } = params;
 
   const url = new URL(
-    `${POLYGON_API_BASE_URL}/v2/aggs/ticker/${encodeURIComponent(indicesTicker)}/range/${multiplier}/${timespan}/${from}/${to}`,
+    `${MASSIVE_API_BASE_URL}/v2/aggs/ticker/${encodeURIComponent(indicesTicker)}/range/${multiplier}/${timespan}/${from}/${to}`,
   );
 
   const queryParams = new URLSearchParams();
@@ -86,18 +88,24 @@ export const fetchIndicesAggregates = async (
 
   url.search = queryParams.toString();
 
-  return polygonIndicesLimit(async () => {
+  return massiveIndicesLimit(async () => {
+    await rateLimiters.massive.acquire();
     try {
-      const response = await fetchWithRetry(url.toString(), {}, 3, 300);
+      const response = await fetchWithRetry(
+        url.toString(),
+        { signal: createTimeoutSignal(DEFAULT_TIMEOUTS.MASSIVE_API) },
+        3,
+        300,
+      );
       const data = await response.json();
 
       if (data.status === "ERROR") {
-        throw new Error(`Polygon API Error: ${data.error}`);
+        throw new Error(`Massive API Error: ${data.error}`);
       }
 
-      return data as PolygonIndicesAggregatesResponse;
+      return data as MassiveIndicesAggregatesResponse;
     } catch (error) {
-      console.error("Error fetching indices aggregates:", error);
+      getLogger().error("Error fetching indices aggregates:", error);
       throw error;
     }
   });
@@ -109,16 +117,16 @@ export const fetchIndicesAggregates = async (
  * @param {string} indicesTicker - The ticker symbol of the index
  * @param {Object} [options] - Optional parameters
  * @param {string} [options.apiKey] - API key to use for the request
- * @returns {Promise<PolygonIndicesPrevCloseResponse>} The previous close response
+ * @returns {Promise<MassiveIndicesPrevCloseResponse>} The previous close response
  */
 export const fetchIndicesPreviousClose = async (
   indicesTicker: string,
   options?: { apiKey?: string },
-): Promise<PolygonIndicesPrevCloseResponse> => {
+): Promise<MassiveIndicesPrevCloseResponse> => {
   const apiKey = validateApiKey(options?.apiKey);
 
   const url = new URL(
-    `${POLYGON_API_BASE_URL}/v2/aggs/ticker/${encodeURIComponent(indicesTicker)}/prev`,
+    `${MASSIVE_API_BASE_URL}/v2/aggs/ticker/${encodeURIComponent(indicesTicker)}/prev`,
   );
 
   const queryParams = new URLSearchParams();
@@ -126,18 +134,24 @@ export const fetchIndicesPreviousClose = async (
 
   url.search = queryParams.toString();
 
-  return polygonIndicesLimit(async () => {
+  return massiveIndicesLimit(async () => {
+    await rateLimiters.massive.acquire();
     try {
-      const response = await fetchWithRetry(url.toString(), {}, 3, 300);
+      const response = await fetchWithRetry(
+        url.toString(),
+        { signal: createTimeoutSignal(DEFAULT_TIMEOUTS.MASSIVE_API) },
+        3,
+        300,
+      );
       const data = await response.json();
 
       if (data.status === "ERROR") {
-        throw new Error(`Polygon API Error: ${data.error}`);
+        throw new Error(`Massive API Error: ${data.error}`);
       }
 
-      return data as PolygonIndicesPrevCloseResponse;
+      return data as MassiveIndicesPrevCloseResponse;
     } catch (error) {
-      console.error("Error fetching indices previous close:", error);
+      getLogger().error("Error fetching indices previous close:", error);
       throw error;
     }
   });
@@ -150,17 +164,17 @@ export const fetchIndicesPreviousClose = async (
  * @param {string} date - The date in YYYY-MM-DD format
  * @param {Object} [options] - Optional parameters
  * @param {string} [options.apiKey] - API key to use for the request
- * @returns {Promise<PolygonIndicesDailyOpenCloseResponse>} The daily open/close response
+ * @returns {Promise<MassiveIndicesDailyOpenCloseResponse>} The daily open/close response
  */
 export const fetchIndicesDailyOpenClose = async (
   indicesTicker: string,
   date: string,
   options?: { apiKey?: string },
-): Promise<PolygonIndicesDailyOpenCloseResponse> => {
+): Promise<MassiveIndicesDailyOpenCloseResponse> => {
   const apiKey = validateApiKey(options?.apiKey);
 
   const url = new URL(
-    `${POLYGON_API_BASE_URL}/v1/open-close/${encodeURIComponent(indicesTicker)}/${date}`,
+    `${MASSIVE_API_BASE_URL}/v1/open-close/${encodeURIComponent(indicesTicker)}/${date}`,
   );
 
   const queryParams = new URLSearchParams();
@@ -168,18 +182,24 @@ export const fetchIndicesDailyOpenClose = async (
 
   url.search = queryParams.toString();
 
-  return polygonIndicesLimit(async () => {
+  return massiveIndicesLimit(async () => {
+    await rateLimiters.massive.acquire();
     try {
-      const response = await fetchWithRetry(url.toString(), {}, 3, 300);
+      const response = await fetchWithRetry(
+        url.toString(),
+        { signal: createTimeoutSignal(DEFAULT_TIMEOUTS.MASSIVE_API) },
+        3,
+        300,
+      );
       const data = await response.json();
 
       if (data.status === "ERROR") {
-        throw new Error(`Polygon API Error: ${data.error}`);
+        throw new Error(`Massive API Error: ${data.error}`);
       }
 
-      return data as PolygonIndicesDailyOpenCloseResponse;
+      return data as MassiveIndicesDailyOpenCloseResponse;
     } catch (error) {
-      console.error("Error fetching indices daily open/close:", error);
+      getLogger().error("Error fetching indices daily open/close:", error);
       throw error;
     }
   });
@@ -188,18 +208,18 @@ export const fetchIndicesDailyOpenClose = async (
 /**
  * Gets a snapshot of indices data for specified tickers.
  *
- * @param {PolygonIndicesSnapshotParams} [params] - Parameters for the snapshot request
+ * @param {MassiveIndicesSnapshotParams} [params] - Parameters for the snapshot request
  * @param {Object} [options] - Optional parameters
  * @param {string} [options.apiKey] - API key to use for the request
- * @returns {Promise<PolygonIndicesSnapshotResponse>} The indices snapshot response
+ * @returns {Promise<MassiveIndicesSnapshotResponse>} The indices snapshot response
  */
 export const fetchIndicesSnapshot = async (
-  params?: PolygonIndicesSnapshotParams,
+  params?: MassiveIndicesSnapshotParams,
   options?: { apiKey?: string },
-): Promise<PolygonIndicesSnapshotResponse> => {
+): Promise<MassiveIndicesSnapshotResponse> => {
   const apiKey = validateApiKey(options?.apiKey);
 
-  const url = new URL(`${POLYGON_API_BASE_URL}/v3/snapshot/indices`);
+  const url = new URL(`${MASSIVE_API_BASE_URL}/v3/snapshot/indices`);
 
   const queryParams = new URLSearchParams();
   queryParams.append("apiKey", apiKey);
@@ -222,18 +242,24 @@ export const fetchIndicesSnapshot = async (
 
   url.search = queryParams.toString();
 
-  return polygonIndicesLimit(async () => {
+  return massiveIndicesLimit(async () => {
+    await rateLimiters.massive.acquire();
     try {
-      const response = await fetchWithRetry(url.toString(), {}, 3, 300);
+      const response = await fetchWithRetry(
+        url.toString(),
+        { signal: createTimeoutSignal(DEFAULT_TIMEOUTS.MASSIVE_API) },
+        3,
+        300,
+      );
       const data = await response.json();
 
       if (data.status === "ERROR") {
-        throw new Error(`Polygon API Error: ${data.error}`);
+        throw new Error(`Massive API Error: ${data.error}`);
       }
 
-      return data as PolygonIndicesSnapshotResponse;
+      return data as MassiveIndicesSnapshotResponse;
     } catch (error) {
-      console.error("Error fetching indices snapshot:", error);
+      getLogger().error("Error fetching indices snapshot:", error);
       throw error;
     }
   });
@@ -249,7 +275,7 @@ export const fetchIndicesSnapshot = async (
  * @param {string} [options.order] - Order results
  * @param {number} [options.limit] - Limit the number of results
  * @param {string} [options.sort] - Sort field
- * @returns {Promise<any>} The universal snapshot response
+ * @returns {Promise<MassiveIndicesSnapshotResponse>} The universal snapshot response
  */
 export const fetchUniversalSnapshot = async (
   tickers: string[],
@@ -260,10 +286,10 @@ export const fetchUniversalSnapshot = async (
     limit?: number;
     sort?: string;
   },
-): Promise<any> => {
+): Promise<MassiveIndicesSnapshotResponse> => {
   const apiKey = validateApiKey(options?.apiKey);
 
-  const url = new URL(`${POLYGON_API_BASE_URL}/v3/snapshot`);
+  const url = new URL(`${MASSIVE_API_BASE_URL}/v3/snapshot`);
 
   const queryParams = new URLSearchParams();
   queryParams.append("apiKey", apiKey);
@@ -290,31 +316,37 @@ export const fetchUniversalSnapshot = async (
 
   url.search = queryParams.toString();
 
-  return polygonIndicesLimit(async () => {
+  return massiveIndicesLimit(async () => {
+    await rateLimiters.massive.acquire();
     try {
-      const response = await fetchWithRetry(url.toString(), {}, 3, 300);
+      const response = await fetchWithRetry(
+        url.toString(),
+        { signal: createTimeoutSignal(DEFAULT_TIMEOUTS.MASSIVE_API) },
+        3,
+        300,
+      );
       const data = await response.json();
 
       if (data.status === "ERROR") {
-        throw new Error(`Polygon API Error: ${data.error}`);
+        throw new Error(`Massive API Error: ${data.error}`);
       }
 
       return data;
     } catch (error) {
-      console.error("Error fetching universal snapshot:", error);
+      getLogger().error("Error fetching universal snapshot:", error);
       throw error;
     }
   });
 };
 
 /**
- * Converts Polygon Indices bar data to a more standardized format
+ * Converts Massive Indices bar data to a more standardized format
  *
- * @param {PolygonIndicesAggregatesResponse} data - The raw aggregates response
+ * @param {MassiveIndicesAggregatesResponse} data - The raw aggregates response
  * @returns {Array<{date: string, open: number, high: number, low: number, close: number, timestamp: number}>} Formatted bar data
  */
 export const formatIndicesBarData = (
-  data: PolygonIndicesAggregatesResponse,
+  data: MassiveIndicesAggregatesResponse,
 ): Array<{
   date: string;
   open: number;

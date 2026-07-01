@@ -39,4 +39,4 @@ async function testOptions() {
   }, 15000);
 }
 
-testOptions();
+void testOptions();

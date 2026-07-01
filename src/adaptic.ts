@@ -1,19 +1,23 @@
 // Adaptic backend calls
+import { getLogger } from "./logger";
 import { AssetOverviewResponse, AssetOverview } from "./types";
 import {
   getApolloClient,
   setTokenProvider,
+  stopClient,
   type TokenProvider,
+  type ApolloClientType,
+  type NormalizedCacheObject,
 } from "@adaptic/backend-legacy";
+import { createTimeoutSignal, DEFAULT_TIMEOUTS } from "./http-timeout";
 
 // Re-export TokenProvider type for consumers
 export type { TokenProvider };
 
-// Types for Apollo client without direct import
-type ApolloClientType = any; // This avoids direct import from @adaptic/backend-legacy
+type ApolloClientInstance = ApolloClientType<NormalizedCacheObject>;
 
 // Keep track of a single instance of Apollo client
-let apolloClientInstance: ApolloClientType | null = null;
+let apolloClientInstance: ApolloClientInstance | null = null;
 
 // Track if auth has been configured
 let authConfigured = false;
@@ -48,7 +52,7 @@ let authConfigured = false;
  */
 export const configureAuth = (provider: TokenProvider): void => {
   if (authConfigured) {
-    console.warn(
+    getLogger().warn(
       "[adaptic] Auth provider already configured. Calling configureAuth again will reset the client.",
     );
   }
@@ -58,7 +62,7 @@ export const configureAuth = (provider: TokenProvider): void => {
   // Reset the cached client so it picks up the new auth on next request
   if (apolloClientInstance) {
     apolloClientInstance = null;
-    console.log(
+    getLogger().info(
       "[adaptic] Apollo client reset due to auth configuration change",
     );
   }
@@ -75,20 +79,21 @@ export const isAuthConfigured = (): boolean => {
  * Returns a shared Apollo client instance with connection pooling.
  * This should be used for all @adaptic/backend-legacy operations.
  *
- * @returns {Promise<ApolloClientType>} The shared Apollo client instance.
+ * @returns {Promise<ApolloClientInstance>} The shared Apollo client instance.
  */
-export const getSharedApolloClient = async (): Promise<ApolloClientType> => {
-  if (!apolloClientInstance) {
-    try {
-      // Initialize the client once and reuse it across requests
-      apolloClientInstance = await getApolloClient();
-    } catch (error) {
-      console.error("Error initializing shared Apollo client:", error);
-      throw error;
+export const getSharedApolloClient =
+  async (): Promise<ApolloClientInstance> => {
+    if (!apolloClientInstance) {
+      try {
+        // Initialize the client once and reuse it across requests
+        apolloClientInstance = await getApolloClient();
+      } catch (error) {
+        getLogger().error("Error initializing shared Apollo client:", error);
+        throw error;
+      }
     }
-  }
-  return apolloClientInstance;
-};
+    return apolloClientInstance;
+  };
 
 /**
  * Fetches the asset overview for a given symbol from the Adaptic backend.
@@ -111,11 +116,14 @@ export const fetchAssetOverview = async (
     const encodedSymbol = encodeURIComponent(symbol.trim().toUpperCase());
     const res = await fetch(
       `https://adaptic.ai/api/asset/overview?symbol=${encodedSymbol}`,
+      {
+        signal: createTimeoutSignal(DEFAULT_TIMEOUTS.GENERAL),
+      },
     );
 
     if (!res.ok) {
       const errorData = (await res.json()) as { error?: string };
-      console.error(`Failed to fetch asset data for ${symbol}:`, errorData);
+      getLogger().error(`Failed to fetch asset data for ${symbol}:`, errorData);
       return {
         asset: null,
         error: errorData.error || `Failed to fetch asset data for ${symbol}`,
@@ -126,7 +134,7 @@ export const fetchAssetOverview = async (
     const data = (await res.json()) as AssetOverviewResponse;
 
     if (!data.asset || !data.asset.id) {
-      console.error(`Invalid asset data received for ${symbol}:`, data);
+      getLogger().error(`Invalid asset data received for ${symbol}:`, data);
       return {
         asset: null,
         error: `Invalid asset data received for ${symbol}`,
@@ -155,11 +163,28 @@ export const fetchAssetOverview = async (
   } catch (error: unknown) {
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error occurred";
-    console.error(`Error fetching asset data for ${symbol}:`, errorMessage);
+    getLogger().error(`Error fetching asset data for ${symbol}:`, errorMessage);
     return {
       asset: null,
       error: errorMessage,
       success: false,
     };
   }
+};
+
+/**
+ * Gracefully disconnects the shared Apollo client and releases its resources.
+ * Call this during process shutdown to close keep-alive HTTP connections
+ * and drain in-flight operations.
+ *
+ * After calling `disconnectClient()`, the next call to `getSharedApolloClient()`
+ * will create a fresh instance.
+ */
+export const disconnectClient = (): void => {
+  if (apolloClientInstance) {
+    apolloClientInstance = null;
+    getLogger().info("[adaptic] Shared Apollo client reference cleared");
+  }
+  // Delegate to backend-legacy's stopClient() which calls .stop() on the underlying singleton
+  stopClient();
 };

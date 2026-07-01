@@ -2,6 +2,15 @@ import typescript from "@rollup/plugin-typescript";
 import resolve from "@rollup/plugin-node-resolve";
 import commonjs from "@rollup/plugin-commonjs";
 import json from "@rollup/plugin-json";
+import { visualizer } from "rollup-plugin-visualizer";
+
+/**
+ * When ANALYZE_BUNDLE=true, generates bundle-stats.html and bundle-stats.json
+ * in the dist/ directory for visualizing module sizes and tree-shaking effectiveness.
+ *
+ * Usage: ANALYZE_BUNDLE=true npm run build
+ */
+const isAnalyze = process.env.ANALYZE_BUNDLE === "true";
 
 const external = [
   "react",
@@ -29,6 +38,30 @@ const testTsConfig = {
   },
 };
 
+/**
+ * Creates bundle analysis plugins when ANALYZE_BUNDLE=true.
+ * Generates an interactive HTML treemap and a JSON report.
+ */
+function getBundleAnalysisPlugins() {
+  if (!isAnalyze) return [];
+  return [
+    visualizer({
+      filename: "dist/bundle-stats.html",
+      open: false,
+      gzipSize: true,
+      brotliSize: true,
+      template: "treemap",
+    }),
+    visualizer({
+      filename: "dist/bundle-stats.json",
+      open: false,
+      gzipSize: true,
+      brotliSize: true,
+      template: "raw-data",
+    }),
+  ];
+}
+
 export default [
   // Main library build
   {
@@ -52,18 +85,13 @@ export default [
       typescript(mainTsConfig),
       resolve({
         extensions: [".ts", ".js", ".json"],
-        // Node core modules ('events', 'buffer', 'http', 'https', etc.) must
-        // resolve to the runtime built-in, never to the npm polyfill package
-        // — silences the "preferring built-in module" warning surfaced by
-        // @rollup/plugin-node-resolve when an npm polyfill is hoisted into
-        // node_modules transitively (e.g. via `events` or `buffer` deps).
-        preferBuiltins: true,
       }),
       commonjs({
         ignoreDynamicRequires: true,
         ignore: ["google-auth-library"],
       }),
       json(),
+      ...getBundleAnalysisPlugins(),
     ],
   },
   // Test build
@@ -80,12 +108,6 @@ export default [
       typescript(testTsConfig),
       resolve({
         extensions: [".ts", ".js", ".json"],
-        // Node core modules ('events', 'buffer', 'http', 'https', etc.) must
-        // resolve to the runtime built-in, never to the npm polyfill package
-        // — silences the "preferring built-in module" warning surfaced by
-        // @rollup/plugin-node-resolve when an npm polyfill is hoisted into
-        // node_modules transitively (e.g. via `events` or `buffer` deps).
-        preferBuiltins: true,
       }),
       commonjs({
         ignoreDynamicRequires: true,

@@ -3,12 +3,13 @@
 import adaptic, { enums, types } from "@adaptic/backend-legacy";
 import { EquityPoint, AlpacaPortfolioHistory } from "./types/index";
 import { getDateInNY, MarketTimeUtil } from "./market-time";
-import { getOrder } from "./alpaca-functions";
+import { getOrder } from "./alpaca/legacy";
+import { getSharedApolloClient } from "./adaptic";
 
 const calculateFees = async (
   action: types.Action,
   trade: types.Trade,
-  alpacaAccount: types.BrokerageAccount,
+  alpacaAccount: types.AlpacaAccount,
 ): Promise<number> => {
   let fee = 0;
 
@@ -18,9 +19,9 @@ const calculateFees = async (
 
   const order = await getOrder(
     {
-      adapticAccountId: trade.brokerageAccountId,
-      alpacaApiKey: alpacaAccount.apiKey,
-      alpacaApiSecret: alpacaAccount.apiSecret,
+      adapticAccountId: trade.alpacaAccountId,
+      alpacaApiKey: alpacaAccount.APIKey,
+      alpacaApiSecret: alpacaAccount.APISecret,
     },
     alpacaOrderId,
   );
@@ -34,38 +35,19 @@ const calculateFees = async (
     Number(order.filled_avg_price || order.limit_price || order.stop_price) ||
     0;
 
-  // Determine trade value
-  const tradeValue = qty ? qty * filledPrice : notional;
+  // Determine trade value (reserved for future fee calculations)
+  const _tradeValue = qty ? qty * filledPrice : notional;
 
-  let perContractFee = 0;
-  let baseCommission = 0;
-  let commissionFee = 0;
-  let regulatoryFee = 0;
+  const _perContractFee = 0;
+  const _baseCommission = 0;
+  const _commissionFee = 0;
+  const _regulatoryFee = 0;
 
   switch (assetType) {
     case "STOCK" as enums.AssetType.STOCK:
-    // case "ETF" as enums.AssetType.ETF:
-    //   commissionFee =
-    //     (tradeValue * FEE_CONFIG.SHARES_COMMISSION_PERCENTAGE) / 100;
-    //   regulatoryFee =
-    //     (tradeValue * FEE_CONFIG.REGULATORY_FEES_PERCENTAGE) / 100;
-    //   fee = commissionFee + regulatoryFee;
-    //   break;
-
-    // case "OPTION" as enums.AssetType.OPTION:
-    //   perContractFee = qty * FEE_CONFIG.OPTIONS_PER_CONTRACT_FEE;
-    //   baseCommission = FEE_CONFIG.OPTIONS_BASE_COMMISSION;
-    //   fee = perContractFee + baseCommission;
-    //   break;
-
-    // case "CRYPTOCURRENCY" as enums.AssetType.CRYPTOCURRENCY:
-    //   fee = (tradeValue * FEE_CONFIG.CRYPTO_TRANSACTION_PERCENTAGE) / 100;
-    //   break;
-
-    // case "FUTURE" as enums.AssetType.FUTURE:
-    //   // Sum of all futures fees
-    //   fee = 0.85 + 0.85 + 0.25 + 0.02 + 0.01 + 0.3 + 0.01;
-    //   break;
+      // Currently zero fees for stocks via Alpaca
+      fee = 0;
+      break;
 
     default:
       fee = 0;
@@ -78,10 +60,14 @@ const calculateFees = async (
 export const computeTotalFees = async (trade: types.Trade): Promise<number> => {
   let totalFees = 0;
 
-  // fetch alpaca account details using adaptic.brokerageAccount.get({id: trade.brokerageAccountId})
-  const alpacaAccount = (await adaptic.brokerageAccount.get({
-    id: trade.brokerageAccountId,
-  } as types.BrokerageAccount)) as types.BrokerageAccount;
+  // Use the shared singleton Apollo client to avoid creating orphaned connections
+  const client = await getSharedApolloClient();
+  const alpacaAccount = (await adaptic.alpacaAccount.get(
+    {
+      id: trade.alpacaAccountId,
+    } as types.AlpacaAccount,
+    client,
+  )) as types.AlpacaAccount;
 
   if (!alpacaAccount) return totalFees;
 
@@ -224,8 +210,8 @@ export function getEquityValues(
   return {
     // DE-005: previously `Number(latestPoint.valueOf)`, which read the
     // un-invoked function reference and silently returned NaN. `latestPoint`
-    // is already a number (see assignment above; sourced from `point.value`
-    // which is typed `number` in EquityPoint), so use it directly.
+    // is already a number (see line above; sourced from `point.value` which
+    // is typed `number` in EquityPoint), so use it directly.
     latestEquity: latestPoint,
     initialEquity,
     latestTimestamp: validData[validData.length - 1].time,

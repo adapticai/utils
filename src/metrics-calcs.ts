@@ -1,10 +1,11 @@
 // metric-calcs.ts
+import { getLogger } from "./logger";
 
 import { Bar, BenchmarkBar } from "./types/alpaca-types";
 import { computeTotalFees } from "./price-utils";
-import { normalizeDate } from "./time-utils";
 import { types } from "@adaptic/backend-legacy";
 import { CalculateBetaResult, TradeMetrics } from "./types";
+import { getRiskFreeRate } from "./risk-free-rate";
 /**
  * Calculates daily returns from an array of closing prices
  * @param prices - Array of closing prices (numbers)
@@ -111,7 +112,7 @@ function alignReturns(
     .sort((a, b) => a - b); // Ensure chronological order
 
   if (commonDates.length === 0) {
-    console.warn("No common dates found between trade and benchmark data");
+    getLogger().warn("No common dates found between trade and benchmark data");
     return {
       alignedTradeReturns: [],
       alignedBenchmarkReturns: [],
@@ -164,7 +165,9 @@ export function calculateBetaFromReturns(
     portfolioReturns.length !== benchmarkReturns.length ||
     portfolioReturns.length < 2
   ) {
-    console.warn("Invalid or insufficient return data for beta calculation");
+    getLogger().warn(
+      "Invalid or insufficient return data for beta calculation",
+    );
     return {
       beta: 0,
       covariance: 0,
@@ -180,7 +183,7 @@ export function calculateBetaFromReturns(
   );
 
   if (validIndices.length < 2) {
-    console.warn("Not enough valid data points for beta calculation");
+    getLogger().warn("Not enough valid data points for beta calculation");
     return {
       beta: 0,
       covariance: 0,
@@ -226,7 +229,9 @@ export function calculateBetaFromReturns(
 
   // Handle zero variance case
   if (Math.abs(variance) < 1e-10) {
-    console.warn("Benchmark variance is effectively zero. Setting beta to 0.");
+    getLogger().warn(
+      "Benchmark variance is effectively zero. Setting beta to 0.",
+    );
     return {
       beta: 0,
       covariance,
@@ -252,7 +257,7 @@ export function calculateBetaFromReturns(
  * @param isShort - Whether the position is a short position
  * @returns Array of position-appropriate returns
  */
-function calculatePositionAwareReturns(
+function _calculatePositionAwareReturns(
   prices: number[],
   isShort: boolean,
 ): number[] {
@@ -284,7 +289,7 @@ async function calculateProfitLoss(
   isShort: boolean,
 ): Promise<string> {
   if (!tradeBars || tradeBars.length < 2) {
-    console.warn("Not enough data to calculate total return.");
+    getLogger().warn("Not enough data to calculate total return.");
     return "N/A";
   }
 
@@ -292,7 +297,7 @@ async function calculateProfitLoss(
   const endPrice = tradeBars[tradeBars.length - 1].c;
 
   if (startPrice <= 0 || isNaN(startPrice) || isNaN(endPrice)) {
-    console.warn("Invalid price values for total return calculation.");
+    getLogger().warn("Invalid price values for total return calculation.");
     return "N/A";
   }
 
@@ -312,7 +317,7 @@ async function calculateRiskAdjustedReturn(tradeBars: Bar[]): Promise<string> {
   const returns = calculateDailyReturns(tradeBars.map((bar) => bar.c));
 
   if (returns.length < 2) {
-    console.warn("No sufficient returns data to calculate Sharpe Ratio.");
+    getLogger().warn("No sufficient returns data to calculate Sharpe Ratio.");
     return "N/A";
   }
 
@@ -332,20 +337,23 @@ async function calculateRiskAdjustedReturn(tradeBars: Bar[]): Promise<string> {
   const stdDevAnnual = stdDevDaily * Math.sqrt(tradingDaysPerYear);
 
   if (!isFinite(stdDevAnnual) || stdDevAnnual === 0) {
-    console.warn(
+    getLogger().warn(
       "Standard deviation is zero or non-finite, cannot calculate Sharpe ratio.",
     );
     return "N/A";
   }
 
-  // Assume a risk-free rate, e.g., 2%
-  const riskFreeRate = 0.02; // Annual risk-free rate (2%)
+  // Fetch live annualized risk-free rate (3-month T-Bill), cached daily.
+  // See src/risk-free-rate.ts for source + fallback behavior.
+  const riskFreeRate = await getRiskFreeRate();
 
   // Calculate Sharpe Ratio
   const sharpeRatio = (avgAnnualReturn - riskFreeRate) / stdDevAnnual;
 
   if (!isFinite(sharpeRatio)) {
-    console.warn("Sharpe ratio calculation resulted in a non-finite number.");
+    getLogger().warn(
+      "Sharpe ratio calculation resulted in a non-finite number.",
+    );
     return "N/A";
   }
 
@@ -372,7 +380,7 @@ async function calculateAlphaAndBeta(
     alignReturns(tradeBars, benchmarkBars);
 
   if (rawTradeReturns.length === 0 || alignedBenchmarkReturns.length === 0) {
-    console.warn("No overlapping data to calculate Alpha.");
+    getLogger().warn("No overlapping data to calculate Alpha.");
     return {
       alpha: "N/A",
       alphaAnnualized: "N/A",
@@ -392,7 +400,7 @@ async function calculateAlphaAndBeta(
   );
 
   if (!isFinite(beta.beta)) {
-    console.warn("Beta calculation resulted in a non-finite value.");
+    getLogger().warn("Beta calculation resulted in a non-finite value.");
     return {
       alpha: "N/A",
       alphaAnnualized: "N/A",
@@ -412,7 +420,10 @@ async function calculateAlphaAndBeta(
     alignedBenchmarkReturns.reduce((sum, ret) => sum + ret, 0) /
     alignedBenchmarkReturns.length;
 
-  const riskFreeRateDaily = 0.02 / 252; // Assuming 2% annual risk-free rate
+  // Fetch live annualized risk-free rate (3-month T-Bill), cached daily.
+  // See src/risk-free-rate.ts for source + fallback behavior.
+  const riskFreeRateAnnual = await getRiskFreeRate();
+  const riskFreeRateDaily = riskFreeRateAnnual / 252;
 
   // Alpha calculation adjusts based on position direction
   const alpha =
@@ -422,7 +433,7 @@ async function calculateAlphaAndBeta(
   const alphaAnnualized = alpha * 252;
 
   if (!isFinite(alphaAnnualized)) {
-    console.warn("Alpha calculation resulted in a non-finite value.");
+    getLogger().warn("Alpha calculation resulted in a non-finite value.");
     return {
       alpha: "N/A",
       alphaAnnualized: "N/A",
@@ -449,7 +460,7 @@ async function calculateInformationRatio(
     alignReturns(tradeBars, benchmarkBars);
 
   if (rawTradeReturns.length === 0 || alignedBenchmarkReturns.length === 0) {
-    console.warn("No overlapping data to calculate Information Ratio.");
+    getLogger().warn("No overlapping data to calculate Information Ratio.");
     return "N/A";
   }
 
@@ -476,7 +487,7 @@ async function calculateInformationRatio(
   const trackingError = Math.sqrt(variance);
 
   if (trackingError === 0 || !isFinite(trackingError)) {
-    console.warn(
+    getLogger().warn(
       "Tracking error is zero or non-finite, cannot calculate Information Ratio.",
     );
     return "N/A";
@@ -485,7 +496,7 @@ async function calculateInformationRatio(
   const informationRatio = avgActiveReturn / trackingError;
 
   if (!isFinite(informationRatio)) {
-    console.warn(
+    getLogger().warn(
       "Information Ratio calculation resulted in a non-finite value.",
     );
     return "N/A";
@@ -504,7 +515,7 @@ async function calculateMaxDrawdown(
   isShort: boolean,
 ): Promise<string> {
   if (!tradeBars || tradeBars.length === 0) {
-    console.warn("No trade bars data to calculate Max Drawdown.");
+    getLogger().warn("No trade bars data to calculate Max Drawdown.");
     return "N/A";
   }
 

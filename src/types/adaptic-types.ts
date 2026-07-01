@@ -2,7 +2,7 @@
 export interface AssetOverview {
   id: string;
   symbol: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 // Use interface for response types as they follow a consistent pattern and may be extended

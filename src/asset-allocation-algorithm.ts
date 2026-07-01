@@ -29,7 +29,6 @@ import {
   AllocationPreferences,
   AllocationConstraint,
   DefaultRiskProfile,
-  RiskAdjustedParameters,
 } from "./types/asset-allocation-types";
 
 /**
@@ -159,6 +158,17 @@ export class AssetAllocationEngine {
     private config: AllocationStrategyConfig = {} as AllocationStrategyConfig,
   ) {
     this.config = { ...this.defaultConfig, ...config };
+  }
+
+  /**
+   * Get default risk profile characteristics
+   * @param profile - The risk profile to retrieve
+   * @returns The default risk profile characteristics or undefined if not found
+   */
+  public getDefaultRiskProfile(
+    profile: RiskProfile,
+  ): DefaultRiskProfile | undefined {
+    return this.defaultRiskProfiles.get(profile);
   }
 
   /**
@@ -475,7 +485,7 @@ export class AssetAllocationEngine {
     allocations: Map<AllocationAssetClass, number>,
     preferences?: AllocationPreferences,
     constraints?: AllocationConstraint[],
-    characteristics?: AssetClassCharacteristics[],
+    _characteristics?: AssetClassCharacteristics[],
   ): Map<AllocationAssetClass, number> {
     const constrained = new Map(allocations);
 
@@ -1372,5 +1382,5 @@ export function getDefaultRiskProfile(
   profile: RiskProfile,
 ): DefaultRiskProfile | undefined {
   const engine = new AssetAllocationEngine();
-  return (engine as any).defaultRiskProfiles.get(profile);
+  return engine.getDefaultRiskProfile(profile);
 }

@@ -16,8 +16,19 @@ import {
   TradeUpdate,
   CreateOrderParams,
   CreateMultiLegOrderParams,
+  AlpacaWebSocketMessage,
+  AlpacaAuthMessage,
+  AlpacaListenMessage,
+  ExerciseOptionResponse,
 } from "./types/alpaca-types";
 import { LogOptions } from "./types/logging-types";
+import {
+  getTradingApiUrl,
+  getTradingWebSocketUrl,
+} from "./config/api-endpoints";
+import { validateAlpacaCredentials } from "./utils/auth-validator";
+import { isTransientNetworkError } from "./utils/retry";
+import { createTimeoutSignal, DEFAULT_TIMEOUTS } from "./http-timeout";
 
 const limitPriceSlippagePercent100 = 0.1; // 0.1%
 
@@ -60,7 +71,10 @@ export class AlpacaTradingAPI {
   private connecting = false;
   private reconnectDelay = 10000; // 10 seconds between reconnection attempts
   private reconnectTimeout: NodeJS.Timeout | null = null;
-  private messageHandlers: Map<string, (data: any) => void> = new Map();
+  private messageHandlers: Map<
+    string,
+    (data: AlpacaWebSocketMessage["data"]) => void
+  > = new Map();
   private debugLogging = false;
 
   /**
@@ -78,18 +92,19 @@ export class AlpacaTradingAPI {
     credentials: AlpacaCredentials,
     options?: { debugLogging?: boolean },
   ) {
+    // Validate credentials before doing anything else
+    validateAlpacaCredentials({
+      apiKey: credentials.apiKey,
+      apiSecret: credentials.apiSecret,
+      isPaper: credentials.type === "PAPER",
+    });
+
     this.credentials = credentials;
 
     // Set URLs based on account type
-    this.apiBaseUrl =
-      credentials.type === "PAPER"
-        ? "https://paper-api.alpaca.markets/v2"
-        : "https://api.alpaca.markets/v2";
+    this.apiBaseUrl = getTradingApiUrl(credentials.type);
 
-    this.wsUrl =
-      credentials.type === "PAPER"
-        ? "wss://paper-api.alpaca.markets/stream"
-        : "wss://api.alpaca.markets/stream";
+    this.wsUrl = getTradingWebSocketUrl(credentials.type);
 
     this.headers = {
       "APCA-API-KEY-ID": credentials.apiKey,
@@ -100,12 +115,21 @@ export class AlpacaTradingAPI {
     // Initialize message handlers
     this.messageHandlers.set(
       "authorization",
-      this.handleAuthMessage.bind(this),
+      this.handleAuthMessage.bind(this) as (
+        data: AlpacaWebSocketMessage["data"],
+      ) => void,
     );
-    this.messageHandlers.set("listening", this.handleListenMessage.bind(this));
+    this.messageHandlers.set(
+      "listening",
+      this.handleListenMessage.bind(this) as (
+        data: AlpacaWebSocketMessage["data"],
+      ) => void,
+    );
     this.messageHandlers.set(
       "trade_updates",
-      this.handleTradeUpdate.bind(this),
+      this.handleTradeUpdate.bind(this) as (
+        data: AlpacaWebSocketMessage["data"],
+      ) => void,
     );
 
     this.debugLogging = options?.debugLogging || false;
@@ -133,7 +157,7 @@ export class AlpacaTradingAPI {
       : Math.round(price * 10000) / 10000;
   };
 
-  private handleAuthMessage(data: any): void {
+  private handleAuthMessage(data: AlpacaAuthMessage["data"]): void {
     if (data.status === "authorized") {
       this.authenticated = true;
       this.log("WebSocket authenticated");
@@ -144,7 +168,7 @@ export class AlpacaTradingAPI {
     }
   }
 
-  private handleListenMessage(data: any): void {
+  private handleListenMessage(data: AlpacaListenMessage["data"]): void {
     if (data.streams?.includes("trade_updates")) {
       this.log("Successfully subscribed to trade updates");
     }
@@ -359,18 +383,19 @@ export class AlpacaTradingAPI {
     });
   }
 
-  private async makeRequest(
+  private async makeRequest<T = unknown>(
     endpoint: string,
     method: string = "GET",
-    body?: any,
+    body?: Record<string, unknown> | CreateOrderParams,
     queryString: string = "",
-  ): Promise<any> {
+  ): Promise<T> {
     const url = `${this.apiBaseUrl}${endpoint}${queryString}`;
     try {
       const response = await fetch(url, {
         method,
         headers: this.headers,
         body: body ? JSON.stringify(body) : undefined,
+        signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
       });
 
       if (!response.ok) {
@@ -386,7 +411,7 @@ export class AlpacaTradingAPI {
         response.status === 204 ||
         response.headers.get("content-length") === "0"
       ) {
-        return null;
+        return null as T;
       }
 
       const contentType = response.headers.get("content-type");
@@ -396,12 +421,23 @@ export class AlpacaTradingAPI {
 
       // For non-JSON responses, return the text content
       const textContent = await response.text();
-      return textContent || null;
+      return (textContent || null) as T;
     } catch (err) {
       const error = err as Error;
+      const isTransient = isTransientNetworkError(err);
+      // Transient fetch failures (timeouts, connection resets, undici
+      // aborts) are recoverable at the caller's next cycle; log at WARN
+      // and annotate for observability filters. Non-transient errors
+      // (4xx/auth/schema) stay at ERROR for operator attention.
       this.log(`Error in makeRequest: ${error.message}. Url: ${url}`, {
         source: "AlpacaAPI",
-        type: "error",
+        type: isTransient ? "warn" : "error",
+        metadata: isTransient
+          ? {
+              transient: true,
+              recoveryHint: "Upstream caller should retry on next cycle",
+            }
+          : undefined,
       });
       throw error;
     }
@@ -540,6 +576,7 @@ export class AlpacaTradingAPI {
    * @param side (string) - the side of the order
    * @param trailPercent100 (number) - the trail percent of the order (scale 100, i.e. 0.5 = 0.5%)
    * @param position_intent (string) - the position intent of the order
+   * @returns The created AlpacaOrder with order ID and details
    */
   async createTrailingStop(
     symbol: string,
@@ -551,7 +588,7 @@ export class AlpacaTradingAPI {
       | "buy_to_close"
       | "sell_to_open"
       | "sell_to_close",
-  ): Promise<void> {
+  ): Promise<AlpacaOrder> {
     this.log(
       `Creating trailing stop ${side.toUpperCase()} ${qty} shares for ${symbol} with trail percent ${trailPercent100}%`,
       {
@@ -560,7 +597,7 @@ export class AlpacaTradingAPI {
     );
 
     try {
-      await this.makeRequest(`/orders`, "POST", {
+      const order = await this.makeRequest<AlpacaOrder>(`/orders`, "POST", {
         symbol,
         qty: Math.abs(qty),
         side,
@@ -570,6 +607,11 @@ export class AlpacaTradingAPI {
         trail_percent: trailPercent100, // Already in decimal form (e.g., 4 for 4%)
         time_in_force: "gtc",
       });
+      this.log(
+        `Trailing stop order created for ${symbol}: orderId=${order.id}, trailPercent=${trailPercent100}%`,
+        { symbol },
+      );
+      return order;
     } catch (error) {
       this.log(`Error creating trailing stop: ${error}`, {
         symbol,
@@ -675,11 +717,12 @@ export class AlpacaTradingAPI {
    * Update the trail percent for a trailing stop order
    * @param symbol (string) - the symbol of the order
    * @param trailPercent100 (number) - the trail percent of the order (scale 100, i.e. 0.5 = 0.5%)
+   * @returns The updated/replaced order from Alpaca, or null if no order found or no update needed
    */
   async updateTrailingStop(
     symbol: string,
     trailPercent100: number,
-  ): Promise<void> {
+  ): Promise<AlpacaOrder | null> {
     // First get all open orders for this symbol
     const orders = await this.getOrders({
       status: "open",
@@ -696,7 +739,7 @@ export class AlpacaTradingAPI {
         type: "error",
         symbol,
       });
-      return;
+      return null;
     }
 
     // Check if the trail_percent is already set to the desired value
@@ -716,20 +759,31 @@ export class AlpacaTradingAPI {
           symbol,
         },
       );
-      return;
+      return null;
     }
 
+    const originalOrderId = trailingStopOrder.id;
     this.log(
-      `Updating trailing stop for ${symbol} from ${currentTrailPercent}% to ${trailPercent100}%`,
+      `Updating trailing stop for ${symbol} from ${currentTrailPercent}% to ${trailPercent100}% (orderId=${originalOrderId})`,
       {
         symbol,
       },
     );
 
     try {
-      await this.makeRequest(`/orders/${trailingStopOrder.id}`, "PATCH", {
-        trail: trailPercent100.toString(), // Changed from trail_percent to trail
-      });
+      const updatedOrder = await this.makeRequest<AlpacaOrder>(
+        `/orders/${trailingStopOrder.id}`,
+        "PATCH",
+        {
+          trail: trailPercent100.toString(),
+        },
+      );
+      // Log the replacement: Alpaca replaces orders on PATCH, so new ID is returned
+      this.log(
+        `Trailing stop updated for ${symbol}: newOrderId=${updatedOrder.id}, replaces=${updatedOrder.replaces || originalOrderId}`,
+        { symbol },
+      );
+      return updatedOrder;
     } catch (error) {
       this.log(`Error updating trailing stop: ${error}`, {
         symbol,
@@ -1071,7 +1125,14 @@ export class AlpacaTradingAPI {
     const response = await this.makeRequest(
       `/account/portfolio/history?${queryParams.toString()}`,
     );
-    return response;
+    return response as {
+      timestamp: number[];
+      equity: number[];
+      profit_loss: number[];
+      profit_loss_pct: number[];
+      base_value: number;
+      timeframe: string;
+    };
   }
 
   /**
@@ -1248,7 +1309,11 @@ export class AlpacaTradingAPI {
       orderData.limit_price = this.roundPriceForAlpaca(limitPrice).toString();
     }
 
-    return this.makeRequest("/orders", "POST", orderData);
+    return this.makeRequest(
+      "/orders",
+      "POST",
+      orderData as unknown as Record<string, unknown>,
+    );
   }
 
   /**
@@ -1256,11 +1321,13 @@ export class AlpacaTradingAPI {
    * @param symbolOrContractId The symbol or ID of the option contract to exercise
    * @returns Response from the exercise request
    */
-  async exerciseOption(symbolOrContractId: string): Promise<any> {
+  async exerciseOption(
+    symbolOrContractId: string,
+  ): Promise<ExerciseOptionResponse> {
     this.log(`Exercising option contract ${symbolOrContractId}`, {
       symbol: symbolOrContractId,
     });
-    return this.makeRequest(
+    return this.makeRequest<ExerciseOptionResponse>(
       `/positions/${symbolOrContractId}/exercise`,
       "POST",
     );

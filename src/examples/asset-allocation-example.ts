@@ -16,6 +16,7 @@ import {
   type AllocationConstraint,
   type OptimizationObjective,
   type AllocationAssetClass,
+  type AllocationRecommendation,
 } from "../index";
 
 /**
@@ -611,7 +612,7 @@ function getStandardAssetCharacteristics(): AssetClassCharacteristics[] {
 /**
  * Helper: Print recommendation in formatted way
  */
-function printRecommendation(recommendation: any): void {
+function printRecommendation(recommendation: AllocationRecommendation): void {
   console.log("Portfolio Metrics:");
   console.log(
     `  Expected Return: ${recommendation.portfolioMetrics.expectedReturn.toFixed(2)}%`,
@@ -634,7 +635,7 @@ function printRecommendation(recommendation: any): void {
   console.log(`  Risk Level: ${recommendation.riskAnalysis.riskLevel}`);
 
   console.log("\nAsset Allocations:");
-  recommendation.allocations.forEach((alloc: any) => {
+  recommendation.allocations.forEach((alloc) => {
     console.log(`  ${alloc.assetClass}:`);
     console.log(`    Allocation: ${(alloc.allocation * 100).toFixed(1)}%`);
     console.log(`    Amount: $${alloc.amount.toFixed(2)}`);

@@ -34,7 +34,7 @@ import { adaptic } from "@adaptic/utils";
 
 ## Environment Variables
 
-- `POLYGON_API_KEY`
+- `MASSIVE_API_KEY`
 - `ALPHA_VANTAGE_API_KEY`
 - `ALPACA_API_KEY` - Required for crypto data and news
 - `ALPACA_API_SECRET` - Required for crypto data and news
@@ -399,9 +399,9 @@ Fetches historical bar data for crypto trading pairs.
 
 ## Market Data Functions
 
-### `fetchPolygonPrices(symbol: string, params: object): Promise<PolygonPriceData[]>`
+### `fetchMassivePrices(symbol: string, params: object): Promise<MassivePriceData[]>`
 
-Fetches historical price data from Polygon.io.
+Fetches historical price data from Massive.com.
 
 **Parameters:**
 
@@ -410,7 +410,7 @@ Fetches historical price data from Polygon.io.
 
 **Returns:**
 
-- `Promise<PolygonPriceData[]>`:
+- `Promise<MassivePriceData[]>`:
   ```typescript
   {
     date: string;

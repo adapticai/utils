@@ -9,6 +9,9 @@ import {
 } from "./types";
 import pLimit from "p-limit";
 import { logIfDebug } from "./misc-utils";
+import { createTimeoutSignal, DEFAULT_TIMEOUTS } from "./http-timeout";
+import { withRetry, API_RETRY_CONFIGS } from "./utils/retry";
+import { validateAlphaVantageApiKey } from "./utils/auth-validator";
 // Constants from environment variables
 const ALPHA_VANTAGE_API_KEY = process.env.ALPHA_VANTAGE_API_KEY;
 
@@ -40,17 +43,29 @@ export const fetchQuote = async (
   options?: { apiKey?: string },
 ): Promise<AlphaVantageQuoteResponse> => {
   checkEnvironment(options?.apiKey);
-  const endpoint = `${AVBaseUrl}GLOBAL_QUOTE&symbol=${ticker.replace(".", "-")}&entitlement=realtime&apikey=${
-    options?.apiKey || ALPHA_VANTAGE_API_KEY
-  }`;
+
+  const apiKey = options?.apiKey || ALPHA_VANTAGE_API_KEY!;
+  validateAlphaVantageApiKey(apiKey);
+
+  const endpoint = `${AVBaseUrl}GLOBAL_QUOTE&symbol=${ticker.replace(".", "-")}&entitlement=realtime&apikey=${apiKey}`;
 
   return alphaVantageLimit(async () => {
-    const response = await fetch(endpoint);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch quote for ${ticker}`);
-    }
-    const data = await response.json();
-    return data as AlphaVantageQuoteResponse;
+    return withRetry(
+      async () => {
+        const response = await fetch(endpoint, {
+          signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPHA_VANTAGE),
+        });
+        if (!response.ok) {
+          throw new Error(
+            `Failed to fetch quote for ${ticker}: ${response.status}`,
+          );
+        }
+        const data = await response.json();
+        return data as AlphaVantageQuoteResponse;
+      },
+      API_RETRY_CONFIGS.ALPHA_VANTAGE,
+      `AlphaVantage.fetchQuote(${ticker})`,
+    );
   });
 };
 
@@ -115,6 +130,10 @@ export const fetchTickerNews = async (
   },
 ): Promise<AVNewsArticle[]> => {
   checkEnvironment(options?.apiKey);
+
+  const apiKey = options?.apiKey || ALPHA_VANTAGE_API_KEY!;
+  validateAlphaVantageApiKey(apiKey);
+
   // Format start date as YYYYMMDDTHHMM
   const formattedStart = convertDateToYYYYMMDDTHHMM(
     options.start ?? new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
@@ -122,58 +141,68 @@ export const fetchTickerNews = async (
   const formattedEnd = convertDateToYYYYMMDDTHHMM(options.end ?? new Date());
 
   // Construct the API endpoint
-  const endpoint = `${AVBaseUrl}NEWS_SENTIMENT&tickers=${ticker}&time_from=${formattedStart}&time_to=${formattedEnd}&sort=${options.sort}&limit=${options.limit}&apikey=${
-    options?.apiKey || ALPHA_VANTAGE_API_KEY
-  }`;
+  const endpoint = `${AVBaseUrl}NEWS_SENTIMENT&tickers=${ticker}&time_from=${formattedStart}&time_to=${formattedEnd}&sort=${options.sort}&limit=${options.limit}&apikey=${apiKey}`;
 
   return alphaVantageLimit(async () => {
-    const response = await fetch(endpoint);
-    if (!response.ok) {
-      throw new Error(
-        `Failed to fetch news for ticker ${ticker} from AlphaVantage`,
-      );
-    }
-
-    const data = (await response.json()) as AVNewsResponse;
-    let newsItems: AVNewsArticle[] = [];
-    if (data.items === 0) {
-      logIfDebug(`No news found for ticker ${ticker}`);
-    } else {
-      logIfDebug(`Fetched ${data.items} news items for ticker ${ticker}`);
-      // Filter articles within date range
-      const startTime =
-        options.start?.getTime() ??
-        new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).getTime();
-      const endTime = options.end?.getTime() ?? new Date().getTime();
-
-      newsItems =
-        data && data.feed && data.feed.length > 0
-          ? data.feed.filter((article) => {
-              const articleDate = convertYYYYMMDDTHHMMSSToDate(
-                article.time_published,
-              );
-              return (
-                articleDate.getTime() >= startTime &&
-                articleDate.getTime() <= endTime
-              );
-            })
-          : [];
-
-      // Sort articles based on the sort parameter
-      newsItems.sort((a, b) => {
-        const dateA = convertYYYYMMDDTHHMMSSToDate(a.time_published).getTime();
-        const dateB = convertYYYYMMDDTHHMMSSToDate(b.time_published).getTime();
-        if (options.sort === "LATEST") {
-          return dateB - dateA;
-        } else if (options.sort === "EARLIEST") {
-          return dateA - dateB;
+    return withRetry(
+      async () => {
+        const response = await fetch(endpoint, {
+          signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPHA_VANTAGE),
+        });
+        if (!response.ok) {
+          throw new Error(
+            `Failed to fetch news for ticker ${ticker} from AlphaVantage: ${response.status}`,
+          );
         }
-        return 0; // For RELEVANCE, maintain API's order
-      });
 
-      // Apply limit after filtering and sorting
-      newsItems = newsItems.slice(0, options.limit);
-    }
-    return newsItems;
+        const data = (await response.json()) as AVNewsResponse;
+        let newsItems: AVNewsArticle[] = [];
+        if (data.items === 0) {
+          logIfDebug(`No news found for ticker ${ticker}`);
+        } else {
+          logIfDebug(`Fetched ${data.items} news items for ticker ${ticker}`);
+          // Filter articles within date range
+          const startTime =
+            options.start?.getTime() ??
+            new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).getTime();
+          const endTime = options.end?.getTime() ?? new Date().getTime();
+
+          newsItems =
+            data && data.feed && data.feed.length > 0
+              ? data.feed.filter((article) => {
+                  const articleDate = convertYYYYMMDDTHHMMSSToDate(
+                    article.time_published,
+                  );
+                  return (
+                    articleDate.getTime() >= startTime &&
+                    articleDate.getTime() <= endTime
+                  );
+                })
+              : [];
+
+          // Sort articles based on the sort parameter
+          newsItems.sort((a, b) => {
+            const dateA = convertYYYYMMDDTHHMMSSToDate(
+              a.time_published,
+            ).getTime();
+            const dateB = convertYYYYMMDDTHHMMSSToDate(
+              b.time_published,
+            ).getTime();
+            if (options.sort === "LATEST") {
+              return dateB - dateA;
+            } else if (options.sort === "EARLIEST") {
+              return dateA - dateB;
+            }
+            return 0; // For RELEVANCE, maintain API's order
+          });
+
+          // Apply limit after filtering and sorting
+          newsItems = newsItems.slice(0, options.limit);
+        }
+        return newsItems;
+      },
+      API_RETRY_CONFIGS.ALPHA_VANTAGE,
+      `AlphaVantage.fetchTickerNews(${ticker})`,
+    );
   });
 };
