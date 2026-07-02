@@ -12,7 +12,6 @@ import type {
   BrokerageAccountType,
   BrokerageProvider,
 } from "../types/broker-types";
-import * as packageRoot from "../index";
 
 describe("UnsupportedBrokerError", () => {
   it("carries the provider, code, service, and is never retryable", () => {
@@ -41,11 +40,9 @@ describe("UnsupportedBrokerError", () => {
 
     expect(error.cause).toBe(cause);
   });
-
-  it("is exported from the package root", () => {
-    expect(packageRoot.UnsupportedBrokerError).toBe(UnsupportedBrokerError);
-  });
 });
+// Package-root export identity is asserted in index.test.ts, which mocks
+// the heavy transitive dependencies before importing ../index.
 
 describe("BrokerCredentials discriminated union", () => {
   const alpaca: BrokerCredentials = {

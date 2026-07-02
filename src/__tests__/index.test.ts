@@ -119,7 +119,20 @@ vi.mock("../risk-free-rate", () => ({
   resetRiskFreeRateCache: vi.fn(),
 }));
 
-import { adaptic, atr, volatility, risk, strategy } from "../index";
+import {
+  adaptic,
+  atr,
+  volatility,
+  risk,
+  strategy,
+  createAlpacaMarketDataAPI,
+  createAlpacaTradingAPI,
+  createBrokerClient,
+  isAlpacaBrokerCredentials,
+  UnsupportedBrokerError,
+} from "../index";
+import { createBrokerClient as factoryCreateBrokerClient } from "../broker/factory";
+import { UnsupportedBrokerError as errorsUnsupportedBrokerError } from "../errors";
 
 describe("namespace exports", () => {
   it("exports atr namespace via top-level export", () => {
@@ -158,5 +171,33 @@ describe("namespace exports", () => {
     expect(typeof strategy.calculateRollingSortino).toBe("function");
     expect(typeof strategy.calculateBacktestDivergenceZ).toBe("function");
     expect(typeof adaptic.strategy.calculateRollingExpectancy).toBe("function");
+  });
+});
+
+describe("multi-broker exports (SP2 additive layer)", () => {
+  it("exports UnsupportedBrokerError from the package root", () => {
+    expect(UnsupportedBrokerError).toBe(errorsUnsupportedBrokerError);
+    expect(new UnsupportedBrokerError("IBKR")).toBeInstanceOf(Error);
+  });
+
+  it("exports createBrokerClient from the package root", () => {
+    expect(createBrokerClient).toBe(factoryCreateBrokerClient);
+  });
+
+  it("exports the broker-types runtime guard via the types re-export", () => {
+    expect(typeof isAlpacaBrokerCredentials).toBe("function");
+    expect(
+      isAlpacaBrokerCredentials({
+        provider: "ALPACA",
+        apiKey: "k",
+        apiSecret: "s",
+        type: "PAPER",
+      }),
+    ).toBe(true);
+  });
+
+  it("leaves the frozen Alpaca factory exports intact", () => {
+    expect(typeof createAlpacaTradingAPI).toBe("function");
+    expect(typeof createAlpacaMarketDataAPI).toBe("function");
   });
 });

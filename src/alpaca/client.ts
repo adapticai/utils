@@ -6,6 +6,7 @@ import Alpaca from "@alpacahq/alpaca-trade-api";
 import { getTradingApiUrl } from "../config/api-endpoints";
 import { createTimeoutSignal, DEFAULT_TIMEOUTS } from "../http-timeout";
 import { log as baseLog } from "../logging";
+import { BrokerageProvider } from "../types/broker-types";
 import { LogOptions } from "../types/logging-types";
 import { rateLimiters } from "../rate-limiter";
 import { withRetry } from "../utils/retry";
@@ -242,12 +243,17 @@ export class AlpacaClient {
 // Client cache for connection pooling
 const clientCache = new Map<string, AlpacaClient>();
 
+// Provider discriminant for cache-key scoping (multi-broker SP2 seam):
+// keeps Alpaca pool entries disjoint from future providers that might
+// reuse an identical apiKey string.
+const ALPACA_PROVIDER: BrokerageProvider = "ALPACA";
+
 /**
  * Create or get a cached Alpaca client
- * Uses apiKey as cache key for connection pooling
+ * Uses provider + apiKey + accountType as cache key for connection pooling
  */
 export function createAlpacaClient(config: AlpacaClientConfig): AlpacaClient {
-  const cacheKey = `${config.apiKey}-${config.accountType}`;
+  const cacheKey = `${ALPACA_PROVIDER}-${config.apiKey}-${config.accountType}`;
 
   if (clientCache.has(cacheKey)) {
     log(`Returning cached client for ${config.accountType}`, { type: "debug" });
