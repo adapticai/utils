@@ -1,0 +1,51 @@
+name: Lineage Guard
+
+# Protects the 0.0.x stable lineage from cross-lineage merges of
+# master/main (0.1.x). Proof case: merge 53cca09 (2026-06-16) pulled the
+# 0.1.x tree into stable-release, jumping the version out of 0.0.x and
+# deleting src/massive-indices.ts while src/index.ts still imported it —
+# leaving stable-release unable to build until the merge was reverted.
+#
+# Locked program decision (2026-07-02 Adaptic OS plan, decision 4):
+# never merge master/main (0.1.x) into stable-release (0.0.x).
+#
+# Intentionally dependency-free: bash + jq only (both preinstalled on
+# ubuntu runners), no npm install, no node_modules.
+
+on:
+  push:
+    branches:
+      - stable-release
+      - platform-alignment
+  pull_request:
+    branches:
+      - stable-release
+      - platform-alignment
+
+jobs:
+  lineage-guard:
+    name: Verify 0.0.x lineage integrity
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Enforce 0.0.x version lineage
+        run: |
+          set -euo pipefail
+          version="$(jq -r '.version' package.json)"
+          echo "package.json version: ${version}"
+          if [[ ! "${version}" =~ ^0\.0\. ]]; then
+            echo "::error file=package.json::Version ${version} is not on the 0.0.x stable lineage — this branch publishes 0.0.x only. Never merge master/main (0.1.x) into stable-release or platform-alignment."
+            exit 1
+          fi
+          echo "OK: version is on the 0.0.x lineage."
+
+      - name: Detect cross-lineage merge signature (53cca09)
+        run: |
+          set -euo pipefail
+          if grep -Eq 'from[[:space:]]+["'"'"']\./massive-indices["'"'"']' src/index.ts && [ ! -f src/massive-indices.ts ]; then
+            echo "::error file=src/index.ts::src/index.ts imports ./massive-indices but src/massive-indices.ts is absent — the 53cca09 cross-lineage merge signature (main's 0.1.x tree deletes stable-only modules). Revert the merge instead of fixing forward."
+            exit 1
+          fi
+          echo "OK: no cross-lineage merge signature detected."
