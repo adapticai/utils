@@ -127,13 +127,6 @@ export const marketEarlyCloses: MarketEarlyCloses = {
     },
   },
   2026: {
-    "2026-07-02": {
-      date: "2026-07-02",
-      time: "13:00",
-      optionsTime: "13:15",
-      notes:
-        "Independence Day observed, market closes early at 1:00 p.m. (1:15 p.m. for eligible options). NYSE American Equities, NYSE Arca Equities, NYSE Chicago, and NYSE National late trading sessions will close at 5:00 p.m. Eastern Time.",
-    },
     "2026-11-27": {
       date: "2026-11-27",
       time: "13:00",
