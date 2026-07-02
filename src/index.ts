@@ -40,6 +40,7 @@ export {
   NetworkError,
   RateLimitError,
   TimeoutError,
+  UnsupportedBrokerError,
   ValidationError,
   WebSocketError,
 } from "./errors";
