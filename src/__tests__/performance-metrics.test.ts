@@ -296,16 +296,44 @@ describe("calculateBetaFromReturns", () => {
   });
 
   it("should return near-zero beta when benchmark has near-zero variance", () => {
-    // Note: Due to IEEE 754 floating-point, the sum of [0.05, 0.05, 0.05] / 3
-    // is not exactly 0.05, so variance is not exactly 0. The function's
-    // zero-variance guard (variance === 0) does not trigger.
-    // Use integer values that divide cleanly to get true zero variance.
+    // Integer values divide cleanly, so variance is exactly 0 here and the
+    // guard triggers on the exact-zero branch of the noise-floor check.
     const portfolioReturns = [1, -2, 3];
     const benchmarkReturns = [5, 5, 5]; // Constant benchmark, integer values
     const result = calculateBetaFromReturns(portfolioReturns, benchmarkReturns);
 
     expect(result.beta).toBe(0);
     expect(result.variance).toBe(0);
+  });
+
+  it("should return beta of 0 for a non-integer constant benchmark whose variance is floating-point noise", () => {
+    // Regression: with a constant benchmark of -6.952 over 34 points, the
+    // computed mean differs from the constant by an ulp, producing a
+    // variance of ~8.1e-31 (pure summation noise). The pre-noise-floor
+    // guard (variance === 0) missed it and returned beta = covariance /
+    // noise ≈ -3.4e-4 — a meaningless value. The relative noise floor
+    // (n * eps * |mean|)^2 must classify this as zero variance.
+    const portfolioReturns = Array.from(
+      { length: 34 },
+      (_, i) => ((i % 7) - 3) / 100,
+    );
+    const benchmarkReturns = Array.from({ length: 34 }, () => -6.952);
+    const result = calculateBetaFromReturns(portfolioReturns, benchmarkReturns);
+
+    expect(result.beta).toBe(0);
+    expect(result.variance).toBeGreaterThanOrEqual(0);
+    expect(result.variance).toBeLessThanOrEqual(1e-27);
+  });
+
+  it("does not swallow genuinely small benchmark variance", () => {
+    // Daily-return-scale variance (~1e-4 magnitude values) is dozens of
+    // orders of magnitude above the noise floor and must NOT be zeroed.
+    const benchmarkReturns = [0.0005, 0.0007, 0.0003, 0.0006, 0.0004];
+    const portfolioReturns = benchmarkReturns.map((r) => r * 2);
+    const result = calculateBetaFromReturns(portfolioReturns, benchmarkReturns);
+
+    expect(result.variance).toBeGreaterThan(0);
+    expect(result.beta).toBeCloseTo(2.0, 6);
   });
 
   it("should calculate correct average returns", () => {

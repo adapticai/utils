@@ -48,6 +48,7 @@ export interface AlpacaAuth {
   alpacaApiKey?: string; // API key for Alpaca
   alpacaApiSecret?: string; // API secret for Alpaca
   type?: "PAPER" | "LIVE"; // Type of Alpaca account
+  provider?: "ALPACA"; // Optional brokerage provider assertion; defaults to ALPACA. validateAuth throws UnsupportedBrokerError for any other value (multi-broker SP2 seam)
 }
 
 /**

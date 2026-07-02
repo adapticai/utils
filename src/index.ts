@@ -40,6 +40,7 @@ export {
   NetworkError,
   RateLimitError,
   TimeoutError,
+  UnsupportedBrokerError,
   ValidationError,
   WebSocketError,
 } from "./errors";
@@ -206,6 +207,16 @@ export const createAlpacaMarketDataAPI = () => {
 
 // Export new modular Alpaca SDK wrappers
 export * from "./alpaca";
+
+// Multi-broker client factory (SP2) — provider-agnostic seam over the
+// per-provider client factories. Only ALPACA is implemented; other
+// providers throw UnsupportedBrokerError.
+export {
+  createBrokerClient,
+  type BrokerClientConfig,
+  type BrokerTradingClient,
+  type BrokerValidatedCredentials,
+} from "./broker";
 
 // Trading Policy schemas, types, enums, and defaults
 export * as tradingPolicy from "./trading-policy";

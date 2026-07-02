@@ -117,6 +117,33 @@ If a field you expect is missing from CRUD results, check the schema for `GQL.SK
 
 Similarly, `typeStrings` (string representations of model types for LLM context) are controlled by `TYPESTRING.SKIP=true` and `TYPESTRING.INCLUDE` directives in the same schema file.
 
+## Multi-Broker Sequencing Rule (SP2)
+
+`resolveBrokerCredentials(brokerageAccountId)` in
+`src/alpaca/legacy/auth.ts` is the **single** backend-coupled credential
+lookup in this package. Today it resolves via `adaptic.alpacaAccount.get`.
+The SP2 backend indirection (`AlpacaAccount` → `BrokerageAccount`, backfilled
+with `id = AlpacaAccount.id`) must land by changing **exactly that one
+function**, in this strict order:
+
+1. **backend-legacy publishes** a `stable` (0.0.x) version exporting the
+   `BrokerageAccount` model (`adaptic.brokerageAccount.*` +
+   `types.BrokerageAccount`). Verify against the actually published `.d.ts`,
+   not a schema branch — field casing (`APIKey`/`APISecret`) must match.
+2. **utils bumps** its `@adaptic/backend-legacy` dependency to that version
+   and **switches the helper** (`alpacaAccount.get` → `brokerageAccount.get`)
+   inside `resolveBrokerCredentials` only.
+3. **utils publishes** the next 0.0.x from `stable-release`.
+4. **engine bumps** its `@adaptic/utils` pin (`engine/package.json`) in a
+   coordinated PR.
+
+Never reference `brokerageAccount`/`types.BrokerageAccount` anywhere in this
+package before step 1 is complete — premature references against a pinned
+backend-legacy that lacks the model are exactly what broke the 53cca09
+cross-lineage merge. Related invariant: never merge `master`/`main` (0.1.x
+lineage) into `stable-release` (0.0.x); the `lineage-guard` GitHub workflow
+enforces the observable signatures of that failure.
+
 ## GitNexus — Cross-Repo Awareness
 
 `@adaptic/utils` is a published npm package consumed by `engine`, `backend-legacy`, `lumic-utils`, `platform`, and `app`. A change here that requires a version bump must be coordinated across consumers. Use the [GitNexus CLI](../gitnexus/README.md) for that visibility.

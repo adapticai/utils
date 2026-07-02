@@ -253,6 +253,29 @@ export class NetworkError extends AdapticUtilsError {
 }
 
 /**
+ * Unsupported brokerage provider errors
+ * Thrown when a broker operation is requested for a provider that has no
+ * implemented integration (e.g. IBKR or COINBASE before their adapters land,
+ * or an unrecognised provider string from an untyped caller).
+ * Never retryable — the caller must route to a supported provider.
+ */
+export class UnsupportedBrokerError extends AdapticUtilsError {
+  constructor(
+    /** The provider that was requested but is not supported. */
+    public readonly provider: string,
+    cause?: unknown,
+  ) {
+    super(
+      `Brokerage provider "${provider}" is not supported. Supported providers: ALPACA`,
+      "UNSUPPORTED_BROKER",
+      "broker",
+      false, // Unsupported providers are never retryable
+      cause,
+    );
+  }
+}
+
+/**
  * Data parsing and format errors
  * Used when API responses cannot be parsed or are in unexpected format
  * Not retryable as the data format issue needs investigation
