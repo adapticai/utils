@@ -26,7 +26,10 @@ vi.mock("../logger", () => ({
 }));
 
 import adaptic from "@adaptic/backend-legacy";
-import { validateAuth } from "../alpaca/legacy/auth";
+import {
+  resolveBrokerCredentials,
+  validateAuth,
+} from "../alpaca/legacy/auth";
 import { UnsupportedBrokerError } from "../errors";
 import type { AlpacaAuth } from "../types/alpaca-types";
 
@@ -232,5 +235,53 @@ describe("validateAuth provider guard (multi-broker seam)", () => {
       type: "LIVE",
     });
     expect(mockAccountGet).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("resolveBrokerCredentials (single backend-coupled lookup)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockAccountGet.mockResolvedValue({
+      id: "acc-1",
+      APIKey: "backend-key",
+      APISecret: "backend-secret",
+      type: "LIVE",
+    } as never);
+  });
+
+  it("resolves credentials for a brokerage-account id via the backend", async () => {
+    const result = await resolveBrokerCredentials("acc-1");
+
+    expect(result).toEqual({
+      APIKey: "backend-key",
+      APISecret: "backend-secret",
+      type: "LIVE",
+    });
+    expect(mockAccountGet).toHaveBeenCalledTimes(1);
+    expect(mockAccountGet).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "acc-1" }),
+      expect.anything(),
+    );
+  });
+
+  it("throws when the backend account record is missing or incomplete", async () => {
+    mockAccountGet.mockResolvedValue({
+      id: "acc-1",
+      APIKey: null,
+      APISecret: null,
+      type: "PAPER",
+    } as never);
+
+    await expect(resolveBrokerCredentials("acc-1")).rejects.toThrow(
+      "Alpaca account not found or incomplete",
+    );
+  });
+
+  it("is the delegation target of validateAuth's adapticAccountId fallback (same result shape)", async () => {
+    const viaValidateAuth = await validateAuth({ adapticAccountId: "acc-1" });
+    const direct = await resolveBrokerCredentials("acc-1");
+
+    expect(viaValidateAuth).toEqual(direct);
+    expect(mockAccountGet).toHaveBeenCalledTimes(2);
   });
 });

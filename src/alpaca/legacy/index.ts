@@ -7,7 +7,11 @@
  */
 
 // Auth
-export { validateAuth, type ValidatedAuth } from "./auth";
+export {
+  resolveBrokerCredentials,
+  validateAuth,
+  type ValidatedAuth,
+} from "./auth";
 
 // Utility functions
 export { roundPriceForAlpaca, cleanContent } from "./utils";
