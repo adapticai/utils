@@ -5,7 +5,9 @@
 import { types } from "@adaptic/backend-legacy";
 import adaptic from "@adaptic/backend-legacy";
 import { getSharedApolloClient } from "../../adaptic";
+import { UnsupportedBrokerError } from "../../errors";
 import { AlpacaAuth } from "../../types/alpaca-types";
+import { BrokerageProvider } from "../../types/broker-types";
 import { validateAlpacaCredentials } from "../../utils/auth-validator";
 
 /**
@@ -39,9 +41,19 @@ export interface ValidatedAuth {
  *
  * @param auth - The authentication details for Alpaca
  * @returns Validated authentication credentials
+ * @throws UnsupportedBrokerError if `auth.provider` is set to a non-ALPACA provider
  * @throws Error if authentication details are missing or invalid
  */
 export async function validateAuth(auth: AlpacaAuth): Promise<ValidatedAuth> {
+  // Multi-broker guard (SP2): this seam only resolves Alpaca credentials.
+  // `auth.provider` is typed as "ALPACA" on AlpacaAuth, but untyped callers
+  // (or future BrokerAuth adapters) may pass other providers at runtime —
+  // fail fast with a typed error instead of silently hitting Alpaca hosts.
+  const requestedProvider: BrokerageProvider | undefined = auth.provider;
+  if (requestedProvider !== undefined && requestedProvider !== "ALPACA") {
+    throw new UnsupportedBrokerError(requestedProvider);
+  }
+
   const inlineKey =
     auth.alpacaApiKey && auth.alpacaApiKey.trim().length > 0
       ? auth.alpacaApiKey

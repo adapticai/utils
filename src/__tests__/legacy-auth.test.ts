@@ -27,6 +27,8 @@ vi.mock("../logger", () => ({
 
 import adaptic from "@adaptic/backend-legacy";
 import { validateAuth } from "../alpaca/legacy/auth";
+import { UnsupportedBrokerError } from "../errors";
+import type { AlpacaAuth } from "../types/alpaca-types";
 
 const mockAccountGet = vi.mocked(adaptic.alpacaAccount.get);
 
@@ -141,5 +143,94 @@ describe("validateAuth credential precedence", () => {
     await expect(validateAuth({})).rejects.toThrow(
       "Either adapticAccountId or both alpacaApiKey and alpacaApiSecret must be provided",
     );
+  });
+});
+
+describe("validateAuth provider guard (multi-broker seam)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockAccountGet.mockResolvedValue({
+      id: "acc-1",
+      APIKey: "backend-key",
+      APISecret: "backend-secret",
+      type: "LIVE",
+    } as never);
+  });
+
+  it("throws UnsupportedBrokerError for a non-ALPACA provider even with valid inline credentials, without any backend round trip", async () => {
+    const auth = {
+      provider: "IBKR",
+      adapticAccountId: "acc-1",
+      alpacaApiKey: "inline-key",
+      alpacaApiSecret: "inline-secret",
+      type: "LIVE",
+    } as unknown as AlpacaAuth;
+
+    await expect(validateAuth(auth)).rejects.toThrow(UnsupportedBrokerError);
+    await expect(validateAuth(auth)).rejects.toMatchObject({
+      provider: "IBKR",
+      code: "UNSUPPORTED_BROKER",
+      isRetryable: false,
+    });
+    expect(mockAccountGet).not.toHaveBeenCalled();
+  });
+
+  it("throws UnsupportedBrokerError for COINBASE before attempting the adapticAccountId lookup", async () => {
+    const auth = {
+      provider: "COINBASE",
+      adapticAccountId: "acc-1",
+    } as unknown as AlpacaAuth;
+
+    await expect(validateAuth(auth)).rejects.toThrow(UnsupportedBrokerError);
+    expect(mockAccountGet).not.toHaveBeenCalled();
+  });
+
+  it("accepts an explicit ALPACA provider and resolves credentials normally", async () => {
+    const result = await validateAuth({
+      provider: "ALPACA",
+      alpacaApiKey: "inline-key",
+      alpacaApiSecret: "inline-secret",
+      type: "PAPER",
+    });
+
+    expect(result).toEqual({
+      APIKey: "inline-key",
+      APISecret: "inline-secret",
+      type: "PAPER",
+    });
+    expect(mockAccountGet).not.toHaveBeenCalled();
+  });
+
+  it("U-7 precedence regression: explicit ALPACA provider does not alter inline-credentials precedence over adapticAccountId (no backend round trip)", async () => {
+    const result = await validateAuth({
+      provider: "ALPACA",
+      adapticAccountId: "acc-1",
+      alpacaApiKey: "inline-key",
+      alpacaApiSecret: "inline-secret",
+      type: "LIVE",
+    });
+
+    expect(result).toEqual({
+      APIKey: "inline-key",
+      APISecret: "inline-secret",
+      type: "LIVE",
+    });
+    expect(mockAccountGet).not.toHaveBeenCalled();
+  });
+
+  it("U-7 precedence regression: with provider set, inline credentials lacking a type still defer to the authoritative backend type", async () => {
+    const result = await validateAuth({
+      provider: "ALPACA",
+      adapticAccountId: "acc-1",
+      alpacaApiKey: "inline-key",
+      alpacaApiSecret: "inline-secret",
+    });
+
+    expect(result).toEqual({
+      APIKey: "backend-key",
+      APISecret: "backend-secret",
+      type: "LIVE",
+    });
+    expect(mockAccountGet).toHaveBeenCalledTimes(1);
   });
 });
