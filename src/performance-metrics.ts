@@ -1007,9 +1007,19 @@ export function calculateBetaFromReturns(
   covariance /= denom;
   variance /= denom;
 
-  // Handle zero variance
-  if (variance === 0) {
-    getLogger().warn("Benchmark variance is zero. Setting beta to 0.");
+  // Handle zero (or numerically-degenerate) variance. A constant benchmark
+  // series can still produce a tiny nonzero variance because the computed
+  // mean differs from the constant by an ulp; dividing covariance by that
+  // rounding noise yields a meaningless beta. Treat any variance at or
+  // below the summation noise floor — (n * eps * |mean|)^2, the square of
+  // the worst-case naive-summation error — as zero. When the mean is
+  // exactly 0 this reduces to the exact zero check.
+  const varianceNoiseFloor =
+    (n * Number.EPSILON * Math.abs(averageBenchmarkReturn)) ** 2;
+  if (variance <= varianceNoiseFloor) {
+    getLogger().warn(
+      "Benchmark variance is zero or below the floating-point noise floor. Setting beta to 0.",
+    );
     return {
       beta: 0,
       covariance,
