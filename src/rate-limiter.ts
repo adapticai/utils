@@ -18,6 +18,22 @@ import { RateLimitError } from "./errors";
 import { getLogger } from "./logger";
 export { RateLimitError };
 
+/** Number of milliseconds in one second, used for token-refill timing math. */
+const MS_PER_SECOND = 1000;
+
+/**
+ * Minimum delay (ms) for a scheduled queue wake-up. Guards against a `0`/`NaN`
+ * delay when the token deficit rounds down, ensuring the timer always makes
+ * forward progress rather than busy-looping on the event loop.
+ */
+const MIN_WAKE_DELAY_MS = 1;
+
+/**
+ * Number of whole tokens required to release a single queued request. The token
+ * bucket consumes exactly one token per admitted request.
+ */
+const TOKENS_PER_REQUEST = 1;
+
 /**
  * Configuration for a rate limiter instance
  */
@@ -58,6 +74,13 @@ export class TokenBucketRateLimiter {
   private queue: QueuedRequest[] = [];
   private readonly timeoutMs: number;
   private processingQueue: boolean = false;
+  /**
+   * Single pending timer that wakes the limiter to refill tokens and drain the
+   * queue. Without this, a queued request would only be released by a
+   * subsequent {@link acquire} call and would otherwise stall until its own
+   * timeout fired. `null` means no wake-up is currently scheduled.
+   */
+  private wakeTimer: NodeJS.Timeout | null = null;
 
   /**
    * Creates a new rate limiter instance
@@ -149,7 +172,57 @@ export class TokenBucketRateLimiter {
       }, this.timeoutMs);
 
       this.queue.push({ resolve, reject, timeoutHandle });
+
+      // Ensure the queue is actively drained even if no further acquire() calls
+      // arrive: schedule a wake-up to refill tokens and release this request.
+      this.scheduleQueueWake();
     });
+  }
+
+  /**
+   * Schedules a single wake-up timer that refills tokens and drains the queue.
+   *
+   * The delay is the time required to accrue the tokens still needed to release
+   * the next queued request at the configured refill rate. Only one timer is
+   * ever outstanding (guarded by {@link wakeTimer}); the timer is `unref`'d so
+   * it never keeps the Node.js process alive on its own. When it fires it
+   * refills, drains what it can, and re-arms itself if work remains.
+   */
+  private scheduleQueueWake(): void {
+    // A wake-up is already pending, or there is nothing to wake for.
+    if (this.wakeTimer !== null || this.queue.length === 0) {
+      return;
+    }
+
+    const tokensNeeded = Math.max(0, TOKENS_PER_REQUEST - this.tokens);
+    const deficitMs = Math.max(
+      MIN_WAKE_DELAY_MS,
+      Math.ceil((tokensNeeded / this.config.refillRate) * MS_PER_SECOND),
+    );
+
+    const timer = setTimeout(() => {
+      this.wakeTimer = null;
+      // refill() drains the queue via processQueue(); if requests remain
+      // afterwards, processQueue() re-arms the wake-up.
+      this.refill();
+    }, deficitMs);
+
+    // Do not let a pending rate-limiter wake-up keep the process alive.
+    if (typeof timer.unref === "function") {
+      timer.unref();
+    }
+
+    this.wakeTimer = timer;
+  }
+
+  /**
+   * Clears any pending wake-up timer.
+   */
+  private clearWakeTimer(): void {
+    if (this.wakeTimer !== null) {
+      clearTimeout(this.wakeTimer);
+      this.wakeTimer = null;
+    }
   }
 
   /**
@@ -202,6 +275,15 @@ export class TokenBucketRateLimiter {
     } finally {
       this.processingQueue = false;
     }
+
+    // Keep the wake-up state consistent with the queue: if requests are still
+    // waiting (tokens ran out mid-drain), ensure a wake-up is armed; otherwise
+    // release any pending timer so it cannot fire needlessly.
+    if (this.queue.length > 0) {
+      this.scheduleQueueWake();
+    } else {
+      this.clearWakeTimer();
+    }
   }
 
   /**
@@ -244,6 +326,7 @@ export class TokenBucketRateLimiter {
       );
     }
 
+    this.clearWakeTimer();
     this.queue = [];
     this.tokens = this.config.maxTokens;
     this.lastRefill = Date.now();

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import WebSocket from "ws";
 import { log as baseLog } from "./logging";
 import { marketDataAPI } from "./alpaca-market-data-api";
@@ -5,9 +6,11 @@ import {
   AlpacaAccountDetails,
   AlpacaCredentials,
   AlpacaPosition,
+  AlpacaQuote,
   AssetClass,
   GetOptionContractsParams,
   GetOrdersParams,
+  LatestQuotesResponse,
   OptionAccountActivity,
   OptionContract,
   OptionContractsResponse,
@@ -42,6 +45,50 @@ const ORDER_PAGE_LIMIT = 500;
 
 /** Delay between order pagination pages to stay clear of rate limits. */
 const ORDER_PAGINATION_DELAY_MS = 300;
+
+/**
+ * HTTP status at or above which a Multi-Status (207) sub-result is a failure.
+ * Alpaca's bulk `DELETE /orders` and `DELETE /positions` endpoints return a 207
+ * envelope whose top-level status is 2xx even when individual orders/positions
+ * failed to cancel or close; each element carries its own per-item HTTP status.
+ * Treating >= 300 as a failure lets the engine failsafe see partial failures
+ * instead of recording a false success.
+ */
+const HTTP_STATUS_MIN_ERROR = 300;
+
+/**
+ * Prefix applied to engine-derived `client_order_id` idempotency keys so they
+ * are visibly attributable in Alpaca's dashboard and can never collide with a
+ * caller-supplied identifier.
+ */
+const CLIENT_ORDER_ID_PREFIX = "adaptic-";
+
+/**
+ * Number of leading hex characters of the SHA-256 digest retained in a derived
+ * `client_order_id`. 32 hex chars = 128 bits of entropy (collision-negligible),
+ * and keeps the full id (prefix + digest = 40 chars) within Alpaca's identifier
+ * length limit.
+ */
+const CLIENT_ORDER_ID_HASH_LENGTH = 32;
+
+/**
+ * Idempotency window (ms) used when deriving a default `client_order_id`.
+ *
+ * A client request timeout followed by an automatic retry re-submits the SAME
+ * logical order. Deriving the id from the order's semantic parameters plus the
+ * current time-window bucket makes Alpaca reject the retried duplicate
+ * (`client_order_id must be unique`) instead of double-filling. The window is
+ * deliberately much larger than the 30s Alpaca request timeout so a full
+ * timeout+retry sequence lands in the same bucket, while a genuinely new but
+ * otherwise-identical order placed in a later window still receives a distinct
+ * id.
+ *
+ * This derived default is a best-effort safety net; the guaranteed-idempotent
+ * path is for the caller to pass an explicit `clientOrderId` tied to the
+ * originating signal/decision id (which also permits legitimately-repeated
+ * identical orders inside a single window).
+ */
+const CLIENT_ORDER_ID_WINDOW_MS = 300_000;
 
 /** 
 Websocket example
@@ -156,6 +203,168 @@ export class AlpacaTradingAPI {
       ? Math.round(price * 100) / 100
       : Math.round(price * 10000) / 10000;
   };
+
+  /**
+   * Derive a deterministic `client_order_id` from an order's semantic
+   * parameters so that a client-timeout-triggered retry re-submits the SAME id
+   * and Alpaca rejects the duplicate broker-side instead of double-filling.
+   *
+   * The id is stable for identical parameters within a single
+   * {@link CLIENT_ORDER_ID_WINDOW_MS} bucket and scoped per account. Callers
+   * that must place genuinely distinct yet otherwise-identical orders should
+   * pass an explicit `clientOrderId` rather than relying on this default.
+   *
+   * @param parts - Ordered, stringifiable components uniquely describing the
+   *   order (e.g. order kind, symbol, side, quantity, price, intent).
+   * @returns An Alpaca-safe `client_order_id` (prefix + truncated SHA-256 hex).
+   */
+  private deriveClientOrderId(
+    parts: ReadonlyArray<string | number | boolean | undefined>,
+  ): string {
+    const windowBucket = Math.floor(Date.now() / CLIENT_ORDER_ID_WINDOW_MS);
+    const material = [
+      this.credentials.accountName,
+      windowBucket,
+      ...parts.map((part) => (part === undefined ? "" : String(part))),
+    ].join("|");
+    const digest = createHash("sha256")
+      .update(material)
+      .digest("hex")
+      .slice(0, CLIENT_ORDER_ID_HASH_LENGTH);
+    return `${CLIENT_ORDER_ID_PREFIX}${digest}`;
+  }
+
+  /**
+   * Collect the human-readable failure entries from a bulk Multi-Status (207)
+   * response body (`DELETE /orders`, `DELETE /positions`). Each element carries
+   * its own per-item HTTP status; any element with status >=
+   * {@link HTTP_STATUS_MIN_ERROR} is a failure the caller must be able to see.
+   *
+   * @param entries - Parsed 207 response array.
+   * @returns One `"<identifier>:<status>"` string per failed entry.
+   */
+  private collectMultiStatusFailures(
+    entries: ReadonlyArray<{ id?: string; symbol?: string; status?: number }>,
+  ): string[] {
+    return entries
+      .filter(
+        (entry) =>
+          typeof entry.status === "number" &&
+          entry.status >= HTTP_STATUS_MIN_ERROR,
+      )
+      .map((entry) => `${entry.symbol ?? entry.id ?? "unknown"}:${entry.status}`);
+  }
+
+  /**
+   * Flatten a single position with a marketable limit order, deriving the
+   * closing side, intent, and slippage-adjusted limit price from the latest
+   * quote. Throws when no usable quote/price is available for the symbol so the
+   * caller can record a per-position failure via {@link Promise.allSettled}
+   * without aborting the flatten of the remaining positions.
+   *
+   * @param position - The position to close.
+   * @param quotesResponse - Latest quotes keyed by symbol.
+   * @param extendedHours - Whether the closing order is an extended-hours order.
+   */
+  private async closePositionWithLimitOrder(
+    position: AlpacaPosition,
+    quotesResponse: LatestQuotesResponse,
+    extendedHours: boolean,
+  ): Promise<void> {
+    const quote: AlpacaQuote | undefined =
+      quotesResponse.quotes[position.symbol];
+    if (!quote) {
+      throw new Error(`No quote available for ${position.symbol}`);
+    }
+
+    const qty = Math.abs(parseFloat(position.qty));
+    const side = position.side === "long" ? "sell" : "buy";
+    const positionIntent = side === "sell" ? "sell_to_close" : "buy_to_close";
+
+    // Use bid for sells, ask for buys.
+    const currentPrice = side === "sell" ? quote.bp : quote.ap;
+    if (!currentPrice) {
+      throw new Error(`No valid price available for ${position.symbol}`);
+    }
+
+    const limitSlippagePercent1 = limitPriceSlippagePercent100 / 100;
+    const limitPrice =
+      side === "sell"
+        ? this.roundPriceForAlpaca(currentPrice * (1 - limitSlippagePercent1)) // Sell slightly lower
+        : this.roundPriceForAlpaca(currentPrice * (1 + limitSlippagePercent1)); // Buy slightly higher
+
+    this.log(
+      `Creating ${extendedHours ? "extended hours " : ""}limit order to close ${
+        position.symbol
+      } position: ${side} ${qty} shares at $${limitPrice.toFixed(2)}`,
+      {
+        symbol: position.symbol,
+      },
+    );
+
+    await this.createLimitOrder(
+      position.symbol,
+      qty,
+      side,
+      limitPrice,
+      positionIntent,
+      extendedHours,
+    );
+  }
+
+  /**
+   * Flatten every supplied position independently and surface an aggregate
+   * failure if any could not be closed. Positions are attempted concurrently
+   * with {@link Promise.allSettled} so a data gap or broker rejection on one
+   * symbol never silently prevents the others from being flattened.
+   *
+   * @param positions - Positions to flatten.
+   * @param extendedHours - Whether the closing orders are extended-hours orders.
+   * @throws Error listing every symbol that failed to flatten.
+   */
+  private async flattenPositionsWithLimitOrders(
+    positions: AlpacaPosition[],
+    extendedHours: boolean,
+  ): Promise<void> {
+    const symbols = positions.map((position) => position.symbol);
+    const quotesResponse = await marketDataAPI.getLatestQuotes(symbols);
+
+    const results = await Promise.allSettled(
+      positions.map((position) =>
+        this.closePositionWithLimitOrder(
+          position,
+          quotesResponse,
+          extendedHours,
+        ),
+      ),
+    );
+
+    const failures: string[] = [];
+    results.forEach((result, index) => {
+      if (result.status === "rejected") {
+        const symbol = positions[index]?.symbol ?? "unknown";
+        const reason =
+          result.reason instanceof Error
+            ? result.reason.message
+            : String(result.reason);
+        failures.push(`${symbol}: ${reason}`);
+        this.log(`Failed to close position ${symbol}: ${reason}`, {
+          symbol,
+          type: "error",
+        });
+      }
+    });
+
+    if (failures.length > 0) {
+      throw new Error(
+        `Failed to close ${failures.length} of ${positions.length} positions: ${failures.join(
+          "; ",
+        )}`,
+      );
+    }
+
+    this.log(`All positions closed: ${symbols.join(", ")}`);
+  }
 
   private handleAuthMessage(data: AlpacaAuthMessage["data"]): void {
     if (data.status === "authorized") {
@@ -588,6 +797,7 @@ export class AlpacaTradingAPI {
       | "buy_to_close"
       | "sell_to_open"
       | "sell_to_close",
+    clientOrderId?: string,
   ): Promise<AlpacaOrder> {
     this.log(
       `Creating trailing stop ${side.toUpperCase()} ${qty} shares for ${symbol} with trail percent ${trailPercent100}%`,
@@ -596,17 +806,33 @@ export class AlpacaTradingAPI {
       },
     );
 
+    const body: CreateOrderParams = {
+      symbol,
+      qty: Math.abs(qty).toString(),
+      side,
+      position_intent,
+      order_class: "simple",
+      type: "trailing_stop",
+      trail_percent: trailPercent100.toString(), // Already in decimal form (e.g., 4 for 4%)
+      time_in_force: "gtc",
+      client_order_id:
+        clientOrderId ??
+        this.deriveClientOrderId([
+          "trailing_stop",
+          symbol,
+          side,
+          position_intent,
+          Math.abs(qty),
+          trailPercent100,
+        ]),
+    };
+
     try {
-      const order = await this.makeRequest<AlpacaOrder>(`/orders`, "POST", {
-        symbol,
-        qty: Math.abs(qty),
-        side,
-        position_intent,
-        order_class: "simple",
-        type: "trailing_stop",
-        trail_percent: trailPercent100, // Already in decimal form (e.g., 4 for 4%)
-        time_in_force: "gtc",
-      });
+      const order = await this.makeRequest<AlpacaOrder>(
+        `/orders`,
+        "POST",
+        body,
+      );
       this.log(
         `Trailing stop order created for ${symbol}: orderId=${order.id}, trailPercent=${trailPercent100}%`,
         { symbol },
@@ -655,9 +881,15 @@ export class AlpacaTradingAPI {
       time_in_force: "day",
       order_class: "simple",
     };
-    if (client_order_id !== undefined) {
-      body.client_order_id = client_order_id;
-    }
+    body.client_order_id =
+      client_order_id ??
+      this.deriveClientOrderId([
+        "market",
+        symbol,
+        side,
+        position_intent,
+        Math.abs(qty),
+      ]);
     try {
       return await this.makeRequest("/orders", "POST", body);
     } catch (error) {
@@ -794,15 +1026,41 @@ export class AlpacaTradingAPI {
   }
 
   /**
-   * Cancel all open orders
+   * Cancel all open orders.
+   *
+   * Alpaca's bulk cancel returns a 207 Multi-Status body whose top-level status
+   * is 2xx even when individual orders failed to cancel; this method inspects
+   * the per-order statuses and throws if any order could not be canceled, so a
+   * caller acting as a live-stop failsafe cannot record success while orders
+   * remain live. Transport/HTTP errors propagate unchanged (matching the
+   * throw-on-failure contract of {@link cancelOrder}).
+   *
+   * @throws Error if the bulk cancel request fails or any individual order
+   *   could not be canceled.
    */
   async cancelAllOrders(): Promise<void> {
     this.log(`Canceling all open orders`);
-    try {
-      await this.makeRequest("/orders", "DELETE");
-    } catch (error) {
-      this.log(`Error canceling all orders: ${error}`, { type: "error" });
+    const results = await this.makeRequest<
+      Array<{ id?: string; status?: number }> | null
+    >("/orders", "DELETE");
+
+    if (!Array.isArray(results)) {
+      return;
     }
+
+    const failures = this.collectMultiStatusFailures(results);
+    if (failures.length > 0) {
+      const detail = failures.join(", ");
+      this.log(
+        `Error canceling all orders: ${failures.length}/${results.length} orders failed to cancel (${detail})`,
+        { type: "error" },
+      );
+      throw new Error(
+        `Failed to cancel ${failures.length} of ${results.length} orders: ${detail}`,
+      );
+    }
+
+    this.log(`Successfully canceled ${results.length} open orders`);
   }
 
   /**
@@ -871,9 +1129,17 @@ export class AlpacaTradingAPI {
       order_class: "simple",
       extended_hours,
     };
-    if (client_order_id !== undefined) {
-      body.client_order_id = client_order_id;
-    }
+    body.client_order_id =
+      client_order_id ??
+      this.deriveClientOrderId([
+        "limit",
+        symbol,
+        side,
+        position_intent,
+        Math.abs(qty),
+        this.roundPriceForAlpaca(limitPrice),
+        extended_hours,
+      ]);
     try {
       return await this.makeRequest("/orders", "POST", body);
     } catch (error) {
@@ -911,94 +1177,33 @@ export class AlpacaTradingAPI {
 
       this.log(`Found ${positions.length} positions to close`);
 
-      // Get latest quotes for all positions
-      const symbols = positions.map((position) => position.symbol);
-      const quotesResponse = await marketDataAPI.getLatestQuotes(symbols);
-
-      const lengthOfQuotes = Object.keys(quotesResponse.quotes).length;
-      if (lengthOfQuotes === 0) {
-        this.log("No quotes available for positions, received 0 quotes", {
-          type: "error",
-        });
-        return;
-      }
-
-      if (lengthOfQuotes !== positions.length) {
-        this.log(
-          `Received ${lengthOfQuotes} quotes for ${positions.length} positions, expected ${positions.length} quotes`,
-          { type: "warn" },
-        );
-        return;
-      }
-
-      // Create limit orders to close each position
-      for (const position of positions) {
-        const quote = quotesResponse.quotes[position.symbol];
-        if (!quote) {
-          this.log(
-            `No quote available for ${position.symbol}, skipping limit order`,
-            {
-              symbol: position.symbol,
-              type: "warn",
-            },
-          );
-          continue;
-        }
-
-        const qty = Math.abs(parseFloat(position.qty));
-        const side = position.side === "long" ? "sell" : "buy";
-        const positionIntent =
-          side === "sell" ? "sell_to_close" : "buy_to_close";
-
-        // Get the current price from the quote
-        const currentPrice = side === "sell" ? quote.bp : quote.ap; // Use bid for sells, ask for buys
-
-        if (!currentPrice) {
-          this.log(
-            `No valid price available for ${position.symbol}, skipping limit order`,
-            {
-              symbol: position.symbol,
-              type: "warn",
-            },
-          );
-          continue;
-        }
-
-        // Apply slippage from config
-        const limitSlippagePercent1 = limitPriceSlippagePercent100 / 100;
-        const limitPrice =
-          side === "sell"
-            ? this.roundPriceForAlpaca(
-                currentPrice * (1 - limitSlippagePercent1),
-              ) // Sell slightly lower
-            : this.roundPriceForAlpaca(
-                currentPrice * (1 + limitSlippagePercent1),
-              ); // Buy slightly higher
-
-        this.log(
-          `Creating limit order to close ${position.symbol} position: ${side} ${qty} shares at $${limitPrice.toFixed(
-            2,
-          )}`,
-          {
-            symbol: position.symbol,
-          },
-        );
-
-        await this.createLimitOrder(
-          position.symbol,
-          qty,
-          side,
-          limitPrice,
-          positionIntent,
-        );
-      }
+      // Flatten each position independently. A missing quote or broker
+      // rejection on one symbol must never abort the flatten of the others; any
+      // per-position failure is surfaced as an aggregate error.
+      await this.flattenPositionsWithLimitOrders(positions, false);
     } else {
-      await this.makeRequest(
+      const results = await this.makeRequest<
+        Array<{ symbol?: string; status?: number }> | null
+      >(
         "/positions",
         "DELETE",
         undefined,
         options.cancel_orders ? "?cancel_orders=true" : "",
       );
+
+      if (Array.isArray(results)) {
+        const failures = this.collectMultiStatusFailures(results);
+        if (failures.length > 0) {
+          const detail = failures.join(", ");
+          this.log(
+            `Error closing all positions: ${failures.length}/${results.length} positions failed to close (${detail})`,
+            { type: "error" },
+          );
+          throw new Error(
+            `Failed to close ${failures.length} of ${results.length} positions: ${detail}`,
+          );
+        }
+      }
     }
   }
 
@@ -1021,76 +1226,25 @@ export class AlpacaTradingAPI {
       return;
     }
 
-    await this.cancelAllOrders();
-    this.log(`Cancelled all open orders`);
-
-    // Get latest quotes for all positions
-    const symbols = positions.map((position) => position.symbol);
-    const quotesResponse = await marketDataAPI.getLatestQuotes(symbols);
-
-    // Create limit orders to close each position
-    for (const position of positions) {
-      const quote = quotesResponse.quotes[position.symbol];
-      if (!quote) {
-        this.log(
-          `No quote available for ${position.symbol}, skipping limit order`,
-          {
-            symbol: position.symbol,
-            type: "warn",
-          },
-        );
-        continue;
-      }
-
-      const qty = Math.abs(parseFloat(position.qty));
-      const side = position.side === "long" ? "sell" : "buy";
-      const positionIntent = side === "sell" ? "sell_to_close" : "buy_to_close";
-
-      // Get the current price from the quote
-      const currentPrice = side === "sell" ? quote.bp : quote.ap; // Use bid for sells, ask for buys
-
-      if (!currentPrice) {
-        this.log(
-          `No valid price available for ${position.symbol}, skipping limit order`,
-          {
-            symbol: position.symbol,
-            type: "warn",
-          },
-        );
-        continue;
-      }
-
-      // Apply slippage from config
-      const limitSlippagePercent1 = limitPriceSlippagePercent100 / 100;
-      const limitPrice =
-        side === "sell"
-          ? this.roundPriceForAlpaca(currentPrice * (1 - limitSlippagePercent1)) // Sell slightly lower
-          : this.roundPriceForAlpaca(
-              currentPrice * (1 + limitSlippagePercent1),
-            ); // Buy slightly higher
-
+    // Cancelling stale open orders is secondary to the primary failsafe goal of
+    // flattening positions. A cancel failure is logged but must not abort the
+    // flatten, otherwise a single un-cancelable order would leave every position
+    // open. The flatten step below surfaces its own aggregate failure.
+    try {
+      await this.cancelAllOrders();
+      this.log(`Cancelled all open orders`);
+    } catch (error) {
       this.log(
-        `Creating extended hours limit order to close ${
-          position.symbol
-        } position: ${side} ${qty} shares at $${limitPrice.toFixed(2)}`,
-        {
-          symbol: position.symbol,
-        },
-      );
-
-      await this.createLimitOrder(
-        position.symbol,
-        qty,
-        side,
-        limitPrice,
-        positionIntent,
-        true, // Enable extended hours trading
+        `Proceeding to flatten despite cancelAllOrders failure: ${error instanceof Error ? error.message : String(error)}`,
+        { type: "error" },
       );
     }
 
-    this.log(
-      `All positions closed: ${positions.map((p) => p.symbol).join(", ")}`,
-    );
+    // Flatten each position independently with extended-hours limit orders. A
+    // missing quote or broker rejection on one symbol must never silently leave
+    // the remaining positions open; per-position failures are surfaced as an
+    // aggregate error.
+    await this.flattenPositionsWithLimitOrders(positions, true);
   }
 
   onTradeUpdate(callback: (update: TradeUpdate) => void): void {
@@ -1208,6 +1362,9 @@ export class AlpacaTradingAPI {
    * @param position_intent Position intent (buy_to_open, buy_to_close, sell_to_open, sell_to_close)
    * @param type Order type (market or limit)
    * @param limitPrice Limit price (required for limit orders)
+   * @param clientOrderId Optional idempotency key; a deterministic one is
+   *   derived from the order parameters when omitted so a client-timeout retry
+   *   is de-duplicated broker-side.
    * @returns The created order
    */
   async createOptionOrder(
@@ -1221,6 +1378,7 @@ export class AlpacaTradingAPI {
       | "sell_to_close",
     type: "market" | "limit",
     limitPrice?: number,
+    clientOrderId?: string,
   ): Promise<AlpacaOrder> {
     if (!Number.isInteger(qty) || qty <= 0) {
       this.log("Quantity must be a positive whole number for option orders", {
@@ -1256,6 +1414,20 @@ export class AlpacaTradingAPI {
       orderData.limit_price = this.roundPriceForAlpaca(limitPrice).toString();
     }
 
+    orderData.client_order_id =
+      clientOrderId ??
+      this.deriveClientOrderId([
+        "option",
+        type,
+        symbol,
+        side,
+        position_intent,
+        qty,
+        type === "limit" && limitPrice !== undefined
+          ? this.roundPriceForAlpaca(limitPrice)
+          : undefined,
+      ]);
+
     return this.makeRequest("/orders", "POST", orderData);
   }
 
@@ -1265,6 +1437,9 @@ export class AlpacaTradingAPI {
    * @param qty Quantity of the multi-leg order (must be a whole number)
    * @param type Order type (market or limit)
    * @param limitPrice Limit price (required for limit orders)
+   * @param clientOrderId Optional idempotency key; a deterministic one is
+   *   derived from the legs and order parameters when omitted so a
+   *   client-timeout retry is de-duplicated broker-side.
    * @returns The created multi-leg order
    */
   async createMultiLegOptionOrder(
@@ -1272,6 +1447,7 @@ export class AlpacaTradingAPI {
     qty: number,
     type: "market" | "limit",
     limitPrice?: number,
+    clientOrderId?: string,
   ): Promise<AlpacaOrder> {
     if (!Number.isInteger(qty) || qty <= 0) {
       this.log("Quantity must be a positive whole number for option orders", {
@@ -1308,6 +1484,21 @@ export class AlpacaTradingAPI {
     if (type === "limit" && limitPrice !== undefined) {
       orderData.limit_price = this.roundPriceForAlpaca(limitPrice).toString();
     }
+
+    orderData.client_order_id =
+      clientOrderId ??
+      this.deriveClientOrderId([
+        "mleg",
+        type,
+        qty,
+        type === "limit" && limitPrice !== undefined
+          ? this.roundPriceForAlpaca(limitPrice)
+          : undefined,
+        ...legs.map(
+          (leg) =>
+            `${leg.symbol}:${leg.side}:${leg.ratio_qty}:${leg.position_intent}`,
+        ),
+      ]);
 
     return this.makeRequest(
       "/orders",
@@ -2009,9 +2200,26 @@ export class AlpacaTradingAPI {
       position_intent: side === "buy" ? "buy_to_open" : "sell_to_open",
     };
 
-    if (clientOrderId) {
-      orderData.client_order_id = clientOrderId;
-    }
+    orderData.client_order_id =
+      clientOrderId ??
+      this.deriveClientOrderId([
+        "equities",
+        orderClass,
+        type,
+        symbol,
+        side,
+        Math.abs(qty),
+        type === "limit" && limitPrice !== undefined
+          ? this.roundPriceForAlpaca(limitPrice)
+          : undefined,
+        extendedHours,
+        useStopLoss && calculatedStopPrice !== undefined
+          ? this.roundPriceForAlpaca(calculatedStopPrice)
+          : undefined,
+        useTakeProfit && calculatedTakeProfitPrice !== undefined
+          ? this.roundPriceForAlpaca(calculatedTakeProfitPrice)
+          : undefined,
+      ]);
 
     // Add limit price for limit orders
     if (type === "limit" && limitPrice !== undefined) {

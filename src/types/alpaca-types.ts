@@ -291,6 +291,7 @@ export interface CreateMultiLegOrderParams {
   type: OrderType; // Type of the order (market or limit)
   limit_price?: string; // Optional limit price for limit orders
   time_in_force: TimeInForce; // Time in force for the order
+  client_order_id?: string; // Optional client order ID (idempotency key)
   legs: Array<{
     symbol: string; // Option contract symbol
     ratio_qty: string; // Ratio quantity for this leg (must be in simplest form)

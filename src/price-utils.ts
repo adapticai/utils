@@ -1,21 +1,107 @@
 // price-utils.ts
 
-import adaptic, { enums, types } from "@adaptic/backend-legacy";
+import adaptic, { types } from "@adaptic/backend-legacy";
 import { EquityPoint, AlpacaPortfolioHistory } from "./types/index";
 import { getDateInNY, MarketTimeUtil } from "./market-time";
 import { getOrder } from "./alpaca/legacy";
 import { getSharedApolloClient } from "./adaptic";
 
+// ---------------------------------------------------------------------------
+// Transaction-cost (fee) model
+//
+// Alpaca's REST order object does not expose the realized per-order fee, so the
+// transaction cost is reconstructed from the published fee schedules, branching
+// on the order's ACTUAL asset class (never a hardcoded STOCK). Every rate is a
+// named constant sourced from Alpaca / SEC / FINRA public schedules (2024-2025)
+// so it can be audited and updated in one place.
+// ---------------------------------------------------------------------------
+
+/** Basis points in one whole unit (1 = 10,000 bps). */
+const BPS_PER_UNIT = 10_000;
+
+/** Shares represented by one US listed option contract. */
+const OPTIONS_CONTRACT_MULTIPLIER = 100;
+
+/**
+ * SEC Section 31 fee, charged on the principal of SELL orders for equities and
+ * options. FY2024+ rate: USD 8.00 per USD 1,000,000 of principal.
+ */
+const SEC_SECTION31_FEE_PER_USD = 8.0 / 1_000_000;
+
+/** FINRA Trading Activity Fee (TAF) for equity sells: USD per share sold. */
+const FINRA_TAF_EQUITY_PER_SHARE = 0.000166;
+
+/** FINRA TAF for option sells: USD per contract sold. */
+const FINRA_TAF_OPTIONS_PER_CONTRACT = 0.00279;
+
+/** FINRA TAF is capped per trade regardless of size. */
+const FINRA_TAF_MAX_PER_TRADE = 8.3;
+
+/** OCC clearing fee per option contract, capped per trade. */
+const OCC_CLEARING_FEE_PER_CONTRACT = 0.02;
+const OCC_CLEARING_FEE_MAX_PER_TRADE = 55.0;
+
+/**
+ * Options Regulatory Fee (ORF) pass-through, charged on both sides, USD per
+ * contract. Published, exchange-set pass-through rate.
+ */
+const OPTIONS_REGULATORY_FEE_PER_CONTRACT = 0.02685;
+
+/**
+ * Alpaca crypto TAKER fee schedule as `[minTrailing30dVolumeUsd, takerBps]`,
+ * ordered ascending by volume threshold. Market orders are takers; absent a
+ * known trailing-30-day volume we conservatively select the tier-1 (highest)
+ * taker rate. Source: Alpaca Crypto fee schedule.
+ */
+const ALPACA_CRYPTO_TAKER_FEE_TIERS_BPS: ReadonlyArray<
+  readonly [number, number]
+> = [
+  [0, 25],
+  [100_000, 22],
+  [500_000, 20],
+  [1_000_000, 18],
+  [10_000_000, 15],
+  [25_000_000, 13],
+  [50_000_000, 12],
+  [100_000_000, 10],
+];
+
+/**
+ * Resolve the applicable Alpaca crypto taker fee (in bps) for a trailing
+ * 30-day USD volume. Defaults to the tier-1 rate when the volume is unknown.
+ * @param trailing30dVolumeUsd - Trailing 30-day traded notional in USD.
+ * @returns The taker fee in basis points.
+ */
+function resolveCryptoTakerBps(trailing30dVolumeUsd: number): number {
+  let bps = ALPACA_CRYPTO_TAKER_FEE_TIERS_BPS[0][1];
+  for (const [threshold, tierBps] of ALPACA_CRYPTO_TAKER_FEE_TIERS_BPS) {
+    if (trailing30dVolumeUsd >= threshold) {
+      bps = tierBps;
+    } else {
+      break;
+    }
+  }
+  return bps;
+}
+
+/**
+ * Computes the realized transaction cost (fees + regulatory charges) for the
+ * Alpaca order backing a single {@link types.Action}, branching on the order's
+ * actual asset class. Returns 0 only when there is genuinely no order to price
+ * (no linked order id, order not found, or nothing filled) — never as a
+ * fabricated success.
+ * @param action - The action whose linked Alpaca order should be priced.
+ * @param trade - The parent trade (supplies the Alpaca account id).
+ * @param alpacaAccount - The Alpaca account supplying broker credentials.
+ * @returns The total fee in account currency (USD).
+ */
 const calculateFees = async (
   action: types.Action,
   trade: types.Trade,
   alpacaAccount: types.AlpacaAccount,
 ): Promise<number> => {
-  let fee = 0;
-
   const alpacaOrderId = action.alpacaOrderId;
-
-  if (!alpacaOrderId) return fee;
+  if (!alpacaOrderId) return 0;
 
   const order = await getOrder(
     {
@@ -25,36 +111,69 @@ const calculateFees = async (
     },
     alpacaOrderId,
   );
-  if (!order) return fee;
+  if (!order) return 0;
 
-  const assetType = "STOCK" as enums.AssetType.STOCK;
-
-  const qty = Number(order.qty) || 0;
-  const notional = order.notional || 0;
+  const filledQty = Number(order.filled_qty) || 0;
   const filledPrice =
-    Number(order.filled_avg_price || order.limit_price || order.stop_price) ||
+    Number(order.filled_avg_price ?? order.limit_price ?? order.stop_price) ||
     0;
 
-  // Determine trade value (reserved for future fee calculations)
-  const _tradeValue = qty ? qty * filledPrice : notional;
+  // Realized notional prefers the actual fill (qty * avg price); it falls back
+  // to the order's notional field for dollar-notional (fractional) orders.
+  const notional =
+    filledQty > 0 && filledPrice > 0
+      ? filledQty * filledPrice
+      : Number(order.notional ?? 0) || 0;
 
-  const _perContractFee = 0;
-  const _baseCommission = 0;
-  const _commissionFee = 0;
-  const _regulatoryFee = 0;
+  if (notional <= 0) return 0;
 
-  switch (assetType) {
-    case "STOCK" as enums.AssetType.STOCK:
-      // Currently zero fees for stocks via Alpaca
-      fee = 0;
-      break;
+  const isSell = order.side === "sell";
 
-    default:
-      fee = 0;
-      break;
+  switch (order.asset_class) {
+    case "crypto": {
+      // Crypto fees are bps of notional. Without a known 30-day volume we use
+      // the conservative tier-1 taker rate.
+      const takerBps = resolveCryptoTakerBps(0);
+      return (notional * takerBps) / BPS_PER_UNIT;
+    }
+
+    case "us_option": {
+      const contracts = filledQty > 0 ? filledQty : Number(order.qty) || 0;
+      const occFee = Math.min(
+        contracts * OCC_CLEARING_FEE_PER_CONTRACT,
+        OCC_CLEARING_FEE_MAX_PER_TRADE,
+      );
+      const orfFee = contracts * OPTIONS_REGULATORY_FEE_PER_CONTRACT;
+      let fee = occFee + orfFee;
+
+      if (isSell) {
+        // Option premium is quoted per share; SEC fee applies to the full
+        // principal (premium * contract multiplier).
+        const optionPrincipal = notional * OPTIONS_CONTRACT_MULTIPLIER;
+        const secFee = optionPrincipal * SEC_SECTION31_FEE_PER_USD;
+        const taf = Math.min(
+          contracts * FINRA_TAF_OPTIONS_PER_CONTRACT,
+          FINRA_TAF_MAX_PER_TRADE,
+        );
+        fee += secFee + taf;
+      }
+
+      return fee;
+    }
+
+    case "us_equity":
+    default: {
+      // Alpaca charges USD 0 commission on US equities; only sell-side
+      // regulatory charges (SEC Section 31 + FINRA TAF) apply.
+      if (!isSell) return 0;
+      const secFee = notional * SEC_SECTION31_FEE_PER_USD;
+      const taf = Math.min(
+        filledQty * FINRA_TAF_EQUITY_PER_SHARE,
+        FINRA_TAF_MAX_PER_TRADE,
+      );
+      return secFee + taf;
+    }
   }
-
-  return fee;
 };
 
 export const computeTotalFees = async (trade: types.Trade): Promise<number> => {
