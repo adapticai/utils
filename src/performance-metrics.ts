@@ -1,7 +1,11 @@
 // performance-metrics.ts
 import { getLogger } from "./logger";
 
-import { fetchAccountDetails, fetchPortfolioHistory } from "./alpaca/legacy";
+import {
+  fetchAccountDetails,
+  fetchPortfolioHistory,
+  makeRequest,
+} from "./alpaca/legacy";
 import { getStartAndEndTimestamps } from "./market-time";
 import {
   PortfolioHistoryParams,
@@ -11,6 +15,8 @@ import {
   CalculateBetaResult,
   AlpacaAccountDetails,
   AlpacaAccountGetOptions,
+  AlpacaAuth,
+  TimeFrame,
 } from "./types/alpaca-types";
 import { Period, IntradayReporting } from "./types/market-time-types";
 import { types } from "@adaptic/backend-legacy";
@@ -20,8 +26,8 @@ import {
   PerformanceMetrics,
   FetchPerformanceMetricsProps,
 } from "./types/metrics-types";
-import { createTimeoutSignal, DEFAULT_TIMEOUTS } from "./http-timeout";
 import { getRiskFreeRate } from "./risk-free-rate";
+import { marketDataAPI } from "./alpaca-market-data-api";
 
 /**
  * Calculates the total return year-to-date (YTD) for a given portfolio history.
@@ -129,22 +135,103 @@ async function calculateExpenseRatio({
   }
   const equity = parseFloat(accountDetails.equity);
 
-  // Fetch portfolio expenses from your system (Assuming you have this data)
-  const expenses = await getPortfolioExpensesFromYourSystem(alpacaAccountId);
+  // Fetch the account's real trailing fee expenses from Alpaca account
+  // activities. A genuine data-source failure yields "N/A" (unknown) rather
+  // than a fabricated 0.00%.
+  const auth: AlpacaAuth = {
+    adapticAccountId: alpacaAccountId,
+    alpacaApiKey: alpacaAccount?.APIKey,
+    alpacaApiSecret: alpacaAccount?.APISecret,
+  };
 
-  // Calculate expense ratio
+  let expenses: number;
+  try {
+    expenses = await fetchTrailingFeeExpenses(auth);
+  } catch (error) {
+    getLogger().warn(
+      "Failed to fetch Alpaca account fee activities for expense ratio.",
+      { error },
+    );
+    return "N/A";
+  }
+
+  // Calculate expense ratio (trailing fees as a percentage of current equity).
   const expenseRatio = (expenses / equity) * 100;
 
   return `${expenseRatio.toFixed(2)}%`;
 }
 
-// Mock function to represent fetching expenses from your system
-async function getPortfolioExpensesFromYourSystem(
-  _accountId: string,
-): Promise<number> {
-  // Implement this function based on your data storage
+/** Trailing window over which account fees are aggregated for the expense ratio. */
+const EXPENSE_TRAILING_WINDOW_DAYS = 365;
+/** Milliseconds in one day. */
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+/** Alpaca account-activity types that represent fees/regulatory charges. */
+const FEE_ACTIVITY_TYPES = "FEE,REG,CFEE";
+/** Page size for the paginated Alpaca account-activities endpoint. */
+const ACTIVITIES_PAGE_SIZE = 100;
+/** Hard cap on activity pages to bound pagination on unexpected responses. */
+const ACTIVITIES_MAX_PAGES = 1000;
 
-  return 0; // Placeholder
+/**
+ * A non-trade Alpaca account activity (e.g. a FEE/REG/CFEE entry). Only the
+ * fields required to aggregate fees are modelled.
+ */
+interface AlpacaNonTradeActivity {
+  id: string;
+  activity_type: string;
+  date?: string;
+  net_amount?: string;
+}
+
+/**
+ * Aggregates the account's fee/regulatory charges over the trailing window from
+ * the Alpaca account-activities endpoint, following id-based pagination.
+ * @param auth - Alpaca authentication (account id and/or direct API keys).
+ * @returns Total fees in account currency (USD) as a positive number.
+ */
+async function fetchTrailingFeeExpenses(auth: AlpacaAuth): Promise<number> {
+  const after = new Date(
+    Date.now() - EXPENSE_TRAILING_WINDOW_DAYS * MS_PER_DAY,
+  ).toISOString();
+
+  let total = 0;
+  let pageToken: string | undefined;
+
+  for (let page = 0; page < ACTIVITIES_MAX_PAGES; page++) {
+    const queryParams = new URLSearchParams({
+      activity_types: FEE_ACTIVITY_TYPES,
+      after,
+      page_size: String(ACTIVITIES_PAGE_SIZE),
+    });
+    if (pageToken) {
+      queryParams.append("page_token", pageToken);
+    }
+
+    const activities = await makeRequest<AlpacaNonTradeActivity[]>(auth, {
+      endpoint: "/account/activities",
+      method: "GET",
+      queryString: `?${queryParams.toString()}`,
+    });
+
+    if (!Array.isArray(activities) || activities.length === 0) {
+      break;
+    }
+
+    for (const activity of activities) {
+      const amount = parseFloat(activity.net_amount ?? "");
+      if (Number.isFinite(amount)) {
+        // Fee entries are debits (negative net_amount); accumulate magnitude.
+        total += Math.abs(amount);
+      }
+    }
+
+    if (activities.length < ACTIVITIES_PAGE_SIZE) {
+      break;
+    }
+    pageToken = activities[activities.length - 1].id;
+  }
+
+  return total;
 }
 
 /**
@@ -1162,6 +1249,71 @@ export async function calculateInformationRatio(
 }
 
 /**
+ * Maps a portfolio-history timeframe token to the Alpaca market-data
+ * {@link TimeFrame} accepted by the historical-bars endpoint. Benchmark
+ * comparison is daily by default when no timeframe is supplied.
+ * @param timeframe - The portfolio-history timeframe token.
+ * @returns The equivalent Alpaca market-data timeframe.
+ */
+function toAlpacaTimeFrame(
+  timeframe: PortfolioHistoryParams["timeframe"],
+): TimeFrame {
+  switch (timeframe) {
+    case "1Min":
+      return "1Min";
+    case "5Min":
+      return "5Min";
+    case "15Min":
+      return "15Min";
+    case "1H":
+      return "1Hour";
+    case "1D":
+      return "1Day";
+    default:
+      return "1Day";
+  }
+}
+
+/** Milliseconds per second, for RFC-3339 → Unix-second conversion. */
+const MS_PER_SECOND = 1000;
+
+/**
+ * Fetches benchmark OHLCV bars from the wrapped Alpaca market-data vendor and
+ * maps them into {@link BenchmarkBar}s (Unix-second timestamp + close price)
+ * expected by the alpha/beta/information-ratio calculators.
+ * @param request - Benchmark symbol, RFC-3339 start/end, and timeframe token.
+ * @returns The benchmark bars, sorted ascending by time; empty if none.
+ */
+async function fetchBenchmarkBars(request: {
+  symbol: string;
+  start: string;
+  end: string;
+  timeframe: PortfolioHistoryParams["timeframe"];
+}): Promise<BenchmarkBar[]> {
+  const { symbol, start, end, timeframe } = request;
+
+  const response = await marketDataAPI.getHistoricalBars({
+    symbols: [symbol],
+    timeframe: toAlpacaTimeFrame(timeframe),
+    start,
+    end,
+    sort: "asc",
+  });
+
+  const bars = response.bars[symbol];
+  if (!Array.isArray(bars) || bars.length === 0) {
+    return [];
+  }
+
+  return bars
+    .map((bar) => ({
+      t: Math.floor(new Date(bar.t).getTime() / MS_PER_SECOND),
+      c: bar.c,
+    }))
+    .filter((bar) => Number.isFinite(bar.t) && Number.isFinite(bar.c));
+}
+
+/**
  * Fetches performance metrics for a given Alpaca account.
  * @param params - The parameters for fetching performance metrics.
  * @param client - The Apollo client instance.
@@ -1247,7 +1399,10 @@ export async function fetchPerformanceMetrics({
       throw new Error("Failed to retrieve portfolio history data");
     }
 
-    // Fetch benchmark data with enhanced error handling
+    // Fetch benchmark data directly from the wrapped Alpaca market-data vendor.
+    // (Previously this hit a relative "/api/market-data/historical-prices"
+    // Next.js route that only resolves in a browser; in a Node/engine runtime
+    // the relative fetch always threw, silently zeroing out alpha/beta/IR.)
     const benchmarkSymbol = "SPY";
     let benchmarkBars: BenchmarkBar[] = [];
 
@@ -1260,35 +1415,18 @@ export async function fetchPerformanceMetrics({
             : params?.period
               ? (params?.period as Period)
               : "1Y",
-        outputFormat: "unix-ms",
+        outputFormat: "iso",
         intraday_reporting: params?.intraday_reporting as IntradayReporting,
       });
 
-      const response = await fetch(
-        `/api/market-data/historical-prices?symbol=${benchmarkSymbol}&start=${start.toString()}&end=${end.toString()}&timeframe=${params.timeframe}`,
-        {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          signal: createTimeoutSignal(DEFAULT_TIMEOUTS.GENERAL),
-        },
-      );
+      benchmarkBars = await fetchBenchmarkBars({
+        symbol: benchmarkSymbol,
+        start: String(start),
+        end: String(end),
+        timeframe: params.timeframe,
+      });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(
-          `Failed to fetch benchmark data: ${response.statusText} - ${errorText}`,
-        );
-      }
-
-      benchmarkBars = await response.json();
-
-      if (
-        !benchmarkBars ||
-        !Array.isArray(benchmarkBars) ||
-        benchmarkBars.length === 0
-      ) {
+      if (benchmarkBars.length === 0) {
         throw new Error("Received empty or invalid benchmark data");
       }
     } catch (error) {

@@ -14,6 +14,14 @@ import { withRetry, API_RETRY_CONFIGS } from "./utils/retry";
 const ALPACA_API_BASE = MARKET_DATA_API.CRYPTO;
 
 /**
+ * Hard upper bound on the number of paginated news pages fetched in a single
+ * {@link fetchNews} call. Acts as a runaway-loop backstop that is independent of
+ * the caller-supplied `limit`, mirroring the max-page guard the equities
+ * paginator already enforces.
+ */
+const MAX_NEWS_PAGES = 100;
+
+/**
  * Fetches cryptocurrency bars for the specified parameters.
  * This function retrieves historical price data for multiple cryptocurrencies.
  *
@@ -161,10 +169,6 @@ export async function fetchNews(
     limit: limit.toString(),
   });
 
-  const url = `${ALPACA_API_BASE}/news?${queryParams}`;
-
-  logIfDebug(`Fetching news from: ${url}`);
-
   interface RawNewsArticle {
     id: number;
     headline: string;
@@ -179,18 +183,30 @@ export async function fetchNews(
     images: Array<{ size: "large" | "small" | "thumb"; url: string }>;
   }
 
-  let newsArticles: AlpacaNewsArticle[] = [];
-  let pageToken: string | null = null;
-  let hasMorePages = true;
+  const authHeaders: Record<string, string> = {
+    "APCA-API-KEY-ID": auth.APIKey,
+    "APCA-API-SECRET-KEY": auth.APISecret,
+  };
 
-  while (hasMorePages) {
+  const newsArticles: AlpacaNewsArticle[] = [];
+  let pageToken: string | null = null;
+  let pageCount = 0;
+
+  while (pageCount < MAX_NEWS_PAGES) {
+    // Rebuild the request URL on every iteration so the pagination cursor is
+    // actually applied. Using `set` (not `append`) overwrites the previous
+    // cursor instead of accumulating stale `page_token` values across pages.
     if (pageToken) {
-      queryParams.append("page_token", pageToken);
+      queryParams.set("page_token", pageToken);
     }
+    const url = `${ALPACA_API_BASE}/news?${queryParams.toString()}`;
+
+    logIfDebug(`Fetching news from: ${url}`);
 
     await withRetry(
       async () => {
         const response = await fetch(url, {
+          headers: authHeaders,
           signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
         });
 
@@ -203,34 +219,42 @@ export async function fetchNews(
 
         const data: { news: RawNewsArticle[]; next_page_token?: string } =
           await response.json();
-        newsArticles = newsArticles.concat(
-          data.news.map(
-            (article): AlpacaNewsArticle => ({
-              id: article.id,
-              author: article.author,
-              content: article.content,
-              created_at: article.created_at,
-              updated_at: article.updated_at,
-              headline: article.headline,
-              source: article.source,
-              summary: article.summary,
-              url: article.url,
-              symbols: article.symbols,
-              images: article.images,
-            }),
-          ),
+        const pageArticles = (data.news ?? []).map(
+          (article): AlpacaNewsArticle => ({
+            id: article.id,
+            author: article.author,
+            content: article.content,
+            created_at: article.created_at,
+            updated_at: article.updated_at,
+            headline: article.headline,
+            source: article.source,
+            summary: article.summary,
+            url: article.url,
+            symbols: article.symbols,
+            images: article.images,
+          }),
         );
+        newsArticles.push(...pageArticles);
 
         pageToken = data.next_page_token ?? null;
-        hasMorePages = !!pageToken;
 
         logIfDebug(
-          `Received ${data.news.length} news articles. More pages: ${hasMorePages}`,
+          `Received ${pageArticles.length} news articles. Next page token: ${
+            pageToken ? "present" : "none"
+          }`,
         );
       },
       API_RETRY_CONFIGS.CRYPTO,
       `Crypto.fetchNews(${symbol})`,
     );
+
+    pageCount++;
+
+    // Terminate once the API reports no further pages or once we have
+    // accumulated at least the requested number of articles.
+    if (!pageToken || newsArticles.length >= limit) {
+      break;
+    }
   }
 
   // If sort is "asc" and limit is 10, return only the 10 most recent articles
