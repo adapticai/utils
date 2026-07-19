@@ -134,6 +134,19 @@ export interface StampedeProtectedCacheOptions {
   enableBackgroundRefresh?: boolean;
 
   /**
+   * Hard ceiling on a single loader invocation in milliseconds
+   * @description Guards the single-flight pin: without it, a loader that
+   * never settles (hung socket, missing upstream timeout) pins its key in
+   * the pending-refresh map FOREVER and every subsequent caller coalesces
+   * onto the hung promise — the exact failure mode behind the engine's
+   * 2026-07-17 14:33 ET decision-pipeline hang. On timeout the pinned
+   * promise is rejected with a typed error, the pending entry is evicted so
+   * the next caller retries fresh, and the abandoned loader settlement is
+   * observed (never unhandled). Range: 1000ms - 300000ms. Default: 30000ms
+   */
+  loadTimeoutMs?: number;
+
+  /**
    * Logger implementation for cache operations
    * @description Structured logger for debugging cache hits, misses, refreshes, and errors
    */
@@ -231,6 +244,13 @@ export interface CacheStats {
    * @description Count of failed data fetch attempts (API errors, timeouts, rate limits)
    */
   refreshErrors: number;
+
+  /**
+   * Number of loader invocations abandoned at the loadTimeoutMs ceiling
+   * @description Each increment is a hung loader whose single-flight pin was
+   * evicted; sustained non-zero values indicate an upstream missing timeout
+   */
+  loadTimeouts: number;
 }
 
 /**
@@ -319,6 +339,7 @@ export class StampedeProtectedCache<T> {
     coalescedRequests: 0,
     backgroundRefreshes: 0,
     refreshErrors: 0,
+    loadTimeouts: 0,
   };
 
   constructor(options: StampedeProtectedCacheOptions) {
@@ -617,6 +638,7 @@ export class StampedeProtectedCache<T> {
       coalescedRequests: this.stats.coalescedRequests,
       backgroundRefreshes: this.stats.backgroundRefreshes,
       refreshErrors: this.stats.refreshErrors,
+      loadTimeouts: this.stats.loadTimeouts,
     };
   }
 
@@ -675,8 +697,9 @@ export class StampedeProtectedCache<T> {
       return existingPromise;
     }
 
-    // Create new promise and store it
-    const promise = this.loadAndCache(key, loader, ttl);
+    // Create new promise and store it — bounded by loadTimeoutMs so a
+    // never-settling loader cannot pin the key (see loadWithTimeout).
+    const promise = this.loadWithTimeout(key, loader, ttl);
     this.pendingRefreshes.set(key, promise);
 
     try {
@@ -685,6 +708,65 @@ export class StampedeProtectedCache<T> {
     } finally {
       // Clean up the pending promise
       this.pendingRefreshes.delete(key);
+    }
+  }
+
+  /**
+   * Race {@link loadAndCache} against the configured load timeout.
+   *
+   * On timeout: rejects with a typed timeout error, evicts the pending
+   * single-flight entry so the NEXT caller retries with a fresh loader
+   * (instead of coalescing onto the hung one), and attaches a settlement
+   * observer to the abandoned loader so its eventual resolution/rejection
+   * is logged rather than surfacing as an unhandled rejection.
+   */
+  private async loadWithTimeout(
+    key: string,
+    loader: CacheLoader<T>,
+    ttl: number,
+  ): Promise<T> {
+    const timeoutMs = this.options.loadTimeoutMs ?? 30000;
+    const loadPromise = this.loadAndCache(key, loader, ttl);
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutHandle = setTimeout(() => {
+        this.stats.loadTimeouts++;
+        // Evict the pin so the next caller retries fresh.
+        this.pendingRefreshes.delete(key);
+        this.options.logger.warn("Cache loader timed out — pin evicted", {
+          key,
+          timeoutMs,
+        });
+        // Observe the abandoned loader; never let it become unhandled.
+        loadPromise
+          .then(() => {
+            this.options.logger.warn(
+              "Abandoned cache loader eventually resolved",
+              { key },
+            );
+          })
+          .catch((error: unknown) => {
+            this.options.logger.warn(
+              "Abandoned cache loader eventually rejected",
+              {
+                key,
+                error: error instanceof Error ? error.message : String(error),
+              },
+            );
+          });
+        reject(
+          new Error(
+            `StampedeProtectedCache loader timed out after ${timeoutMs}ms for key "${key}"`,
+          ),
+        );
+      }, timeoutMs);
+    });
+    try {
+      return await Promise.race([loadPromise, timeoutPromise]);
+    } finally {
+      if (timeoutHandle !== undefined) {
+        clearTimeout(timeoutHandle);
+      }
     }
   }
 
@@ -858,4 +940,5 @@ export const DEFAULT_CACHE_OPTIONS: StampedeProtectedCacheOptions = {
   minJitter: 0.9, // 90%
   maxJitter: 1.1, // 110%
   enableBackgroundRefresh: true,
+  loadTimeoutMs: 30000, // 30s hard loader ceiling (anti-pinning)
 };
