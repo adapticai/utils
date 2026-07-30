@@ -51,6 +51,36 @@ import { EventEmitter } from "events";
 import WebSocket from "ws";
 import { validateAlpacaCredentials } from "./utils/auth-validator";
 import { createTimeoutSignal, DEFAULT_TIMEOUTS } from "./http-timeout";
+import { isTransientNetworkError } from "./utils/retry";
+
+/**
+ * Bounded retry for TRANSIENT network faults on Alpaca market-data reads.
+ *
+ * 2026-07-30: the engine logged 637 `TypeError: fetch failed` / `read
+ * ECONNRESET` errors against `/v2/stocks/bars` in a single session (~4 per
+ * minute). Every OTHER Alpaca/Massive client in this package already routes
+ * transient faults through {@link isTransientNetworkError} — this client was
+ * the one that never adopted it, so a single reset socket killed the whole
+ * read. Those failures surface in the engine's market-tape prompt context and
+ * its intraday direction/path resolvers, so the decision model judged with a
+ * blind tape: raw confidence collapsed from a 0.677 median to a degenerate
+ * ~0.504 band, the entire distribution fell below the 0.55 admission floor,
+ * and live participation went to near zero.
+ *
+ * `ECONNRESET` on a keep-alive pool is the classic idle-socket race — the
+ * server closes a pooled connection while the client dispatches onto it. It
+ * is transient by construction and safe to retry on an idempotent GET.
+ */
+const TRANSIENT_NETWORK_RETRY_ATTEMPTS = 3;
+
+/** Base backoff (ms); doubled per attempt with full jitter. */
+const TRANSIENT_NETWORK_RETRY_BASE_MS = 120;
+
+/** Full-jitter backoff so concurrent fan-out retries do not resonate. */
+function transientRetryDelayMs(attempt: number): number {
+  const ceiling = TRANSIENT_NETWORK_RETRY_BASE_MS * 2 ** attempt;
+  return Math.floor(Math.random() * ceiling);
+}
 import { rateLimiters } from "./rate-limiter";
 
 const log = (message: string, options: LogOptions = { type: "info" }) => {
@@ -808,11 +838,49 @@ export class AlpacaMarketDataAPI extends EventEmitter {
       // historical-bar fan-out produced ~125 server-side 429s per minute.
       await rateLimiters.alpaca.acquire();
 
-      const response = await fetch(url.toString(), {
-        method,
-        headers: this.headers,
-        signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
-      });
+      // Retry ONLY transient connection faults, and only on GET (every
+      // market-data read here is idempotent). A non-2xx response is a real
+      // answer from Alpaca and is never retried — that path still throws on
+      // the first attempt exactly as before.
+      let response: Response | undefined;
+      let lastNetworkError: unknown;
+      for (
+        let attempt = 0;
+        attempt < TRANSIENT_NETWORK_RETRY_ATTEMPTS;
+        attempt += 1
+      ) {
+        try {
+          response = await fetch(url.toString(), {
+            method,
+            headers: this.headers,
+            signal: createTimeoutSignal(DEFAULT_TIMEOUTS.ALPACA_API),
+          });
+          break;
+        } catch (networkErr) {
+          lastNetworkError = networkErr;
+          const retryable =
+            method === "GET" &&
+            isTransientNetworkError(networkErr) &&
+            attempt < TRANSIENT_NETWORK_RETRY_ATTEMPTS - 1;
+          if (!retryable) {
+            throw networkErr;
+          }
+          const delayMs = transientRetryDelayMs(attempt);
+          log(
+            `Transient network fault on ${endpoint} (attempt ${attempt + 1}/${TRANSIENT_NETWORK_RETRY_ATTEMPTS}); retrying in ${delayMs}ms`,
+            { type: "warn" },
+          );
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          // Re-acquire the rate-limit token so a retry storm cannot overrun
+          // Alpaca's server-side limit.
+          await rateLimiters.alpaca.acquire();
+        }
+      }
+      if (!response) {
+        throw lastNetworkError instanceof Error
+          ? lastNetworkError
+          : new Error(`Market Data API request failed for ${endpoint}`);
+      }
 
       if (!response.ok) {
         const errorText = await response.text();
