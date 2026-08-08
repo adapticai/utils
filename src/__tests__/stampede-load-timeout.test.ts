@@ -117,3 +117,23 @@ describe("onEvent observability hook", () => {
     }
   });
 });
+
+describe("peek", () => {
+  it("returns fresh values without loading and undefined for absent/expired keys", async () => {
+    vi.useFakeTimers();
+    try {
+      const cache = new StampedeProtectedCache<string>({
+        maxSize: 10,
+        defaultTtl: 1_000,
+        enableBackgroundRefresh: false,
+      });
+      expect(cache.peek("k")).toBeUndefined();
+      cache.set("k", "v");
+      expect(cache.peek("k")).toBe("v");
+      await vi.advanceTimersByTimeAsync(1_500);
+      expect(cache.peek("k")).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

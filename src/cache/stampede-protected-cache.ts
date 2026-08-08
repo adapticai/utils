@@ -608,6 +608,30 @@ export class StampedeProtectedCache<T> {
   }
 
   /**
+   * Synchronous peek at a cached value without triggering a loader.
+   *
+   * @description Returns the cached value when present and FRESH (inside its
+   * per-entry TTL), `undefined` otherwise — never coalesces onto or starts a
+   * load, never serves stale-while-revalidate data, and counts a hit only
+   * when a fresh value is returned (mirroring the read-path hit semantics so
+   * hitRatio stays truthful). Added 2026-08-08 for the engine cache
+   * consolidation: its fork exposed peek() and consumers rely on the
+   * no-load contract on hot paths.
+   *
+   * @param key - Cache key to inspect.
+   * @returns The fresh cached value, or `undefined` when absent or expired.
+   */
+  peek(key: string): T | undefined {
+    const entry = this.cache.get(key);
+    if (entry && Date.now() < entry.expiresAt) {
+      this.stats.hits++;
+      this.emitEvent("hit", key);
+      return entry.value;
+    }
+    return undefined;
+  }
+
+  /**
    * Delete a specific key from the cache
    *
    * @description Immediately removes cache entry and any pending refreshes for the key.
