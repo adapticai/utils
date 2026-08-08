@@ -30,6 +30,45 @@ describe("StampedeProtectedCache load timeout", () => {
     expect(healthyLoader).toHaveBeenCalledTimes(1);
   });
 
+  it("discards an abandoned loader's late value instead of overwriting fresher retry data", async () => {
+    const cache = new StampedeProtectedCache<string>({
+      maxSize: 10,
+      defaultTtl: 60_000,
+      loadTimeoutMs: 50,
+    });
+
+    // Loader A hangs past the ceiling, then resolves a STALE value later.
+    let resolveHungLoader: (value: string) => void = () => undefined;
+    const hungLoader = () =>
+      new Promise<string>((resolve) => {
+        resolveHungLoader = resolve;
+      });
+
+    await expect(cache.get("k", hungLoader)).rejects.toThrow(/timed out/);
+
+    // Retry (loader B) caches fresh data after the timeout evicted the pin.
+    await expect(cache.get("k", async () => "fresh")).resolves.toBe("fresh");
+
+    // Loader A finally resolves; its late value must be discarded.
+    resolveHungLoader("stale");
+    await new Promise((resolve) => setImmediate(resolve));
+
+    await expect(cache.get("k", async () => "reload")).resolves.toBe("fresh");
+  });
+
+  it("rejects a non-positive or non-finite loadTimeoutMs at construction", () => {
+    for (const invalid of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(
+        () =>
+          new StampedeProtectedCache<string>({
+            maxSize: 10,
+            defaultTtl: 60_000,
+            loadTimeoutMs: invalid,
+          }),
+      ).toThrow(RangeError);
+    }
+  });
+
   it("does not time out a loader that settles within the ceiling", async () => {
     const cache = new StampedeProtectedCache<string>({
       maxSize: 10,

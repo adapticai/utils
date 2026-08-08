@@ -275,6 +275,26 @@ export interface CacheStats {
 export type CacheLoader<T> = (key: string) => Promise<T>;
 
 /**
+ * Default hard ceiling (ms) on a single loader invocation. Resolved at
+ * construction time into `options.loadTimeoutMs` so the effective value is
+ * always a validated number (see the constructor guard) — mirrors the
+ * engine-local copy's constructor-time resolution ahead of consolidating the
+ * two implementations onto this one.
+ */
+export const DEFAULT_LOAD_TIMEOUT_MS = 30_000;
+
+/**
+ * Per-invocation abandonment token threaded from {@link
+ * StampedeProtectedCache.loadWithTimeout} into `loadAndCache`. The timeout
+ * handler flips `abandoned` so a loader that settles AFTER its pin was evicted
+ * cannot write its late (potentially stale) value over data a fresh retry has
+ * already cached.
+ */
+interface LoaderInvocationState {
+  abandoned: boolean;
+}
+
+/**
  * StampedeProtectedCache provides three-layer protection against cache stampedes
  *
  * @description High-performance caching system implementing multiple stampede prevention
@@ -343,6 +363,14 @@ export class StampedeProtectedCache<T> {
   };
 
   constructor(options: StampedeProtectedCacheOptions) {
+    if (
+      options.loadTimeoutMs !== undefined &&
+      (!Number.isFinite(options.loadTimeoutMs) || options.loadTimeoutMs <= 0)
+    ) {
+      throw new RangeError(
+        `StampedeProtectedCache loadTimeoutMs must be a positive finite number of milliseconds; received ${String(options.loadTimeoutMs)}`,
+      );
+    }
     this.options = {
       ...options,
       staleWhileRevalidateTtl:
@@ -350,6 +378,7 @@ export class StampedeProtectedCache<T> {
       minJitter: options.minJitter ?? 0.9,
       maxJitter: options.maxJitter ?? 1.1,
       enableBackgroundRefresh: options.enableBackgroundRefresh ?? true,
+      loadTimeoutMs: options.loadTimeoutMs ?? DEFAULT_LOAD_TIMEOUT_MS,
       logger: options.logger ?? {
         debug: () => {},
         info: () => {},
@@ -725,12 +754,16 @@ export class StampedeProtectedCache<T> {
     loader: CacheLoader<T>,
     ttl: number,
   ): Promise<T> {
-    const timeoutMs = this.options.loadTimeoutMs ?? 30000;
-    const loadPromise = this.loadAndCache(key, loader, ttl);
+    const timeoutMs = this.options.loadTimeoutMs;
+    const invocation: LoaderInvocationState = { abandoned: false };
+    const loadPromise = this.loadAndCache(key, loader, ttl, invocation);
     let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
     const timeoutPromise = new Promise<never>((_, reject) => {
       timeoutHandle = setTimeout(() => {
         this.stats.loadTimeouts++;
+        // Mark the invocation abandoned BEFORE evicting the pin: a retry that
+        // starts now must never be overwritten by this loader's late result.
+        invocation.abandoned = true;
         // Evict the pin so the next caller retries fresh.
         this.pendingRefreshes.delete(key);
         this.options.logger.warn("Cache loader timed out — pin evicted", {
@@ -777,12 +810,25 @@ export class StampedeProtectedCache<T> {
     key: string,
     loader: CacheLoader<T>,
     ttl: number,
+    invocation: LoaderInvocationState = { abandoned: false },
   ): Promise<T> {
     const startTime = Date.now();
 
     try {
       this.options.logger.debug("Loading data", { key });
       const value = await loader(key);
+
+      if (invocation.abandoned) {
+        // The pin was evicted at loadTimeoutMs and a retry may have cached
+        // fresher data since; writing this late value would overwrite it with
+        // a snapshot fetched before/through the hang.
+        const loadTime = Date.now() - startTime;
+        this.options.logger.warn(
+          "Abandoned cache loader resolved late — result discarded",
+          { key, loadTime },
+        );
+        return value;
+      }
 
       // Cache the loaded value
       this.set(key, value, ttl);
@@ -800,11 +846,15 @@ export class StampedeProtectedCache<T> {
         loadTime,
       });
 
-      // Update cached entry with error if it exists
-      const cached = this.cache.get(key);
-      if (cached) {
-        cached.lastError = error as Error;
-        cached.isRefreshing = false;
+      // Update cached entry with error if it exists — unless this invocation
+      // was abandoned, in which case the entry may already belong to a
+      // fresher retry and must not be marked with a stale error.
+      if (!invocation.abandoned) {
+        const cached = this.cache.get(key);
+        if (cached) {
+          cached.lastError = error as Error;
+          cached.isRefreshing = false;
+        }
       }
 
       throw error;
@@ -940,5 +990,5 @@ export const DEFAULT_CACHE_OPTIONS: StampedeProtectedCacheOptions = {
   minJitter: 0.9, // 90%
   maxJitter: 1.1, // 110%
   enableBackgroundRefresh: true,
-  loadTimeoutMs: 30000, // 30s hard loader ceiling (anti-pinning)
+  loadTimeoutMs: DEFAULT_LOAD_TIMEOUT_MS, // hard loader ceiling (anti-pinning)
 };
