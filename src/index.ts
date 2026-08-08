@@ -72,6 +72,7 @@ export {
   StampedeProtectedCache,
   createStampedeProtectedCache,
   type CacheEntry,
+  type CacheEventType,
   type CacheLoader,
   type CacheStats,
   type StampedeProtectedCacheOptions,

@@ -79,3 +79,41 @@ describe("StampedeProtectedCache load timeout", () => {
     expect(cache.getStats().loadTimeouts).toBe(0);
   });
 });
+
+describe("onEvent observability hook", () => {
+  it("emits hit/miss/coalesced/load_timeout and never lets a throwing observer break the path", async () => {
+    vi.useFakeTimers();
+    try {
+      const events: string[] = [];
+      const cache = new StampedeProtectedCache<string>({
+        maxSize: 10,
+        defaultTtl: 60_000,
+        loadTimeoutMs: 1_000,
+        enableBackgroundRefresh: false,
+        onEvent: (event, key) => {
+          events.push(`${event}:${key}`);
+          throw new Error("observer boom — must be swallowed");
+        },
+      });
+      await expect(cache.get("k", () => Promise.resolve("v"))).resolves.toBe(
+        "v",
+      );
+      await expect(cache.get("k", () => Promise.resolve("v2"))).resolves.toBe(
+        "v",
+      );
+      const never = () => new Promise<string>(() => undefined);
+      const a = cache.get("wedge", never);
+      const b = cache.get("wedge", never);
+      const aAssert = expect(a).rejects.toThrow(/timed out/);
+      const bAssert = expect(b).rejects.toThrow(/timed out/);
+      await vi.advanceTimersByTimeAsync(1_001);
+      await Promise.all([aAssert, bAssert]);
+      expect(events).toContain("miss:k");
+      expect(events).toContain("hit:k");
+      expect(events).toContain("coalesced:wedge");
+      expect(events).toContain("load_timeout:wedge");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

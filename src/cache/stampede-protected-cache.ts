@@ -96,6 +96,26 @@ export interface CacheEntry<T> {
  * };
  * ```
  */
+/**
+ * Lifecycle events emitted through {@link StampedeProtectedCacheOptions.onEvent}.
+ *
+ * @description Mirrors the internal {@link CacheStats} counters one-to-one so
+ * an external metrics system can maintain live counters without polling
+ * getStats(): `hit`/`stale_hit`/`miss` from the read path, `coalesced` when a
+ * caller joins an in-flight load, `load_timeout` when the single-flight
+ * ceiling abandons a loader, `refresh_error`/`background_refresh` from the
+ * stale-while-revalidate path, and `eviction` when the LRU discards an entry.
+ */
+export type CacheEventType =
+  | "hit"
+  | "stale_hit"
+  | "miss"
+  | "coalesced"
+  | "load_timeout"
+  | "refresh_error"
+  | "background_refresh"
+  | "eviction";
+
 export interface StampedeProtectedCacheOptions {
   /**
    * Maximum number of entries in the cache
@@ -145,6 +165,19 @@ export interface StampedeProtectedCacheOptions {
    * observed (never unhandled). Range: 1000ms - 300000ms. Default: 30000ms
    */
   loadTimeoutMs?: number;
+
+  /**
+   * Observability hook fired on every cache lifecycle event.
+   *
+   * @description Generic, metrics-system-agnostic callback (added 2026-08-08
+   * for the engine's Prometheus CacheMetricsCollector consolidation — the
+   * engine previously maintained a hand-synced fork of this class solely to
+   * keep its metrics integration). The hook is invoked synchronously,
+   * wrapped in a try/catch so a throwing observer can NEVER break the cache
+   * path, and receives the event name plus the affected key. Do heavy work
+   * (histograms, network) off this call path.
+   */
+  onEvent?: (event: CacheEventType, key: string) => void;
 
   /**
    * Logger implementation for cache operations
@@ -393,6 +426,15 @@ export class StampedeProtectedCache<T> {
       allowStale: true,
       updateAgeOnGet: false,
       updateAgeOnHas: false,
+      // LRU discard visibility for the onEvent observability hook. lru-cache
+      // invokes dispose for every removal; only capacity discards ("evict")
+      // are reported as evictions so deliberate delete()/invalidate() calls
+      // do not inflate the eviction signal.
+      dispose: (_value, key, reason) => {
+        if (reason === "evict") {
+          this.emitEvent("eviction", key);
+        }
+      },
     });
 
     this.options.logger.info("StampedeProtectedCache initialized", {
@@ -466,6 +508,7 @@ export class StampedeProtectedCache<T> {
       if (now < jitteredExpiresAt) {
         // Fresh hit
         this.stats.hits++;
+        this.emitEvent("hit", key);
         this.options.logger.debug("Cache hit (fresh)", {
           key,
           age: now - cached.createdAt,
@@ -480,6 +523,7 @@ export class StampedeProtectedCache<T> {
       if (now < staleExpiresAt && !cached.isRefreshing) {
         // Serve stale and trigger background refresh
         this.stats.staleHits++;
+        this.emitEvent("stale_hit", key);
         this.options.logger.debug("Cache hit (stale-while-revalidate)", {
           key,
           age: now - cached.createdAt,
@@ -496,6 +540,7 @@ export class StampedeProtectedCache<T> {
 
     // Cache miss or expired - need to load
     this.stats.misses++;
+    this.emitEvent("miss", key);
     this.options.logger.debug("Cache miss", { key, hadCached: !!cached });
 
     return this.loadWithCoalescing(key, loader, effectiveTtl);
@@ -579,6 +624,24 @@ export class StampedeProtectedCache<T> {
    * cache.delete(`positions:${accountId}`);
    * ```
    */
+  /**
+   * Fire the {@link StampedeProtectedCacheOptions.onEvent} hook, never
+   * letting an observer failure propagate into the cache path.
+   */
+  private emitEvent(event: CacheEventType, key: string): void {
+    const hook = this.options.onEvent;
+    if (!hook) return;
+    try {
+      hook(event, key);
+    } catch (err) {
+      this.options.logger.warn("cache onEvent observer threw — ignored", {
+        event,
+        key,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   delete(key: string): boolean {
     const deleted = this.cache.delete(key);
     if (deleted) {
@@ -722,6 +785,7 @@ export class StampedeProtectedCache<T> {
     const existingPromise = this.pendingRefreshes.get(key);
     if (existingPromise) {
       this.stats.coalescedRequests++;
+      this.emitEvent("coalesced", key);
       this.options.logger.debug("Request coalesced", { key });
       return existingPromise;
     }
@@ -761,6 +825,7 @@ export class StampedeProtectedCache<T> {
     const timeoutPromise = new Promise<never>((_, reject) => {
       timeoutHandle = setTimeout(() => {
         this.stats.loadTimeouts++;
+        this.emitEvent("load_timeout", key);
         // Mark the invocation abandoned BEFORE evicting the pin: a retry that
         // starts now must never be overwritten by this loader's late result.
         invocation.abandoned = true;
@@ -839,6 +904,7 @@ export class StampedeProtectedCache<T> {
       return value;
     } catch (error) {
       this.stats.refreshErrors++;
+      this.emitEvent("refresh_error", key);
       const loadTime = Date.now() - startTime;
       this.options.logger.error("Failed to load data", {
         key,
@@ -879,6 +945,7 @@ export class StampedeProtectedCache<T> {
     this.loadWithCoalescing(key, loader, ttl)
       .then(() => {
         this.stats.backgroundRefreshes++;
+        this.emitEvent("background_refresh", key);
         this.options.logger.debug("Background refresh completed", { key });
       })
       .catch((error) => {
