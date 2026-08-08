@@ -16,6 +16,10 @@ describe("withRetry — classifier coverage for transient network errors", () =>
       { maxRetries: 3, baseDelayMs: 10, maxDelayMs: 50 },
       "test",
     );
+    // Observe rejections immediately: a fail-fast (non-retryable) rejection
+    // settles during the timer drain below, before the caller awaits the
+    // returned promise, and would otherwise be flagged as unhandled.
+    void promise.catch(() => undefined);
     // Drain timers so backoff completes without real delay.
     await vi.runAllTimersAsync();
     return promise;
@@ -191,6 +195,9 @@ describe("withRetry — classifier coverage for transient network errors", () =>
       { maxRetries: 3, baseDelayMs: 10, retryOnNetworkError: false },
       "test",
     );
+    // Observe the fail-fast rejection before draining timers so it is never
+    // flagged as unhandled.
+    void promise.catch(() => undefined);
     await vi.runAllTimersAsync();
     await expect(promise).rejects.toThrow();
     expect(fn).toHaveBeenCalledTimes(1);

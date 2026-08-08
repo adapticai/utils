@@ -246,6 +246,35 @@ describe("queue wake-up timer", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it("does not admit a request on a fractional token accrual", async () => {
+    vi.useFakeTimers();
+    const slowLimiter = new TokenBucketRateLimiter({
+      maxTokens: 1,
+      refillRate: 0.001, // 1 token per ~17 minutes
+      label: "fractional-test",
+      timeoutMs: 60_000,
+    });
+
+    await slowLimiter.acquire(); // consume the whole token
+
+    let released = false;
+    const queued = slowLimiter.acquire().then(
+      () => {
+        released = true;
+      },
+      () => undefined, // rejected by the cleanup reset below
+    );
+
+    // 5s accrues only 0.005 of a token — the queued request must NOT be
+    // admitted on that fraction (the pre-fix bucket released a full request
+    // per fractional accrual, overrunning the configured rate).
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(released).toBe(false);
+
+    slowLimiter.reset();
+    await queued;
+  });
+
   it("reset() rejects queued requests and clears the pending wake timer", async () => {
     vi.useFakeTimers();
     const wakeLimiter = new TokenBucketRateLimiter({

@@ -18,6 +18,12 @@ vi.mock("../adaptic", () => ({
   getSharedApolloClient: vi.fn(),
 }));
 
+// performance-metrics.ts imports marketDataAPI, which transitively imports
+// `ws` — a consumer-provided external not installed in this package.
+vi.mock("../alpaca-market-data-api", () => ({
+  marketDataAPI: {},
+}));
+
 import {
   calculateBetaFromReturns,
   calculateDailyReturns,

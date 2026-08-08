@@ -461,7 +461,7 @@ export class StampedeProtectedCache<T> {
       cached.lastAccessedAt = now;
 
       // Check if entry is still fresh (considering probabilistic expiration)
-      const jitteredExpiresAt = this.applyJitter(cached.expiresAt);
+      const jitteredExpiresAt = this.applyJitter(cached.expiresAt, cached.ttl);
 
       if (now < jitteredExpiresAt) {
         // Fresh hit
@@ -894,13 +894,23 @@ export class StampedeProtectedCache<T> {
   }
 
   /**
-   * Apply probabilistic jitter to expiration time
+   * Apply probabilistic jitter to an entry's expiration time.
+   *
+   * The jitter must scale with the ENTRY's own TTL: using `defaultTtl` here
+   * (as this method originally did) mis-anchored `createdAt` for any entry
+   * cached with a custom TTL, swinging its effective expiry by up to
+   * ±(defaultTtl - ttl) — a 50ms entry under a 5s default could randomly
+   * read as already-expired at write time or fresh for 10x its TTL.
+   *
+   * @param originalExpiresAt - The entry's unjittered expiry timestamp (ms).
+   * @param ttl - The TTL (ms) the entry was cached with.
+   * @returns The jittered expiry timestamp.
    */
-  private applyJitter(originalExpiresAt: number): number {
+  private applyJitter(originalExpiresAt: number, ttl: number): number {
     const range = this.options.maxJitter - this.options.minJitter;
     const jitter = this.options.minJitter + Math.random() * range;
-    const createdAt = originalExpiresAt - this.options.defaultTtl;
-    const jitteredTtl = this.options.defaultTtl * jitter;
+    const createdAt = originalExpiresAt - ttl;
+    const jitteredTtl = ttl * jitter;
     return createdAt + jitteredTtl;
   }
 

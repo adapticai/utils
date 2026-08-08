@@ -130,8 +130,11 @@ export class TokenBucketRateLimiter {
 
     this.refill();
 
-    if (this.tokens > 0) {
-      this.tokens--;
+    // Require a WHOLE token: refill() accrues fractionally, and admitting on
+    // any positive fraction would release a full request per accrual tick,
+    // driving the bucket negative and overrunning the configured rate.
+    if (this.tokens >= TOKENS_PER_REQUEST) {
+      this.tokens -= TOKENS_PER_REQUEST;
       logger.debug(`Rate limit token acquired for ${this.config.label}`, {
         remainingTokens: this.tokens,
         queueLength: this.queue.length,
@@ -258,8 +261,9 @@ export class TokenBucketRateLimiter {
     const logger = getLogger();
 
     try {
-      while (this.queue.length > 0 && this.tokens > 0) {
-        this.tokens--;
+      // Whole-token admission — see the matching guard in acquire().
+      while (this.queue.length > 0 && this.tokens >= TOKENS_PER_REQUEST) {
+        this.tokens -= TOKENS_PER_REQUEST;
         const next = this.queue.shift();
 
         if (next) {
