@@ -78,9 +78,11 @@ async function calculateTotalReturnYTD(
  * @param accountId - The ID of the Alpaca account.
  * @param client - The Apollo client instance.
  * @param alpacaAccount - The Alpaca account object.
- * @returns A promise that resolves to a string representing the expense ratio in percentage format.
+ * @returns A promise that resolves to a string representing the expense ratio
+ *   in percentage format, or "N/A" when the ratio cannot be computed honestly
+ *   (missing account, fee-fetch failure, or non-positive/non-finite equity).
  */
-async function calculateExpenseRatio({
+export async function calculateExpenseRatio({
   accountId,
   client,
   alpacaAccount,
@@ -128,12 +130,18 @@ async function calculateExpenseRatio({
     }
   }
 
-  // Validate equity
-  if (!accountDetails.equity || isNaN(parseFloat(accountDetails.equity))) {
-    getLogger().warn("Invalid equity value.");
+  // Validate equity. A drained or freshly-funded account reports equity "0"
+  // (and a broken feed can yield NaN or a negative string); dividing by it
+  // would fabricate "Infinity%"/"NaN%" — return the deliberate "N/A"
+  // (unknown) instead, consistent with the fee-fetch failure path below.
+  const equity = parseFloat(accountDetails.equity);
+  if (!Number.isFinite(equity) || equity <= 0) {
+    getLogger().warn(
+      "Non-positive or non-finite equity value; cannot compute expense ratio.",
+      { equity: accountDetails.equity },
+    );
     return "N/A";
   }
-  const equity = parseFloat(accountDetails.equity);
 
   // Fetch the account's real trailing fee expenses from Alpaca account
   // activities. A genuine data-source failure yields "N/A" (unknown) rather
@@ -189,7 +197,9 @@ interface AlpacaNonTradeActivity {
  * @param auth - Alpaca authentication (account id and/or direct API keys).
  * @returns Total fees in account currency (USD) as a positive number.
  */
-async function fetchTrailingFeeExpenses(auth: AlpacaAuth): Promise<number> {
+export async function fetchTrailingFeeExpenses(
+  auth: AlpacaAuth,
+): Promise<number> {
   const after = new Date(
     Date.now() - EXPENSE_TRAILING_WINDOW_DAYS * MS_PER_DAY,
   ).toISOString();
@@ -590,8 +600,13 @@ export async function calculateAlphaAndBeta(
   const alignedBenchmarkReturns: number[] = [];
 
   for (const timestamp of commonTimestamps) {
-    const portfolioRet = portfolioReturnsMap.get(timestamp)!;
-    const benchmarkRet = benchmarkReturnsMap.get(timestamp)!;
+    // commonTimestamps is the key intersection of both maps, so both lookups
+    // are guaranteed present; the guard replaces a non-null assertion.
+    const portfolioRet = portfolioReturnsMap.get(timestamp);
+    const benchmarkRet = benchmarkReturnsMap.get(timestamp);
+    if (portfolioRet === undefined || benchmarkRet === undefined) {
+      continue;
+    }
 
     if (isFinite(portfolioRet) && isFinite(benchmarkRet)) {
       alignedPortfolioReturns.push(portfolioRet);
@@ -958,8 +973,13 @@ export function alignReturnsByDate(
   const alignedBenchmarkReturns: number[] = [];
 
   for (const timestamp of commonTimestamps) {
-    const portfolioRet = portfolioReturnsMap.get(timestamp)!;
-    const benchmarkRet = benchmarkReturnsMap.get(timestamp)!;
+    // commonTimestamps is the key intersection of both maps, so both lookups
+    // are guaranteed present; the guard replaces a non-null assertion.
+    const portfolioRet = portfolioReturnsMap.get(timestamp);
+    const benchmarkRet = benchmarkReturnsMap.get(timestamp);
+    if (portfolioRet === undefined || benchmarkRet === undefined) {
+      continue;
+    }
 
     alignedPortfolioReturns.push(portfolioRet);
     alignedBenchmarkReturns.push(benchmarkRet);
@@ -1209,8 +1229,13 @@ export async function calculateInformationRatio(
   const activeReturns: number[] = [];
 
   for (const timestamp of commonTimestamps) {
-    const portfolioRet = portfolioReturnsMap.get(timestamp)!;
-    const benchmarkRet = benchmarkReturnsMap.get(timestamp)!;
+    // commonTimestamps is the key intersection of both maps, so both lookups
+    // are guaranteed present; the guard replaces a non-null assertion.
+    const portfolioRet = portfolioReturnsMap.get(timestamp);
+    const benchmarkRet = benchmarkReturnsMap.get(timestamp);
+    if (portfolioRet === undefined || benchmarkRet === undefined) {
+      continue;
+    }
 
     activeReturns.push(portfolioRet - benchmarkRet);
   }
@@ -1284,7 +1309,7 @@ const MS_PER_SECOND = 1000;
  * @param request - Benchmark symbol, RFC-3339 start/end, and timeframe token.
  * @returns The benchmark bars, sorted ascending by time; empty if none.
  */
-async function fetchBenchmarkBars(request: {
+export async function fetchBenchmarkBars(request: {
   symbol: string;
   start: string;
   end: string;
