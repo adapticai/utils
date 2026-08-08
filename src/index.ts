@@ -34,6 +34,7 @@ export {
   AlphaVantageError,
   AuthenticationError,
   DataFormatError,
+  DuplicateClientOrderIdError,
   HttpClientError,
   HttpServerError,
   MassiveApiError,

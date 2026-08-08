@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import WebSocket from "ws";
 import { log as baseLog } from "./logging";
 import { marketDataAPI } from "./alpaca-market-data-api";
@@ -30,6 +30,7 @@ import {
   getTradingWebSocketUrl,
 } from "./config/api-endpoints";
 import { validateAlpacaCredentials } from "./utils/auth-validator";
+import { DuplicateClientOrderIdError } from "./errors";
 import { isTransientNetworkError } from "./utils/retry";
 import { createTimeoutSignal, DEFAULT_TIMEOUTS } from "./http-timeout";
 
@@ -86,9 +87,49 @@ const CLIENT_ORDER_ID_HASH_LENGTH = 32;
  * This derived default is a best-effort safety net; the guaranteed-idempotent
  * path is for the caller to pass an explicit `clientOrderId` tied to the
  * originating signal/decision id (which also permits legitimately-repeated
- * identical orders inside a single window).
+ * identical orders inside a single window). Callers that intentionally repeat
+ * an identical order inside one window without managing explicit ids can pass
+ * an `idempotencyNonce` (e.g. an attempt counter or signal id) instead — the
+ * nonce is folded into the derived id, so each distinct nonce yields a
+ * distinct id while a timeout+retry of the SAME attempt still collides
+ * broker-side as intended.
+ *
+ * When a DERIVED id is 422-rejected as a duplicate, {@link
+ * AlpacaTradingAPI.postOrderWithIdempotencyRecovery} recovers instead of
+ * failing the caller: if the previously-submitted order is still live (or
+ * filled) it is returned as idempotent success; if it is terminally dead
+ * (canceled/expired/rejected) the order is resubmitted exactly once with a
+ * fresh random salt. Caller-SUPPLIED ids are never recovered — they surface a
+ * typed {@link DuplicateClientOrderIdError} so the caller can distinguish a
+ * duplicate from a genuine rejection.
  */
 const CLIENT_ORDER_ID_WINDOW_MS = 300_000;
+
+/**
+ * Matches Alpaca's 422 duplicate-idempotency-key rejection message. Alpaca has
+ * used both "client_order_id must be unique" and "client order id must be
+ * unique" across API revisions, so separators are matched loosely.
+ */
+const DUPLICATE_CLIENT_ORDER_ID_PATTERN =
+  /client[\s_-]?order[\s_-]?id must be unique/i;
+
+/** HTTP status Alpaca uses for duplicate `client_order_id` rejections. */
+const DUPLICATE_CLIENT_ORDER_ID_STATUS = 422;
+
+/**
+ * Order statuses in which a previously-submitted order can never execute.
+ * A derived-id duplicate colliding with an order in one of these states is a
+ * legitimate NEW order (e.g. cancel-then-recreate of an identical trailing
+ * stop) and is resubmitted with a fresh salt; any other status means the
+ * original order is live or executed, so it is returned as idempotent success.
+ */
+const TERMINAL_DEAD_ORDER_STATUSES: ReadonlySet<string> = new Set([
+  "canceled",
+  "expired",
+  "rejected",
+  "replaced",
+  "done_for_day",
+]);
 
 /** 
 Websocket example
@@ -232,6 +273,195 @@ export class AlpacaTradingAPI {
       .digest("hex")
       .slice(0, CLIENT_ORDER_ID_HASH_LENGTH);
     return `${CLIENT_ORDER_ID_PREFIX}${digest}`;
+  }
+
+  /**
+   * Running count of derived-id duplicate collisions resolved by returning the
+   * already-submitted order. Emitted in log metadata so operators can see the
+   * idempotency net firing.
+   */
+  private idempotentDuplicateReturns = 0;
+
+  /**
+   * Running count of derived-id duplicate collisions resolved by resubmitting
+   * once with a fresh random salt (the colliding order was terminally dead).
+   */
+  private saltedDuplicateResubmits = 0;
+
+  /**
+   * Whether an error thrown by {@link makeRequest} is Alpaca's 422
+   * duplicate-`client_order_id` rejection.
+   * @param error - The error thrown by the order POST.
+   * @returns true when the error is a duplicate-idempotency-key rejection.
+   */
+  private isDuplicateClientOrderIdRejection(error: unknown): boolean {
+    if (!(error instanceof Error)) return false;
+    return (
+      error.message.includes(`(${DUPLICATE_CLIENT_ORDER_ID_STATUS})`) &&
+      DUPLICATE_CLIENT_ORDER_ID_PATTERN.test(error.message)
+    );
+  }
+
+  /**
+   * Look up an order by its `client_order_id` (Alpaca
+   * `GET /orders:by_client_order_id`).
+   * @param clientOrderId - The idempotency key the order was submitted with.
+   * @returns The order, or null when no order exists for the id (404).
+   */
+  async getOrderByClientOrderId(
+    clientOrderId: string,
+  ): Promise<AlpacaOrder | null> {
+    try {
+      return await this.makeRequest<AlpacaOrder>(
+        "/orders:by_client_order_id",
+        "GET",
+        undefined,
+        `?client_order_id=${encodeURIComponent(clientOrderId)}`,
+      );
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("(404)")) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * POST an order body with duplicate-`client_order_id` recovery.
+   *
+   * Sets `client_order_id` (explicit id wins; otherwise derived from
+   * `deriveParts`), submits, and on Alpaca's 422 duplicate rejection:
+   *
+   * - **Caller-supplied id**: throws a typed
+   *   {@link DuplicateClientOrderIdError} — the caller owns idempotency
+   *   semantics and must decide whether the duplicate is success or a bug.
+   * - **Derived id, colliding order live/filled**: returns the existing order
+   *   as idempotent success (this is the timeout+retry case the derived id
+   *   exists to de-duplicate).
+   * - **Derived id, colliding order terminally dead** (canceled / expired /
+   *   rejected — e.g. cancel-then-recreate of an identical trailing stop):
+   *   resubmits exactly once with a fresh random salt so the legitimate new
+   *   order is not blocked. A second duplicate rejection throws the typed
+   *   error.
+   * - **Derived id, status lookup fails**: fails CLOSED with the typed error —
+   *   the colliding order may be live, so resubmitting could double-fill; the
+   *   caller's next cycle retries when the lookup can succeed.
+   *
+   * Both recovery outcomes increment log-visible counters.
+   *
+   * @param body - The order payload (its `client_order_id` is set here).
+   * @param options - Idempotency inputs: optional explicit id and the derive
+   *   parts used both for the default id and for the salted resubmit.
+   * @returns The created (or pre-existing, on idempotent recovery) order.
+   */
+  private async postOrderWithIdempotencyRecovery(
+    body: CreateOrderParams | CreateMultiLegOrderParams,
+    options: {
+      explicitClientOrderId?: string;
+      deriveParts: ReadonlyArray<string | number | boolean | undefined>;
+      logSymbol?: string;
+    },
+  ): Promise<AlpacaOrder> {
+    const derived = options.explicitClientOrderId === undefined;
+    const clientOrderId =
+      options.explicitClientOrderId ??
+      this.deriveClientOrderId(options.deriveParts);
+    body.client_order_id = clientOrderId;
+
+    const requestBody = body as unknown as Record<string, unknown>;
+    try {
+      return await this.makeRequest<AlpacaOrder>("/orders", "POST", requestBody);
+    } catch (error) {
+      if (!this.isDuplicateClientOrderIdRejection(error)) {
+        throw error;
+      }
+      if (!derived) {
+        throw new DuplicateClientOrderIdError(
+          `Duplicate client_order_id "${clientOrderId}" rejected by Alpaca (caller-supplied id)`,
+          clientOrderId,
+          false,
+          error,
+        );
+      }
+
+      let existing: AlpacaOrder | null = null;
+      try {
+        existing = await this.getOrderByClientOrderId(clientOrderId);
+      } catch (lookupError) {
+        // Fail CLOSED: the 422 proves an order with this id exists, but its
+        // status is unverifiable. Resubmitting here could double-fill a live
+        // order (the timeout+retry case), which is strictly worse than the
+        // caller retrying on its next cycle — by then the lookup will resolve.
+        this.log(
+          `Duplicate-order lookup failed for ${clientOrderId}; failing closed (no resubmit) to avoid a possible double order: ${
+            lookupError instanceof Error
+              ? lookupError.message
+              : String(lookupError)
+          }`,
+          { symbol: options.logSymbol, type: "error" },
+        );
+        throw new DuplicateClientOrderIdError(
+          `Duplicate client_order_id "${clientOrderId}" rejected by Alpaca and the existing-order lookup failed; refusing to resubmit (possible live duplicate)`,
+          clientOrderId,
+          true,
+          lookupError,
+        );
+      }
+
+      if (existing && !TERMINAL_DEAD_ORDER_STATUSES.has(existing.status)) {
+        this.idempotentDuplicateReturns++;
+        this.log(
+          `Derived client_order_id ${clientOrderId} already submitted (status=${existing.status}); returning existing order ${existing.id} as idempotent success`,
+          {
+            symbol: options.logSymbol,
+            type: "warn",
+            metadata: {
+              outcome: "idempotent_return",
+              idempotentDuplicateReturns: this.idempotentDuplicateReturns,
+            },
+          },
+        );
+        return existing;
+      }
+
+      const saltedId = this.deriveClientOrderId([
+        ...options.deriveParts,
+        "resubmit",
+        randomUUID(),
+      ]);
+      this.saltedDuplicateResubmits++;
+      this.log(
+        `Derived client_order_id ${clientOrderId} collided with a ${
+          existing ? `terminal (${existing.status})` : "missing"
+        } order; resubmitting once with fresh salt ${saltedId}`,
+        {
+          symbol: options.logSymbol,
+          type: "warn",
+          metadata: {
+            outcome: "salted_resubmit",
+            saltedDuplicateResubmits: this.saltedDuplicateResubmits,
+          },
+        },
+      );
+      body.client_order_id = saltedId;
+      try {
+        return await this.makeRequest<AlpacaOrder>(
+          "/orders",
+          "POST",
+          requestBody,
+        );
+      } catch (resubmitError) {
+        if (this.isDuplicateClientOrderIdRejection(resubmitError)) {
+          throw new DuplicateClientOrderIdError(
+            `Salted resubmit of duplicate client_order_id "${clientOrderId}" was itself rejected as a duplicate ("${saltedId}")`,
+            saltedId,
+            true,
+            resubmitError,
+          );
+        }
+        throw resubmitError;
+      }
+    }
   }
 
   /**
@@ -398,7 +628,7 @@ export class AlpacaTradingAPI {
 
   private handleMessage(message: string): void {
     try {
-      const data = JSON.parse(message);
+      const data = JSON.parse(message) as AlpacaWebSocketMessage;
       const handler = this.messageHandlers.get(data.stream);
 
       if (handler) {
@@ -512,7 +742,10 @@ export class AlpacaTradingAPI {
 
       const handleAuthResponse = (data: WebSocket.Data) => {
         try {
-          const message = JSON.parse(data.toString());
+          const message = JSON.parse(data.toString()) as {
+            stream?: string;
+            data?: { status?: string; message?: string };
+          };
           if (message.stream === "authorization") {
             this.ws?.removeListener("message", handleAuthResponse);
             clearTimeout(authTimeout);
@@ -566,7 +799,10 @@ export class AlpacaTradingAPI {
 
       const handleListenResponse = (data: WebSocket.Data) => {
         try {
-          const message = JSON.parse(data.toString());
+          const message = JSON.parse(data.toString()) as {
+            stream?: string;
+            data?: { streams?: string[] };
+          };
           if (message.stream === "listening") {
             this.ws?.removeListener("message", handleListenResponse);
             clearTimeout(listenTimeout);
@@ -625,7 +861,7 @@ export class AlpacaTradingAPI {
 
       const contentType = response.headers.get("content-type");
       if (contentType && contentType.includes("application/json")) {
-        return await response.json();
+        return (await response.json()) as T;
       }
 
       // For non-JSON responses, return the text content
@@ -785,6 +1021,12 @@ export class AlpacaTradingAPI {
    * @param side (string) - the side of the order
    * @param trailPercent100 (number) - the trail percent of the order (scale 100, i.e. 0.5 = 0.5%)
    * @param position_intent (string) - the position intent of the order
+   * @param clientOrderId - Optional explicit idempotency key; when supplied it
+   *   is used verbatim and duplicate rejections surface as
+   *   {@link DuplicateClientOrderIdError}.
+   * @param idempotencyNonce - Optional attempt/signal discriminator folded into
+   *   the derived idempotency key so an intentionally-repeated identical order
+   *   inside one derivation window receives a distinct id.
    * @returns The created AlpacaOrder with order ID and details
    */
   async createTrailingStop(
@@ -798,6 +1040,7 @@ export class AlpacaTradingAPI {
       | "sell_to_open"
       | "sell_to_close",
     clientOrderId?: string,
+    idempotencyNonce?: string | number,
   ): Promise<AlpacaOrder> {
     this.log(
       `Creating trailing stop ${side.toUpperCase()} ${qty} shares for ${symbol} with trail percent ${trailPercent100}%`,
@@ -815,24 +1058,22 @@ export class AlpacaTradingAPI {
       type: "trailing_stop",
       trail_percent: trailPercent100.toString(), // Already in decimal form (e.g., 4 for 4%)
       time_in_force: "gtc",
-      client_order_id:
-        clientOrderId ??
-        this.deriveClientOrderId([
+    };
+
+    try {
+      const order = await this.postOrderWithIdempotencyRecovery(body, {
+        explicitClientOrderId: clientOrderId,
+        deriveParts: [
           "trailing_stop",
           symbol,
           side,
           position_intent,
           Math.abs(qty),
           trailPercent100,
-        ]),
-    };
-
-    try {
-      const order = await this.makeRequest<AlpacaOrder>(
-        `/orders`,
-        "POST",
-        body,
-      );
+          ...(idempotencyNonce !== undefined ? [String(idempotencyNonce)] : []),
+        ],
+        logSymbol: symbol,
+      });
       this.log(
         `Trailing stop order created for ${symbol}: orderId=${order.id}, trailPercent=${trailPercent100}%`,
         { symbol },
@@ -853,6 +1094,12 @@ export class AlpacaTradingAPI {
    * @param qty (number) - the quantity of the order
    * @param side (string) - the side of the order
    * @param position_intent (string) - the position intent of the order. Important for knowing if a position needs a trailing stop.
+   * @param client_order_id - Optional explicit idempotency key; duplicate
+   *   rejections of an explicit id surface as
+   *   {@link DuplicateClientOrderIdError}.
+   * @param idempotencyNonce - Optional attempt/signal discriminator folded into
+   *   the derived idempotency key so an intentionally-repeated identical order
+   *   inside one derivation window receives a distinct id.
    */
   async createMarketOrder(
     symbol: string,
@@ -864,6 +1111,7 @@ export class AlpacaTradingAPI {
       | "sell_to_open"
       | "sell_to_close",
     client_order_id?: string,
+    idempotencyNonce?: string | number,
   ): Promise<AlpacaOrder> {
     this.log(
       `Creating market order for ${symbol}: ${side} ${qty} shares (${position_intent})`,
@@ -881,17 +1129,19 @@ export class AlpacaTradingAPI {
       time_in_force: "day",
       order_class: "simple",
     };
-    body.client_order_id =
-      client_order_id ??
-      this.deriveClientOrderId([
-        "market",
-        symbol,
-        side,
-        position_intent,
-        Math.abs(qty),
-      ]);
     try {
-      return await this.makeRequest("/orders", "POST", body);
+      return await this.postOrderWithIdempotencyRecovery(body, {
+        explicitClientOrderId: client_order_id,
+        deriveParts: [
+          "market",
+          symbol,
+          side,
+          position_intent,
+          Math.abs(qty),
+          ...(idempotencyNonce !== undefined ? [String(idempotencyNonce)] : []),
+        ],
+        logSymbol: symbol,
+      });
     } catch (error) {
       this.log(`Error creating market order: ${error}`, { type: "error" });
       throw error;
@@ -1096,7 +1346,12 @@ export class AlpacaTradingAPI {
    * @param limitPrice (number) - the limit price of the order
    * @param position_intent (string) - the position intent of the order
    * @param extended_hours (boolean) - whether the order is in extended hours
-   * @param client_order_id (string) - the client order id of the order
+   * @param client_order_id - Optional explicit idempotency key; duplicate
+   *   rejections of an explicit id surface as
+   *   {@link DuplicateClientOrderIdError}.
+   * @param idempotencyNonce - Optional attempt/signal discriminator folded into
+   *   the derived idempotency key so an intentionally-repeated identical order
+   *   inside one derivation window receives a distinct id.
    */
   async createLimitOrder(
     symbol: string,
@@ -1110,6 +1365,7 @@ export class AlpacaTradingAPI {
       | "sell_to_close",
     extended_hours: boolean = false,
     client_order_id?: string,
+    idempotencyNonce?: string | number,
   ): Promise<AlpacaOrder> {
     this.log(
       `Creating limit order for ${symbol}: ${side} ${qty} shares at $${limitPrice.toFixed(2)} (${position_intent})`,
@@ -1129,19 +1385,21 @@ export class AlpacaTradingAPI {
       order_class: "simple",
       extended_hours,
     };
-    body.client_order_id =
-      client_order_id ??
-      this.deriveClientOrderId([
-        "limit",
-        symbol,
-        side,
-        position_intent,
-        Math.abs(qty),
-        this.roundPriceForAlpaca(limitPrice),
-        extended_hours,
-      ]);
     try {
-      return await this.makeRequest("/orders", "POST", body);
+      return await this.postOrderWithIdempotencyRecovery(body, {
+        explicitClientOrderId: client_order_id,
+        deriveParts: [
+          "limit",
+          symbol,
+          side,
+          position_intent,
+          Math.abs(qty),
+          this.roundPriceForAlpaca(limitPrice),
+          extended_hours,
+          ...(idempotencyNonce !== undefined ? [String(idempotencyNonce)] : []),
+        ],
+        logSymbol: symbol,
+      });
     } catch (error) {
       this.log(`Error creating limit order: ${error}`, { type: "error" });
       throw error;
@@ -1364,7 +1622,11 @@ export class AlpacaTradingAPI {
    * @param limitPrice Limit price (required for limit orders)
    * @param clientOrderId Optional idempotency key; a deterministic one is
    *   derived from the order parameters when omitted so a client-timeout retry
-   *   is de-duplicated broker-side.
+   *   is de-duplicated broker-side. Duplicate rejections of an explicit id
+   *   surface as {@link DuplicateClientOrderIdError}.
+   * @param idempotencyNonce Optional attempt/signal discriminator folded into
+   *   the derived idempotency key so an intentionally-repeated identical order
+   *   inside one derivation window receives a distinct id.
    * @returns The created order
    */
   async createOptionOrder(
@@ -1379,6 +1641,7 @@ export class AlpacaTradingAPI {
     type: "market" | "limit",
     limitPrice?: number,
     clientOrderId?: string,
+    idempotencyNonce?: string | number,
   ): Promise<AlpacaOrder> {
     if (!Number.isInteger(qty) || qty <= 0) {
       this.log("Quantity must be a positive whole number for option orders", {
@@ -1414,9 +1677,9 @@ export class AlpacaTradingAPI {
       orderData.limit_price = this.roundPriceForAlpaca(limitPrice).toString();
     }
 
-    orderData.client_order_id =
-      clientOrderId ??
-      this.deriveClientOrderId([
+    return this.postOrderWithIdempotencyRecovery(orderData, {
+      explicitClientOrderId: clientOrderId,
+      deriveParts: [
         "option",
         type,
         symbol,
@@ -1426,9 +1689,10 @@ export class AlpacaTradingAPI {
         type === "limit" && limitPrice !== undefined
           ? this.roundPriceForAlpaca(limitPrice)
           : undefined,
-      ]);
-
-    return this.makeRequest("/orders", "POST", orderData);
+        ...(idempotencyNonce !== undefined ? [String(idempotencyNonce)] : []),
+      ],
+      logSymbol: symbol,
+    });
   }
 
   /**
@@ -1439,7 +1703,11 @@ export class AlpacaTradingAPI {
    * @param limitPrice Limit price (required for limit orders)
    * @param clientOrderId Optional idempotency key; a deterministic one is
    *   derived from the legs and order parameters when omitted so a
-   *   client-timeout retry is de-duplicated broker-side.
+   *   client-timeout retry is de-duplicated broker-side. Duplicate rejections
+   *   of an explicit id surface as {@link DuplicateClientOrderIdError}.
+   * @param idempotencyNonce Optional attempt/signal discriminator folded into
+   *   the derived idempotency key so an intentionally-repeated identical order
+   *   inside one derivation window receives a distinct id.
    * @returns The created multi-leg order
    */
   async createMultiLegOptionOrder(
@@ -1448,6 +1716,7 @@ export class AlpacaTradingAPI {
     type: "market" | "limit",
     limitPrice?: number,
     clientOrderId?: string,
+    idempotencyNonce?: string | number,
   ): Promise<AlpacaOrder> {
     if (!Number.isInteger(qty) || qty <= 0) {
       this.log("Quantity must be a positive whole number for option orders", {
@@ -1485,9 +1754,9 @@ export class AlpacaTradingAPI {
       orderData.limit_price = this.roundPriceForAlpaca(limitPrice).toString();
     }
 
-    orderData.client_order_id =
-      clientOrderId ??
-      this.deriveClientOrderId([
+    return this.postOrderWithIdempotencyRecovery(orderData, {
+      explicitClientOrderId: clientOrderId,
+      deriveParts: [
         "mleg",
         type,
         qty,
@@ -1498,13 +1767,10 @@ export class AlpacaTradingAPI {
           (leg) =>
             `${leg.symbol}:${leg.side}:${leg.ratio_qty}:${leg.position_intent}`,
         ),
-      ]);
-
-    return this.makeRequest(
-      "/orders",
-      "POST",
-      orderData as unknown as Record<string, unknown>,
-    );
+        ...(idempotencyNonce !== undefined ? [String(idempotencyNonce)] : []),
+      ],
+      logSymbol: legSymbols,
+    });
   }
 
   /**
@@ -2058,6 +2324,12 @@ export class AlpacaTradingAPI {
       takeProfitPrice?: number;
       takeProfitPercent100?: number;
       clientOrderId?: string;
+      /**
+       * Attempt/signal discriminator folded into the derived idempotency key
+       * so an intentionally-repeated identical order inside one derivation
+       * window receives a distinct id.
+       */
+      idempotencyNonce?: string | number;
     },
   ): Promise<AlpacaOrder> {
     const { symbol, qty, side, referencePrice } = params;
@@ -2072,6 +2344,7 @@ export class AlpacaTradingAPI {
       takeProfitPrice,
       takeProfitPercent100,
       clientOrderId,
+      idempotencyNonce,
     } = options || {};
 
     // Validation: Extended hours + market order is not allowed
@@ -2200,26 +2473,25 @@ export class AlpacaTradingAPI {
       position_intent: side === "buy" ? "buy_to_open" : "sell_to_open",
     };
 
-    orderData.client_order_id =
-      clientOrderId ??
-      this.deriveClientOrderId([
-        "equities",
-        orderClass,
-        type,
-        symbol,
-        side,
-        Math.abs(qty),
-        type === "limit" && limitPrice !== undefined
-          ? this.roundPriceForAlpaca(limitPrice)
-          : undefined,
-        extendedHours,
-        useStopLoss && calculatedStopPrice !== undefined
-          ? this.roundPriceForAlpaca(calculatedStopPrice)
-          : undefined,
-        useTakeProfit && calculatedTakeProfitPrice !== undefined
-          ? this.roundPriceForAlpaca(calculatedTakeProfitPrice)
-          : undefined,
-      ]);
+    const deriveParts: ReadonlyArray<string | number | boolean | undefined> = [
+      "equities",
+      orderClass,
+      type,
+      symbol,
+      side,
+      Math.abs(qty),
+      type === "limit" && limitPrice !== undefined
+        ? this.roundPriceForAlpaca(limitPrice)
+        : undefined,
+      extendedHours,
+      useStopLoss && calculatedStopPrice !== undefined
+        ? this.roundPriceForAlpaca(calculatedStopPrice)
+        : undefined,
+      useTakeProfit && calculatedTakeProfitPrice !== undefined
+        ? this.roundPriceForAlpaca(calculatedTakeProfitPrice)
+        : undefined,
+      ...(idempotencyNonce !== undefined ? [String(idempotencyNonce)] : []),
+    ];
 
     // Add limit price for limit orders
     if (type === "limit" && limitPrice !== undefined) {
@@ -2255,7 +2527,11 @@ export class AlpacaTradingAPI {
     });
 
     try {
-      return await this.makeRequest("/orders", "POST", orderData);
+      return await this.postOrderWithIdempotencyRecovery(orderData, {
+        explicitClientOrderId: clientOrderId,
+        deriveParts,
+        logSymbol: symbol,
+      });
     } catch (error) {
       this.log(`Error creating equities trade: ${error}`, {
         symbol,

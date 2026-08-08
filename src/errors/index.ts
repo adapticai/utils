@@ -295,3 +295,30 @@ export class DataFormatError extends AdapticUtilsError {
     );
   }
 }
+
+/**
+ * Broker-side duplicate `client_order_id` rejection (Alpaca HTTP 422,
+ * "client order id must be unique").
+ *
+ * Thrown by the order-creation paths of `AlpacaTradingAPI` so callers can
+ * distinguish "this exact order was already submitted" from a genuine order
+ * rejection. When {@link wasDerived} is `false` the id was caller-supplied and
+ * the caller owns idempotency semantics (a legitimate repeat needs a new
+ * explicit id or an `idempotencyNonce`). When `true`, the wrapper's automatic
+ * recovery (existing-order lookup, then one salted resubmit) was exhausted.
+ *
+ * Never retryable with the same id — resubmitting the identical
+ * `client_order_id` will 422 again.
+ */
+export class DuplicateClientOrderIdError extends AlpacaApiError {
+  constructor(
+    message: string,
+    /** The `client_order_id` that collided broker-side. */
+    public readonly clientOrderId: string,
+    /** Whether the colliding id was derived by the wrapper (vs caller-supplied). */
+    public readonly wasDerived: boolean,
+    cause?: unknown,
+  ) {
+    super(message, "DUPLICATE_CLIENT_ORDER_ID", 422, cause);
+  }
+}
