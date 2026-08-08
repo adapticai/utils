@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { TokenBucketRateLimiter } from "../rate-limiter";
 
 describe("TokenBucketRateLimiter", () => {
@@ -208,5 +208,60 @@ describe("TokenBucketRateLimiter", () => {
 
       await expect(singleToken.acquire()).resolves.toBeUndefined();
     });
+  });
+});
+
+describe("queue wake-up timer", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("releases a queued acquire via the self-armed timer with no subsequent acquire() call", async () => {
+    vi.useFakeTimers();
+    const wakeLimiter = new TokenBucketRateLimiter({
+      maxTokens: 1,
+      refillRate: 1, // 1 token per second
+      label: "wake-test",
+      timeoutMs: 10_000,
+    });
+
+    await wakeLimiter.acquire(); // consume the only token
+
+    let released = false;
+    const queued = wakeLimiter.acquire().then(() => {
+      released = true;
+    });
+
+    // Nothing has refilled yet; the queued request must still be waiting.
+    await vi.advanceTimersByTimeAsync(100);
+    expect(released).toBe(false);
+
+    // Advance past the refill deficit (~1s): the wake timer alone must
+    // release the queued request — no further acquire() traffic arrives.
+    await vi.advanceTimersByTimeAsync(1_100);
+    await queued;
+    expect(released).toBe(true);
+
+    // Drained queue must leave no armed timers behind.
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("reset() rejects queued requests and clears the pending wake timer", async () => {
+    vi.useFakeTimers();
+    const wakeLimiter = new TokenBucketRateLimiter({
+      maxTokens: 1,
+      refillRate: 1,
+      label: "reset-test",
+      timeoutMs: 10_000,
+    });
+
+    await wakeLimiter.acquire();
+    const queued = wakeLimiter.acquire();
+    const expectation = expect(queued).rejects.toThrow(/reset/);
+
+    wakeLimiter.reset();
+
+    await expectation;
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

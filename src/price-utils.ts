@@ -95,7 +95,7 @@ function resolveCryptoTakerBps(trailing30dVolumeUsd: number): number {
  * @param alpacaAccount - The Alpaca account supplying broker credentials.
  * @returns The total fee in account currency (USD).
  */
-const calculateFees = async (
+export const calculateFees = async (
   action: types.Action,
   trade: types.Trade,
   alpacaAccount: types.AlpacaAccount,

@@ -48,7 +48,7 @@ function makeOrder(id: string, offsetSeconds: number): AlpacaOrder {
     symbol: "AAPL",
     status: "open",
     submitted_at: new Date(baseMs - offsetSeconds * 1000).toISOString(),
-  } as AlpacaOrder;
+  } as unknown as AlpacaOrder;
 }
 
 /** Builds `count` descending-submitted_at orders with ids `${prefix}-<n>`. */
@@ -202,5 +202,66 @@ describe("AlpacaTradingAPI.getOrders", () => {
     expect(requestedUrl(0)).toContain(
       `until=${encodeURIComponent(callerUntil)}`,
     );
+  });
+});
+
+describe("AlpacaTradingAPI bulk 207 Multi-Status handling", () => {
+  let api: AlpacaTradingAPI;
+
+  beforeEach(() => {
+    mockFetch.mockReset();
+    api = new AlpacaTradingAPI(testCredentials);
+  });
+
+  it("cancelAllOrders throws listing per-order failures from a mixed 207 body", async () => {
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse([
+        { id: "a", status: 200 },
+        { id: "b", status: 500 },
+      ]),
+    );
+
+    await expect(api.cancelAllOrders()).rejects.toThrow(/b:500/);
+  });
+
+  it("cancelAllOrders resolves when every per-order status is 2xx", async () => {
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse([
+        { id: "a", status: 200 },
+        { id: "b", status: 200 },
+      ]),
+    );
+
+    await expect(api.cancelAllOrders()).resolves.toBeUndefined();
+  });
+
+  it("cancelAllOrders resolves on an empty 204 response", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 204,
+      headers: new Headers({ "content-length": "0" }),
+    });
+
+    await expect(api.cancelAllOrders()).resolves.toBeUndefined();
+  });
+
+  it("closeAllPositions throws listing per-position failures from a mixed 207 body", async () => {
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse([
+        { symbol: "AAPL", status: 200 },
+        { symbol: "TSLA", status: 500 },
+      ]),
+    );
+
+    await expect(api.closeAllPositions()).rejects.toThrow(/TSLA:500/);
+    expect(requestedUrl(0)).toContain("/positions?cancel_orders=true");
+  });
+
+  it("closeAllPositions resolves when every per-position status is 2xx", async () => {
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse([{ symbol: "AAPL", status: 200 }]),
+    );
+
+    await expect(api.closeAllPositions()).resolves.toBeUndefined();
   });
 });
