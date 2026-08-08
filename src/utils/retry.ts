@@ -157,6 +157,93 @@ export function isTransientNetworkError(error: unknown): boolean {
 }
 
 /**
+ * Error names that indicate the CLIENT's own request deadline expired (an
+ * `AbortSignal` timeout or an undici per-phase timeout) rather than a
+ * connection-phase fault. These faults have already consumed a full request
+ * timeout, so retrying them is expensive by construction.
+ */
+const DEADLINE_EXPIRY_ERROR_NAMES = new Set<string>([
+  "AbortError",
+  "TimeoutError",
+  "RequestTimeoutError",
+  "ConnectTimeoutError",
+  "HeadersTimeoutError",
+  "BodyTimeoutError",
+]);
+
+/**
+ * Error codes that indicate an expired request/phase deadline (vs a fast
+ * connection-phase fault such as `ECONNRESET`/`ECONNREFUSED`).
+ */
+const DEADLINE_EXPIRY_ERROR_CODES = new Set<string>([
+  "ETIMEDOUT",
+  "ESOCKETTIMEDOUT",
+  "ECONNABORTED",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_HEADERS_TIMEOUT",
+  "UND_ERR_BODY_TIMEOUT",
+]);
+
+/** Message-pattern fallback for deadline-expiry errors that lost name/code. */
+const DEADLINE_EXPIRY_MESSAGE_PATTERNS: RegExp[] = [
+  /timed out/i,
+  /timeout/i,
+  /aborted/i,
+];
+
+/**
+ * Whether an error represents the client's OWN deadline expiring (abort /
+ * timeout) rather than a connection-phase network fault. Both classes are
+ * "transient" per {@link isTransientNetworkError}, but they have very
+ * different retry economics: a connection fault (`ECONNRESET`, `EPIPE`,
+ * refused socket) settles in milliseconds and is cheap to retry, while a
+ * deadline expiry has already consumed the full per-attempt timeout — blindly
+ * retrying it multiplies time-to-failure exactly when the caller most needs
+ * to fail fast. Walks the `error.cause` chain like the transient classifier.
+ *
+ * @param error - The error to classify.
+ * @returns true when the fault is a client deadline/abort expiry.
+ */
+export function isClientDeadlineExpiry(error: unknown): boolean {
+  const MAX_CAUSE_DEPTH = 6;
+  let current: unknown = error;
+
+  for (let depth = 0; depth < MAX_CAUSE_DEPTH && current; depth++) {
+    if (current instanceof Error || typeof current === "object") {
+      const err = current as ErrorLike;
+
+      if (
+        typeof err.name === "string" &&
+        DEADLINE_EXPIRY_ERROR_NAMES.has(err.name)
+      ) {
+        return true;
+      }
+
+      if (
+        typeof err.code === "string" &&
+        DEADLINE_EXPIRY_ERROR_CODES.has(err.code)
+      ) {
+        return true;
+      }
+
+      if (typeof err.message === "string") {
+        for (const pattern of DEADLINE_EXPIRY_MESSAGE_PATTERNS) {
+          if (pattern.test(err.message)) {
+            return true;
+          }
+        }
+      }
+
+      current = err.cause;
+    } else {
+      break;
+    }
+  }
+
+  return false;
+}
+
+/**
  * Analyzes an error and determines if it's retryable.
  * @param error - The error to analyze
  * @param response - Optional Response object for HTTP errors

@@ -51,7 +51,10 @@ import { EventEmitter } from "events";
 import WebSocket from "ws";
 import { validateAlpacaCredentials } from "./utils/auth-validator";
 import { createTimeoutSignal, DEFAULT_TIMEOUTS } from "./http-timeout";
-import { isTransientNetworkError } from "./utils/retry";
+import {
+  isClientDeadlineExpiry,
+  isTransientNetworkError,
+} from "./utils/retry";
 
 /**
  * Bounded retry for TRANSIENT network faults on Alpaca market-data reads.
@@ -80,6 +83,40 @@ const TRANSIENT_NETWORK_RETRY_BASE_MS = 120;
 function transientRetryDelayMs(attempt: number): number {
   const ceiling = TRANSIENT_NETWORK_RETRY_BASE_MS * 2 ** attempt;
   return Math.floor(Math.random() * ceiling);
+}
+
+/**
+ * Total-deadline multiple over the per-attempt client timeout for one
+ * {@link AlpacaMarketDataAPI.makeRequest} call INCLUDING transient retries.
+ * The ECONNRESET class this loop targets settles in milliseconds, so the
+ * retries fit comfortably inside 1.5x the single-attempt timeout — while a
+ * request whose attempts each consume the full client timeout is refused
+ * further retries instead of stretching a hot-path read to a multi-minute
+ * stall (worst case before this budget: 3 x (60s limiter wait + 30s fetch)).
+ */
+const TRANSIENT_RETRY_BUDGET_TIMEOUT_MULTIPLE = 1.5;
+
+/**
+ * Maximum retries for a fault classified as the client's OWN deadline expiry
+ * (see {@link isClientDeadlineExpiry}): such a fault already consumed a full
+ * per-attempt timeout, so it is retried at most once — and then only if the
+ * total budget still allows a further full-length attempt.
+ */
+const CLIENT_DEADLINE_EXPIRY_MAX_RETRIES = 1;
+
+/**
+ * Minimal shape of a raw Alpaca stream frame as parsed off the WebSocket,
+ * before it is narrowed to a typed stream message. Only the discriminator and
+ * control-frame fields the dispatch loop inspects are modelled.
+ */
+interface RawAlpacaStreamFrame {
+  T?: string;
+  S?: string;
+  msg?: string;
+  code?: number;
+  trades?: string[];
+  quotes?: string[];
+  bars?: string[];
 }
 import { rateLimiters } from "./rate-limiter";
 
@@ -438,9 +475,9 @@ export class AlpacaMarketDataAPI extends EventEmitter {
 
     ws.on("message", (data: WebSocket.Data) => {
       const rawData = data.toString();
-      let messages;
+      let messages: RawAlpacaStreamFrame[];
       try {
-        messages = JSON.parse(rawData);
+        messages = JSON.parse(rawData) as RawAlpacaStreamFrame[];
       } catch (e) {
         log(
           `${streamType} stream received invalid JSON: ${rawData.substring(0, 200)}`,
@@ -841,7 +878,17 @@ export class AlpacaMarketDataAPI extends EventEmitter {
       // Retry ONLY transient connection faults, and only on GET (every
       // market-data read here is idempotent). A non-2xx response is a real
       // answer from Alpaca and is never retried — that path still throws on
-      // the first attempt exactly as before.
+      // the first attempt exactly as before. The whole loop is bounded by a
+      // cumulative deadline so retries can never stretch a hot-path read far
+      // beyond a single attempt's timeout: connection-phase faults
+      // (ECONNRESET class, millisecond-scale) retry cheaply, while a fault
+      // that consumed the full client timeout retries at most once and only
+      // when the remaining budget still fits a full-length attempt.
+      const retryLoopStartedAt = Date.now();
+      const totalBudgetMs = Math.round(
+        DEFAULT_TIMEOUTS.ALPACA_API * TRANSIENT_RETRY_BUDGET_TIMEOUT_MULTIPLE,
+      );
+      let deadlineExpiryRetries = 0;
       let response: Response | undefined;
       let lastNetworkError: unknown;
       for (
@@ -858,12 +905,22 @@ export class AlpacaMarketDataAPI extends EventEmitter {
           break;
         } catch (networkErr) {
           lastNetworkError = networkErr;
+          const deadlineExpiry = isClientDeadlineExpiry(networkErr);
+          const nextAttemptFitsBudget =
+            Date.now() - retryLoopStartedAt + DEFAULT_TIMEOUTS.ALPACA_API <=
+            totalBudgetMs;
           const retryable =
             method === "GET" &&
             isTransientNetworkError(networkErr) &&
-            attempt < TRANSIENT_NETWORK_RETRY_ATTEMPTS - 1;
+            attempt < TRANSIENT_NETWORK_RETRY_ATTEMPTS - 1 &&
+            nextAttemptFitsBudget &&
+            (!deadlineExpiry ||
+              deadlineExpiryRetries < CLIENT_DEADLINE_EXPIRY_MAX_RETRIES);
           if (!retryable) {
             throw networkErr;
+          }
+          if (deadlineExpiry) {
+            deadlineExpiryRetries += 1;
           }
           const delayMs = transientRetryDelayMs(attempt);
           log(
@@ -892,8 +949,7 @@ export class AlpacaMarketDataAPI extends EventEmitter {
         );
       }
 
-      const data = await response.json();
-      return data;
+      return (await response.json()) as T;
     } catch (err) {
       const error = err as Error;
       log(
@@ -1840,10 +1896,10 @@ export class AlpacaMarketDataAPI extends EventEmitter {
           `Alpaca news API error (${response.status}): ${errorText}`,
         );
       }
-      const data: {
+      const data = (await response.json()) as {
         news: AlpacaNewsArticle[];
         next_page_token: string | null;
-      } = await response.json();
+      };
       if (!data.news || !Array.isArray(data.news)) {
         log(`No news data found in Alpaca response for ${symbol}`, {
           type: "warn",
