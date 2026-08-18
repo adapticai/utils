@@ -1,3 +1,4 @@
+import { AdapticUtilsError } from "../errors";
 import { getLogger } from "../logger";
 
 /**
@@ -26,17 +27,34 @@ export interface RetryConfig {
   onRetry?: (attempt: number, error: unknown) => void;
 }
 
-interface ErrorDetails {
-  type:
-    | "RATE_LIMIT"
-    | "SERVER_ERROR"
-    | "CLIENT_ERROR"
-    | "AUTH_ERROR"
-    | "NETWORK_ERROR"
-    | "UNKNOWN";
+/**
+ * Typed taxonomy of retry outcomes. Every classification decision resolves to
+ * exactly one member; the union is exhaustive by construction so a new class
+ * cannot be added without every consumer switch failing to compile.
+ */
+export type RetryErrorType =
+  | "RATE_LIMIT"
+  | "SERVER_ERROR"
+  | "CLIENT_ERROR"
+  | "AUTH_ERROR"
+  | "NETWORK_ERROR"
+  | "UNKNOWN";
+
+/**
+ * The verdict produced by {@link classifyRetryError}: what kind of failure this
+ * is, the HTTP status it was decided from (null when the failure carried no
+ * status), and whether the call may be re-issued.
+ */
+export interface RetryErrorDetails {
+  /** Typed failure class. */
+  type: RetryErrorType;
+  /** Human-readable reason, for logs only — never used to decide anything. */
   reason: string;
+  /** HTTP status the verdict was derived from, or null for status-less failures. */
   status: number | null;
+  /** Delay (ms) mandated by the upstream (Retry-After / sentinel suffix). */
   retryAfter?: number;
+  /** Whether the operation may be re-issued. */
   isRetryable: boolean;
 }
 
@@ -244,149 +262,338 @@ export function isClientDeadlineExpiry(error: unknown): boolean {
 }
 
 /**
- * Analyzes an error and determines if it's retryable.
- * @param error - The error to analyze
- * @param response - Optional Response object for HTTP errors
- * @param config - Retry configuration
- * @returns Structured error details
+ * HTTP statuses the classifier reasons about, named rather than inlined.
  */
-function analyzeError(
+const HTTP_STATUS = {
+  /** Too Many Requests — retryable, honouring `Retry-After`. */
+  RATE_LIMIT: 429,
+  /** Unauthorized — never retryable, the credentials are wrong. */
+  UNAUTHORIZED: 401,
+  /** Forbidden — never retryable, the permissions are wrong. */
+  FORBIDDEN: 403,
+  /** Lowest status in the client-error band. */
+  CLIENT_ERROR_MIN: 400,
+  /** Lowest status in the server-error band. */
+  SERVER_ERROR_MIN: 500,
+  /** First status above the server-error band. */
+  SERVER_ERROR_MAX_EXCLUSIVE: 600,
+} as const;
+
+/** `Retry-After` is expressed in seconds; delays are handled in milliseconds. */
+const MILLISECONDS_PER_SECOND = 1000;
+
+/**
+ * Anchored parse of the structured error sentinels this repository's own fetch
+ * wrappers throw (`AlpacaClient.makeRequest`, `misc-utils.fetchWithRetry`):
+ * `"<CLASS>: <status>[: body]"`, and for rate limits `"RATE_LIMIT: 429:<ms>"`.
+ *
+ * The status is read from the fixed position immediately after the class name,
+ * so a status-shaped number appearing anywhere in the body can never be
+ * mistaken for the status of the response. This is a compatibility shim for
+ * throw sites that do not yet raise a typed error — see
+ * {@link LEGACY_MESSAGE_STATUS_PATTERN}.
+ */
+const LEGACY_SENTINEL_STATUS_PATTERN =
+  /^(?:RATE_LIMIT|SERVER_ERROR|AUTH_ERROR|CLIENT_ERROR|HTTP_ERROR):\s*(\d{3})(?::(\d+))?/;
+
+/**
+ * Last-resort status extraction for throw sites that embed the status in free
+ * text (`"Alpaca API error (503): …"`, `"Failed to fetch quote for AAPL: 429"`).
+ *
+ * Deliberately narrow, because this is the seam that produced F-0035: it
+ * accepts only a **standalone** 4xx/5xx token — one that is neither preceded
+ * nor followed by a digit or a decimal point — so a price quoted in a rejection
+ * body (`"limit price 502.50"`) is not read as HTTP 502, and an eight-digit
+ * vendor error code is not read as a status either.
+ *
+ * Retryability is still decided from the extracted **status**, never from the
+ * surrounding words. Deprecated: throw sites should raise a typed
+ * {@link AdapticUtilsError} (or attach the `Response`) instead.
+ */
+const LEGACY_MESSAGE_STATUS_PATTERN = /(?<![\d.])([45]\d{2})(?![\d.])/;
+
+/** A failure that carries an HTTP status, however it was transported. */
+interface HttpFailure {
+  /** The HTTP status the upstream returned. */
+  status: number;
+  /** Upstream-mandated delay before the next attempt, in milliseconds. */
+  retryAfterMs?: number;
+}
+
+/**
+ * Narrows an unknown value to an index-signature record so its properties can
+ * be probed without an `any` cast.
+ * @param value - The value to test.
+ * @returns true when the value is a non-null object.
+ */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+/**
+ * Reads a `Retry-After` header (seconds) from either a `Headers` instance or a
+ * plain header map, and converts it to milliseconds.
+ * @param headers - The headers carrier from a Response or an HTTP client error.
+ * @returns The delay in milliseconds, or undefined when absent/unparseable.
+ */
+function readRetryAfterMs(headers: unknown): number | undefined {
+  let raw: unknown;
+  if (headers instanceof Headers) {
+    raw = headers.get("Retry-After");
+  } else if (isRecord(headers)) {
+    raw = headers["retry-after"] ?? headers["Retry-After"];
+  }
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    return raw * MILLISECONDS_PER_SECOND;
+  }
+  if (typeof raw === "string") {
+    const seconds = Number.parseInt(raw, 10);
+    if (Number.isFinite(seconds)) {
+      return seconds * MILLISECONDS_PER_SECOND;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Reads a numeric HTTP status from an unknown property value.
+ * @param value - The candidate status value.
+ * @returns The status when it is a finite number, otherwise null.
+ */
+function asStatus(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+/**
+ * Extracts the HTTP status from a **typed** carrier: a `Response`, a typed
+ * {@link AdapticUtilsError}, an HTTP-client error exposing `response.status`
+ * (axios/the Alpaca SDK), or an error exposing a numeric `status`/`statusCode`.
+ *
+ * @param error - The thrown value.
+ * @returns The typed failure, or null when the value carries no status.
+ */
+function extractTypedHttpFailure(error: unknown): HttpFailure | null {
+  if (error instanceof Response) {
+    return {
+      status: error.status,
+      retryAfterMs: readRetryAfterMs(error.headers),
+    };
+  }
+
+  if (error instanceof AdapticUtilsError) {
+    const status = asStatus(
+      (error as AdapticUtilsError & { statusCode?: unknown }).statusCode,
+    );
+    if (status !== null) {
+      return { status };
+    }
+    return null;
+  }
+
+  if (!isRecord(error)) {
+    return null;
+  }
+
+  const nested = error.response;
+  if (nested instanceof Response) {
+    return {
+      status: nested.status,
+      retryAfterMs: readRetryAfterMs(nested.headers),
+    };
+  }
+  if (isRecord(nested)) {
+    const status = asStatus(nested.status);
+    if (status !== null) {
+      return { status, retryAfterMs: readRetryAfterMs(nested.headers) };
+    }
+  }
+
+  const direct = asStatus(error.status) ?? asStatus(error.statusCode);
+  return direct === null ? null : { status: direct };
+}
+
+/**
+ * Extracts an HTTP status from the message of an untyped `Error`, first via the
+ * anchored sentinel form and then via the narrow standalone-token shim.
+ * @param error - The thrown value.
+ * @param allowFreeText - Whether to fall back to the free-text token shim.
+ * @returns The failure, or null when no status could be read.
+ */
+function extractLegacyHttpFailure(
   error: unknown,
-  response: Response | null,
+  allowFreeText: boolean,
+): HttpFailure | null {
+  if (!(error instanceof Error)) {
+    return null;
+  }
+
+  const sentinel = LEGACY_SENTINEL_STATUS_PATTERN.exec(error.message);
+  if (sentinel) {
+    const retryAfterMs =
+      sentinel[2] === undefined ? undefined : Number.parseInt(sentinel[2], 10);
+    return { status: Number.parseInt(sentinel[1], 10), retryAfterMs };
+  }
+
+  if (!allowFreeText) {
+    return null;
+  }
+
+  const token = LEGACY_MESSAGE_STATUS_PATTERN.exec(error.message);
+  return token === null ? null : { status: Number.parseInt(token[1], 10) };
+}
+
+/**
+ * Maps an HTTP status to the typed retry verdict. This is the single place
+ * retryability is decided for status-bearing failures.
+ *
+ * @param failure - The status (and any upstream-mandated delay).
+ * @param config - Effective retry configuration.
+ * @returns The typed classification.
+ */
+function classifyByStatus(
+  failure: HttpFailure,
   config: RetryConfig,
-): ErrorDetails {
-  // Handle Response objects with error status codes
+): RetryErrorDetails {
+  const { status } = failure;
+
+  if (status === HTTP_STATUS.RATE_LIMIT) {
+    return {
+      type: "RATE_LIMIT",
+      reason: "Rate limit exceeded",
+      status,
+      retryAfter: failure.retryAfterMs,
+      isRetryable: true,
+    };
+  }
+
+  if (
+    status === HTTP_STATUS.UNAUTHORIZED ||
+    status === HTTP_STATUS.FORBIDDEN
+  ) {
+    return {
+      type: "AUTH_ERROR",
+      reason:
+        status === HTTP_STATUS.UNAUTHORIZED
+          ? "Authentication failed - invalid credentials"
+          : "Access forbidden - insufficient permissions",
+      status,
+      isRetryable: false,
+    };
+  }
+
+  if (
+    status >= HTTP_STATUS.SERVER_ERROR_MIN &&
+    status < HTTP_STATUS.SERVER_ERROR_MAX_EXCLUSIVE
+  ) {
+    return {
+      type: "SERVER_ERROR",
+      reason: `Server error (${status})`,
+      status,
+      retryAfter: failure.retryAfterMs,
+      isRetryable: config.retryableStatusCodes.includes(status),
+    };
+  }
+
+  if (
+    status >= HTTP_STATUS.CLIENT_ERROR_MIN &&
+    status < HTTP_STATUS.SERVER_ERROR_MIN
+  ) {
+    return {
+      type: "CLIENT_ERROR",
+      reason: `Client error (${status})`,
+      status,
+      isRetryable: false,
+    };
+  }
+
+  return {
+    type: "UNKNOWN",
+    reason: `Unexpected HTTP status (${status})`,
+    status,
+    isRetryable: false,
+  };
+}
+
+/**
+ * Classifies a failure into the typed {@link RetryErrorDetails} taxonomy.
+ *
+ * Precedence, strongest evidence first:
+ *
+ * 1. an explicit `Response`, or a thrown `Response`;
+ * 2. a **typed** carrier — {@link AdapticUtilsError} (status, else its declared
+ *    `isRetryable`), `error.response.status` (axios / Alpaca SDK), or a numeric
+ *    `error.status` / `error.statusCode`;
+ * 3. the anchored sentinel prefix this repo's own fetch wrappers throw;
+ * 4. transient network conditions (error codes, error names, `cause` chain);
+ * 5. the narrow standalone-status-token shim for untyped free-text throw sites;
+ * 6. otherwise `UNKNOWN`, which is **not** retryable.
+ *
+ * Retryability is never inferred from the words in a message: a 422 whose body
+ * quotes a price of 502.50 is a client error, not a 502 (F-0035).
+ *
+ * @param error - The thrown value.
+ * @param response - Optional Response already in hand for this failure.
+ * @param config - Optional retry-configuration overrides.
+ * @returns The typed classification.
+ */
+export function classifyRetryError(
+  error: unknown,
+  response: Response | null = null,
+  config: Partial<RetryConfig> = {},
+): RetryErrorDetails {
+  const fullConfig: RetryConfig = { ...DEFAULT_RETRY_CONFIG, ...config };
+
   if (response && !response.ok) {
-    const status = response.status;
-
-    // Rate limit errors - always retryable
-    if (status === 429) {
-      const retryAfterHeader = response.headers.get("Retry-After");
-      const retryAfter = retryAfterHeader
-        ? parseInt(retryAfterHeader, 10) * 1000
-        : undefined;
-      return {
-        type: "RATE_LIMIT",
-        reason: "Rate limit exceeded",
-        status,
-        retryAfter,
-        isRetryable: true,
-      };
-    }
-
-    // Authentication errors - never retry
-    if (status === 401 || status === 403) {
-      return {
-        type: "AUTH_ERROR",
-        reason:
-          status === 401
-            ? "Authentication failed - invalid credentials"
-            : "Access forbidden - insufficient permissions",
-        status,
-        isRetryable: false,
-      };
-    }
-
-    // Server errors - check if in retryable list
-    if (status >= 500 && status < 600) {
-      return {
-        type: "SERVER_ERROR",
-        reason: `Server error (${status})`,
-        status,
-        isRetryable: config.retryableStatusCodes.includes(status),
-      };
-    }
-
-    // Other client errors - never retry
-    if (status >= 400 && status < 500) {
-      return {
-        type: "CLIENT_ERROR",
-        reason: `Client error (${status})`,
-        status,
-        isRetryable: false,
-      };
-    }
+    return classifyByStatus(
+      {
+        status: response.status,
+        retryAfterMs: readRetryAfterMs(response.headers),
+      },
+      fullConfig,
+    );
   }
 
-  // Handle network errors (TypeError from fetch API)
-  if (error instanceof TypeError && error.message.includes("fetch")) {
+  const typedFailure = extractTypedHttpFailure(error);
+  if (typedFailure) {
+    return classifyByStatus(typedFailure, fullConfig);
+  }
+
+  // A typed error class that declares its own retryability but carries no
+  // status (timeouts, validation failures, network wrappers) is authoritative.
+  if (error instanceof AdapticUtilsError) {
     return {
-      type: "NETWORK_ERROR",
-      reason: "Network connectivity issue",
+      type: error.isRetryable ? "NETWORK_ERROR" : "CLIENT_ERROR",
+      reason: error.message,
       status: null,
-      isRetryable: config.retryOnNetworkError,
+      isRetryable: error.isRetryable && fullConfig.retryOnNetworkError,
     };
   }
 
-  // Handle transient network conditions: AbortError, TimeoutError,
-  // Node/undici error codes (ETIMEDOUT, ECONNRESET, UND_ERR_*), and
-  // wrapped failures exposed via error.cause. This catches the broad class
-  // of infrastructure flakes that the TypeError-only check above misses.
-  if (isTransientNetworkError(error)) {
-    const reason =
-      error instanceof Error ? error.message : "Transient network error";
+  const sentinelFailure = extractLegacyHttpFailure(error, false);
+  if (sentinelFailure) {
+    return classifyByStatus(sentinelFailure, fullConfig);
+  }
+
+  // Transient network conditions: fetch TypeErrors, AbortError/TimeoutError,
+  // Node/undici error codes, and failures wrapped via `error.cause`. Checked
+  // before the free-text shim so a host:port in the message (":443") is never
+  // mistaken for an HTTP status.
+  if (
+    (error instanceof TypeError && error.message.includes("fetch")) ||
+    isTransientNetworkError(error)
+  ) {
     return {
       type: "NETWORK_ERROR",
-      reason,
+      reason:
+        error instanceof Error ? error.message : "Transient network error",
       status: null,
-      isRetryable: config.retryOnNetworkError,
+      isRetryable: fullConfig.retryOnNetworkError,
     };
   }
 
-  // Handle error objects with messages
-  if (error instanceof Error) {
-    // Parse error messages that might contain status information
-    if (error.message.includes("429") || error.message.includes("RATE_LIMIT")) {
-      const match = error.message.match(/RATE_LIMIT: 429:(\d+)/);
-      const retryAfter = match ? parseInt(match[1], 10) : undefined;
-      return {
-        type: "RATE_LIMIT",
-        reason: "Rate limit exceeded",
-        status: 429,
-        retryAfter,
-        isRetryable: true,
-      };
-    }
-
-    if (
-      error.message.includes("401") ||
-      error.message.includes("403") ||
-      error.message.includes("AUTH_ERROR")
-    ) {
-      const status = error.message.includes("401") ? 401 : 403;
-      return {
-        type: "AUTH_ERROR",
-        reason: `Authentication error (${status})`,
-        status,
-        isRetryable: false,
-      };
-    }
-
-    if (
-      error.message.includes("SERVER_ERROR") ||
-      error.message.match(/50[0-9]/)
-    ) {
-      const statusMatch = error.message.match(/50[0-9]/);
-      const status = statusMatch ? parseInt(statusMatch[0], 10) : 500;
-      return {
-        type: "SERVER_ERROR",
-        reason: `Server error (${status})`,
-        status,
-        isRetryable: config.retryableStatusCodes.includes(status),
-      };
-    }
-
-    if (
-      error.message.includes("network") ||
-      error.message.includes("NETWORK_ERROR")
-    ) {
-      return {
-        type: "NETWORK_ERROR",
-        reason: error.message,
-        status: null,
-        isRetryable: config.retryOnNetworkError,
-      };
-    }
+  const legacyFailure = extractLegacyHttpFailure(error, true);
+  if (legacyFailure) {
+    return classifyByStatus(legacyFailure, fullConfig);
   }
 
   // Unknown error - not retryable by default for safety
@@ -399,13 +606,16 @@ function analyzeError(
 }
 
 /**
- * Calculates the delay before the next retry attempt using exponential backoff with jitter.
+ * Calculates the delay before the next retry attempt using exponential backoff
+ * with jitter, capped at `maxDelay`. Exported so the backoff contract (growth,
+ * cap, jitter) is directly testable rather than only observable through timers.
+ *
  * @param attempt - Current attempt number (1-indexed)
  * @param baseDelay - Base delay in milliseconds
- * @param maxDelay - Maximum delay in milliseconds
+ * @param maxDelay - Maximum delay in milliseconds (before jitter)
  * @returns Delay in milliseconds
  */
-function calculateBackoff(
+export function calculateRetryBackoff(
   attempt: number,
   baseDelay: number,
   maxDelay: number,
@@ -521,7 +731,7 @@ export async function withRetry<T>(
 
       // Analyze the error to determine if we should retry
       const response = error instanceof Response ? error : null;
-      const errorDetails = analyzeError(error, response, fullConfig);
+      const errorDetails = classifyRetryError(error, response, fullConfig);
 
       // If error is not retryable, fail immediately
       if (!errorDetails.isRetryable) {
@@ -544,7 +754,7 @@ export async function withRetry<T>(
       } else if (errorDetails.type === "RATE_LIMIT") {
         // For rate limits without Retry-After, use a longer minimum delay
         delayMs = Math.max(
-          calculateBackoff(
+          calculateRetryBackoff(
             attempt,
             fullConfig.baseDelayMs,
             fullConfig.maxDelayMs,
@@ -553,7 +763,7 @@ export async function withRetry<T>(
         );
       } else {
         // Standard exponential backoff with jitter
-        delayMs = calculateBackoff(
+        delayMs = calculateRetryBackoff(
           attempt,
           fullConfig.baseDelayMs,
           fullConfig.maxDelayMs,
