@@ -2,7 +2,10 @@
  * Alpaca Order Management Module
  * Provides functions for creating, managing, and canceling orders using the official SDK
  */
+import { createHash } from "node:crypto";
 import { AlpacaClient } from "../client";
+import { DuplicateClientOrderIdError } from "../../errors";
+import { classifyRetryError } from "../../utils/retry";
 import { log as baseLog } from "../../logging";
 import { LogOptions } from "../../types/logging-types";
 import {
@@ -35,22 +38,327 @@ export interface CancelAllOrdersResponse {
 }
 
 /**
+ * Maximum length Alpaca accepts for a `client_order_id`.
+ */
+export const MAX_CLIENT_ORDER_ID_LENGTH = 128;
+
+/**
+ * Characters Alpaca does **not** accept inside a `client_order_id`. Anything
+ * matching is rewritten before submission.
+ */
+const UNSAFE_CLIENT_ORDER_ID_CHARS = /[^A-Za-z0-9._:-]/g;
+
+/**
+ * Hex characters of the SHA-256 digest appended when an idempotency key had to
+ * be rewritten (unsafe characters or over-length). 16 hex chars = 64 bits,
+ * which keeps two keys that sanitise to the same head distinguishable.
+ */
+const CLIENT_ORDER_ID_DIGEST_LENGTH = 16;
+
+/** Separator between the sanitised head and the digest tag. */
+const CLIENT_ORDER_ID_DIGEST_SEPARATOR = "-";
+
+/** HTTP status Alpaca uses for a duplicate `client_order_id`. */
+const DUPLICATE_CLIENT_ORDER_ID_STATUS = 422;
+
+/** HTTP status Alpaca returns when no order carries the given id. */
+const ORDER_NOT_FOUND_STATUS = 404;
+
+/**
+ * Matches Alpaca's duplicate-idempotency-key rejection text. Alpaca has used
+ * both "client_order_id must be unique" and "client order id must be unique"
+ * across API revisions, so the separator is matched loosely.
+ */
+const DUPLICATE_CLIENT_ORDER_ID_PATTERN =
+  /client[\s_-]?order[\s_-]?id must be unique/i;
+
+/**
+ * Order statuses in which a previously-submitted order can never execute. A
+ * duplicate colliding with an order in one of these states is NOT an idempotent
+ * success — the caller asked for an order that cannot exist under that id, so
+ * the typed duplicate error is raised instead of a silent resubmission.
+ */
+const TERMINAL_DEAD_ORDER_STATUSES: ReadonlySet<string> = new Set([
+  "canceled",
+  "expired",
+  "rejected",
+  "replaced",
+  "done_for_day",
+]);
+
+/**
+ * The idempotency contract every order submission must satisfy.
+ *
+ * Without it, `AlpacaClient.executeWithRateLimit`'s automatic retry re-sends a
+ * POST that may already have landed broker-side — an ECONNRESET after the order
+ * was accepted doubles a live position (F-0035). The key makes the submission
+ * idempotent at the broker: the same key always produces the same
+ * `client_order_id`, and Alpaca rejects the second POST instead of filling it.
+ */
+export interface OrderIdempotency {
+  /**
+   * Identity of the **logical** order, supplied by the caller. Two submissions
+   * carrying the same key are the same order and must never both fill; a
+   * genuinely new order needs a new key. The engine's convention is the
+   * originating `trade.id` (`client_order_id === trade.id`), which
+   * {@link deriveClientOrderId} preserves verbatim.
+   */
+  idempotencyKey: string;
+}
+
+/** {@link CreateOrderParams} plus the mandatory idempotency key. */
+export type IdempotentCreateOrderParams = CreateOrderParams & OrderIdempotency;
+
+/**
+ * Validates a caller-supplied idempotency key.
+ * @param idempotencyKey - The key to validate.
+ * @returns The trimmed key.
+ * @throws Error when the key is empty or whitespace-only.
+ */
+function requireIdempotencyKey(idempotencyKey: string): string {
+  const key = idempotencyKey.trim();
+  if (key.length === 0) {
+    throw new Error(
+      "Order submission requires a non-empty idempotency key identifying the logical order",
+    );
+  }
+  return key;
+}
+
+/**
+ * Derives the broker-side `client_order_id` from a caller-supplied idempotency
+ * key. Deterministic: the same key always yields the same id, so a retry of the
+ * same logical order collides broker-side instead of creating a second order.
+ *
+ * A key that is already broker-safe is used **verbatim**, which preserves the
+ * engine's `client_order_id === trade.id` convention (and keeps every
+ * reconciliation path that joins on `trade.id` working). A key needing
+ * sanitisation or truncation is rewritten and tagged with a SHA-256 digest of
+ * the original, so two distinct keys can never collapse onto one id.
+ *
+ * @param idempotencyKey - Identity of the logical order.
+ * @returns An Alpaca-safe, length-bounded `client_order_id`.
+ * @throws Error when the key is empty or whitespace-only.
+ */
+export function deriveClientOrderId(idempotencyKey: string): string {
+  const key = requireIdempotencyKey(idempotencyKey);
+  const sanitized = key.replace(UNSAFE_CLIENT_ORDER_ID_CHARS, "-");
+
+  if (sanitized === key && key.length <= MAX_CLIENT_ORDER_ID_LENGTH) {
+    return key;
+  }
+
+  const digest = createHash("sha256")
+    .update(key)
+    .digest("hex")
+    .slice(0, CLIENT_ORDER_ID_DIGEST_LENGTH);
+  const headLength =
+    MAX_CLIENT_ORDER_ID_LENGTH -
+    digest.length -
+    CLIENT_ORDER_ID_DIGEST_SEPARATOR.length;
+
+  return `${sanitized.slice(0, headLength)}${CLIENT_ORDER_ID_DIGEST_SEPARATOR}${digest}`;
+}
+
+/**
+ * Idempotency window (ms) for keys derived from an order's semantics rather
+ * than from a caller-owned identifier.
+ *
+ * A submission that times out and is retried lands in the same bucket, so the
+ * retry collides broker-side as intended; an order with identical semantics
+ * placed in a later window is treated as a genuinely new order. The window is
+ * deliberately much larger than the client's own retry budget. Callers that
+ * hold a real identity for the order (the engine holds `trade.id`) should pass
+ * it directly instead of using this helper.
+ */
+const SEMANTIC_IDEMPOTENCY_WINDOW_MS = 300_000;
+
+/**
+ * Builds an idempotency key for callers that have no natural identifier for the
+ * order, from the order's semantic parameters plus the current window bucket.
+ *
+ * @param parts - Ordered components uniquely describing the order (strategy
+ *   name, symbol, side, quantity, price, intent).
+ * @returns A key suitable for {@link OrderIdempotency.idempotencyKey}.
+ *
+ * @example
+ * idempotencyKey: deriveSemanticIdempotencyKey(['covered-call', symbol, qty]);
+ */
+export function deriveSemanticIdempotencyKey(
+  parts: ReadonlyArray<string | number | boolean | undefined>,
+): string {
+  const windowBucket = Math.floor(Date.now() / SEMANTIC_IDEMPOTENCY_WINDOW_MS);
+  return [
+    ...parts.map((part) => (part === undefined ? "" : String(part))),
+    windowBucket,
+  ].join("|");
+}
+
+/**
+ * Renders everything the broker said about a rejection: the error message plus
+ * the vendor payload, which is where Alpaca puts the actual reason (the SDK's
+ * own message is only "Request failed with status code NNN").
+ *
+ * @param error - The thrown value.
+ * @returns A single human-readable description.
+ */
+function describeRejection(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (typeof error !== "object" || error === null) {
+    return message;
+  }
+  const response = (error as { response?: unknown }).response;
+  if (typeof response !== "object" || response === null) {
+    return message;
+  }
+  const data = (response as { data?: unknown }).data;
+  if (data === undefined || data === null) {
+    return message;
+  }
+  const rendered = typeof data === "string" ? data : JSON.stringify(data);
+  return `${message}: ${rendered}`;
+}
+
+/**
+ * Whether a rejection is Alpaca's duplicate-`client_order_id` refusal — decided
+ * from the typed HTTP status plus the vendor payload, never from a status-shaped
+ * number found loose in the text.
+ *
+ * @param error - The thrown value.
+ * @returns true when the broker refused the order as a duplicate.
+ */
+function isDuplicateClientOrderIdRejection(error: unknown): boolean {
+  if (classifyRetryError(error).status !== DUPLICATE_CLIENT_ORDER_ID_STATUS) {
+    return false;
+  }
+  return DUPLICATE_CLIENT_ORDER_ID_PATTERN.test(describeRejection(error));
+}
+
+/**
+ * Looks up an order by its `client_order_id`.
+ *
+ * @param client - The AlpacaClient instance
+ * @param clientOrderId - The idempotency key the order was submitted with
+ * @returns The order, or null when the broker holds no order for that id
+ * @throws The underlying error when the lookup fails for any reason other than
+ *   "not found" — an unverifiable lookup must never be read as "no order".
+ *
+ * @example
+ * const existing = await getOrderByClientOrderId(client, trade.id);
+ */
+export async function getOrderByClientOrderId(
+  client: AlpacaClient,
+  clientOrderId: string,
+): Promise<AlpacaOrder | null> {
+  try {
+    const sdk = client.getSDK();
+    return await client.executeWithRateLimit<AlpacaOrder>(
+      () => sdk.getOrderByClientId(clientOrderId) as Promise<AlpacaOrder>,
+      `getOrderByClientOrderId ${clientOrderId}`,
+    );
+  } catch (error) {
+    if (classifyRetryError(error).status === ORDER_NOT_FOUND_STATUS) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Resolves a duplicate-`client_order_id` rejection **without ever issuing a
+ * second POST**.
+ *
+ * - Colliding order live or filled → returned as idempotent success. This is
+ *   the retry-after-network-failure case the key exists to de-duplicate.
+ * - Colliding order terminally dead, absent, or unverifiable → typed
+ *   {@link DuplicateClientOrderIdError}. Fails **closed**: the 422 proves an
+ *   order with this id exists, so resubmitting could double-fill.
+ *
+ * @param client - The AlpacaClient instance
+ * @param clientOrderId - The id the broker refused as a duplicate
+ * @param symbol - Symbol, for log attribution
+ * @param cause - The original duplicate rejection
+ * @returns The already-submitted order when it is live or filled
+ */
+async function resolveDuplicateSubmission(
+  client: AlpacaClient,
+  clientOrderId: string,
+  symbol: string,
+  cause: unknown,
+): Promise<AlpacaOrder> {
+  let existing: AlpacaOrder | null;
+  try {
+    existing = await getOrderByClientOrderId(client, clientOrderId);
+  } catch (lookupError) {
+    const reason =
+      lookupError instanceof Error ? lookupError.message : String(lookupError);
+    log(
+      `Duplicate-order lookup failed for ${clientOrderId}; failing closed (no resubmit): ${reason}`,
+      { type: "error", symbol, metadata: { clientOrderId } },
+    );
+    throw new DuplicateClientOrderIdError(
+      `Duplicate client_order_id "${clientOrderId}" rejected by Alpaca and the existing-order lookup failed; refusing to resubmit (possible live duplicate)`,
+      clientOrderId,
+      false,
+      lookupError,
+    );
+  }
+
+  if (existing && !TERMINAL_DEAD_ORDER_STATUSES.has(existing.status)) {
+    log(
+      `client_order_id ${clientOrderId} already submitted (status=${existing.status}); returning existing order ${existing.id} as idempotent success`,
+      {
+        type: "warn",
+        symbol,
+        metadata: {
+          outcome: "idempotent_return",
+          clientOrderId,
+          orderId: existing.id,
+          status: existing.status,
+        },
+      },
+    );
+    return existing;
+  }
+
+  throw new DuplicateClientOrderIdError(
+    existing
+      ? `Duplicate client_order_id "${clientOrderId}" collided with a terminal (${existing.status}) order; a new logical order needs a new idempotency key`
+      : `Duplicate client_order_id "${clientOrderId}" rejected by Alpaca but no order carries that id; refusing to resubmit`,
+    clientOrderId,
+    false,
+    cause,
+  );
+}
+
+/**
  * Creates a new order using the Alpaca SDK.
  * Supports market, limit, stop, and stop_limit order types.
  *
+ * Submission is **idempotent**: `params.idempotencyKey` identifies the logical
+ * order and determines the `client_order_id` (an explicit `client_order_id`
+ * wins). Because the underlying client retries on transient network failure,
+ * this is what stops a POST that already landed from being filled twice — the
+ * retried POST is refused broker-side, and the order that landed is returned.
+ *
  * @param client - The AlpacaClient instance
- * @param params - Order parameters including symbol, qty, side, type, and time_in_force
- * @returns The created order object
+ * @param params - Order parameters (symbol, qty, side, type, time_in_force)
+ *   plus the mandatory `idempotencyKey`
+ * @returns The created order, or the already-submitted order when the broker
+ *   refused the submission as a duplicate of a live/filled order
+ * @throws DuplicateClientOrderIdError when the id collides with an order that
+ *   cannot be treated as this submission's success
  * @throws Error if order creation fails
  *
  * @example
- * // Create a market order
+ * // Create a market order, keyed on the originating trade
  * const order = await createOrder(client, {
  *   symbol: 'AAPL',
  *   qty: '10',
  *   side: 'buy',
  *   type: 'market',
  *   time_in_force: 'day',
+ *   idempotencyKey: trade.id,
  * });
  *
  * @example
@@ -62,44 +370,65 @@ export interface CancelAllOrdersResponse {
  *   type: 'limit',
  *   limit_price: '150.00',
  *   time_in_force: 'gtc',
+ *   idempotencyKey: `${trade.id}-limit`,
  * });
  */
 export async function createOrder(
   client: AlpacaClient,
-  params: CreateOrderParams,
+  params: IdempotentCreateOrderParams,
 ): Promise<AlpacaOrder> {
-  const { symbol, qty, side, type } = params;
-  log(`Creating ${type} order: ${side} ${qty || params.notional} ${symbol}`, {
-    type: "info",
-    symbol,
-  });
+  const { idempotencyKey, ...orderParams } = params;
+  const key = requireIdempotencyKey(idempotencyKey);
+  const clientOrderId = orderParams.client_order_id ?? deriveClientOrderId(key);
+  const submission: CreateOrderParams = {
+    ...orderParams,
+    client_order_id: clientOrderId,
+  };
+
+  const { symbol, qty, side, type } = submission;
+  log(
+    `Creating ${type} order: ${side} ${qty || submission.notional} ${symbol} (client_order_id=${clientOrderId})`,
+    {
+      type: "info",
+      symbol,
+    },
+  );
 
   try {
     const sdk = client.getSDK();
-    const order = await client.executeWithRateLimit(
-      () => sdk.createOrder(params),
+    const order = (await client.executeWithRateLimit(
+      () => sdk.createOrder(submission),
       `createOrder ${symbol}`,
-    );
+    )) as AlpacaOrder;
 
     log(`Order created successfully: ${order.id}`, {
       type: "info",
       symbol,
       metadata: {
         orderId: order.id,
+        clientOrderId,
         status: order.status,
         type: order.type,
         side: order.side,
       },
     });
 
-    return order as AlpacaOrder;
+    return order;
   } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
+    if (isDuplicateClientOrderIdRejection(error)) {
+      return await resolveDuplicateSubmission(
+        client,
+        clientOrderId,
+        symbol,
+        error,
+      );
+    }
+
+    const errorMessage = describeRejection(error);
     log(`Failed to create order for ${symbol}: ${errorMessage}`, {
       type: "error",
       symbol,
-      metadata: { params },
+      metadata: { params: submission },
     });
     throw new Error(
       `Failed to create ${type} order for ${symbol}: ${errorMessage}`,
