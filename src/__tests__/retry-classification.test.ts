@@ -5,10 +5,15 @@
  * The defect this pins: `analyzeError` matched `/50[0-9]/` anywhere in the
  * message, so a 422 rejection whose body quoted a price ("502.50") was
  * classified as a 502 server error and the non-idempotent order POST was
- * re-sent. These tests assert the classification table by status, the
- * "502.50-in-a-422" regression in all three error shapes the repo actually
- * throws (sentinel prefix, free-form text, axios-shaped carrier), and that the
- * legitimate retry behaviour of the non-order fetch paths is preserved.
+ * re-sent. The mechanism — not the fixture — is what is removed: there is no
+ * longer any path from message text to an HTTP status, so no message can
+ * produce a status-derived retry, whatever numbers it contains.
+ *
+ * These tests assert the classification table by typed status, that every
+ * text-only shape this repo throws (the `CLASS: status` sentinels, the
+ * free-form vendor strings, and the two wave-1 review repros) yields
+ * `status: null` / not-retryable, and that the same statuses are honoured as
+ * soon as the throw site carries them typed.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
@@ -151,7 +156,66 @@ describe("withRetry — the 502.50-in-a-422 regression", () => {
   });
 });
 
-describe("withRetry — preserved retry behaviour of the non-order paths", () => {
+describe("classifyRetryError — a status in message text is never a status", () => {
+  /**
+   * Every shape this repo actually throws with the status embedded in free
+   * text, plus the two live repros the wave-1 review reproduced. None of them
+   * may yield a status, and therefore none may yield a status-derived retry.
+   */
+  const textOnlyFailures: ReadonlyArray<{ label: string; message: string }> = [
+    // src/alpaca/client.ts makeRequest sentinels.
+    { label: "RATE_LIMIT sentinel", message: "RATE_LIMIT: 429:60000" },
+    { label: "SERVER_ERROR sentinel", message: "SERVER_ERROR: 502" },
+    { label: "AUTH_ERROR sentinel", message: "AUTH_ERROR: 401: bad key" },
+    { label: "CLIENT_ERROR sentinel", message: "CLIENT_ERROR: 422: rejected" },
+    // src/crypto.ts fetchers.
+    {
+      label: "crypto free-form 5xx",
+      message: "Alpaca API error (503): upstream unavailable",
+    },
+    // src/alphavantage.ts fetchers.
+    {
+      label: "AlphaVantage free-form 429",
+      message: "Failed to fetch quote for AAPL: 429",
+    },
+    // Wave-1 review repro 1: a 422 rejection whose FIRST standalone token is a
+    // whole-number quantity, read by the deleted shim as HTTP 500.
+    {
+      label: "422 rejection quoting a whole-number quantity",
+      message:
+        "insufficient qty available (requested: 500, available: 100) — Alpaca API error (422)",
+    },
+    // Wave-1 review repro 2: a message carrying no HTTP status at all, read by
+    // the deleted shim as HTTP 503.
+    {
+      label: "no status at all, only a status-shaped quantity",
+      message: "Failed to create market order for AAPL: qty 503 exceeds position",
+    },
+    // The original F-0035 fixture.
+    {
+      label: "422 rejection quoting a price",
+      message: "Order rejected: limit 502.50 vs last 499.10",
+    },
+  ];
+
+  for (const { label, message } of textOnlyFailures) {
+    it(`derives no status and no retry from ${label}`, () => {
+      const details = classifyRetryError(new Error(message));
+      expect(details.status).toBeNull();
+      expect(details.type).toBe("UNKNOWN");
+      expect(details.isRetryable).toBe(false);
+      expect(details.retryAfter).toBeUndefined();
+    });
+  }
+
+  it("honours the same statuses once the throw site carries them typed", () => {
+    expect(classifyRetryError(axiosError(429, {})).isRetryable).toBe(true);
+    expect(classifyRetryError(axiosError(503, {})).isRetryable).toBe(true);
+    expect(classifyRetryError(axiosError(422, {})).isRetryable).toBe(false);
+  });
+});
+
+describe("withRetry — what a text-only failure does end to end", () => {
   beforeEach(() => {
     vi.useFakeTimers();
   });
@@ -159,62 +223,43 @@ describe("withRetry — preserved retry behaviour of the non-order paths", () =>
     vi.useRealTimers();
   });
 
-  it("still retries the free-form 5xx thrown by the crypto/bars fetchers", async () => {
-    let attempts = 0;
+  it("submits exactly once for a free-form 5xx (no status ⇒ no retry)", async () => {
     const fn = vi.fn(async (): Promise<string> => {
-      attempts += 1;
-      if (attempts < 2) {
-        throw new Error("Alpaca API error (503): upstream unavailable");
-      }
-      return "ok";
+      throw new Error("Alpaca API error (503): upstream unavailable");
     });
     const { settled } = await runWithRetry(fn);
-    await expect(settled).resolves.toBe("ok");
-    expect(attempts).toBe(2);
-  });
-
-  it("still retries the free-form 429 thrown by the AlphaVantage fetcher", async () => {
-    let attempts = 0;
-    const fn = vi.fn(async (): Promise<string> => {
-      attempts += 1;
-      if (attempts < 2) {
-        throw new Error("Failed to fetch quote for AAPL: 429");
-      }
-      return "ok";
-    });
-    const { settled } = await runWithRetry(fn);
-    await expect(settled).resolves.toBe("ok");
-    expect(attempts).toBe(2);
-  });
-
-  it("still retries the SERVER_ERROR sentinel thrown by makeRequest", async () => {
-    let attempts = 0;
-    const fn = vi.fn(async (): Promise<string> => {
-      attempts += 1;
-      if (attempts < 2) {
-        throw new Error("SERVER_ERROR: 502");
-      }
-      return "ok";
-    });
-    const { settled } = await runWithRetry(fn);
-    await expect(settled).resolves.toBe("ok");
-    expect(attempts).toBe(2);
-  });
-
-  it("still fails fast on the AUTH_ERROR sentinel", async () => {
-    const fn = vi.fn(async (): Promise<string> => {
-      throw new Error("AUTH_ERROR: 401: invalid credentials");
-    });
-    const { settled } = await runWithRetry(fn);
-    await expect(settled).rejects.toThrow(/401/);
+    await expect(settled).rejects.toThrow(/503/);
     expect(fn).toHaveBeenCalledTimes(1);
   });
 
-  it("still honours the Retry-After encoded in the RATE_LIMIT sentinel", () => {
-    const details = classifyRetryError(new Error("RATE_LIMIT: 429:60000"));
-    expect(details.type).toBe("RATE_LIMIT");
-    expect(details.retryAfter).toBe(60_000);
-    expect(details.isRetryable).toBe(true);
+  it("retries a 5xx that arrives on a typed carrier", async () => {
+    let attempts = 0;
+    const fn = vi.fn(async (): Promise<string> => {
+      attempts += 1;
+      if (attempts < 2) {
+        throw axiosError(503, { message: "upstream unavailable" });
+      }
+      return "ok";
+    });
+    const { settled } = await runWithRetry(fn);
+    await expect(settled).resolves.toBe("ok");
+    expect(attempts).toBe(2);
+  });
+
+  it("retries a 429 that arrives on a typed Response carrier", async () => {
+    let attempts = 0;
+    const fn = vi.fn(async (): Promise<string> => {
+      attempts += 1;
+      if (attempts < 2) {
+        throw Object.assign(new Error("rate limited"), {
+          response: new Response("slow down", { status: 429 }),
+        });
+      }
+      return "ok";
+    });
+    const { settled } = await runWithRetry(fn);
+    await expect(settled).resolves.toBe("ok");
+    expect(attempts).toBe(2);
   });
 
   it("still retries transient network errors that carry no status", async () => {
@@ -231,15 +276,6 @@ describe("withRetry — preserved retry behaviour of the non-order paths", () =>
     const { settled } = await runWithRetry(fn);
     await expect(settled).resolves.toBe("ok");
     expect(attempts).toBe(2);
-  });
-
-  it("does not invent a status from a price-shaped number", () => {
-    const details = classifyRetryError(
-      new Error("Order rejected: limit 502.50 vs last 499.10"),
-    );
-    expect(details.status).toBeNull();
-    expect(details.type).toBe("UNKNOWN");
-    expect(details.isRetryable).toBe(false);
   });
 });
 

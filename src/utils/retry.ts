@@ -10,6 +10,8 @@ import { getLogger } from "../logger";
  * - Respects Retry-After headers for rate limiting (429)
  * - Fail-fast for non-retryable errors (4xx client errors)
  * - Detailed error logging with context
+ * - Retryability is decided from a **typed** HTTP status or a typed error
+ *   class only; an error message is never parsed for a status (F-0035)
  */
 
 export interface RetryConfig {
@@ -52,7 +54,7 @@ export interface RetryErrorDetails {
   reason: string;
   /** HTTP status the verdict was derived from, or null for status-less failures. */
   status: number | null;
-  /** Delay (ms) mandated by the upstream (Retry-After / sentinel suffix). */
+  /** Delay (ms) mandated by the upstream `Retry-After` header. */
   retryAfter?: number;
   /** Whether the operation may be re-issued. */
   isRetryable: boolean;
@@ -282,36 +284,6 @@ const HTTP_STATUS = {
 /** `Retry-After` is expressed in seconds; delays are handled in milliseconds. */
 const MILLISECONDS_PER_SECOND = 1000;
 
-/**
- * Anchored parse of the structured error sentinels this repository's own fetch
- * wrappers throw (`AlpacaClient.makeRequest`, `misc-utils.fetchWithRetry`):
- * `"<CLASS>: <status>[: body]"`, and for rate limits `"RATE_LIMIT: 429:<ms>"`.
- *
- * The status is read from the fixed position immediately after the class name,
- * so a status-shaped number appearing anywhere in the body can never be
- * mistaken for the status of the response. This is a compatibility shim for
- * throw sites that do not yet raise a typed error — see
- * {@link LEGACY_MESSAGE_STATUS_PATTERN}.
- */
-const LEGACY_SENTINEL_STATUS_PATTERN =
-  /^(?:RATE_LIMIT|SERVER_ERROR|AUTH_ERROR|CLIENT_ERROR|HTTP_ERROR):\s*(\d{3})(?::(\d+))?/;
-
-/**
- * Last-resort status extraction for throw sites that embed the status in free
- * text (`"Alpaca API error (503): …"`, `"Failed to fetch quote for AAPL: 429"`).
- *
- * Deliberately narrow, because this is the seam that produced F-0035: it
- * accepts only a **standalone** 4xx/5xx token — one that is neither preceded
- * nor followed by a digit or a decimal point — so a price quoted in a rejection
- * body (`"limit price 502.50"`) is not read as HTTP 502, and an eight-digit
- * vendor error code is not read as a status either.
- *
- * Retryability is still decided from the extracted **status**, never from the
- * surrounding words. Deprecated: throw sites should raise a typed
- * {@link AdapticUtilsError} (or attach the `Response`) instead.
- */
-const LEGACY_MESSAGE_STATUS_PATTERN = /(?<![\d.])([45]\d{2})(?![\d.])/;
-
 /** A failure that carries an HTTP status, however it was transported. */
 interface HttpFailure {
   /** The HTTP status the upstream returned. */
@@ -413,36 +385,6 @@ function extractTypedHttpFailure(error: unknown): HttpFailure | null {
 }
 
 /**
- * Extracts an HTTP status from the message of an untyped `Error`, first via the
- * anchored sentinel form and then via the narrow standalone-token shim.
- * @param error - The thrown value.
- * @param allowFreeText - Whether to fall back to the free-text token shim.
- * @returns The failure, or null when no status could be read.
- */
-function extractLegacyHttpFailure(
-  error: unknown,
-  allowFreeText: boolean,
-): HttpFailure | null {
-  if (!(error instanceof Error)) {
-    return null;
-  }
-
-  const sentinel = LEGACY_SENTINEL_STATUS_PATTERN.exec(error.message);
-  if (sentinel) {
-    const retryAfterMs =
-      sentinel[2] === undefined ? undefined : Number.parseInt(sentinel[2], 10);
-    return { status: Number.parseInt(sentinel[1], 10), retryAfterMs };
-  }
-
-  if (!allowFreeText) {
-    return null;
-  }
-
-  const token = LEGACY_MESSAGE_STATUS_PATTERN.exec(error.message);
-  return token === null ? null : { status: Number.parseInt(token[1], 10) };
-}
-
-/**
  * Maps an HTTP status to the typed retry verdict. This is the single place
  * retryability is decided for status-bearing failures.
  *
@@ -517,19 +459,25 @@ function classifyByStatus(
 /**
  * Classifies a failure into the typed {@link RetryErrorDetails} taxonomy.
  *
+ * **An HTTP status is only ever read from a typed carrier.** There is no path
+ * from the characters of an error message to a status, and therefore none to a
+ * retry decision derived from a status (F-0035). A throw site that wants its
+ * status honoured must attach it: throw the `Response`, set `response.status`
+ * (axios / the Alpaca SDK do this), set a numeric `status` / `statusCode`, or
+ * raise an {@link AdapticUtilsError}. A plain `Error` whose text mentions
+ * "429", "503" or "CLIENT_ERROR: 422" is `UNKNOWN` and is **not** retried.
+ *
  * Precedence, strongest evidence first:
  *
  * 1. an explicit `Response`, or a thrown `Response`;
  * 2. a **typed** carrier — {@link AdapticUtilsError} (status, else its declared
  *    `isRetryable`), `error.response.status` (axios / Alpaca SDK), or a numeric
  *    `error.status` / `error.statusCode`;
- * 3. the anchored sentinel prefix this repo's own fetch wrappers throw;
- * 4. transient network conditions (error codes, error names, `cause` chain);
- * 5. the narrow standalone-status-token shim for untyped free-text throw sites;
- * 6. otherwise `UNKNOWN`, which is **not** retryable.
- *
- * Retryability is never inferred from the words in a message: a 422 whose body
- * quotes a price of 502.50 is a client error, not a 502 (F-0035).
+ * 3. transient network conditions — {@link isTransientNetworkError}, which
+ *    reads `error.code` / `error.name` / the `cause` chain. This decides
+ *    *transience*, never a status, so it can never turn a broker rejection into
+ *    a 5xx; a rejection that carries a typed status is already resolved above;
+ * 4. otherwise `UNKNOWN`, which is **not** retryable.
  *
  * @param error - The thrown value.
  * @param response - Optional Response already in hand for this failure.
@@ -569,15 +517,8 @@ export function classifyRetryError(
     };
   }
 
-  const sentinelFailure = extractLegacyHttpFailure(error, false);
-  if (sentinelFailure) {
-    return classifyByStatus(sentinelFailure, fullConfig);
-  }
-
   // Transient network conditions: fetch TypeErrors, AbortError/TimeoutError,
-  // Node/undici error codes, and failures wrapped via `error.cause`. Checked
-  // before the free-text shim so a host:port in the message (":443") is never
-  // mistaken for an HTTP status.
+  // Node/undici error codes, and failures wrapped via `error.cause`.
   if (
     (error instanceof TypeError && error.message.includes("fetch")) ||
     isTransientNetworkError(error)
@@ -589,11 +530,6 @@ export function classifyRetryError(
       status: null,
       isRetryable: fullConfig.retryOnNetworkError,
     };
-  }
-
-  const legacyFailure = extractLegacyHttpFailure(error, true);
-  if (legacyFailure) {
-    return classifyByStatus(legacyFailure, fullConfig);
   }
 
   // Unknown error - not retryable by default for safety

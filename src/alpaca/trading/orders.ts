@@ -161,37 +161,39 @@ export function deriveClientOrderId(idempotencyKey: string): string {
 }
 
 /**
- * Idempotency window (ms) for keys derived from an order's semantics rather
- * than from a caller-owned identifier.
+ * Validates a `client_order_id` a caller supplied **explicitly**, instead of
+ * letting it be derived from the idempotency key.
  *
- * A submission that times out and is retried lands in the same bucket, so the
- * retry collides broker-side as intended; an order with identical semantics
- * placed in a later window is treated as a genuinely new order. The window is
- * deliberately much larger than the client's own retry budget. Callers that
- * hold a real identity for the order (the engine holds `trade.id`) should pass
- * it directly instead of using this helper.
+ * An explicit id bypasses {@link deriveClientOrderId}, so it must satisfy the
+ * same broker contract on its own: non-empty, within Alpaca's length bound, and
+ * free of characters Alpaca rejects. A blank or malformed id is refused here
+ * rather than submitted — a submission the broker ignores or rejects leaves the
+ * POST non-idempotent, which is the F-0035 failure this contract exists to
+ * close. It is never silently rewritten: rewriting a caller-chosen id would
+ * break every reconciliation path that joins on it.
+ *
+ * @param clientOrderId - The explicitly supplied broker id.
+ * @returns The id, unchanged.
+ * @throws Error when the id is blank, over-length, or contains characters
+ *   Alpaca does not accept.
  */
-const SEMANTIC_IDEMPOTENCY_WINDOW_MS = 300_000;
-
-/**
- * Builds an idempotency key for callers that have no natural identifier for the
- * order, from the order's semantic parameters plus the current window bucket.
- *
- * @param parts - Ordered components uniquely describing the order (strategy
- *   name, symbol, side, quantity, price, intent).
- * @returns A key suitable for {@link OrderIdempotency.idempotencyKey}.
- *
- * @example
- * idempotencyKey: deriveSemanticIdempotencyKey(['covered-call', symbol, qty]);
- */
-export function deriveSemanticIdempotencyKey(
-  parts: ReadonlyArray<string | number | boolean | undefined>,
-): string {
-  const windowBucket = Math.floor(Date.now() / SEMANTIC_IDEMPOTENCY_WINDOW_MS);
-  return [
-    ...parts.map((part) => (part === undefined ? "" : String(part))),
-    windowBucket,
-  ].join("|");
+function requireExplicitClientOrderId(clientOrderId: string): string {
+  if (clientOrderId.trim().length === 0) {
+    throw new Error(
+      "Order submission was given a blank client_order_id; supply a non-empty id or omit it and let the idempotency key derive one",
+    );
+  }
+  if (clientOrderId.length > MAX_CLIENT_ORDER_ID_LENGTH) {
+    throw new Error(
+      `Order submission client_order_id exceeds Alpaca's ${MAX_CLIENT_ORDER_ID_LENGTH}-character limit (${clientOrderId.length})`,
+    );
+  }
+  if (clientOrderId.replace(UNSAFE_CLIENT_ORDER_ID_CHARS, "-") !== clientOrderId) {
+    throw new Error(
+      `Order submission client_order_id "${clientOrderId}" contains characters Alpaca does not accept`,
+    );
+  }
+  return clientOrderId;
 }
 
 /**
@@ -336,10 +338,12 @@ async function resolveDuplicateSubmission(
  * Supports market, limit, stop, and stop_limit order types.
  *
  * Submission is **idempotent**: `params.idempotencyKey` identifies the logical
- * order and determines the `client_order_id` (an explicit `client_order_id`
- * wins). Because the underlying client retries on transient network failure,
- * this is what stops a POST that already landed from being filled twice — the
- * retried POST is refused broker-side, and the order that landed is returned.
+ * order and determines the `client_order_id`. A caller may instead supply the
+ * broker id explicitly, in which case it is validated (non-empty, length- and
+ * charset-safe) and used verbatim — never blanked, never silently rewritten.
+ * Because the underlying client retries on transient network failure, this is
+ * what stops a POST that already landed from being filled twice — the retried
+ * POST is refused broker-side, and the order that landed is returned.
  *
  * @param client - The AlpacaClient instance
  * @param params - Order parameters (symbol, qty, side, type, time_in_force)
@@ -348,7 +352,8 @@ async function resolveDuplicateSubmission(
  *   refused the submission as a duplicate of a live/filled order
  * @throws DuplicateClientOrderIdError when the id collides with an order that
  *   cannot be treated as this submission's success
- * @throws Error if order creation fails
+ * @throws Error when the idempotency key is blank, when an explicitly supplied
+ *   `client_order_id` is blank/over-length/unsafe, or if order creation fails
  *
  * @example
  * // Create a market order, keyed on the originating trade
@@ -379,7 +384,13 @@ export async function createOrder(
 ): Promise<AlpacaOrder> {
   const { idempotencyKey, ...orderParams } = params;
   const key = requireIdempotencyKey(idempotencyKey);
-  const clientOrderId = orderParams.client_order_id ?? deriveClientOrderId(key);
+  // `??` would let `client_order_id: ""` through: the broker would then mint its
+  // own id and the submission would be non-idempotent again despite a valid key
+  // having been supplied. An explicit id is validated, never defaulted past.
+  const clientOrderId =
+    orderParams.client_order_id === undefined
+      ? deriveClientOrderId(key)
+      : requireExplicitClientOrderId(orderParams.client_order_id);
   const submission: CreateOrderParams = {
     ...orderParams,
     client_order_id: clientOrderId,

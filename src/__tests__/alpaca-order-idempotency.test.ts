@@ -14,7 +14,6 @@ import {
   expect,
   vi,
   beforeEach,
-  afterEach,
   expectTypeOf,
 } from "vitest";
 import fc from "fast-check";
@@ -26,7 +25,6 @@ vi.mock("../logging", () => ({
 import {
   createOrder,
   deriveClientOrderId,
-  deriveSemanticIdempotencyKey,
   getOrderByClientOrderId,
   MAX_CLIENT_ORDER_ID_LENGTH,
   type IdempotentCreateOrderParams,
@@ -178,55 +176,6 @@ describe("deriveClientOrderId", () => {
   });
 });
 
-describe("deriveSemanticIdempotencyKey", () => {
-  /** Window the helper buckets on (5 minutes). */
-  const WINDOW_MS = 300_000;
-
-  beforeEach(() => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-08-18T14:30:00Z"));
-  });
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it("is stable across a retry inside the same window", () => {
-    const first = deriveSemanticIdempotencyKey(["covered-call", "AAPL", 100]);
-    vi.advanceTimersByTime(WINDOW_MS / 10);
-    expect(deriveSemanticIdempotencyKey(["covered-call", "AAPL", 100])).toBe(
-      first,
-    );
-  });
-
-  it("moves to a new key in a later window", () => {
-    const first = deriveSemanticIdempotencyKey(["covered-call", "AAPL", 100]);
-    vi.advanceTimersByTime(WINDOW_MS * 2);
-    expect(
-      deriveSemanticIdempotencyKey(["covered-call", "AAPL", 100]),
-    ).not.toBe(first);
-  });
-
-  it("separates orders that differ in any semantic part", () => {
-    const base = deriveSemanticIdempotencyKey(["covered-call", "AAPL", 100]);
-    expect(deriveSemanticIdempotencyKey(["covered-call", "AAPL", 200])).not.toBe(
-      base,
-    );
-    expect(deriveSemanticIdempotencyKey(["covered-call", "MSFT", 100])).not.toBe(
-      base,
-    );
-    expect(
-      deriveSemanticIdempotencyKey(["covered-call", "AAPL", 100, undefined]),
-    ).not.toBe(base);
-  });
-
-  it("yields a broker-safe client_order_id once derived", () => {
-    const key = deriveSemanticIdempotencyKey(["covered-call", "AAPL", 100]);
-    const id = deriveClientOrderId(key);
-    expect(id).toMatch(/^[A-Za-z0-9._:-]+$/);
-    expect(id.length).toBeLessThanOrEqual(MAX_CLIENT_ORDER_ID_LENGTH);
-  });
-});
-
 describe("createOrder — idempotency contract", () => {
   let broker: FakeBroker;
 
@@ -254,7 +203,7 @@ describe("createOrder — idempotency contract", () => {
     expect(order.client_order_id).toBe("trade-abc-1");
   });
 
-  it("lets an explicit client_order_id win over the derived one", async () => {
+  it("uses an explicitly supplied client_order_id verbatim", async () => {
     const client = makeClient(broker);
     await createOrder(client, {
       ...BASE_PARAMS,
@@ -262,6 +211,43 @@ describe("createOrder — idempotency contract", () => {
       idempotencyKey: "trade-abc-1",
     });
     expect(broker.submissions[0].client_order_id).toBe("explicit-id");
+  });
+
+  // A blank explicit id used to slip past `?? deriveClientOrderId(key)` — the
+  // broker then minted its own id and the POST was non-idempotent again, which
+  // is exactly the F-0035 double-fill this contract exists to close.
+  it.each(["", "   "])(
+    "refuses to submit when client_order_id is blank (%j)",
+    async (blankId) => {
+      const client = makeClient(broker);
+      await expect(
+        createOrder(client, {
+          ...BASE_PARAMS,
+          client_order_id: blankId,
+          idempotencyKey: "trade-abc-1",
+        }),
+      ).rejects.toThrow(/blank client_order_id/i);
+      expect(broker.submissions).toHaveLength(0);
+    },
+  );
+
+  it("refuses to submit an explicit client_order_id the broker cannot accept", async () => {
+    const client = makeClient(broker);
+    await expect(
+      createOrder(client, {
+        ...BASE_PARAMS,
+        client_order_id: "trade 1/2",
+        idempotencyKey: "trade-abc-1",
+      }),
+    ).rejects.toThrow(/does not accept/i);
+    await expect(
+      createOrder(client, {
+        ...BASE_PARAMS,
+        client_order_id: "x".repeat(MAX_CLIENT_ORDER_ID_LENGTH + 1),
+        idempotencyKey: "trade-abc-1",
+      }),
+    ).rejects.toThrow(/character limit/i);
+    expect(broker.submissions).toHaveLength(0);
   });
 
   it("refuses to submit when the idempotency key is blank", async () => {
@@ -307,7 +293,10 @@ describe("createOrder — idempotency contract", () => {
   it("fails closed, without re-submitting, when the duplicate lookup fails", async () => {
     const client = makeClient(broker);
     await createOrder(client, { ...BASE_PARAMS, idempotencyKey: "trade-dup-2" });
-    broker.lookupFailure = new Error("SERVER_ERROR: 503");
+    broker.lookupFailure = Object.assign(
+      new Error("Request failed with status code 503"),
+      { response: { status: 503, data: { message: "upstream unavailable" } } },
+    );
     const submissionsBefore = broker.submissions.length;
 
     await expect(

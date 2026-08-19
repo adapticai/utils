@@ -13,10 +13,7 @@ import {
   CreateMultiLegOrderParams,
   AlpacaPosition,
 } from "../../types/alpaca-types";
-import {
-  createOrder,
-  deriveSemanticIdempotencyKey,
-} from "../trading/orders";
+import { createOrder } from "../trading/orders";
 
 const LOG_SOURCE = "OptionsStrategies";
 
@@ -629,18 +626,6 @@ export async function createCoveredCall(
       side: "buy",
       type: "market",
       time_in_force: timeInForce,
-      // The covered call carries no caller-owned order id, so the stock leg is
-      // keyed on the strategy's own semantics: a retry of this construction
-      // reuses the key and is refused broker-side instead of buying the shares
-      // twice.
-      idempotencyKey: deriveSemanticIdempotencyKey([
-        "covered-call-stock-leg",
-        underlying,
-        expirationDate,
-        strike,
-        qty,
-        additionalSharesNeeded,
-      ]),
     });
   } else {
     // Already have enough shares - create a placeholder response
