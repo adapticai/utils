@@ -2,7 +2,7 @@
  * Alpaca Order Management Module
  * Provides functions for creating, managing, and canceling orders using the official SDK
  */
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { AlpacaClient } from "../client";
 import { DuplicateClientOrderIdError } from "../../errors";
 import { classifyRetryError } from "../../utils/retry";
@@ -87,13 +87,18 @@ const TERMINAL_DEAD_ORDER_STATUSES: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * The idempotency contract every order submission must satisfy.
+ * The idempotency contract every order submission should satisfy.
  *
  * Without it, `AlpacaClient.executeWithRateLimit`'s automatic retry re-sends a
  * POST that may already have landed broker-side — an ECONNRESET after the order
  * was accepted doubles a live position (F-0035). The key makes the submission
  * idempotent at the broker: the same key always produces the same
  * `client_order_id`, and Alpaca rejects the second POST instead of filling it.
+ *
+ * A caller-supplied key is the only thing that makes a *caller-level* retry
+ * (a fresh `createOrder` call for the same logical order) safe. The
+ * transitional overload that accepts no key buys transport-retry idempotency
+ * only — see {@link createOrder}.
  */
 export interface OrderIdempotency {
   /**
@@ -108,6 +113,48 @@ export interface OrderIdempotency {
 
 /** {@link CreateOrderParams} plus the mandatory idempotency key. */
 export type IdempotentCreateOrderParams = CreateOrderParams & OrderIdempotency;
+
+/**
+ * {@link CreateOrderParams} with the idempotency key **optional** — the shape
+ * the transitional (deprecated) `createOrder` overload accepts.
+ *
+ * This exists only because `createOrder` is published public API with callers
+ * that supply no order identity (`options/strategies.ts` in this package, owned
+ * by B-0061; `tool-execution-engine.ts` in the engine). Requiring the key
+ * outright broke their compilation. Every such caller is expected to migrate to
+ * {@link IdempotentCreateOrderParams}; see {@link createOrder} for exactly what
+ * an omitted key does and does not guarantee.
+ */
+export type OptionallyIdempotentCreateOrderParams = CreateOrderParams &
+  Partial<OrderIdempotency>;
+
+/**
+ * Prefix marking a `client_order_id` this module minted because the caller
+ * supplied no identity of its own. It makes the un-migrated call sites
+ * greppable broker-side and in fill telemetry, and it can never collide with
+ * the engine's `trade.id` convention.
+ */
+const GENERATED_IDEMPOTENCY_KEY_PREFIX = "adptc-auto";
+
+/**
+ * Mints a per-submission idempotency key for a caller that supplied none.
+ *
+ * The key is a fresh random UUID, so it is unique to **this call** and is held
+ * constant for the whole of it — which is precisely what makes the transport
+ * retry inside {@link AlpacaClient.executeWithRateLimit} idempotent: a POST
+ * that already landed is refused broker-side on the re-send instead of filling
+ * twice (F-0035). It deliberately carries no other meaning. It is **not**
+ * derived from the order's contents or from the clock, because either would
+ * claim a de-duplication across separate calls that a generated key cannot
+ * honestly provide: content-derived keys would silently swallow a legitimate
+ * repeat order, and clock-derived keys would de-duplicate or not depending on
+ * which side of a bucket boundary the second call fell.
+ *
+ * @returns A broker-safe, unique key for a single submission.
+ */
+function generateSubmissionIdempotencyKey(): string {
+  return `${GENERATED_IDEMPOTENCY_KEY_PREFIX}-${randomUUID()}`;
+}
 
 /**
  * Validates a caller-supplied idempotency key.
@@ -337,23 +384,38 @@ async function resolveDuplicateSubmission(
  * Creates a new order using the Alpaca SDK.
  * Supports market, limit, stop, and stop_limit order types.
  *
- * Submission is **idempotent**: `params.idempotencyKey` identifies the logical
- * order and determines the `client_order_id`. A caller may instead supply the
- * broker id explicitly, in which case it is validated (non-empty, length- and
- * charset-safe) and used verbatim — never blanked, never silently rewritten.
- * Because the underlying client retries on transient network failure, this is
- * what stops a POST that already landed from being filled twice — the retried
- * POST is refused broker-side, and the order that landed is returned.
+ * Every submission carries a `client_order_id`, so the retry the underlying
+ * client performs on transient network failure can never fill the same order
+ * twice: the re-sent POST is refused broker-side and the order that landed is
+ * returned (F-0035).
+ *
+ * Where that id comes from, in precedence order:
+ *
+ * 1. an explicit `params.client_order_id` — validated (non-empty, length- and
+ *    charset-safe) and used verbatim, never blanked, never silently rewritten;
+ * 2. `params.idempotencyKey` — the identity of the **logical** order, from
+ *    which {@link deriveClientOrderId} derives the id deterministically, so a
+ *    resubmission of the same logical order collides at the broker instead of
+ *    creating a second position;
+ * 3. neither — a key is minted for this submission alone. **This is the
+ *    deprecated path.** It closes the transport-retry double-fill and nothing
+ *    more: two `createOrder` calls for the same logical order are two distinct
+ *    ids and therefore two live orders. It exists because published callers
+ *    that carry no order identity would otherwise fail to compile, it logs a
+ *    warning with `outcome: "generated_idempotency_key"` on every submission,
+ *    and it is removed once those callers pass their own identity.
  *
  * @param client - The AlpacaClient instance
- * @param params - Order parameters (symbol, qty, side, type, time_in_force)
- *   plus the mandatory `idempotencyKey`
+ * @param params - Order parameters (symbol, qty, side, type, time_in_force);
+ *   supply `idempotencyKey` (or an explicit `client_order_id`) to get
+ *   caller-level idempotency rather than transport-level only
  * @returns The created order, or the already-submitted order when the broker
  *   refused the submission as a duplicate of a live/filled order
  * @throws DuplicateClientOrderIdError when the id collides with an order that
  *   cannot be treated as this submission's success
- * @throws Error when the idempotency key is blank, when an explicitly supplied
- *   `client_order_id` is blank/over-length/unsafe, or if order creation fails
+ * @throws Error when a supplied idempotency key is blank, when an explicitly
+ *   supplied `client_order_id` is blank/over-length/unsafe, or if order
+ *   creation fails
  *
  * @example
  * // Create a market order, keyed on the originating trade
@@ -380,16 +442,22 @@ async function resolveDuplicateSubmission(
  */
 export async function createOrder(
   client: AlpacaClient,
-  params: IdempotentCreateOrderParams,
+  params: OptionallyIdempotentCreateOrderParams,
 ): Promise<AlpacaOrder> {
   const { idempotencyKey, ...orderParams } = params;
-  const key = requireIdempotencyKey(idempotencyKey);
+  // A key that is present must be well-formed even when an explicit
+  // `client_order_id` would have won: a blank key is a caller defect, not a
+  // silent fall-through to some other identity.
+  const suppliedKey =
+    idempotencyKey === undefined ? null : requireIdempotencyKey(idempotencyKey);
+  const isGeneratedKey =
+    suppliedKey === null && orderParams.client_order_id === undefined;
   // `??` would let `client_order_id: ""` through: the broker would then mint its
   // own id and the submission would be non-idempotent again despite a valid key
   // having been supplied. An explicit id is validated, never defaulted past.
   const clientOrderId =
     orderParams.client_order_id === undefined
-      ? deriveClientOrderId(key)
+      ? deriveClientOrderId(suppliedKey ?? generateSubmissionIdempotencyKey())
       : requireExplicitClientOrderId(orderParams.client_order_id);
   const submission: CreateOrderParams = {
     ...orderParams,
@@ -397,6 +465,16 @@ export async function createOrder(
   };
 
   const { symbol, qty, side, type } = submission;
+  if (isGeneratedKey) {
+    log(
+      `Order submitted with no caller idempotency key; minted ${clientOrderId} for this submission only — the transport retry is de-duplicated, a caller-level resubmission is NOT`,
+      {
+        type: "warn",
+        symbol,
+        metadata: { outcome: "generated_idempotency_key", clientOrderId },
+      },
+    );
+  }
   log(
     `Creating ${type} order: ${side} ${qty || submission.notional} ${symbol} (client_order_id=${clientOrderId})`,
     {

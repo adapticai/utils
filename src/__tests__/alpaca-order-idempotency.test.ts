@@ -176,20 +176,104 @@ describe("deriveClientOrderId", () => {
   });
 });
 
-describe("createOrder — idempotency contract", () => {
+describe("IdempotentCreateOrderParams", () => {
+  it("still requires the key on the keyed contract type", () => {
+    expectTypeOf<IdempotentCreateOrderParams>().toMatchTypeOf<{
+      idempotencyKey: string;
+    }>();
+  });
+});
+
+/**
+ * Transitional surface. `createOrder` is exported public API with in-repo and
+ * cross-repo callers that supply no order identity — `options/strategies.ts`
+ * (owned by B-0061) and the engine's `tool-execution-engine.ts`. Making the key
+ * a hard compile-time requirement broke both. The key is therefore accepted as
+ * optional at the boundary, and an omitted key is replaced by a per-submission
+ * generated identity.
+ *
+ * What that buys is precise and limited, and these tests pin exactly it: an
+ * un-keyed submission still carries ONE broker-side `client_order_id` that is
+ * held constant across the transport retry, so the F-0035 double-fill (an
+ * ECONNRESET after the POST landed) is closed for un-keyed callers too. What it
+ * does NOT buy is de-duplication of a *caller-level* resubmission — two calls
+ * are two logical orders. Only a caller-supplied key gives that, which is why
+ * the un-keyed overload is deprecated rather than blessed.
+ */
+describe("createOrder — un-keyed callers (transitional, B-0061 / engine handoff)", () => {
   let broker: FakeBroker;
 
   beforeEach(() => {
     broker = newBroker();
   });
 
-  it("requires an idempotency key at the type level", () => {
-    expectTypeOf<IdempotentCreateOrderParams>().toMatchTypeOf<{
-      idempotencyKey: string;
-    }>();
-    expectTypeOf<Parameters<typeof createOrder>[1]>().toMatchTypeOf<{
-      idempotencyKey: string;
-    }>();
+  it("submits the un-keyed caller shape with a generated client_order_id", async () => {
+    const client = makeClient(broker);
+
+    // Byte-for-byte the shape `options/strategies.ts` passes for the covered
+    // call's stock leg: no idempotencyKey, no client_order_id.
+    const order = await createOrder(client, {
+      symbol: "AAPL",
+      qty: "10",
+      side: "buy",
+      type: "market",
+      time_in_force: "day",
+    });
+
+    expect(broker.submissions).toHaveLength(1);
+    const submittedId = broker.submissions[0].client_order_id;
+    expect(typeof submittedId).toBe("string");
+    expect((submittedId ?? "").length).toBeGreaterThan(0);
+    expect(order.client_order_id).toBe(submittedId);
+  });
+
+  it("holds the generated id constant across the transport retry, leaving one broker order", async () => {
+    broker.postLandingFailure = connectionReset();
+    const client = makeClient(broker);
+
+    const order = await createOrder(client, { ...BASE_PARAMS });
+
+    expect(broker.submissions.length).toBeGreaterThan(1);
+    const ids = new Set(broker.submissions.map((s) => s.client_order_id));
+    expect(ids.size).toBe(1);
+    expect(broker.accepted.size).toBe(1);
+    expect(order.id).toBe("broker-1");
+  });
+
+  it("gives two un-keyed calls two distinct ids — it never pretends to de-duplicate across calls", async () => {
+    const client = makeClient(broker);
+    await createOrder(client, { ...BASE_PARAMS });
+    await createOrder(client, { ...BASE_PARAMS });
+
+    expect(broker.accepted.size).toBe(2);
+    expect(broker.submissions[0].client_order_id).not.toBe(
+      broker.submissions[1].client_order_id,
+    );
+  });
+
+  it("still honours an explicit client_order_id when no key is supplied", async () => {
+    const client = makeClient(broker);
+    await createOrder(client, {
+      ...BASE_PARAMS,
+      client_order_id: "explicit-unkeyed",
+    });
+    expect(broker.submissions[0].client_order_id).toBe("explicit-unkeyed");
+  });
+
+  it("still refuses a blank explicit client_order_id when no key is supplied", async () => {
+    const client = makeClient(broker);
+    await expect(
+      createOrder(client, { ...BASE_PARAMS, client_order_id: "   " }),
+    ).rejects.toThrow(/blank client_order_id/i);
+    expect(broker.submissions).toHaveLength(0);
+  });
+});
+
+describe("createOrder — keyed submissions", () => {
+  let broker: FakeBroker;
+
+  beforeEach(() => {
+    broker = newBroker();
   });
 
   it("submits the derived client_order_id", async () => {
