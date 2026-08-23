@@ -20,3 +20,6 @@ dist/bundle-stats.html
 dist/bundle-stats.json
 
 .claude/worktrees/
+
+# Graphify code-graph output (regenerate with ../scripts/graphify-refresh.sh utils)
+graphify-out/

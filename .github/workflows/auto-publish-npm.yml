@@ -11,7 +11,6 @@ on:
       - "*.mjs"
       - "types/**"
       - "*.ts"
-      - ".github/workflows/**"
 
 jobs:
   # Master branch: use reusable workflow (existing behavior)

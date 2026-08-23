@@ -46,10 +46,10 @@ Do not behave like a task-completion assistant. Behave like an owner, an archite
 
 `@adaptic/utils` has two parallel publish lineages on GitHub:
 
-| Branch           | npm versions     | npm dist-tag      | Consumed by                                     |
-| ---------------- | ---------------- | ----------------- | ----------------------------------------------- |
-| `master`         | `0.1.x`          | `latest`          | External / unpinned `npm install @adaptic/utils` |
-| `stable-release` | `0.0.x` (0.0.992+)| `stable`          | `engine`, `backend-legacy` (pinned)             |
+| Branch           | npm versions       | npm dist-tag | Consumed by                                      |
+| ---------------- | ------------------ | ------------ | ------------------------------------------------ |
+| `master`         | `0.1.x`            | `latest`     | External / unpinned `npm install @adaptic/utils` |
+| `stable-release` | `0.0.x` (0.0.992+) | `stable`     | `engine`, `backend-legacy` (pinned)              |
 
 **All new work lands on `stable-release`.** Engine and backend-legacy pin a
 specific `0.0.x` via `@adaptic/utils` in their `package.json`. `master` is only
@@ -180,3 +180,22 @@ Do not publish if `gitnexus guard` reports `DIRTY_TREE`, `WRONG_BRANCH`, `AHEAD_
 ### Final-response requirements
 
 Final response must list: new utils version, consumer repos updated, validation per repo, and explicit confirmation that the publish completed before downstream consumers were updated.
+
+## Publish mechanics (stable-release)
+
+`.github/workflows/auto-publish-npm.yml` auto-publishes on push to
+`stable-release` when the push touches `src/**`, root-level `*.json` /
+`*.ts` / `*.mjs`, or `types/**`. The workflow builds, derives the next
+version by reading the `stable` npm dist-tag and incrementing its patch
+(`0.0.PATCH+1`; falls back to `0.0.900` if no stable tag exists), publishes
+with `npm publish --access public --tag stable`, and pushes the
+`ci: bump version to X` commit back to `stable-release` — pull after each
+publish before continuing work. Markdown/docs changes do NOT trigger a
+publish (not in the paths filter), and workflow-file changes no longer
+trigger one (`.github/workflows/**` removed from the filter 2026-08-23).
+Pushes to `master` instead publish the legacy `0.1.x` lineage as `latest`
+via the reusable `adapticai/workflows` publish workflow.
+
+- Canonical deploy routines: `~/adapticai/docs/DEPLOY_ROUTINES.md`.
+- Code graph: `graphify-out/` (gitignored; refresh via `../scripts/graphify-refresh.sh utils`) — query it before grep, per the mono CLAUDE.md.
+- Canonical design tokens: `~/adapticai/design-system/` (informational — this package has no UI).
