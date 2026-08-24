@@ -197,5 +197,21 @@ Pushes to `master` instead publish the legacy `0.1.x` lineage as `latest`
 via the reusable `adapticai/workflows` publish workflow.
 
 - Canonical deploy routines: `~/adapticai/docs/DEPLOY_ROUTINES.md`.
-- Code graph: `graphify-out/` (gitignored; refresh via `../scripts/graphify-refresh.sh utils`) — query it before grep, per the mono CLAUDE.md.
+## Codebase Graph — Graphify (query before you grep)
+
+A local tree-sitter AST graph of this package is the queryable source of truth for what lives here and how it wires together — deterministic, free, nothing leaves the machine. utils is a Rollup-bundled single-entry library (everything re-exports through `src/index.ts`, and you cannot compile/run arbitrary TS files here), so the graph is the fastest way to trace a symbol to its module and callers without a build.
+
+- **This repo's graph:** `/Users/ravi/adapticai/utils/graphify-out/graph.json` (~1915 nodes; gitignored — regenerate any time). From inside `utils/` the `--graph` value is just `graphify-out/graph.json`.
+- **Query before you grep.** For any "where is / how does / what calls this" question, run a Graphify query first instead of grepping:
+  - `graphify query "<question>" --graph /Users/ravi/adapticai/utils/graphify-out/graph.json` — natural-language BFS over the graph.
+  - `graphify explain "<symbol>" --graph <path>` — one symbol's callers, callees, and methods.
+  - `graphify path "A" "B" --graph <path>` — how two symbols connect.
+  - `graphify affected "<symbol>" --graph <path>` — reverse-impact (what breaks if you change it).
+  - `graphify god-nodes --graph <path>` — the architectural hubs to reason from.
+  - Add `--graph ~/.graphify/global-graph.json` instead for cross-repo questions (e.g. who downstream consumes a utils export).
+- **Refresh** after meaningful edits, from `~/adapticai`: `scripts/graphify-refresh.sh utils` (incremental, AST-only; the hygiene workflows do this automatically).
+- **Real examples (run against this graph):**
+  - `graphify god-nodes …` → `getLogger()` (87 edges), `AlpacaTradingAPI` (63), `createTimeoutSignal()` (58), `AlpacaClient` (53) — the true hubs.
+  - `graphify query "How does the Alpaca client fetch account positions?" …` → surfaces `src/alpaca/trading/positions.ts`, `fetchAccountDetails()` (`src/alpaca/legacy/account.ts`), and `AlpacaClient` (`src/alpaca/client.ts`) among 786 reachable nodes.
+- **Caveat:** version is pinned (`graphifyy==0.9.48`, pre-1.0) — re-verify CLI flags on any upgrade, and never adopt its auto-installed PreToolUse hooks or CLAUDE.md auto-edits; the config here is curated by hand.
 - Canonical design tokens: `~/adapticai/design-system/` (informational — this package has no UI).
