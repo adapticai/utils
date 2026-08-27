@@ -1020,7 +1020,14 @@ export const fetchTrades = async (
     await rateLimiters.massive.acquire();
     const url = `${baseUrl}?${params.toString()}`;
     try {
-      logIfDebug(`Fetching trades for ${symbol} from ${url}`);
+      // Redact the apiKey query param before logging — the raw URL embeds the
+      // live Massive API key (audit #595).
+      logIfDebug(
+        `Fetching trades for ${symbol} from ${url.replace(
+          /([?&](?:apiKey|apikey|api_key)=)[^&]+/gi,
+          "$1***",
+        )}`,
+      );
       const response = await fetchWithRetry(
         url,
         { signal: createTimeoutSignal(DEFAULT_TIMEOUTS.MASSIVE_API) },
