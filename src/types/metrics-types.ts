@@ -34,5 +34,12 @@ export interface TradeMetrics {
   riskAdjustedReturn: string;
   expenseRatio: string;
   maxDrawdown: string;
-  side: string;
+  /**
+   * Position direction the direction-aware metrics were computed under.
+   * `"N/A"` when the trade's primary action does not resolve to a long or a
+   * short — in that case every direction-aware metric above is `"N/A"` too,
+   * because their sign would otherwise be an assumption rather than a
+   * measurement.
+   */
+  side: "long" | "short" | "N/A";
 }

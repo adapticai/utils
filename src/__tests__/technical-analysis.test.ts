@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   calculateBollingerBands,
   calculateEMA,
+  calculateFibonacciLevels,
   calculateMACD,
   calculateRSI,
   calculateStochasticOscillator,
@@ -508,5 +509,148 @@ describe("edge cases and data validation", () => {
     const result = calculateEMA(priceData, { period: 10 });
     expect(result.length).toBeGreaterThan(0);
     expect(result.every((entry) => !isNaN(entry.ema))).toBe(true);
+  });
+});
+
+/**
+ * Builds a swing window from explicit (high, low) pairs so the leg direction
+ * and the resulting anchors are exactly determined rather than incidental.
+ */
+function swingBars(
+  bounds: Array<{ high: number; low: number }>,
+): MassivePriceData[] {
+  return bounds.map(({ high, low }, i) => ({
+    symbol: "TEST",
+    date: `2025-01-${String(i + 1).padStart(2, "0")}`,
+    timeStamp: Date.now() + i * 86400000,
+    open: (high + low) / 2,
+    high,
+    low,
+    close: (high + low) / 2,
+    vol: 1000000,
+    vwap: (high + low) / 2,
+    trades: 1000,
+  }));
+}
+
+/** Swing low prints first, swing high last: the leg runs up. Range 90 -> 120. */
+const UP_LEG = swingBars([
+  { high: 100, low: 90 },
+  { high: 105, low: 95 },
+  { high: 110, low: 100 },
+  { high: 115, low: 105 },
+  { high: 120, low: 110 },
+]);
+
+/** Swing high prints first, swing low last: the leg runs down. Range 120 -> 90. */
+const DOWN_LEG = swingBars([
+  { high: 120, low: 110 },
+  { high: 115, low: 105 },
+  { high: 110, low: 100 },
+  { high: 105, low: 95 },
+  { high: 100, low: 90 },
+]);
+
+function levelPrice(
+  bar: ReturnType<typeof calculateFibonacciLevels>[number],
+  level: number,
+  type: "retracement" | "extension",
+): number | undefined {
+  return bar.levels?.find((l) => l.level === level && l.type === type)?.price;
+}
+
+describe("calculateFibonacciLevels", () => {
+  it("projects a downtrend extension beyond the swing low", () => {
+    // A down-leg terminates at the swing low, so its extensions run below it:
+    // 90 - 30 * 0.272 = 81.84. Anchoring to the swing high instead would put
+    // the target at 111.84 — inside the range and above the leg's own low.
+    const result = calculateFibonacciLevels(DOWN_LEG, { lookbackPeriod: 5 });
+    const last = result[result.length - 1];
+
+    expect(last.trend).toBe("downtrend");
+    expect(levelPrice(last, 1.272, "extension")).toBe(81.84);
+  });
+
+  it("projects an uptrend extension beyond the swing high", () => {
+    const result = calculateFibonacciLevels(UP_LEG, { lookbackPeriod: 5 });
+    const last = result[result.length - 1];
+
+    expect(last.trend).toBe("uptrend");
+    expect(levelPrice(last, 1.272, "extension")).toBe(128.16);
+  });
+
+  it("places both sides' extensions the same distance beyond their own leg extreme", () => {
+    // The two limbs are mirror images: each extension sits priceRange*(level-1)
+    // past the extreme its leg terminates at. Any difference in that distance
+    // is a construction asymmetry, not a property of the direction.
+    const up = calculateFibonacciLevels(UP_LEG, { lookbackPeriod: 5 });
+    const down = calculateFibonacciLevels(DOWN_LEG, { lookbackPeriod: 5 });
+    const upLast = up[up.length - 1];
+    const downLast = down[down.length - 1];
+
+    for (const level of [1.272, 1.618, 2.618]) {
+      const upDistance =
+        levelPrice(upLast, level, "extension")! - upLast.swingHigh!;
+      const downDistance =
+        downLast.swingLow! - levelPrice(downLast, level, "extension")!;
+
+      expect(upDistance).toBeCloseTo(downDistance, 10);
+      expect(upDistance).toBeGreaterThan(0);
+    }
+  });
+
+  it("mirrors retracements about the leg it is measuring", () => {
+    const up = calculateFibonacciLevels(UP_LEG, { lookbackPeriod: 5 });
+    const down = calculateFibonacciLevels(DOWN_LEG, { lookbackPeriod: 5 });
+
+    // The 0.5 retracement is the midpoint of the range from either direction.
+    expect(levelPrice(up[up.length - 1], 0.5, "retracement")).toBe(105);
+    expect(levelPrice(down[down.length - 1], 0.5, "retracement")).toBe(105);
+  });
+
+  it("derives the trend from the window when no direction is supplied", () => {
+    // The leg direction is present in the data — which extreme prints last —
+    // so it is measured, never assumed.
+    const down = calculateFibonacciLevels(DOWN_LEG, { lookbackPeriod: 5 });
+    const up = calculateFibonacciLevels(UP_LEG, { lookbackPeriod: 5 });
+
+    expect(down[down.length - 1].trend).toBe("downtrend");
+    expect(up[up.length - 1].trend).toBe("uptrend");
+  });
+
+  it("honours an explicit reverseDirection over the derived trend", () => {
+    const forcedUp = calculateFibonacciLevels(DOWN_LEG, {
+      lookbackPeriod: 5,
+      reverseDirection: false,
+    });
+    const forcedDown = calculateFibonacciLevels(UP_LEG, {
+      lookbackPeriod: 5,
+      reverseDirection: true,
+    });
+
+    expect(forcedUp[forcedUp.length - 1].trend).toBe("uptrend");
+    expect(forcedDown[forcedDown.length - 1].trend).toBe("downtrend");
+  });
+
+  it("reports no trend and no levels when the window resolves no leg", () => {
+    // Both extremes on one bar is not an uptrend — it is an absence of a leg,
+    // and it is reported as one.
+    const singleBar = calculateFibonacciLevels(
+      swingBars([{ high: 120, low: 90 }]),
+      { lookbackPeriod: 5 },
+    );
+
+    expect(singleBar[0].trend).toBeNull();
+    expect(singleBar[0].levels).toEqual([]);
+  });
+
+  it("still reports the swing extremes it measured when no leg resolves", () => {
+    const singleBar = calculateFibonacciLevels(
+      swingBars([{ high: 120, low: 90 }]),
+      { lookbackPeriod: 5 },
+    );
+
+    expect(singleBar[0].swingHigh).toBe(120);
+    expect(singleBar[0].swingLow).toBe(90);
   });
 });

@@ -510,7 +510,7 @@ async function calculateInformationRatio(
  * @param tradeBars - Array of price bars
  * @param isShort - Whether it's a short position
  */
-async function calculateMaxDrawdown(
+export async function calculateMaxDrawdown(
   tradeBars: Bar[],
   isShort: boolean,
 ): Promise<string> {
@@ -532,8 +532,14 @@ async function calculateMaxDrawdown(
     if (positionAwareEquity[i] > peak) {
       peak = positionAwareEquity[i];
     } else {
+      // The short branch negates equity, so its peak is legitimately negative.
+      // Scale the decline by the peak's magnitude — a sign test on the peak
+      // would discard every drawdown on one side of the book.
+      const denominator = Math.abs(peak);
       const drawdown =
-        peak <= 0 ? 0 : (peak - positionAwareEquity[i]) / Math.abs(peak);
+        denominator === 0
+          ? 0
+          : (peak - positionAwareEquity[i]) / denominator;
       if (drawdown > maxDrawdown) {
         maxDrawdown = drawdown;
       }
@@ -550,29 +556,93 @@ async function calculateExpenseRatio(trade: types.Trade): Promise<string> {
   return totalFees ? `${totalFees.toFixed(2)}%` : "N/A";
 }
 
+/**
+ * Resolves whether a trade is short from its primary action.
+ *
+ * Only an outright BUY or SELL fixes whether the position's P&L runs with or
+ * against the price series. Option legs, exercises, cancels, adjustments and
+ * hedges do not, and `trade.actions` itself is curated by backend-legacy
+ * selection-set directives, so its absence is routine. Every one of those
+ * cases leaves the direction genuinely unknown, and unknown is returned as
+ * such — inferring a side would silently invert every direction-aware metric
+ * computed from it.
+ *
+ * @param trade - Trade whose direction is being resolved
+ * @returns `true` for a short, `false` for a long, `null` when unresolvable
+ */
+function resolveIsShort(trade: types.Trade): boolean | null {
+  const primaryAction = trade.actions?.find((action) => action.primary);
+
+  if (!primaryAction) {
+    getLogger().warn(
+      `Trade ${trade.id} has no primary action; position direction is unresolved.`,
+    );
+    return null;
+  }
+
+  switch (primaryAction.type) {
+    case "SELL":
+      return true;
+    case "BUY":
+      return false;
+    default:
+      getLogger().warn(
+        `Trade ${trade.id} primary action type "${primaryAction.type}" does not determine a long/short direction.`,
+      );
+      return null;
+  }
+}
+
 // Main function to fetch and calculate all trade metrics for one trade object
 export default async function fetchTradeMetrics(
   trade: types.Trade,
   tradeBars: Bar[],
   benchmarkBars: BenchmarkBar[],
 ): Promise<TradeMetrics> {
-  const isShort =
-    trade.actions?.find((a) => a.primary)?.type === "SELL" ? true : false;
+  const isShort = resolveIsShort(trade);
+
+  // The Sharpe ratio and the expense ratio do not invert on direction, so they
+  // are started immediately and stay concurrent with everything below.
+  const riskAdjustedReturnPromise = calculateRiskAdjustedReturn(tradeBars);
+  const expenseRatioPromise = calculateExpenseRatio(trade);
+
+  if (isShort === null) {
+    // Every other metric inverts on direction. With the direction unknown
+    // there is no value to report — only a sign-ambiguous one — so they are
+    // reported as unavailable rather than resolved by assumption.
+    const [riskAdjustedReturn, expenseRatio] = await Promise.all([
+      riskAdjustedReturnPromise,
+      expenseRatioPromise,
+    ]);
+
+    return {
+      totalReturnYTD: "N/A",
+      alpha: "N/A",
+      beta: "N/A",
+      alphaAnnualized: "N/A",
+      informationRatio: "N/A",
+      riskAdjustedReturn,
+      expenseRatio,
+      maxDrawdown: "N/A",
+      side: "N/A",
+    };
+  }
+
   // Calculate metrics concurrently
   const [
     totalReturnYTD,
     { alpha, beta, alphaAnnualized },
     informationRatio,
+    maxDrawdown,
     riskAdjustedReturn,
     expenseRatio,
-    maxDrawdown,
   ] = await Promise.all([
     calculateProfitLoss(tradeBars, isShort),
     calculateAlphaAndBeta(tradeBars, benchmarkBars, isShort),
     calculateInformationRatio(tradeBars, benchmarkBars, isShort),
-    calculateRiskAdjustedReturn(tradeBars),
-    calculateExpenseRatio(trade),
     calculateMaxDrawdown(tradeBars, isShort),
+    riskAdjustedReturnPromise,
+    expenseRatioPromise,
   ]);
 
   return {

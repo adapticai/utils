@@ -434,10 +434,13 @@ export async function cancelTrailingStop(
 }
 
 /**
- * Create trailing stops for all positions in a portfolio
+ * Create trailing stops for every position in a portfolio
  *
- * This function creates trailing stop orders for all long positions in the portfolio,
- * which is useful for applying blanket downside protection. Short positions are skipped.
+ * Applies blanket adverse-move protection across the book. The protective side
+ * is derived per position from the signed quantity reported by the broker — a
+ * long is protected by a trailing sell, a short by a trailing buy — so a
+ * position is never left unprotected because of the direction it happens to
+ * hold.
  *
  * @param client - AlpacaClient instance
  * @param params - Configuration for portfolio-wide trailing stops
@@ -466,8 +469,13 @@ export async function createPortfolioTrailingStops(
     throw new Error("trailPercent must be greater than 0");
   }
 
-  if (params.trailPercent > 100) {
-    throw new Error("trailPercent cannot exceed 100");
+  // Reject against the broker's real ceiling up front. A looser outer bound
+  // lets an out-of-range value reach the per-position loop, where every single
+  // submission is rejected and the book silently ends up unprotected.
+  if (params.trailPercent > ALPACA_MAX_TRAIL_PERCENT) {
+    throw new Error(
+      `trailPercent cannot exceed ${ALPACA_MAX_TRAIL_PERCENT} (Alpaca API limit)`,
+    );
   }
 
   const sdk = client.getSDK();
@@ -504,20 +512,25 @@ export async function createPortfolioTrailingStops(
         continue;
       }
 
-      // Only create trailing stops for long positions
+      // Derive the protective side from the broker's signed quantity: a long
+      // (qty > 0) is closed by selling, a short (qty < 0) by buying. Direction
+      // is read from the position, never assumed — a stop on the wrong side
+      // doubles the exposure it was meant to cap.
       const qty = parseFloat(position.qty);
-      if (qty <= 0) {
-        log(`Skipping ${symbol} (not a long position, qty: ${qty})`, {
-          type: "debug",
-        });
+      if (!Number.isFinite(qty) || qty === 0) {
+        log(
+          `Skipping ${symbol}: position qty "${position.qty}" is not a usable non-zero number`,
+          { type: "warn" },
+        );
         continue;
       }
+      const side: OrderSide = qty > 0 ? "sell" : "buy";
 
       try {
         const order = await createTrailingStop(client, {
           symbol,
           qty: Math.abs(qty),
-          side: "sell",
+          side,
           trailPercent: params.trailPercent,
           timeInForce: params.timeInForce || "gtc",
         });

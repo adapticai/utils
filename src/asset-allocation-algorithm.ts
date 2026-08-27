@@ -310,6 +310,18 @@ export class AssetAllocationEngine {
    * Assess current market condition
    */
   private assessMarketCondition(metrics: MarketMetrics): MarketCondition {
+    // Crisis detection runs first: it is the strictly more severe reading and
+    // its volatility threshold sits above the high-volatility one, so testing
+    // volatility first would classify every crisis-level VIX as merely high
+    // and never reach this branch at all.
+    if (
+      metrics.volatilityIndex > 40 ||
+      metrics.sentimentScore < 20 ||
+      metrics.creditSpread > 500
+    ) {
+      return "CRISIS";
+    }
+
     // High volatility check
     if (metrics.volatilityIndex > 30) {
       return "HIGH_VOLATILITY";
@@ -318,15 +330,6 @@ export class AssetAllocationEngine {
     // Low volatility check
     if (metrics.volatilityIndex < 12) {
       return "LOW_VOLATILITY";
-    }
-
-    // Crisis detection
-    if (
-      metrics.volatilityIndex > 40 ||
-      metrics.sentimentScore < 20 ||
-      metrics.creditSpread > 500
-    ) {
-      return "CRISIS";
     }
 
     // Bull market

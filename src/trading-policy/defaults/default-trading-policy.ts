@@ -42,6 +42,14 @@ export const DEFAULT_TRADING_POLICY: EffectiveTradingPolicy =
     optionsEnabled: true,
     futuresEnabled: true,
     forexEnabled: true,
+    // Shorting and margin are capability opt-ins, not a directional stance.
+    // Both require a margin agreement and locate/borrow availability the
+    // package cannot verify, so an account that has not asserted the
+    // capability defaults to the one it is known to have. This is a statement
+    // about account permissions, never a preference for long over short — the
+    // side a strategy takes is derived from live data once the capability is
+    // enabled. Resolve these from the broker account's actual margin and
+    // shorting entitlements wherever those are available.
     shortingEnabled: false,
     marginEnabled: false,
     fractionalSharesEnabled: true,

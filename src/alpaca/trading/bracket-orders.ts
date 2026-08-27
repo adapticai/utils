@@ -280,8 +280,12 @@ export interface ProtectiveBracketParams {
   symbol: string;
   /** Number of shares to protect */
   qty: number;
-  /** Side is always 'sell' to close a long position */
-  side: "sell";
+  /**
+   * Side that closes the position being protected: 'sell' for a long, 'buy'
+   * for a short. Derived from the position, not assumed — pinning one side
+   * here would leave the other unprotectable.
+   */
+  side: OrderSide;
   /** Take profit configuration */
   takeProfit: {
     /** Price at which to take profit */
@@ -311,7 +315,8 @@ export interface ProtectiveBracketParams {
  *
  * @example
  * ```typescript
- * // Add protection to an existing long position
+ * // Add protection to an existing long position (sell to close):
+ * // take profit above, stop below.
  * const result = await createProtectiveBracket(
  *   executor,
  *   {
@@ -320,6 +325,23 @@ export interface ProtectiveBracketParams {
  *     side: 'sell',
  *     takeProfit: { limitPrice: 160.00 },
  *     stopLoss: { stopPrice: 145.00 },
+ *     timeInForce: 'gtc',
+ *   }
+ * );
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // Add protection to an existing short position (buy to close):
+ * // take profit below, stop above.
+ * const result = await createProtectiveBracket(
+ *   executor,
+ *   {
+ *     symbol: 'TSLA',
+ *     qty: 50,
+ *     side: 'buy',
+ *     takeProfit: { limitPrice: 200.00 },
+ *     stopLoss: { stopPrice: 260.00 },
  *     timeInForce: 'gtc',
  *   }
  * );
@@ -348,6 +370,14 @@ export async function createProtectiveBracket(
     throw new Error("Quantity must be a positive number");
   }
 
+  // The closing side determines which of the two exit prices is the profit
+  // target, so it must be stated rather than inferred.
+  if (params.side !== "buy" && params.side !== "sell") {
+    throw new Error(
+      "Protective bracket requires a side of 'buy' or 'sell' matching the position being closed",
+    );
+  }
+
   if (!params.takeProfit?.limitPrice || params.takeProfit.limitPrice <= 0) {
     throw new Error("Take profit limit price is required and must be positive");
   }
@@ -356,10 +386,20 @@ export async function createProtectiveBracket(
     throw new Error("Stop loss stop price is required and must be positive");
   }
 
-  // For a protective sell bracket, take profit should be higher than stop loss
-  if (params.takeProfit.limitPrice <= params.stopLoss.stopPrice) {
+  // The take profit must sit on the profitable side of the position and the
+  // stop on the losing side. Which price is the higher one therefore depends
+  // on the closing side: selling to close a long takes profit above and stops
+  // below; buying to close a short is the exact mirror.
+  if (params.side === "sell") {
+    if (params.takeProfit.limitPrice <= params.stopLoss.stopPrice) {
+      log(
+        "Warning: Take profit price should be higher than stop loss price for protective sell bracket",
+        { type: "warn" },
+      );
+    }
+  } else if (params.takeProfit.limitPrice >= params.stopLoss.stopPrice) {
     log(
-      "Warning: Take profit price should be higher than stop loss price for protective sell bracket",
+      "Warning: Take profit price should be lower than stop loss price for protective buy bracket",
       { type: "warn" },
     );
   }

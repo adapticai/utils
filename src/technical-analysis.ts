@@ -142,6 +142,58 @@ export function calculateEMA(
 import { FibonacciData, FibonacciLevel, FibonacciParams } from "./types";
 
 /**
+ * The swing extremes of a lookback window and the direction of its latest leg.
+ */
+interface SwingWindow {
+  /** Highest high in the window. */
+  swingHigh: number;
+  /** Lowest low in the window. */
+  swingLow: number;
+  /** Direction of the most recent leg, or null when the window resolves none. */
+  trend: "uptrend" | "downtrend" | null;
+}
+
+/**
+ * Locates a window's swing extremes and derives the direction of its most
+ * recent leg from the order in which those extremes print.
+ *
+ * A Fibonacci construction is anchored to the latest leg: an up-leg runs swing
+ * low to swing high, a down-leg swing high to swing low. Whichever extreme
+ * prints last therefore identifies the leg, which makes the direction a
+ * measurement of the window rather than a caller's assumption. When both
+ * extremes land on the same bar the window contains no leg and the direction
+ * is genuinely indeterminate.
+ *
+ * @param window - The lookback slice to analyse.
+ * @returns The window's swing extremes and derived leg direction.
+ */
+function analyzeSwingWindow(window: MassivePriceData[]): SwingWindow {
+  let swingHigh = -Infinity;
+  let swingLow = Infinity;
+  let highIndex = -1;
+  let lowIndex = -1;
+
+  // `>=` / `<=` keep the most recent occurrence of each extreme, which is the
+  // one the current leg is measured from.
+  for (let i = 0; i < window.length; i++) {
+    if (window[i].high >= swingHigh) {
+      swingHigh = window[i].high;
+      highIndex = i;
+    }
+    if (window[i].low <= swingLow) {
+      swingLow = window[i].low;
+      lowIndex = i;
+    }
+  }
+
+  return {
+    swingHigh,
+    swingLow,
+    trend: highIndex === lowIndex ? null : highIndex > lowIndex ? "uptrend" : "downtrend",
+  };
+}
+
+/**
  * Calculates Fibonacci retracement and extension levels based on price data.
  * Fibonacci levels are used to identify potential support and resistance levels.
  *
@@ -150,7 +202,7 @@ import { FibonacciData, FibonacciLevel, FibonacciParams } from "./types";
  * @param params.lookbackPeriod - The number of periods to look back for swing high/low (default is 20).
  * @param params.retracementLevels - An array of retracement levels to calculate (default is [0.236, 0.382, 0.5, 0.618, 0.786]).
  * @param params.extensionLevels - An array of extension levels to calculate (default is [1.272, 1.618, 2.618]).
- * @param params.reverseDirection - A boolean indicating if the trend is reversed (default is false).
+ * @param params.reverseDirection - Forces the leg direction: `true` for a downtrend, `false` for an uptrend. Omit it to derive the direction per bar from the swing window.
  * @returns An array of FibonacciData objects containing the calculated levels.
  */
 export function calculateFibonacciLevels(
@@ -159,7 +211,7 @@ export function calculateFibonacciLevels(
     lookbackPeriod = 20,
     retracementLevels = [0.236, 0.382, 0.5, 0.618, 0.786],
     extensionLevels = [1.272, 1.618, 2.618],
-    reverseDirection = false,
+    reverseDirection,
   }: FibonacciParams = {},
 ): FibonacciData[] {
   const result: FibonacciData[] = [];
@@ -169,17 +221,26 @@ export function calculateFibonacciLevels(
       Math.max(0, i - lookbackPeriod + 1),
       i + 1,
     );
-    const swingHigh = Math.max(...periodSlice.map((d) => d.high));
-    const swingLow = Math.min(...periodSlice.map((d) => d.low));
+    const { swingHigh, swingLow, trend: derivedTrend } =
+      analyzeSwingWindow(periodSlice);
     const priceRange = swingHigh - swingLow;
 
-    const trend = reverseDirection ? "downtrend" : "uptrend";
+    // An explicit `reverseDirection` is the caller stating the leg it is
+    // measuring; absent that, the leg is read off the window itself.
+    const trend =
+      reverseDirection === undefined
+        ? derivedTrend
+        : reverseDirection
+          ? "downtrend"
+          : "uptrend";
     const levels: FibonacciLevel[] = [];
 
-    if (priceRange > 0) {
+    if (priceRange > 0 && trend !== null) {
+      const isDowntrend = trend === "downtrend";
+
       // Calculate retracement levels
       retracementLevels.forEach((level) => {
-        const price = reverseDirection
+        const price = isDowntrend
           ? swingLow + priceRange * level
           : swingHigh - priceRange * level;
 
@@ -190,10 +251,13 @@ export function calculateFibonacciLevels(
         });
       });
 
-      // Calculate extension levels
+      // Calculate extension levels — each is projected beyond the leg's
+      // terminal extreme: past the swing low for a down-leg, past the swing
+      // high for an up-leg. Anchoring both to the same extreme would place one
+      // side's targets a full swing range away from where the leg is running.
       extensionLevels.forEach((level) => {
-        const price = reverseDirection
-          ? swingHigh - priceRange * (level - 1) // For downtrend
+        const price = isDowntrend
+          ? swingLow - priceRange * (level - 1) // For downtrend
           : swingHigh + priceRange * (level - 1); // For uptrend
 
         levels.push({
@@ -205,7 +269,11 @@ export function calculateFibonacciLevels(
 
       // Sort levels by price
       levels.sort((a, b) =>
-        reverseDirection ? b.price - a.price : a.price - b.price,
+        isDowntrend ? b.price - a.price : a.price - b.price,
+      );
+    } else if (trend === null) {
+      logIfDebug(
+        `Swing high and low fall on the same bar on date ${priceData[i].date}; trend is indeterminate and no levels calculated.`,
       );
     } else {
       logIfDebug(

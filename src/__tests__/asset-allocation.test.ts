@@ -577,6 +577,46 @@ describe("AssetAllocationEngine", () => {
       }
     });
 
+    it("should classify a crisis-level VIX as crisis, not merely high volatility", async () => {
+      // The crisis volatility threshold (40) sits above the high-volatility
+      // one (30), so evaluating volatility first would classify every
+      // crisis-level reading as high volatility and never reach the crisis
+      // response at all. The two responses differ observably: crisis scales
+      // crypto to 0.1 and equities to 0.5, high volatility only 0.5 and 1.0.
+      const engine = new AssetAllocationEngine();
+
+      const crisisVix: AllocationInput = {
+        riskProfile: "MODERATE",
+        marketConditions: createMarketMetrics({ volatilityIndex: 45 }),
+        accountSize: 100000,
+        assetCharacteristics: createAssetCharacteristics(),
+      };
+
+      const highVix: AllocationInput = {
+        riskProfile: "MODERATE",
+        marketConditions: createMarketMetrics({ volatilityIndex: 35 }),
+        accountSize: 100000,
+        assetCharacteristics: createAssetCharacteristics(),
+      };
+
+      const crisisResult = await engine.generateAllocation(crisisVix);
+      const highVolResult = await engine.generateAllocation(highVix);
+
+      const allocationOf = (
+        result: Awaited<ReturnType<typeof engine.generateAllocation>>,
+        assetClass: string,
+      ): number =>
+        result.allocations.find((a) => a.assetClass === assetClass)
+          ?.allocation ?? 0;
+
+      expect(allocationOf(crisisResult, "CRYPTO")).toBeLessThan(
+        allocationOf(highVolResult, "CRYPTO"),
+      );
+      expect(allocationOf(crisisResult, "EQUITIES")).toBeLessThan(
+        allocationOf(highVolResult, "EQUITIES"),
+      );
+    });
+
     it("should reduce crypto in high volatility", async () => {
       const engine = new AssetAllocationEngine();
 

@@ -654,11 +654,17 @@ export async function shortWithStopLoss(
  * @param qty - Number of shares
  * @param entryPrice - Limit price for entry (null for market)
  * @param stopLossPercent - Stop loss percentage (e.g., 5 for 5%)
- * @param side - Order side ('buy' or 'sell')
+ * @param side - Order side ('buy' or 'sell'). Required: the entry direction is
+ *   the caller's decision, and a default would open a position in a direction
+ *   nobody chose.
  *
  * @example
  * // Buy AAPL at $150 with 3% stop loss (stop at $145.50)
  * const result = await entryWithPercentStopLoss(client, 'AAPL', 100, 150.00, 3, 'buy');
+ *
+ * @example
+ * // Short GOOGL at $140 with 3% stop loss (stop at $144.20)
+ * const result = await entryWithPercentStopLoss(client, 'GOOGL', 10, 140.00, 3, 'sell');
  */
 export async function entryWithPercentStopLoss(
   client: AlpacaClient,
@@ -666,8 +672,17 @@ export async function entryWithPercentStopLoss(
   qty: number,
   entryPrice: number | null,
   stopLossPercent: number,
-  side: OrderSide = "buy",
+  side: OrderSide,
 ): Promise<OTOOrderResult> {
+  // Guard the direction at runtime as well as in the signature: every price
+  // below is computed off `side`, so an unsupplied one would silently place
+  // the stop on the wrong side of the entry.
+  if (side !== "buy" && side !== "sell") {
+    throw new Error(
+      "entryWithPercentStopLoss requires an explicit side of 'buy' or 'sell'; the entry direction cannot be inferred",
+    );
+  }
+
   if (stopLossPercent <= 0 || stopLossPercent >= 100) {
     throw new Error("stopLossPercent must be between 0 and 100");
   }

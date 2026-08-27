@@ -41,7 +41,11 @@ export interface FibonacciParams {
   lookbackPeriod?: number;
   retracementLevels?: number[];
   extensionLevels?: number[];
-  reverseDirection?: boolean; // true for downtrend, false for uptrend
+  /**
+   * Forces the leg direction: true for a downtrend, false for an uptrend.
+   * Omit it to derive the direction per bar from the swing window.
+   */
+  reverseDirection?: boolean;
 }
 
 export interface FibonacciLevel {
@@ -55,7 +59,12 @@ export interface FibonacciData {
   levels?: FibonacciLevel[];
   swingHigh?: number;
   swingLow?: number;
-  trend?: "uptrend" | "downtrend";
+  /**
+   * Direction of the swing leg the levels are anchored to. `null` when the
+   * window resolves no leg, in which case `levels` is empty — a label that was
+   * never measured is not reported as one.
+   */
+  trend?: "uptrend" | "downtrend" | null;
   close: number;
 }
 
