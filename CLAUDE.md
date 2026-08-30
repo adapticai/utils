@@ -109,6 +109,34 @@ by declaring strict local types in `src/types/`.
 
 Always maintain the existing code style when making changes. Follow TypeScript's strict mode guidelines.
 
+## Functional Architecture & Agent Engineering Rules
+
+The canonical engineering-architecture doctrine — the _shape_ Adaptic code should take and the first-principles reason why (deterministic decision core · explicit stateful runtime · isolated external adapters) — lives at [`~/adapticai/docs/ENGINEERING_DOCTRINE.md`](../docs/ENGINEERING_DOCTRINE.md). Read it for the full model; this section is the `@adaptic/utils`-specific distillation and does not restate it.
+
+**This package's place in that shape.** `utils` is two of the doctrine's categories at once: **pure financial calculation + numerical semantics** (performance metrics, TA indicators, money math, normalization) and **the isolated external effect boundary** (the Alpaca / Polygon / Alpha Vantage clients and market-time utilities where vendor errors, ids, units, timestamps, and staleness are normalized). The load-bearing rule for both: a calculation is a **pure function of explicit inputs**, and **no vendor semantic leaks past this boundary inward**. Because `engine` and `backend-legacy` consume every export (pinned `0.0.x`), a hidden clock, a silent `?? 0`, or a leaked Alpaca quirk here becomes a defect inside their decision core.
+
+### Mandatory Agent Engineering Rules
+
+1. **Prefer deterministic functions for financial/domain calculations** — same inputs → same outputs. A metric, indicator, or normalization that reads a hidden `Date.now()`, fetches data internally, or depends on mutable global config is a defect: lift the environment out into explicit inputs.
+2. **Isolate external effects at this boundary and normalize them.** Alpaca/Polygon/Alpha Vantage error shapes, id casing, units, timestamps, and staleness are normalized _here_ — no vendor semantics leak inward to consumers. `resolveBrokerCredentials` (`src/alpaca/legacy/auth.ts`) is the single backend-coupled seam; keep it that way (see the SP2 rule below).
+3. **Make important dependencies explicit.** Time is a dependency — pass `now` into market-time / expiry logic rather than burying `Date.now()`, so behaviour is reproducible in a consumer's backtest and replay. Do not construct SDK clients or read secrets inside a calculation.
+4. **Immutable externally; mutable internally only where justified, bounded, and documented.** LRU caches, ring buffers, and rolling-window accumulators are legitimate mutable internals **behind a value-semantic API**. Benchmark before replacing performant mutation with allocation-heavy immutable structures.
+5. **Never sacrifice latency / throughput / numerical efficiency for stylistic purity.** utils sits on the engine's hot paths (per-bar TA, quote normalization); **benchmark hot-path changes** before/after, keep synchronous logging/telemetry off hot numeric paths unless justified, and prefer one cohesive numeric transform over fracturing it into indirection layers.
+6. **Model money-and-risk domains strongly and make invalid states hard to construct.** Use strong types for `Price`, `Quantity`, `Notional`, `BasisPoints`, `Percentage`, `OrderSide`, `OrderStatus` (utils owns the broker/API types — `AlpacaPosition`, `AlpacaOrder`, …); make state transitions explicit and prefer discriminated unions over bags of optional fields that admit nonsense combinations.
+7. **Treat expected failures explicitly; keep irreversible effects idempotent.** Broker rejections are first-class typed outcomes, not generic `catch (error)` — the Alpaca `422 / 42210000` stale-order-id modify reject in particular must surface as a typed, terminal state, never be swallowed. **Unknown stays unknown:** no `?? 0` on a measured price/quantity/equity, no default that turns a missing quote into a tradable number — absence fails closed at the consumer, it does not resolve to a value that trades.
+8. **Treat LLM/model stochasticity explicitly and record provenance.** utils's contribution is mostly `typeStrings` for LLM context — keep those deterministic and schema-governed (`TYPESTRING.*` directives in the backend-legacy schema); never pretend a stochastic call is referentially transparent.
+9. **Preserve live/backtest/simulation parity, and NEVER silently change calculation behaviour in a structural refactor.** The same utils function runs in a consumer's unit test, backtest, paper, and live paths — never fork subtly different numeric behaviour per environment. A mechanical change that moves a metric, indicator value, or normalized number is a _behavioural_ change wearing a refactor's clothes: call it out, test it, treat it as consumer-visible. This is the utils form of the doctrine's "never silently change strategy behavior" rule and of the cross-lineage / no-alpha-drift discipline downstream — it does not license bypassing engine's shadow-first graduation for behaviour it feeds.
+10. **Avoid unnecessary abstraction; improve the surrounding architecture when you touch legacy; test the invariants.** Idiomatic TypeScript in the existing style — no custom monad frameworks, no `Result<Option<Either<…>>>`, no point-free theatre. Encode money-math / normalization invariants as fast deterministic tests, mutation-proven (revert the fix, watch the test go red). When you touch the fragile SDK type-gap surface in `src/alpaca/`, leave it better-typed, per the Ownership & Execution Doctrine above.
+
+### Self-Review (before declaring work complete)
+
+- **Determinism:** Could this calculation be a pure function of explicit inputs? Did I introduce a hidden clock, internal fetch, or global-config read?
+- **Boundary:** Are external effects isolated and normalized here — does any vendor error shape, id, unit, timestamp, or staleness quirk leak inward to consumers?
+- **Silent failure:** Did I add a swallowed catch, a `?? 0` on a measured quantity, or a default that turns absence into a tradable value? Does the `422 / 42210000` path stay first-class and terminal?
+- **Performance:** Did I add unnecessary mutation or unbenchmarked allocation to a hot numeric path? Did I benchmark a hot-path change?
+- **Parity & no drift:** Does the same function behave identically across a consumer's live / backtest / sim paths? Did I silently move a number a downstream decision depends on?
+- **Types & gates:** Strong types for money/risk/order concepts (no new `any`)? Then run `npm run build && npm run lint && npm test`, honour the SP2 sequencing and cross-lineage rules, and the publish workflow before any version bump.
+
 ## Backend-Legacy CRUD & Field Availability
 
 This package depends on `@adaptic/backend-legacy` for database CRUD operations (`adaptic.<model>.<op>()`). The fields available on returned objects are **curated via GQL inline comments** in `~/adapticai/backend-legacy/prisma/schema.prisma` — that file is the single source of truth.
