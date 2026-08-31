@@ -6,6 +6,64 @@ import {
 } from "./types";
 
 /**
+ * Round a PRICE-scale indicator output to a precision derived from its own
+ * magnitude, rather than a hardcoded 2 decimal places.
+ *
+ * A flat `toFixed(2)` silently destroys every sub-penny price — a $0.0003
+ * microcap's bands collapse to `0.00`, and a MACD histogram of a low-priced
+ * name rounds to nothing (F7.2). Precision must scale with the price: values at
+ * or above $1 keep the conventional 2dp, while sub-dollar values keep ~4
+ * significant figures so the number survives its own scale. Non-finite inputs
+ * pass through untouched — totality of the underlying value is the caller's
+ * responsibility, this helper only quantises.
+ *
+ * The `>= $1` branch delegates to `toFixed(2)` rather than re-deriving it as
+ * `Math.round(value * 100) / 100`. The two disagree wherever the intermediate
+ * `value * 100` rounds onto an exact `.5` that the decimal value sits just
+ * below (`1.045` → `1.05` vs `1.04`), which would make this helper shift
+ * ordinary dollar prices by a cent — a behaviour change well outside repairing
+ * sub-penny collapse. Delegating keeps the common case byte-identical to the
+ * historical output by construction, which matters because the same function
+ * computes indicators for unit tests, backtests, paper and live.
+ *
+ * @param value - A price-scale indicator output (band, EMA, MACD component).
+ * @returns The value rounded to a scale-appropriate precision.
+ */
+export function roundToPriceScale(value: number): number {
+  if (!Number.isFinite(value)) return value;
+  const abs = Math.abs(value);
+  if (abs === 0) return 0;
+  if (abs >= 1) return parseFloat(value.toFixed(2));
+  // Sub-dollar: decimals = leading zeros after the point + 4 significant figures,
+  // capped so the factor stays within safe-integer range.
+  const decimals = Math.min(12, Math.ceil(-Math.log10(abs)) + 4);
+  const factor = 10 ** decimals;
+  return Math.round(value * factor) / factor;
+}
+
+/**
+ * Relative Strength Index from average gain / average loss, total on the
+ * degenerate flat window.
+ *
+ * When a window has no losses the Wilder ratio `avgGain / avgLoss` is
+ * `+Infinity` (→ RSI 100); on a perfectly flat window it is `0 / 0 = NaN`,
+ * which the naive formula propagates straight into the output. A flat window
+ * carries no momentum, so its RSI is the neutral 50 — never NaN. This mirrors
+ * the engine's live RSI guards (a constant series scores neutral, an all-gains
+ * series scores 100).
+ *
+ * @param avgGain - Average gain over the period (>= 0).
+ * @param avgLoss - Average loss over the period (>= 0).
+ * @returns RSI in [0, 100]; 50 for a flat window, 100 for an all-gains window.
+ */
+function rsiFromAverages(avgGain: number, avgLoss: number): number {
+  if (avgLoss === 0) return avgGain === 0 ? 50 : 100;
+  const rs = avgGain / avgLoss;
+  const rsi = 100 - 100 / (1 + rs);
+  return Number.isFinite(rsi) ? rsi : 50;
+}
+
+/**
  * Calculates Bollinger Bands for a given set of price data.
  * Bollinger Bands consist of a middle band (SMA) and two outer bands
  * that are standard deviations away from the middle band.
@@ -49,9 +107,9 @@ export function calculateBollingerBands(
 
     result.push({
       date: priceData[i].date,
-      middle: parseFloat(sma.toFixed(2)),
-      upper: parseFloat(upperBand.toFixed(2)),
-      lower: parseFloat(lowerBand.toFixed(2)),
+      middle: roundToPriceScale(sma),
+      upper: roundToPriceScale(upperBand),
+      lower: roundToPriceScale(lowerBand),
       close: priceData[i].close,
     });
   }
@@ -106,11 +164,11 @@ export function calculateEMA(
   // Add first EMA(s)
   const firstEntry: EMAData = {
     date: priceData[Math.max(period, period2 || 0) - 1].date,
-    ema: parseFloat(prevEMA.toFixed(2)),
+    ema: roundToPriceScale(prevEMA),
     close: priceData[Math.max(period, period2 || 0) - 1].close,
   };
   if (period2) {
-    firstEntry.ema2 = parseFloat(prevEMA2!.toFixed(2));
+    firstEntry.ema2 = roundToPriceScale(prevEMA2!);
   }
   result.push(firstEntry);
 
@@ -122,7 +180,7 @@ export function calculateEMA(
 
     const entry: EMAData = {
       date: priceData[i].date,
-      ema: parseFloat(currentEMA.toFixed(2)),
+      ema: roundToPriceScale(currentEMA),
       close: currentClose,
     };
 
@@ -130,7 +188,7 @@ export function calculateEMA(
       const currentEMA2: number =
         (currentClose - prevEMA2!) * multiplier2 + prevEMA2!;
       prevEMA2 = currentEMA2;
-      entry.ema2 = parseFloat(currentEMA2.toFixed(2));
+      entry.ema2 = roundToPriceScale(currentEMA2);
     }
 
     result.push(entry);
@@ -246,7 +304,7 @@ export function calculateFibonacciLevels(
 
         levels.push({
           level,
-          price: parseFloat(price.toFixed(2)),
+          price: roundToPriceScale(price),
           type: "retracement",
         });
       });
@@ -262,7 +320,7 @@ export function calculateFibonacciLevels(
 
         levels.push({
           level,
-          price: parseFloat(price.toFixed(2)),
+          price: roundToPriceScale(price),
           type: "extension",
         });
       });
@@ -362,9 +420,9 @@ export function calculateMACD(
 
     result.push({
       date: emaLong[i].date, // Use emaLong's date for alignment
-      macd: parseFloat(macdValue.toFixed(2)),
-      signal: parseFloat(signalEMA.toFixed(2)),
-      histogram: parseFloat(hist.toFixed(2)),
+      macd: roundToPriceScale(macdValue),
+      signal: roundToPriceScale(signalEMA),
+      histogram: roundToPriceScale(hist),
       close: emaLong[i].close,
     });
   }
@@ -411,9 +469,9 @@ export function calculateRSI(
   avgGain = avgGain / period;
   avgLoss = avgLoss / period;
 
-  // Calculate RSI for the first period
-  let rs = avgGain / avgLoss;
-  let rsi = 100 - 100 / (1 + rs);
+  // Calculate RSI for the first period (total on a flat window — see
+  // rsiFromAverages: a constant series scores the neutral 50, never NaN).
+  let rsi = rsiFromAverages(avgGain, avgLoss);
 
   result.push({
     date: priceData[period].date,
@@ -431,8 +489,7 @@ export function calculateRSI(
     avgGain = (avgGain * (period - 1) + gain) / period;
     avgLoss = (avgLoss * (period - 1) + loss) / period;
 
-    rs = avgGain / avgLoss;
-    rsi = 100 - 100 / (1 + rs);
+    rsi = rsiFromAverages(avgGain, avgLoss);
 
     result.push({
       date: priceData[i].date,
@@ -465,6 +522,25 @@ export function calculateStochasticOscillator(
     smoothingFactor = 3,
   }: StochasticParams = {},
 ): StochData[] {
+  // Each period is a divisor (`kSum / min(len, smoothingFactor)`) and a slice
+  // width. A zero or fractional period therefore divides by zero or slices an
+  // empty window, producing NaN/Infinity %K and %D — an oscillator reading that
+  // is never true and never false. The periods are caller-supplied constants
+  // rather than market data, so an invalid one is a programming error and is
+  // reported as such, matching the ATR and volatility primitives.
+  if (
+    !Number.isInteger(lookbackPeriod) ||
+    lookbackPeriod < 1 ||
+    !Number.isInteger(signalPeriod) ||
+    signalPeriod < 1 ||
+    !Number.isInteger(smoothingFactor) ||
+    smoothingFactor < 1
+  ) {
+    throw new Error(
+      "calculateStochasticOscillator: lookbackPeriod, signalPeriod and smoothingFactor must be positive integers",
+    );
+  }
+
   if (priceData.length < lookbackPeriod) {
     logIfDebug(
       `Insufficient data for Stochastic Oscillator calculation: required periods: ${lookbackPeriod}, but only received ${priceData.length} periods of data`,
@@ -524,6 +600,69 @@ import {
 } from "./types";
 
 /**
+ * A price level candidate accumulated by the pivot scan, before nearby
+ * candidates are collapsed into a single reported level.
+ */
+interface PivotPoint {
+  /** The pivot's price. */
+  price: number;
+  /** How many pivots have merged into this candidate. */
+  count: number;
+  /** Total volume transacted across the merged pivots. */
+  volume: number;
+}
+
+/**
+ * Collapses a cluster of nearby pivots into one volume-weighted level, or
+ * reports that the cluster evidences no level at all.
+ *
+ * Both outputs are volume-weighted: the price is the volume-weighted mean of
+ * the cluster's pivots, and the strength is the pivot count weighted by each
+ * pivot's share of cluster volume. That weighting is undefined when the cluster
+ * transacted no volume — `0 / 0` makes both NaN. A NaN level is strictly worse
+ * than no level: every comparison against NaN is false, so a stop or target
+ * placed off one is silently never triggered, leaving the position unprotected
+ * while appearing protected.
+ *
+ * Zero cluster volume is a real market state rather than corrupt input — halted,
+ * pre-market-thin and synthetic warm-up bars all report it. A support or
+ * resistance level means price transacted enough there to turn the market, so a
+ * cluster with no volume has not evidenced one. `SupportResistanceLevel` types
+ * both fields as non-optional numbers, which leaves omitting the level as the
+ * only honest way to say so.
+ *
+ * @param cluster - The nearby pivots to collapse into a single level.
+ * @param currentPrice - The bar's close, which classifies the level's side.
+ * @returns The aggregated level, or null when the cluster evidences none.
+ */
+function aggregatePivotCluster(
+  cluster: readonly PivotPoint[],
+  currentPrice: number,
+): SupportResistanceLevel | null {
+  const totalVolume = cluster.reduce((sum, p) => sum + p.volume, 0);
+  // Negated `> 0` so NaN and negative totals are rejected alongside zero: no
+  // volume weighting survives any of them.
+  if (!(totalVolume > 0)) return null;
+
+  const avgPrice =
+    cluster.reduce((sum, p) => sum + p.price * p.volume, 0) / totalVolume;
+  const strength = cluster.reduce(
+    (sum, p) => sum + p.count * (p.volume / totalVolume),
+    0,
+  );
+  if (!Number.isFinite(avgPrice) || !Number.isFinite(strength)) return null;
+
+  return {
+    // The level is a price, so its precision follows the price's magnitude
+    // (F7.2). Strength is a count-weighted score rather than a price and keeps
+    // the conventional 2dp.
+    price: roundToPriceScale(avgPrice),
+    strength: parseFloat(strength.toFixed(2)),
+    type: avgPrice > currentPrice ? "resistance" : "support",
+  };
+}
+
+/**
  * Calculates support and resistance levels based on price data.
  * Support and resistance levels are price levels at which a stock tends to stop and reverse.
  *
@@ -543,16 +682,30 @@ export function calculateSupportAndResistance(
     const startIdx = Math.max(0, i - lookbackPeriod);
     const analysisWindow = priceData.slice(startIdx, i + 1);
 
-    const pivotPoints: { price: number; count: number; volume: number }[] = [];
+    const pivotPoints: PivotPoint[] = [];
 
     // **Compute Volatility Metrics**
     const priceChanges = analysisWindow
       .slice(1)
       .map((bar, idx) => Math.abs(bar.close - analysisWindow[idx].close));
+    // A single-bar window produces no price changes to average, and a
+    // non-positive reference close cannot scale one — `0 / 0` and `x / 0` make
+    // the relative volatility NaN or Infinity. Volatility is the sole input to
+    // both the pivot sensitivity and the level-grouping gap below, so a
+    // non-finite value silently disables every comparison that depends on it
+    // (each is false against NaN). Unmeasurable volatility resolves to zero,
+    // under which each pivot stands as its own level instead of being merged on
+    // a meaningless ratio.
+    const referenceClose = analysisWindow[0].close;
     const avgPriceChange =
-      priceChanges.reduce((sum, change) => sum + change, 0) /
-      priceChanges.length;
-    const volatility = avgPriceChange / analysisWindow[0].close; // Relative volatility
+      priceChanges.length > 0
+        ? priceChanges.reduce((sum, change) => sum + change, 0) /
+          priceChanges.length
+        : 0;
+    const volatility =
+      referenceClose > 0 && Number.isFinite(avgPriceChange)
+        ? avgPriceChange / referenceClose
+        : 0; // Relative volatility
 
     // **Adjust Sensitivity and minGapBetweenLevels Dynamically**
     const sensitivity = volatility * 2; // Adjust the multiplier as needed
@@ -564,8 +717,19 @@ export function calculateSupportAndResistance(
       const prevBar = analysisWindow[j - 1];
       const nextBar = analysisWindow[j + 1];
 
+      // A pivot is matched against existing candidates by a *relative* gap
+      // measured against its own price, so a non-positive reference price makes
+      // that ratio meaningless: zero divides to NaN or Infinity (which never
+      // compares below the sensitivity, so the pivot never merges), and a
+      // negative price inverts the comparison (so everything merges). A bar
+      // without a positive high or low carries no tradeable level either way.
+
       // Check for high pivot
-      if (curr.high > prevBar.high && curr.high > nextBar.high) {
+      if (
+        curr.high > 0 &&
+        curr.high > prevBar.high &&
+        curr.high > nextBar.high
+      ) {
         const existingPivot = pivotPoints.find(
           (p) => Math.abs(p.price - curr.high) / curr.high < sensitivity,
         );
@@ -578,7 +742,7 @@ export function calculateSupportAndResistance(
       }
 
       // Check for low pivot
-      if (curr.low < prevBar.low && curr.low < nextBar.low) {
+      if (curr.low > 0 && curr.low < prevBar.low && curr.low < nextBar.low) {
         const existingPivot = pivotPoints.find(
           (p) => Math.abs(p.price - curr.low) / curr.low < sensitivity,
         );
@@ -599,7 +763,7 @@ export function calculateSupportAndResistance(
     pivotPoints.sort((a, b) => a.price - b.price);
 
     // Group close pivots
-    let currentGroup: { price: number; count: number; volume: number }[] = [];
+    let currentGroup: PivotPoint[] = [];
     for (let j = 0; j < pivotPoints.length; j++) {
       if (currentGroup.length === 0) {
         currentGroup.push(pivotPoints[j]);
@@ -612,47 +776,16 @@ export function calculateSupportAndResistance(
           currentGroup.push(pivotPoints[j]);
         } else {
           // Process current group
-          if (currentGroup.length > 0) {
-            const totalVolume = currentGroup.reduce(
-              (sum, p) => sum + p.volume,
-              0,
-            );
-            const avgPrice =
-              currentGroup.reduce((sum, p) => sum + p.price * p.volume, 0) /
-              totalVolume;
-            const totalStrength = currentGroup.reduce(
-              (sum, p) => sum + p.count * (p.volume / totalVolume),
-              0,
-            );
-
-            levels.push({
-              price: parseFloat(avgPrice.toFixed(2)),
-              strength: parseFloat(totalStrength.toFixed(2)),
-              type: avgPrice > currentPrice ? "resistance" : "support",
-            });
-          }
+          const level = aggregatePivotCluster(currentGroup, currentPrice);
+          if (level) levels.push(level);
           currentGroup = [pivotPoints[j]];
         }
       }
     }
 
     // Process final group
-    if (currentGroup.length > 0) {
-      const totalVolume = currentGroup.reduce((sum, p) => sum + p.volume, 0);
-      const avgPrice =
-        currentGroup.reduce((sum, p) => sum + p.price * p.volume, 0) /
-        totalVolume;
-      const totalStrength = currentGroup.reduce(
-        (sum, p) => sum + p.count * (p.volume / totalVolume),
-        0,
-      );
-
-      levels.push({
-        price: parseFloat(avgPrice.toFixed(2)),
-        strength: parseFloat(totalStrength.toFixed(2)),
-        type: avgPrice > currentPrice ? "resistance" : "support",
-      });
-    }
+    const finalGroupLevel = aggregatePivotCluster(currentGroup, currentPrice);
+    if (finalGroupLevel) levels.push(finalGroupLevel);
 
     // Sort by strength and limit
     const finalLevels = levels

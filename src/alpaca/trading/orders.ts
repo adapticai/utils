@@ -4,7 +4,7 @@
  */
 import { createHash, randomUUID } from "node:crypto";
 import { AlpacaClient } from "../client";
-import { DuplicateClientOrderIdError } from "../../errors";
+import { DuplicateClientOrderIdError, enrichAlpacaError } from "../../errors";
 import { classifyRetryError } from "../../utils/retry";
 import { log as baseLog } from "../../logging";
 import { LogOptions } from "../../types/logging-types";
@@ -519,8 +519,11 @@ export async function createOrder(
       symbol,
       metadata: { params: submission },
     });
-    throw new Error(
-      `Failed to create ${type} order for ${symbol}: ${errorMessage}`,
+    throw enrichAlpacaError(
+      new Error(
+        `Failed to create ${type} order for ${symbol}: ${errorMessage}`,
+      ),
+      error,
     );
   }
 }
@@ -673,18 +676,24 @@ export async function cancelOrder(
           type: "warn",
         },
       );
-      throw new Error(`Order ${orderId} is not cancelable`);
+      throw enrichAlpacaError(
+        new Error(`Order ${orderId} is not cancelable`),
+        error,
+      );
     }
 
     if (errorMessage.includes("404") || errorMessage.includes("not found")) {
       log(`Order ${orderId} not found`, { type: "error" });
-      throw new Error(`Order ${orderId} not found`);
+      throw enrichAlpacaError(new Error(`Order ${orderId} not found`), error);
     }
 
     log(`Failed to cancel order ${orderId}: ${errorMessage}`, {
       type: "error",
     });
-    throw new Error(`Failed to cancel order ${orderId}: ${errorMessage}`);
+    throw enrichAlpacaError(
+      new Error(`Failed to cancel order ${orderId}: ${errorMessage}`),
+      error,
+    );
   }
 }
 
@@ -811,20 +820,26 @@ export async function replaceOrder(
       log(`Order ${orderId} cannot be replaced (may already be filled)`, {
         type: "error",
       });
-      throw new Error(
-        `Order ${orderId} cannot be replaced: order may already be filled or canceled`,
+      throw enrichAlpacaError(
+        new Error(
+          `Order ${orderId} cannot be replaced: order may already be filled or canceled`,
+        ),
+        error,
       );
     }
 
     if (errorMessage.includes("404")) {
       log(`Order ${orderId} not found`, { type: "error" });
-      throw new Error(`Order ${orderId} not found`);
+      throw enrichAlpacaError(new Error(`Order ${orderId} not found`), error);
     }
 
     log(`Failed to replace order ${orderId}: ${errorMessage}`, {
       type: "error",
     });
-    throw new Error(`Failed to replace order ${orderId}: ${errorMessage}`);
+    throw enrichAlpacaError(
+      new Error(`Failed to replace order ${orderId}: ${errorMessage}`),
+      error,
+    );
   }
 }
 

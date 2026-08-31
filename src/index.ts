@@ -30,11 +30,16 @@ export { getLogger, resetLogger, setLogger, type Logger } from "./logger";
 // Error utilities
 export {
   AdapticUtilsError,
+  type AlpacaBrokerErrorDetail,
   AlpacaApiError,
   AlphaVantageError,
   AuthenticationError,
   DataFormatError,
   DuplicateClientOrderIdError,
+  enrichAlpacaError,
+  extractAlpacaBrokerError,
+  getAlpacaBrokerErrorCode,
+  getAlpacaBrokerErrorDetail,
   HttpClientError,
   HttpServerError,
   MassiveApiError,

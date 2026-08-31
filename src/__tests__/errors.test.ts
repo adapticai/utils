@@ -1,10 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
   AdapticUtilsError,
+  type AlpacaBrokerErrorDetail,
   AlpacaApiError,
   AlphaVantageError,
   AuthenticationError,
   DataFormatError,
+  DuplicateClientOrderIdError,
+  enrichAlpacaError,
+  extractAlpacaBrokerError,
+  getAlpacaBrokerErrorCode,
+  getAlpacaBrokerErrorDetail,
   HttpClientError,
   HttpServerError,
   MassiveApiError,
@@ -14,6 +20,22 @@ import {
   ValidationError,
   WebSocketError,
 } from "../errors";
+
+/**
+ * Builds Alpaca's rejection in the SDK/axios error shape: the SDK sets
+ * `message` only to the bare status line, and puts the machine-readable reason
+ * (numeric `code` + human `message`) in `response.data`.
+ */
+function alpacaRejection(
+  statusCode: number,
+  code: number | string,
+  message: string,
+): Error {
+  return Object.assign(
+    new Error(`Request failed with status code ${statusCode}`),
+    { response: { status: statusCode, data: { code, message } } },
+  );
+}
 
 describe("AdapticUtilsError", () => {
   it("should create error with all properties", () => {
@@ -317,5 +339,140 @@ describe("Error hierarchy", () => {
 
     const uniqueNames = new Set(names);
     expect(uniqueNames.size).toBe(names.length);
+  });
+});
+
+describe("AlpacaApiError.brokerError (additive field)", () => {
+  it("is undefined for the existing (pre-enrichment) constructor call", () => {
+    // The load-bearing backward-compat guarantee: every existing construction
+    // that stops at `cause` still compiles and leaves the new field undefined.
+    const error = new AlpacaApiError("Alpaca error", "ALPACA_ERR", 400);
+    expect(error.brokerError).toBeUndefined();
+    expect(error.name).toBe("AlpacaApiError");
+    expect(error.statusCode).toBe(400);
+  });
+
+  it("carries the normalized broker detail when supplied", () => {
+    const detail: AlpacaBrokerErrorDetail = {
+      brokerCode: 42210000,
+      brokerMessage: "cannot replace order in pending_cancel status",
+      statusCode: 422,
+      raw: { code: 42210000 },
+    };
+    const error = new AlpacaApiError("m", "C", 422, undefined, detail);
+    expect(error.brokerError?.brokerCode).toBe(42210000);
+  });
+});
+
+describe("extractAlpacaBrokerError", () => {
+  it("reads the numeric code + message from an axios/SDK response.data", () => {
+    const detail = extractAlpacaBrokerError(
+      alpacaRejection(422, 42210000, "cannot replace order"),
+    );
+    expect(detail).toEqual({
+      brokerCode: 42210000,
+      brokerMessage: "cannot replace order",
+      statusCode: 422,
+      raw: { code: 42210000, message: "cannot replace order" },
+    });
+  });
+
+  it("walks the `cause` chain to find a wrapped SDK rejection", () => {
+    // The exact production shape: the wrapper throws its own Error and preserves
+    // the SDK rejection (with response.data) as `cause`.
+    const wrapper = new Error(
+      "Failed to update trailing stop abc: Request failed with status code 422",
+      { cause: alpacaRejection(422, 42210000, "cannot replace order") },
+    );
+    expect(extractAlpacaBrokerError(wrapper)?.brokerCode).toBe(42210000);
+  });
+
+  it("accepts a numeric-string code (40310000 as a string)", () => {
+    expect(
+      extractAlpacaBrokerError(
+        alpacaRejection(403, "40310000", "insufficient qty available"),
+      )?.brokerCode,
+    ).toBe(40310000);
+  });
+
+  it("parses a response.data left as an unparsed JSON string", () => {
+    const err = Object.assign(new Error("Request failed with status code 422"), {
+      response: {
+        status: 422,
+        data: JSON.stringify({ code: 42210000, message: "stale order" }),
+      },
+    });
+    expect(extractAlpacaBrokerError(err)?.brokerCode).toBe(42210000);
+  });
+
+  it("returns undefined for a plain Error with no broker payload (absence stays absent)", () => {
+    expect(extractAlpacaBrokerError(new Error("boom"))).toBeUndefined();
+    expect(extractAlpacaBrokerError(undefined)).toBeUndefined();
+    expect(extractAlpacaBrokerError("string error")).toBeUndefined();
+  });
+});
+
+describe("getAlpacaBrokerErrorCode / getAlpacaBrokerErrorDetail", () => {
+  it("returns the numeric code, or null when absent — never a fabricated 0", () => {
+    expect(
+      getAlpacaBrokerErrorCode(alpacaRejection(422, 42210000, "x")),
+    ).toBe(42210000);
+    expect(getAlpacaBrokerErrorCode(new Error("no payload"))).toBeNull();
+  });
+
+  it("returns the full detail or null", () => {
+    expect(
+      getAlpacaBrokerErrorDetail(alpacaRejection(403, 40310000, "insufficient")),
+    ).toMatchObject({ brokerCode: 40310000, statusCode: 403 });
+    expect(getAlpacaBrokerErrorDetail(new Error("plain"))).toBeNull();
+  });
+});
+
+describe("enrichAlpacaError (additive enrichment)", () => {
+  it("preserves message, name, and Error identity while attaching the broker code", () => {
+    const source = alpacaRejection(422, 42210000, "cannot replace order");
+    const message = "Failed to update trailing stop abc: Request failed with status code 422";
+    const thrown = enrichAlpacaError(new Error(message), source);
+
+    // Purely additive: every existing consumer reads the identical value.
+    expect(thrown.message).toBe(message);
+    expect(thrown.name).toBe("Error");
+    expect(thrown).toBeInstanceOf(Error);
+    // New consumers get the structured code + the preserved raw rejection.
+    expect(thrown.brokerError?.brokerCode).toBe(42210000);
+    expect(getAlpacaBrokerErrorCode(thrown)).toBe(42210000);
+    expect(thrown.cause).toBe(source);
+  });
+
+  it("returns the same target reference (enrichment is in-place)", () => {
+    const target = new Error("x");
+    expect(enrichAlpacaError(target, alpacaRejection(422, 1, "y"))).toBe(target);
+  });
+
+  it("does not overwrite a cause that is already set", () => {
+    const original = new Error("original cause");
+    const target = new Error("wrap", { cause: original });
+    enrichAlpacaError(target, alpacaRejection(422, 42210000, "z"));
+    expect(target.cause).toBe(original);
+    // The broker detail is still surfaced from the enrichment source.
+    expect(getAlpacaBrokerErrorCode(target)).toBe(42210000);
+  });
+
+  it("adds no brokerError when the source carries no broker payload", () => {
+    const thrown = enrichAlpacaError(new Error("wrap"), new Error("plain"));
+    expect(thrown.brokerError).toBeUndefined();
+  });
+});
+
+describe("DuplicateClientOrderIdError broker payload", () => {
+  it("populates brokerError from its cause (the original 422 rejection)", () => {
+    const cause = alpacaRejection(422, 42210000, "client_order_id must be unique");
+    const error = new DuplicateClientOrderIdError("dup", "coid-1", true, cause);
+    expect(error.brokerError?.brokerCode).toBe(42210000);
+    expect(error.statusCode).toBe(422);
+    // Existing shape is unchanged.
+    expect(error.name).toBe("DuplicateClientOrderIdError");
+    expect(error.clientOrderId).toBe("coid-1");
+    expect(error.cause).toBe(cause);
   });
 });

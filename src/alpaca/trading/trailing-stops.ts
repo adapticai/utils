@@ -12,6 +12,7 @@
  * - Support for both percentage-based and dollar-based trailing
  */
 import { AlpacaClient } from "../client";
+import { enrichAlpacaError } from "../../errors";
 import { log as baseLog } from "../../logging";
 import { LogOptions } from "../../types/logging-types";
 import {
@@ -234,8 +235,11 @@ export async function createTrailingStop(
     log(`Trailing stop creation failed for ${params.symbol}: ${err.message}`, {
       type: "error",
     });
-    throw new Error(
-      `Failed to create trailing stop for ${params.symbol}: ${err.message}`,
+    throw enrichAlpacaError(
+      new Error(
+        `Failed to create trailing stop for ${params.symbol}: ${err.message}`,
+      ),
+      error,
     );
   }
 }
@@ -322,8 +326,13 @@ export async function updateTrailingStop(
     log(`Trailing stop update failed for ${orderId}: ${err.message}`, {
       type: "error",
     });
-    throw new Error(
-      `Failed to update trailing stop ${orderId}: ${err.message}`,
+    // Preserve Alpaca's `response.data` (numeric code `42210000` etc.) that the
+    // SDK reduces to a bare "status code NNN" message. This is THE trailing-stop
+    // modify path; dropping the code here left the consumer unable to tell a
+    // stale-order reject from a benign race, blind-failing the profit lock.
+    throw enrichAlpacaError(
+      new Error(`Failed to update trailing stop ${orderId}: ${err.message}`),
+      error,
     );
   }
 }
@@ -379,8 +388,11 @@ export async function getTrailingStopHWM(
     log(`Failed to get trailing stop HWM for ${orderId}: ${err.message}`, {
       type: "error",
     });
-    throw new Error(
-      `Failed to get trailing stop HWM for ${orderId}: ${err.message}`,
+    throw enrichAlpacaError(
+      new Error(
+        `Failed to get trailing stop HWM for ${orderId}: ${err.message}`,
+      ),
+      error,
     );
   }
 }
@@ -419,16 +431,20 @@ export async function cancelTrailingStop(
           type: "warn",
         },
       );
-      throw new Error(
-        `Trailing stop ${orderId} is not cancelable: order may already be filled or canceled`,
+      throw enrichAlpacaError(
+        new Error(
+          `Trailing stop ${orderId} is not cancelable: order may already be filled or canceled`,
+        ),
+        error,
       );
     }
 
     log(`Failed to cancel trailing stop ${orderId}: ${err.message}`, {
       type: "error",
     });
-    throw new Error(
-      `Failed to cancel trailing stop ${orderId}: ${err.message}`,
+    throw enrichAlpacaError(
+      new Error(`Failed to cancel trailing stop ${orderId}: ${err.message}`),
+      error,
     );
   }
 }
@@ -626,7 +642,10 @@ export async function getOpenTrailingStops(
   } catch (error) {
     const err = error as Error;
     log(`Failed to get open trailing stops: ${err.message}`, { type: "error" });
-    throw new Error(`Failed to get open trailing stops: ${err.message}`);
+    throw enrichAlpacaError(
+      new Error(`Failed to get open trailing stops: ${err.message}`),
+      error,
+    );
   }
 }
 

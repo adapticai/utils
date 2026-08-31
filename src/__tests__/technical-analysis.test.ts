@@ -483,10 +483,11 @@ describe("edge cases and data validation", () => {
     expect(emaResult.every((entry) => entry.ema === 100)).toBe(true);
 
     const rsiResult = calculateRSI(constantPriceData, { period: 14 });
-    // RSI should be NaN or 0 for constant prices (no gains or losses)
-    expect(
-      rsiResult.every((entry) => entry.rsi === 0 || isNaN(entry.rsi)),
-    ).toBe(true);
+    // A constant series has no momentum, so RSI is the neutral 50 — and, above
+    // all, it must be FINITE. The prior assertion tolerated `isNaN(entry.rsi)`,
+    // codifying a real 0/0 divide as acceptable output (fabricated assurance).
+    expect(rsiResult.every((entry) => Number.isFinite(entry.rsi))).toBe(true);
+    expect(rsiResult.every((entry) => entry.rsi === 50)).toBe(true);
   });
 
   it("should handle very small price changes", () => {

@@ -30,6 +30,39 @@ export class AdapticUtilsError extends Error {
 }
 
 /**
+ * Normalized Alpaca broker-rejection detail, extracted once at the vendor
+ * boundary from the SDK/axios `error.response.data` payload.
+ *
+ * Alpaca reports the machine-readable reason for a rejection in the HTTP
+ * response body — a numeric `code` (e.g. `42210000` "cannot replace order in
+ * pending_cancel status", `40310000` "insufficient qty available for order")
+ * and a human `message` — while the SDK's own `Error.message` is only
+ * "Request failed with status code NNN". Surfacing that body as a typed field
+ * is the vendor-boundary contract (utils engineering rule 2): downstream
+ * consumers branch on {@link brokerCode} instead of string-matching a
+ * flattened message, and the `422/42210000` stale-order reject becomes a
+ * typed, terminal outcome rather than a leaked, lossy quirk.
+ */
+export interface AlpacaBrokerErrorDetail {
+  /**
+   * Alpaca's machine-readable numeric error code from the response body, or
+   * `null` when the body carried no numeric code. Never fabricated — an absent
+   * code stays `null`, it never resolves to `0` or a guessed value.
+   */
+  readonly brokerCode: number | null;
+  /** Alpaca's human-readable reason from the response body, or `null` when absent. */
+  readonly brokerMessage: string | null;
+  /** The HTTP status the rejection was carried on, or `null` when unknown. */
+  readonly statusCode: number | null;
+  /**
+   * The raw vendor payload (`error.response.data`) exactly as received,
+   * preserved verbatim for diagnostics and forward-compatibility with codes a
+   * given release does not yet enumerate.
+   */
+  readonly raw: unknown;
+}
+
+/**
  * Alpaca API specific errors
  * Handles all errors from Alpaca trading and market data APIs
  */
@@ -39,6 +72,13 @@ export class AlpacaApiError extends AdapticUtilsError {
     code: string,
     public readonly statusCode?: number,
     cause?: unknown,
+    /**
+     * Normalized Alpaca broker-rejection detail (numeric code + message + raw
+     * body), when the underlying rejection carried one. Additive and optional:
+     * synthetic errors and non-broker failures omit it, and every existing
+     * consumer of `message`/`code`/`statusCode`/`cause` is unaffected.
+     */
+    public readonly brokerError?: AlpacaBrokerErrorDetail,
   ) {
     // Rate limit (429) and server errors (5xx) are retryable
     const isRetryable =
@@ -319,6 +359,211 @@ export class DuplicateClientOrderIdError extends AlpacaApiError {
     public readonly wasDerived: boolean,
     cause?: unknown,
   ) {
-    super(message, "DUPLICATE_CLIENT_ORDER_ID", 422, cause);
+    // Carry the normalized broker payload forward from the original rejection
+    // (the `cause`) so a consumer can read the numeric code without re-parsing.
+    super(
+      message,
+      "DUPLICATE_CLIENT_ORDER_ID",
+      422,
+      cause,
+      extractAlpacaBrokerError(cause),
+    );
   }
+}
+
+/** Max depth walked along the `error.cause` chain when locating a broker payload. */
+const MAX_BROKER_ERROR_CAUSE_DEPTH = 6;
+
+/**
+ * Narrows an unknown value to an index-signature record so nested properties
+ * can be probed without an unsafe cast.
+ * @param value - The value to test.
+ * @returns true when the value is a non-null object.
+ */
+function isBrokerErrorRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+/**
+ * Reads a finite number from an unknown value, accepting Alpaca's numeric
+ * `code` whether it arrives as a JSON number or a numeric string.
+ * @param value - The candidate value.
+ * @returns The number when finite, otherwise null.
+ */
+function asBrokerCode(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+/**
+ * Reads the normalized broker detail from a SINGLE error-like node, without
+ * walking its `cause` chain. Recognizes three carriers: an
+ * {@link AlpacaBrokerErrorDetail} already attached as `brokerError`, an
+ * axios/SDK-shaped `response.data` object, and a `response.data` left as an
+ * unparsed JSON string. Returns `undefined` when the node carries no broker
+ * payload, so absence is never converted into a fabricated code.
+ *
+ * @param node - The candidate error-like value.
+ * @returns The normalized detail, or undefined.
+ */
+function readBrokerDetailFromNode(
+  node: unknown,
+): AlpacaBrokerErrorDetail | undefined {
+  if (!isBrokerErrorRecord(node)) {
+    return undefined;
+  }
+
+  // Already normalized and attached by this module (e.g. AlpacaApiError.brokerError
+  // or a value enriched via enrichAlpacaError).
+  const attached = node.brokerError;
+  if (isBrokerErrorRecord(attached) && "brokerCode" in attached) {
+    return {
+      brokerCode: asBrokerCode(attached.brokerCode),
+      brokerMessage:
+        typeof attached.brokerMessage === "string"
+          ? attached.brokerMessage
+          : null,
+      statusCode: asBrokerCode(attached.statusCode),
+      raw: attached.raw,
+    };
+  }
+
+  const response = node.response;
+  if (!isBrokerErrorRecord(response)) {
+    return undefined;
+  }
+  const statusCode = asBrokerCode(response.status);
+
+  // Keep the raw body in its own const so the string narrowing survives the
+  // JSON.parse (a reassigned `let` would widen back to `unknown` in the catch).
+  const rawData: unknown = response.data;
+  let parsed: unknown = rawData;
+  if (typeof rawData === "string") {
+    try {
+      parsed = JSON.parse(rawData) as unknown;
+    } catch {
+      // A non-JSON string body carries a human reason but no structured code.
+      return { brokerCode: null, brokerMessage: rawData, statusCode, raw: rawData };
+    }
+  }
+  if (!isBrokerErrorRecord(parsed)) {
+    return undefined;
+  }
+
+  const brokerCode = asBrokerCode(parsed.code);
+  const brokerMessage =
+    typeof parsed.message === "string" ? parsed.message : null;
+  if (brokerCode === null && brokerMessage === null) {
+    return undefined;
+  }
+  return { brokerCode, brokerMessage, statusCode, raw: rawData };
+}
+
+/**
+ * Extracts the normalized {@link AlpacaBrokerErrorDetail} from a thrown Alpaca
+ * SDK/axios error, reading the vendor payload at `error.response.data` and,
+ * failing that, walking the `error.cause` chain (the raw SDK error is preserved
+ * there once a wrapper has re-thrown). Returns `undefined` when no broker
+ * payload is present anywhere on the chain.
+ *
+ * Pure and outcome-independent: derived solely from Alpaca's documented error
+ * contract, with zero reference to realized P&L, fills, or account state.
+ *
+ * @param error - The thrown value.
+ * @returns The normalized broker detail, or undefined when none is present.
+ */
+export function extractAlpacaBrokerError(
+  error: unknown,
+): AlpacaBrokerErrorDetail | undefined {
+  let current: unknown = error;
+  for (
+    let depth = 0;
+    depth < MAX_BROKER_ERROR_CAUSE_DEPTH && current != null;
+    depth++
+  ) {
+    const detail = readBrokerDetailFromNode(current);
+    if (detail !== undefined) {
+      return detail;
+    }
+    if (!isBrokerErrorRecord(current)) {
+      break;
+    }
+    current = current.cause;
+  }
+  return undefined;
+}
+
+/**
+ * Returns the normalized {@link AlpacaBrokerErrorDetail} for a thrown error, or
+ * `null` when the error carries no Alpaca broker payload. The typed
+ * vendor-boundary replacement for reaching into `err.response.data` downstream.
+ *
+ * @param error - The thrown value.
+ * @returns The normalized detail, or null.
+ */
+export function getAlpacaBrokerErrorDetail(
+  error: unknown,
+): AlpacaBrokerErrorDetail | null {
+  return extractAlpacaBrokerError(error) ?? null;
+}
+
+/**
+ * Returns Alpaca's machine-readable numeric broker error code from a thrown
+ * error (walking the `cause` chain), or `null` when absent. The typed
+ * replacement for `err.message.includes("42210000")`:
+ *
+ * ```typescript
+ * if (getAlpacaBrokerErrorCode(err) === 42210000) { ... } // stale-order reject
+ * ```
+ *
+ * @param error - The thrown value.
+ * @returns The numeric broker code, or null.
+ */
+export function getAlpacaBrokerErrorCode(error: unknown): number | null {
+  return extractAlpacaBrokerError(error)?.brokerCode ?? null;
+}
+
+/**
+ * Additively enriches a thrown error with the normalized Alpaca broker detail
+ * extracted from `source` (the original SDK/axios rejection), WITHOUT changing
+ * the target's `message`, `name`, or prototype. It:
+ *
+ *  - sets `target.cause = source` when the target has no cause yet, so the raw
+ *    rejection (and its `response.data`) is never lost down the wrapper chain;
+ *  - attaches the normalized {@link AlpacaBrokerErrorDetail} as
+ *    `target.brokerError` when `source` carried a broker payload.
+ *
+ * Purely additive by construction: a caller writes
+ * `throw enrichAlpacaError(new Error(msg), error)` and every consumer that read
+ * `error.message` or `error instanceof Error` before reads the identical value
+ * after, while new consumers can call {@link getAlpacaBrokerErrorCode}. This is
+ * the restoration for the dropped-`response.data` defect (Alpaca `42210000` /
+ * `40310000` reaching consumers only as a lossy "status code NNN" string).
+ *
+ * @param target - The wrapper error about to be thrown.
+ * @param source - The original rejection to normalize and preserve.
+ * @returns The same `target`, typed to expose the optional `brokerError`.
+ */
+export function enrichAlpacaError<E extends Error>(
+  target: E,
+  source: unknown,
+): E & { brokerError?: AlpacaBrokerErrorDetail } {
+  const enriched = target as E & {
+    brokerError?: AlpacaBrokerErrorDetail;
+    cause?: unknown;
+  };
+  if (enriched.cause === undefined && source !== undefined) {
+    enriched.cause = source;
+  }
+  const detail = extractAlpacaBrokerError(source);
+  if (detail !== undefined) {
+    enriched.brokerError = detail;
+  }
+  return enriched;
 }
