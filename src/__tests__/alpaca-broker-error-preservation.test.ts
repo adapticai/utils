@@ -21,7 +21,7 @@ import { describe, it, expect, vi } from "vitest";
 vi.mock("../logging", () => ({ log: vi.fn() }));
 
 import { updateTrailingStop } from "../alpaca/trading/trailing-stops";
-import { replaceOrder } from "../alpaca/trading/orders";
+import { getOrder, getOrders, replaceOrder } from "../alpaca/trading/orders";
 import { getAlpacaBrokerErrorCode } from "../errors";
 import { AlpacaClient } from "../alpaca/client";
 import { AlpacaOrder } from "../types/alpaca-types";
@@ -90,12 +90,22 @@ describe("updateTrailingStop broker-code preservation (the 08-20 site)", () => {
     expect(getAlpacaBrokerErrorCode(thrown)).toBe(42210000);
   });
 
-  it("is a strict no-op on the success path (returns the replacement order)", async () => {
-    const client = makeClient(REPLACEMENT_ORDER);
+  it("is a strict no-op on the success path — one SDK call, exact order returned, nothing enriched", async () => {
+    const replaceSpy = vi.fn().mockResolvedValue(REPLACEMENT_ORDER);
+    const client = {
+      getSDK: () => ({ replaceOrder: replaceSpy }),
+      executeWithRateLimit: <T>(op: () => Promise<T>): Promise<T> => op(),
+    } as unknown as AlpacaClient;
+
     const result = await updateTrailingStop(client, "order-abc", {
       trailPercent: 1.5,
     });
+
     expect(result).toBe(REPLACEMENT_ORDER);
+    expect(replaceSpy).toHaveBeenCalledTimes(1);
+    // Enrichment lives only in catch: the success return is not decorated.
+    expect("brokerError" in (result as object)).toBe(false);
+    expect("response" in (result as object)).toBe(false);
   });
 });
 
@@ -118,9 +128,74 @@ describe("replaceOrder broker-code preservation", () => {
     expect(getAlpacaBrokerErrorCode(thrown)).toBe(42210000);
   });
 
-  it("is a strict no-op on the success path (returns the replacement order)", async () => {
-    const client = makeClient(REPLACEMENT_ORDER);
+  it("is a strict no-op on the success path — one SDK call, exact order returned, nothing enriched", async () => {
+    const replaceSpy = vi.fn().mockResolvedValue(REPLACEMENT_ORDER);
+    const client = {
+      getSDK: () => ({ replaceOrder: replaceSpy }),
+      executeWithRateLimit: <T>(op: () => Promise<T>): Promise<T> => op(),
+    } as unknown as AlpacaClient;
+
     const result = await replaceOrder(client, "order-xyz", { trail: "1.5" });
+
     expect(result).toBe(REPLACEMENT_ORDER);
+    expect(replaceSpy).toHaveBeenCalledTimes(1);
+    expect("brokerError" in (result as object)).toBe(false);
+    expect("response" in (result as object)).toBe(false);
+  });
+});
+
+/**
+ * Builds a client whose SDK method `name` rejects with `error`, so the read
+ * wrappers' catch blocks can be exercised directly. `executeWithRateLimit` runs
+ * the operation with no retry semantics of its own.
+ */
+function makeRejectingClient(name: string, error: Error): AlpacaClient {
+  const sdk = { [name]: (): Promise<never> => Promise.reject(error) };
+  return {
+    getSDK: () => sdk,
+    executeWithRateLimit: <T>(operation: () => Promise<T>): Promise<T> =>
+      operation(),
+  } as unknown as AlpacaClient;
+}
+
+/**
+ * The read wrappers (getOrder / getOrders) also re-threw a fresh Error that
+ * dropped `response.data`. These have live callers (getOrder ←
+ * name-concentration-cap-stop-release-exec; getOrders ← the app account
+ * context) and so must preserve the broker code the same way the mutating
+ * wrappers do. The class `makeRequest` fetch seam and the legacy fetch seam are
+ * covered in alpaca-trading-api.test.ts and alpaca-functions.test.ts.
+ */
+describe("read-wrapper broker-code preservation (getOrder / getOrders)", () => {
+  it("getOrder preserves 42210000; message byte-identical", async () => {
+    const client = makeRejectingClient("getOrder", staleOrderReject());
+
+    const thrown = await getOrder(client, "order-abc").then(
+      () => {
+        throw new Error("expected getOrder to reject");
+      },
+      (e: unknown) => e as Error,
+    );
+
+    expect(thrown.message).toBe(
+      "Failed to fetch order order-abc: Request failed with status code 422",
+    );
+    expect(getAlpacaBrokerErrorCode(thrown)).toBe(42210000);
+  });
+
+  it("getOrders preserves 42210000; message byte-identical", async () => {
+    const client = makeRejectingClient("getOrders", staleOrderReject());
+
+    const thrown = await getOrders(client, { status: "open" }).then(
+      () => {
+        throw new Error("expected getOrders to reject");
+      },
+      (e: unknown) => e as Error,
+    );
+
+    expect(thrown.message).toBe(
+      "Failed to fetch orders: Request failed with status code 422",
+    );
+    expect(getAlpacaBrokerErrorCode(thrown)).toBe(42210000);
   });
 });

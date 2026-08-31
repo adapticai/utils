@@ -12,7 +12,7 @@
  * - Support for both percentage-based and dollar-based trailing
  */
 import { AlpacaClient } from "../client";
-import { enrichAlpacaError } from "../../errors";
+import { enrichAlpacaError, getAlpacaBrokerErrorCode } from "../../errors";
 import { log as baseLog } from "../../logging";
 import { LogOptions } from "../../types/logging-types";
 import {
@@ -517,7 +517,11 @@ export async function createPortfolioTrailingStops(
       { type: "debug" },
     );
 
-    const errors: Array<{ symbol: string; error: string }> = [];
+    const errors: Array<{
+      symbol: string;
+      error: string;
+      brokerCode: number | null;
+    }> = [];
 
     for (const position of positions) {
       const symbol = position.symbol.toUpperCase();
@@ -553,9 +557,14 @@ export async function createPortfolioTrailingStops(
         results.set(symbol, order);
       } catch (err) {
         const errorMessage = (err as Error).message;
-        errors.push({ symbol, error: errorMessage });
+        // Preserve the broker's numeric code (e.g. 42210000) rather than
+        // reducing the swallowed per-item failure to its flattened message —
+        // this loop only logs failures, so the log is the preservation target.
+        const brokerCode = getAlpacaBrokerErrorCode(err);
+        errors.push({ symbol, error: errorMessage, brokerCode });
         log(`Failed to create trailing stop for ${symbol}: ${errorMessage}`, {
           type: "error",
+          metadata: { brokerCode },
         });
       }
     }
@@ -572,7 +581,12 @@ export async function createPortfolioTrailingStops(
 
     if (errors.length > 0) {
       log(
-        `Failed symbols: ${errors.map((e) => `${e.symbol} (${e.error})`).join(", ")}`,
+        `Failed symbols: ${errors
+          .map(
+            (e) =>
+              `${e.symbol} (${e.error}${e.brokerCode !== null ? `, code ${e.brokerCode}` : ""})`,
+          )
+          .join(", ")}`,
         {
           type: "warn",
         },
@@ -585,8 +599,9 @@ export async function createPortfolioTrailingStops(
     log(`Failed to create portfolio trailing stops: ${err.message}`, {
       type: "error",
     });
-    throw new Error(
-      `Failed to create portfolio trailing stops: ${err.message}`,
+    throw enrichAlpacaError(
+      new Error(`Failed to create portfolio trailing stops: ${err.message}`),
+      error,
     );
   }
 }
@@ -703,7 +718,12 @@ export async function cancelTrailingStopsForSymbol(
       await cancelTrailingStop(client, order.id);
       canceledCount++;
     } catch (err) {
-      errors.push(`${order.id}: ${(err as Error).message}`);
+      // Keep the broker's numeric code alongside the message so the swallowed
+      // per-item cancel failure stays diagnosable in the summary log.
+      const brokerCode = getAlpacaBrokerErrorCode(err);
+      errors.push(
+        `${order.id}: ${(err as Error).message}${brokerCode !== null ? ` (code ${brokerCode})` : ""}`,
+      );
     }
   }
 

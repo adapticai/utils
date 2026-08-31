@@ -30,7 +30,10 @@ import {
   type IdempotentCreateOrderParams,
 } from "../alpaca/trading/orders";
 import { withRetry } from "../utils/retry";
-import { DuplicateClientOrderIdError } from "../errors";
+import {
+  DuplicateClientOrderIdError,
+  getAlpacaBrokerErrorCode,
+} from "../errors";
 import { AlpacaClient } from "../alpaca/client";
 import { AlpacaOrder, CreateOrderParams } from "../types/alpaca-types";
 
@@ -374,19 +377,34 @@ describe("createOrder — keyed submissions", () => {
     expect(broker.accepted.size).toBe(1);
   });
 
-  it("fails closed, without re-submitting, when the duplicate lookup fails", async () => {
+  it("fails closed when the duplicate lookup fails, preserving the ORIGINAL 422 code (not the lookup failure's)", async () => {
     const client = makeClient(broker);
     await createOrder(client, { ...BASE_PARAMS, idempotencyKey: "trade-dup-2" });
+    // The lookup fails with a 503 that carries NO broker code; the original
+    // duplicate rejection (42210000) is the payload that must survive.
     broker.lookupFailure = Object.assign(
       new Error("Request failed with status code 503"),
       { response: { status: 503, data: { message: "upstream unavailable" } } },
     );
     const submissionsBefore = broker.submissions.length;
 
-    await expect(
-      createOrder(client, { ...BASE_PARAMS, idempotencyKey: "trade-dup-2" }),
-    ).rejects.toBeInstanceOf(DuplicateClientOrderIdError);
+    const thrown = await createOrder(client, {
+      ...BASE_PARAMS,
+      idempotencyKey: "trade-dup-2",
+    }).then(
+      () => {
+        throw new Error("expected createOrder to reject");
+      },
+      (e: unknown) => e as Error,
+    );
 
+    expect(thrown).toBeInstanceOf(DuplicateClientOrderIdError);
+    // The cause must not be dropped: the numeric code is the duplicate 422's,
+    // not the code-less 503 lookup failure's.
+    expect(getAlpacaBrokerErrorCode(thrown)).toBe(42210000);
+    expect((thrown as DuplicateClientOrderIdError).brokerError?.brokerCode).toBe(
+      42210000,
+    );
     expect(broker.accepted.size).toBe(1);
     expect(broker.submissions.length).toBe(submissionsBefore + 1);
   });

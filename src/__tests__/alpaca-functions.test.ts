@@ -49,6 +49,7 @@ import {
   getAsset,
   cleanContent,
 } from "../alpaca/legacy";
+import { getAlpacaBrokerErrorCode, getAlpacaBrokerErrorDetail } from "../errors";
 import { AlpacaAuth } from "../types/alpaca-types";
 
 const testAuth: AlpacaAuth = {
@@ -137,23 +138,38 @@ describe("createOrder", () => {
     expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 
-  it("should throw on API error", async () => {
+  it("should throw on API error, preserving the broker code with a byte-identical message (legacy fetch seam)", async () => {
+    // A coded 422 body: the legacy createOrder now throws via alpacaHttpError, so
+    // the numeric code rides along on `.response` while the thrown message stays
+    // byte-identical (existing "422" string-matching consumers are unaffected).
+    const body = JSON.stringify({
+      code: 40310000,
+      message: "insufficient buying power",
+    });
     mockFetch.mockResolvedValueOnce({
       ok: false,
       status: 422,
       statusText: "Unprocessable Entity",
-      text: () => Promise.resolve("Insufficient buying power"),
+      text: () => Promise.resolve(body),
     });
 
-    await expect(
-      createOrder(testAuth, {
-        symbol: "AAPL",
-        qty: "10",
-        side: "buy",
-        type: "market",
-        time_in_force: "day",
-      }),
-    ).rejects.toThrow("Failed to create order");
+    const thrown = await createOrder(testAuth, {
+      symbol: "AAPL",
+      qty: "10",
+      side: "buy",
+      type: "market",
+      time_in_force: "day",
+    }).then(
+      () => {
+        throw new Error("expected createOrder to reject");
+      },
+      (e: unknown) => e as Error,
+    );
+
+    expect(thrown.message).toBe(
+      `Failed to create order: 422 Unprocessable Entity ${body}`,
+    );
+    expect(getAlpacaBrokerErrorCode(thrown)).toBe(40310000);
   });
 });
 
@@ -189,7 +205,10 @@ describe("getOrders", () => {
     expect(result[0].id).toBe("order-1");
   });
 
-  it("should throw on API error", async () => {
+  it("should throw on API error, preserving the HTTP status with a byte-identical message (legacy fetch seam)", async () => {
+    // A code-less auth body carries no numeric code, but the legacy getOrders now
+    // throws via alpacaHttpError so the KNOWN 401 survives on `.response` (a status
+    // is itself signal); the thrown message stays byte-identical.
     mockFetch.mockResolvedValueOnce({
       ok: false,
       status: 401,
@@ -197,7 +216,18 @@ describe("getOrders", () => {
       text: () => Promise.resolve("Invalid API key"),
     });
 
-    await expect(getOrders(testAuth)).rejects.toThrow("Failed to get orders");
+    const thrown = await getOrders(testAuth).then(
+      () => {
+        throw new Error("expected getOrders to reject");
+      },
+      (e: unknown) => e as Error,
+    );
+
+    expect(thrown.message).toBe(
+      "Failed to get orders: 401 Unauthorized Invalid API key",
+    );
+    expect(getAlpacaBrokerErrorDetail(thrown)?.statusCode).toBe(401);
+    expect(getAlpacaBrokerErrorCode(thrown)).toBeNull(); // code never fabricated
   });
 });
 
@@ -246,7 +276,10 @@ describe("cancelOrder", () => {
     expect(result.message).toContain("Order not found");
   });
 
-  it("should throw on non-404 errors", async () => {
+  it("should throw on non-404 errors, preserving the HTTP status with a byte-identical message (legacy fetch seam)", async () => {
+    // The legacy cancelOrder now throws via alpacaHttpError on non-404 failures,
+    // so the KNOWN 500 survives on `.response` while the message stays
+    // byte-identical (the 404 branch keeps returning a soft failure, unchanged).
     mockFetch.mockResolvedValueOnce({
       ok: false,
       status: 500,
@@ -254,9 +287,17 @@ describe("cancelOrder", () => {
       text: () => Promise.resolve("Server error"),
     });
 
-    await expect(cancelOrder(testAuth, "order-123")).rejects.toThrow(
-      "Failed to cancel order",
+    const thrown = await cancelOrder(testAuth, "order-123").then(
+      () => {
+        throw new Error("expected cancelOrder to reject");
+      },
+      (e: unknown) => e as Error,
     );
+
+    expect(thrown.message).toBe(
+      "Failed to cancel order: 500 Internal Server Error Server error",
+    );
+    expect(getAlpacaBrokerErrorDetail(thrown)?.statusCode).toBe(500);
   });
 });
 
@@ -298,6 +339,34 @@ describe("replaceOrder", () => {
 
     const result = await replaceOrder(testAuth, "order-123", { qty: "20" });
     expect(result.id).toBe("order-123");
+  });
+
+  it("preserves the broker code on a 422 reject via .response; message byte-identical (legacy fetch seam)", async () => {
+    // `alpaca.orders.replace` is a raw-fetch seam; a plain Error dropped the
+    // broker's response.data. The message is preserved verbatim (existing "422"
+    // string-matching consumers unaffected) and the numeric code rides along.
+    const body = JSON.stringify({
+      code: 42210000,
+      message: "cannot replace order in pending_cancel status",
+    });
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 422,
+      statusText: "Unprocessable Entity",
+      text: () => Promise.resolve(body),
+    });
+
+    const thrown = await replaceOrder(testAuth, "order-123", { qty: "20" }).then(
+      () => {
+        throw new Error("expected replaceOrder to reject");
+      },
+      (e: unknown) => e as Error,
+    );
+
+    expect(thrown.message).toBe(
+      `Failed to replace order: 422 Unprocessable Entity ${body}`,
+    );
+    expect(getAlpacaBrokerErrorCode(thrown)).toBe(42210000);
   });
 });
 

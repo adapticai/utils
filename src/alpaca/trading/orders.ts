@@ -345,11 +345,19 @@ async function resolveDuplicateSubmission(
       `Duplicate-order lookup failed for ${clientOrderId}; failing closed (no resubmit): ${reason}`,
       { type: "error", symbol, metadata: { clientOrderId } },
     );
+    // The typed error represents the ORIGINAL duplicate rejection, so its broker
+    // payload must come from `cause` (the 422), not from the lookup failure.
+    // Chain the lookup error ahead of the original 422 (and carry the 422's
+    // normalized detail onto it) so both are diagnosable and
+    // getAlpacaBrokerErrorCode still resolves the duplicate code.
     throw new DuplicateClientOrderIdError(
       `Duplicate client_order_id "${clientOrderId}" rejected by Alpaca and the existing-order lookup failed; refusing to resubmit (possible live duplicate)`,
       clientOrderId,
       false,
-      lookupError,
+      enrichAlpacaError(
+        lookupError instanceof Error ? lookupError : new Error(reason),
+        cause,
+      ),
     );
   }
 
@@ -563,7 +571,10 @@ export async function getOrder(
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";
     log(`Failed to fetch order ${orderId}: ${errorMessage}`, { type: "error" });
-    throw new Error(`Failed to fetch order ${orderId}: ${errorMessage}`);
+    throw enrichAlpacaError(
+      new Error(`Failed to fetch order ${orderId}: ${errorMessage}`),
+      error,
+    );
   }
 }
 
@@ -631,7 +642,10 @@ export async function getOrders(
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";
     log(`Failed to fetch orders: ${errorMessage}`, { type: "error" });
-    throw new Error(`Failed to fetch orders: ${errorMessage}`);
+    throw enrichAlpacaError(
+      new Error(`Failed to fetch orders: ${errorMessage}`),
+      error,
+    );
   }
 }
 
@@ -750,7 +764,10 @@ export async function cancelAllOrders(
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";
     log(`Failed to cancel all orders: ${errorMessage}`, { type: "error" });
-    throw new Error(`Failed to cancel all orders: ${errorMessage}`);
+    throw enrichAlpacaError(
+      new Error(`Failed to cancel all orders: ${errorMessage}`),
+      error,
+    );
   }
 }
 
@@ -947,8 +964,11 @@ export async function getOrderByClientId(
         type: "error",
       },
     );
-    throw new Error(
-      `Failed to fetch order by client_order_id ${clientOrderId}: ${errorMessage}`,
+    throw enrichAlpacaError(
+      new Error(
+        `Failed to fetch order by client_order_id ${clientOrderId}: ${errorMessage}`,
+      ),
+      error,
     );
   }
 }

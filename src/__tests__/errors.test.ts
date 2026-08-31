@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   AdapticUtilsError,
   type AlpacaBrokerErrorDetail,
+  alpacaHttpError,
   AlpacaApiError,
   AlphaVantageError,
   AuthenticationError,
@@ -410,6 +411,36 @@ describe("extractAlpacaBrokerError", () => {
     expect(extractAlpacaBrokerError(undefined)).toBeUndefined();
     expect(extractAlpacaBrokerError("string error")).toBeUndefined();
   });
+
+  it("surfaces a known HTTP status even when the body has neither code nor message (status is not discarded)", () => {
+    // Gap #1: an object body carrying no `code`/`message` used to return
+    // undefined, throwing away a KNOWN 422. The status is itself signal.
+    const statusOnly = Object.assign(
+      new Error("Request failed with status code 422"),
+      { response: { status: 422, data: { unrelated: "field" } } },
+    );
+    const detail = extractAlpacaBrokerError(statusOnly);
+    expect(detail).toBeDefined();
+    expect(detail?.statusCode).toBe(422);
+    expect(detail?.brokerCode).toBeNull(); // never fabricated into a value
+  });
+
+  it("prefers a numeric code deeper in the cause chain over a shallower code-less node (no short-circuit on null code)", () => {
+    // Gap #2: a shallow node whose attached brokerError resolved no code must
+    // not shadow the real numeric code carried by a deeper cause.
+    const coded = alpacaRejection(422, 42210000, "cannot replace order");
+    const shallow = Object.assign(new Error("wrapper"), {
+      brokerError: {
+        brokerCode: null,
+        brokerMessage: null,
+        statusCode: 429,
+        raw: {},
+      },
+      cause: coded,
+    });
+    expect(getAlpacaBrokerErrorCode(shallow)).toBe(42210000);
+    expect(extractAlpacaBrokerError(shallow)?.brokerCode).toBe(42210000);
+  });
 });
 
 describe("getAlpacaBrokerErrorCode / getAlpacaBrokerErrorDetail", () => {
@@ -461,6 +492,39 @@ describe("enrichAlpacaError (additive enrichment)", () => {
   it("adds no brokerError when the source carries no broker payload", () => {
     const thrown = enrichAlpacaError(new Error("wrap"), new Error("plain"));
     expect(thrown.brokerError).toBeUndefined();
+  });
+});
+
+describe("alpacaHttpError (raw-fetch seam broker-code preservation)", () => {
+  it("attaches a typed .response so the numeric code is recoverable; message byte-identical; instanceof Error", () => {
+    // The raw-fetch seams (AlpacaTradingAPI.makeRequest + legacy order helpers)
+    // build the thrown error with this instead of a plain `new Error`, so the
+    // vendor body reaches getAlpacaBrokerErrorCode without the SDK's axios shape.
+    const body = JSON.stringify({
+      code: 42210000,
+      message: "cannot replace order in pending_cancel status",
+    });
+    const message = `Alpaca API error (422): ${body}`;
+    const err = alpacaHttpError(message, 422, body);
+
+    expect(err).toBeInstanceOf(Error);
+    expect(err.message).toBe(message);
+    expect(err.response).toEqual({ status: 422, data: body });
+    expect(getAlpacaBrokerErrorCode(err)).toBe(42210000);
+    expect(getAlpacaBrokerErrorDetail(err)).toMatchObject({
+      brokerCode: 42210000,
+      statusCode: 422,
+    });
+  });
+
+  it("recovers a numeric-string code body (40310000) from the raw string body", () => {
+    const body = JSON.stringify({
+      code: "40310000",
+      message: "insufficient qty available for order",
+    });
+    expect(getAlpacaBrokerErrorCode(alpacaHttpError("boom", 403, body))).toBe(
+      40310000,
+    );
   });
 });
 

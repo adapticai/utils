@@ -22,6 +22,7 @@ const mockFetch = vi.fn();
 global.fetch = mockFetch;
 
 import { AlpacaTradingAPI } from "../alpaca-trading-api";
+import { getAlpacaBrokerErrorCode } from "../errors";
 import { AlpacaCredentials, AlpacaOrder } from "../types/alpaca-types";
 
 const testCredentials: AlpacaCredentials = {
@@ -263,5 +264,89 @@ describe("AlpacaTradingAPI bulk 207 Multi-Status handling", () => {
     );
 
     await expect(api.closeAllPositions()).resolves.toBeUndefined();
+  });
+});
+
+/**
+ * U1 keystone — the class `makeRequest` (raw `fetch`) seam. This is the dominant
+ * percent-trailing-stop tighten path (engine stop-execution → updateTrailingStop
+ * → makeRequest) and the literal 08-20 defect site: a plain `new Error` dropped
+ * the broker's `response.data`, so a stale-order `42210000` reached the engine
+ * only as a lossy string. These pin that the numeric code is now structurally
+ * recoverable while the thrown message stays byte-identical.
+ */
+describe("AlpacaTradingAPI broker-code preservation (makeRequest fetch seam)", () => {
+  let api: AlpacaTradingAPI;
+
+  /** Alpaca's stale-order-id reject body, exactly as the wire carries it. */
+  const STALE_BODY = JSON.stringify({
+    code: 42210000,
+    message: "cannot replace order in pending_cancel status",
+  });
+
+  /** A non-ok fetch Response whose text() body is the raw broker payload. */
+  function errorResponse(status: number, body: string) {
+    return { ok: false, status, text: () => Promise.resolve(body) };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    api = new AlpacaTradingAPI(testCredentials);
+  });
+
+  it("preserves 42210000 on the updateTrailingStop PATCH 422 (dominant tighten path), message byte-identical", async () => {
+    const trailingStop = {
+      id: "ts-1",
+      symbol: "AAPL",
+      type: "trailing_stop",
+      trail_percent: "2.0",
+      status: "open",
+    } as unknown as AlpacaOrder;
+    mockFetch
+      .mockResolvedValueOnce(jsonResponse([trailingStop])) // GET /orders
+      .mockResolvedValueOnce(errorResponse(422, STALE_BODY)); // PATCH /orders/ts-1
+
+    const thrown = await api.updateTrailingStop("AAPL", 1.5).then(
+      () => {
+        throw new Error("expected updateTrailingStop to reject");
+      },
+      (e: unknown) => e as Error,
+    );
+
+    // Byte-identical: makeRequest re-thrown unchanged through updateTrailingStop.
+    expect(thrown.message).toBe(`Alpaca API error (422): ${STALE_BODY}`);
+    expect(getAlpacaBrokerErrorCode(thrown)).toBe(42210000);
+  });
+
+  it("preserves the broker code on any direct makeRequest 422 (getPositions), re-thrown unchanged", async () => {
+    mockFetch.mockResolvedValueOnce(errorResponse(422, STALE_BODY));
+
+    const thrown = await api.getPositions().then(
+      () => {
+        throw new Error("expected getPositions to reject");
+      },
+      (e: unknown) => e as Error,
+    );
+
+    expect(thrown.message).toBe(`Alpaca API error (422): ${STALE_BODY}`);
+    expect(getAlpacaBrokerErrorCode(thrown)).toBe(42210000);
+  });
+
+  it("carries the broker code through cancelOrder's 'not cancelable' re-wrap, message byte-identical", async () => {
+    const body = JSON.stringify({
+      code: 42210000,
+      message: "order is not cancelable",
+    });
+    mockFetch.mockResolvedValueOnce(errorResponse(422, body));
+
+    const thrown = await api.cancelOrder("order-1").then(
+      () => {
+        throw new Error("expected cancelOrder to reject");
+      },
+      (e: unknown) => e as Error,
+    );
+
+    expect(thrown.message).toBe("Order order-1 is not cancelable");
+    expect(getAlpacaBrokerErrorCode(thrown)).toBe(42210000);
   });
 });

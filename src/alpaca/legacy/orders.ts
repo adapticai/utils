@@ -14,6 +14,7 @@ import { getTradingApiUrl } from "../../config/api-endpoints";
 import { getLogger } from "../../logger";
 import { isTransientNetworkError } from "../../utils/retry";
 import { createTimeoutSignal, DEFAULT_TIMEOUTS } from "../../http-timeout";
+import { alpacaHttpError } from "../../errors";
 
 const PAGINATION_DELAY_MS = 300;
 const ORDER_CHUNK_SIZE = 500;
@@ -91,7 +92,11 @@ export async function makeRequest<T = unknown>(
       source: "AlpacaAPI",
       type: "error",
     });
-    throw new Error(`Alpaca API error (${response.status}): ${errorText}`);
+    throw alpacaHttpError(
+      `Alpaca API error (${response.status}): ${errorText}`,
+      response.status,
+      errorText,
+    );
   } catch (err) {
     const error = err as Error;
     getLogger().error(`Error in makeRequest: ${error.message}`, {
@@ -129,8 +134,10 @@ export async function createOrder(
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(
+      throw alpacaHttpError(
         `Failed to create order: ${response.status} ${response.statusText} ${errorText}`,
+        response.status,
+        errorText,
       );
     }
 
@@ -181,8 +188,10 @@ export async function getOrders(
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(
+        throw alpacaHttpError(
           `Failed to get orders: ${response.status} ${response.statusText} ${errorText}`,
+          response.status,
+          errorText,
         );
       }
 
@@ -249,8 +258,10 @@ export async function cancelAllOrders(
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(
+      throw alpacaHttpError(
         `Failed to cancel orders: ${response.status} ${response.statusText} ${errorText}`,
+        response.status,
+        errorText,
       );
     }
 
@@ -294,8 +305,10 @@ export async function getOrder(
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(
+      throw alpacaHttpError(
         `Failed to get order: ${response.status} ${response.statusText} ${errorText}`,
+        response.status,
+        errorText,
       );
     }
 
@@ -336,8 +349,10 @@ export async function replaceOrder(
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(
+      throw alpacaHttpError(
         `Failed to replace order: ${response.status} ${response.statusText} ${errorText}`,
+        response.status,
+        errorText,
       );
     }
 
@@ -376,8 +391,10 @@ export async function cancelOrder(
       if (response.status === 404) {
         return { success: false, message: `Order not found: ${orderId}` };
       } else {
-        throw new Error(
+        throw alpacaHttpError(
           `Failed to cancel order: ${response.status} ${response.statusText} ${errorText}`,
+          response.status,
+          errorText,
         );
       }
     }

@@ -30,7 +30,11 @@ import {
   getTradingWebSocketUrl,
 } from "./config/api-endpoints";
 import { validateAlpacaCredentials } from "./utils/auth-validator";
-import { DuplicateClientOrderIdError } from "./errors";
+import {
+  alpacaHttpError,
+  DuplicateClientOrderIdError,
+  enrichAlpacaError,
+} from "./errors";
 import { isTransientNetworkError } from "./utils/retry";
 import { createTimeoutSignal, DEFAULT_TIMEOUTS } from "./http-timeout";
 
@@ -848,7 +852,17 @@ export class AlpacaTradingAPI {
         this.log(`Alpaca API error (${response.status}): ${errorText}`, {
           type: "error",
         });
-        throw new Error(`Alpaca API error (${response.status}): ${errorText}`);
+        // Additive broker-error preservation: the message is byte-identical
+        // (existing "422"/"42210000" string-matching consumers are unaffected),
+        // and the verbatim status + body ride along as a typed `.response` so
+        // getAlpacaBrokerErrorCode resolves the numeric code on this fetch seam —
+        // the dominant percent-trailing-stop tighten path and the 08-20 defect
+        // site, where a plain Error dropped the broker's response.data.
+        throw alpacaHttpError(
+          `Alpaca API error (${response.status}): ${errorText}`,
+          response.status,
+          errorText,
+        );
       }
 
       // Handle responses with no content (e.g., 204 No Content)
@@ -1331,7 +1345,13 @@ export class AlpacaTradingAPI {
         this.log(`Order ${orderId} is not cancelable`, {
           type: "error",
         });
-        throw new Error(`Order ${orderId} is not cancelable`);
+        // Re-message stays byte-identical; the broker payload from makeRequest's
+        // `.response` is carried onto the new error so the numeric code survives
+        // this wrapper instead of being dropped at the re-throw.
+        throw enrichAlpacaError(
+          new Error(`Order ${orderId} is not cancelable`),
+          error,
+        );
       }
       // Re-throw other errors
       throw error;
