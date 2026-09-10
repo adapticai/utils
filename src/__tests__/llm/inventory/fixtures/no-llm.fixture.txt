@@ -1,0 +1,4 @@
+export function annualise(returns: number[], periods: number): number {
+  const mean = returns.reduce((total, value) => total + value, 0) / returns.length;
+  return mean * periods;
+}

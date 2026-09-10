@@ -1,0 +1,11 @@
+import { lumic } from "@adaptic/lumic-utils";
+
+export async function analyse(prompt: string, chart: string): Promise<unknown> {
+  return lumic.llm.call<unknown>(prompt, { type: "json_schema" }, {
+    model: "claude-haiku-4-5",
+    tools: [],
+    stream: true,
+    content: [{ image_url: chart }],
+    cache_control: { type: "ephemeral" },
+  });
+}

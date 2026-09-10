@@ -1,0 +1,15 @@
+export const CANDIDATES = [
+  "gpt-5.4-nano",
+  "claude-haiku-4-5",
+  "o3-mini",
+  "deepseek-v4-flash",
+  "grok-4",
+  "gemini-3.1-pro-preview",
+  "kimi-k3",
+  "qwen3-max",
+  "glm-5.3",
+  "gpt-oss-120b",
+  "o4-mini",
+];
+
+export const NOT_MODELS = ["gptlike", "claudette", "o5", "deepsea-blue", "portfolio"];

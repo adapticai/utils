@@ -1,0 +1,8 @@
+export function resolve(): string {
+  const primary = process.env.ANTHROPIC_API_KEY;
+  const secondary = requireSecret("DEEPINFRA_API_KEY");
+  const alias = "llm.reason";
+  return `${primary ?? ""}${secondary}${alias}`;
+}
+
+declare function requireSecret(name: string): string;

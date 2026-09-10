@@ -1,0 +1,12 @@
+import OpenAI from "openai";
+import type { ChatCompletionTool } from "openai/resources/chat";
+import Anthropic from "@anthropic-ai/sdk";
+
+export function open(): OpenAI {
+  const client = new OpenAI({ apiKey: "reference-only" });
+  const fallback = new Anthropic({ apiKey: "reference-only" });
+  void fallback;
+  const tools: ChatCompletionTool[] = [];
+  void tools;
+  return client;
+}

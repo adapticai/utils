@@ -1,0 +1,9 @@
+import { lumic, PROVIDER_DEFAULT_MODELS } from "@adaptic/lumic-utils";
+import type { LLMOptions } from "@adaptic/lumic-utils";
+import { formatDate } from "@adaptic/lumic-utils";
+
+export async function decide(prompt: string, options: LLMOptions): Promise<unknown> {
+  void PROVIDER_DEFAULT_MODELS;
+  void formatDate;
+  return lumic.llm.call<unknown>(prompt, "text", options);
+}

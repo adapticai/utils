@@ -23,9 +23,17 @@ const external = [
   "node-fetch",
 ];
 
-// Shared TypeScript configuration
+// Shared TypeScript configuration.
+//
+// Test sources are excluded from the bundled programs. They are not published,
+// so they contribute nothing to `dist/types`, and a test that imports build
+// tooling from outside `src/` would otherwise drag that tooling into the
+// declaration emit — where its output path falls outside rootDir and the build
+// fails. Typechecking still covers tests: `tsc --noEmit` reads tsconfig
+// directly and is unaffected by this.
 const mainTsConfig = {
   tsconfig: "./tsconfig.json",
+  exclude: ["src/__tests__/**", "**/*.test.ts"],
 };
 
 // Test-specific TypeScript configuration

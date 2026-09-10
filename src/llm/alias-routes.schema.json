@@ -1,0 +1,236 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://adaptic.ai/schemas/llm-alias-routes.v1.json",
+  "title": "LLM semantic-alias route table",
+  "description": "The single authoring surface for every alias -> (provider, model, params, fallbacks, budgets, limits) mapping. The LiteLLM gateway config and the @adaptic/utils alias client are both derived from this file; neither may carry an independent mapping. Application code names only aliases (PD-5), so this table is where a model swap becomes a config change rather than a code change.",
+  "type": "object",
+  "required": ["schema_version", "policy_source", "defaults", "providers", "aliases"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "policy_source": {
+      "type": "string",
+      "description": "Document and section this table implements, so a routing change is always traceable to the policy that authorised it."
+    },
+    "revised": { "type": "string", "format": "date" },
+    "defaults": {
+      "type": "object",
+      "required": ["request_timeout_ms", "retries_per_leg", "circuit_breaker"],
+      "additionalProperties": false,
+      "properties": {
+        "request_timeout_ms": {
+          "type": "object",
+          "description": "Hard per-leg timeout by latency class. A leg that exceeds its budget is abandoned and the chain advances; an unbounded LLM call is the engine's known brown-out mode (PD-3).",
+          "required": ["hot-path", "background", "batch"],
+          "additionalProperties": false,
+          "properties": {
+            "hot-path": { "type": "integer", "minimum": 1000 },
+            "background": { "type": "integer", "minimum": 1000 },
+            "batch": { "type": "integer", "minimum": 1000 }
+          }
+        },
+        "retries_per_leg": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3,
+          "description": "Retries within one route before the chain advances. Kept low: a retry on a dead provider spends the caller's latency budget that the next leg needs."
+        },
+        "circuit_breaker": {
+          "type": "object",
+          "required": ["failure_threshold", "cooldown_ms", "half_open_probes"],
+          "additionalProperties": false,
+          "properties": {
+            "failure_threshold": { "type": "integer", "minimum": 1 },
+            "cooldown_ms": { "type": "integer", "minimum": 1000 },
+            "half_open_probes": { "type": "integer", "minimum": 1 }
+          }
+        }
+      }
+    },
+    "providers": {
+      "type": "object",
+      "description": "Every account this programme can route to, open and closed alike. PD-11: closed providers are permanent members of this registry, never decommissioned entries.",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "display_name",
+          "tier",
+          "api_style",
+          "api_key_env",
+          "secret_path",
+          "account_status",
+          "docs_url"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "display_name": { "type": "string", "minLength": 1 },
+          "tier": {
+            "enum": ["open", "closed", "aggregator"],
+            "description": "open = open-weight model host; closed = closed frontier vendor retained as a designated tier (PD-11); aggregator = multi-provider backstop."
+          },
+          "api_style": { "enum": ["openai-compatible", "anthropic"] },
+          "base_url": { "type": ["string", "null"] },
+          "base_url_env": { "type": ["string", "null"] },
+          "api_key_env": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]*$",
+            "description": "Env-var NAME only. A key value must never appear in this file (PD-2)."
+          },
+          "secret_path": { "type": "string", "minLength": 1 },
+          "account_status": {
+            "enum": ["live", "pending-onboarding", "not-in-scope"],
+            "description": "pending-onboarding blocks canary promotion for any route naming this provider until W3 completes its human gates."
+          },
+          "lumic_provider": {
+            "type": ["string", "null"],
+            "description": "The @adaptic/lumic-utils LLMProvider this maps to, when the degraded direct transport can serve it. Null means gateway-only."
+          },
+          "published_rpm": { "type": ["integer", "null"] },
+          "published_tpm": { "type": ["integer", "null"] },
+          "limits_source": { "type": ["string", "null"] },
+          "docs_url": { "type": "string", "minLength": 1 },
+          "notes": { "type": "string" }
+        }
+      }
+    },
+    "aliases": {
+      "type": "object",
+      "description": "Semantic aliases. Application code names exactly these (PD-5).",
+      "minProperties": 1,
+      "propertyNames": { "pattern": "^llm\\.[a-z][a-z0-9]*$" },
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "workload",
+          "latency_class",
+          "criticality",
+          "isolation_capable",
+          "eval_gate",
+          "routes",
+          "budget"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "workload": { "type": "string", "minLength": 1 },
+          "latency_class": { "enum": ["hot-path", "background", "batch"] },
+          "criticality": { "enum": ["trading-adjacent", "ops", "internal"] },
+          "isolation_capable": {
+            "type": "boolean",
+            "description": "PD-9: when true, a `<alias>.isolated` variant is generated with a dedicated key path and a dedicated log sink, and the shared sink must never receive it."
+          },
+          "pinned": {
+            "type": "boolean",
+            "description": "PD-6: a pinned alias is never auto-swapped and carries no fallback — it fails loud so a judge outage can never be silently substituted."
+          },
+          "eval_gate": {
+            "enum": [
+              "structured-output",
+              "free-text-judge",
+              "tool-call",
+              "none-pinned-judge"
+            ]
+          },
+          "policy_note": { "type": "string" },
+          "budget": {
+            "type": "object",
+            "required": ["monthly_usd", "alert_pct", "basis"],
+            "additionalProperties": false,
+            "properties": {
+              "basis": {
+                "enum": ["provisional-pre-baseline", "measured"],
+                "description": "A cap is a control and must be active before any production traffic (PD-7), but a cap set before the W1-03 billing baseline exists is provisional and must say so rather than pose as a measured figure."
+              },
+              "monthly_usd": { "type": "number", "exclusiveMinimum": 0 },
+              "alert_pct": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "type": "integer", "minimum": 1, "maximum": 200 }
+              }
+            }
+          },
+          "routes": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["role", "provider", "model_id", "model_id_status"],
+              "additionalProperties": false,
+              "properties": {
+                "role": {
+                  "enum": ["primary", "secondary", "closed_incumbent"],
+                  "description": "Chain order is primary -> secondary -> closed_incumbent (PD-3). closed_incumbent is the permanent revert target (PD-11)."
+                },
+                "provider": { "type": "string", "minLength": 1 },
+                "model_id": {
+                  "type": ["string", "null"],
+                  "description": "The vendor model string the gateway resolves the alias to. Null is only permitted while model_id_status is pending-provider-confirmation — a model id is transcribed from a provider doc at onboarding, never guessed."
+                },
+                "model_id_status": {
+                  "enum": ["confirmed", "pending-provider-confirmation"]
+                },
+                "model_id_source": {
+                  "type": ["string", "null"],
+                  "description": "Where a confirmed model_id was read from — a provider doc URL, or the in-repo registry that already routes on it."
+                },
+                "model_family": { "type": "string", "minLength": 1 },
+                "lumic_model": {
+                  "type": ["string", "null"],
+                  "description": "The @adaptic/lumic-utils SupportedModel used by the degraded direct transport when the gateway itself is unreachable. Null means this leg is gateway-only."
+                },
+                "params": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "temperature": { "type": ["number", "null"] },
+                    "max_output_tokens": { "type": ["integer", "null"] },
+                    "reasoning_effort": {
+                      "enum": ["low", "medium", "high", null]
+                    },
+                    "supports_temperature": { "type": "boolean" },
+                    "supports_json_schema": { "type": "boolean" },
+                    "supports_tools": { "type": "boolean" },
+                    "supports_cache_control": { "type": "boolean" },
+                    "supports_vision": { "type": "boolean" },
+                    "context_window": { "type": "integer", "minimum": 1 }
+                  }
+                },
+                "price_per_mtok": {
+                  "type": "object",
+                  "required": ["input", "output", "as_of"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "input": { "type": "number", "minimum": 0 },
+                    "output": { "type": "number", "minimum": 0 },
+                    "as_of": { "type": "string", "format": "date" },
+                    "source": { "type": "string" }
+                  }
+                },
+                "shadow_only": {
+                  "type": "boolean",
+                  "description": "Configured and continuously evaluated, but never served to a caller. Used where the backlog admits a model for shadow evaluation only."
+                },
+                "notes": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "open_items": {
+      "type": "array",
+      "description": "Routing questions this table cannot answer on its own authority. Each blocks the G4 inventory-and-mapping sign-off until an owner decides.",
+      "items": {
+        "type": "object",
+        "required": ["id", "question", "blocks", "owner"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "pattern": "^OI-[0-9]{2}$" },
+          "question": { "type": "string", "minLength": 1 },
+          "blocks": { "type": "string", "minLength": 1 },
+          "owner": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

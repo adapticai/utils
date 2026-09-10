@@ -1,0 +1,187 @@
+{
+  "description": "Independently enumerated LLM call sites, read out of the four repositories by hand rather than produced by the scanner. Generating this list from the scanner would make the recall gate circular: it would only ever prove the scanner agrees with itself. Recall is asserted at FILE granularity because line numbers move with every unrelated edit, while the claim under test - 'this file reaches a model and the scan knows it' - does not.",
+  "enumerated": "2026-09-10",
+  "method": "Read of import graphs and call expressions across engine/src, utils/src, lumic-utils/src and backend-legacy/src, cross-checked against the migration doc's named entry points.",
+  "sites": [
+    {
+      "repo": "engine",
+      "path": "src/utils/llm-validated-dispatch.ts",
+      "evidence": "Live `lumic.llm.call` dispatch for the validated-call path, plus the backtest `callLLMWithCaching` branch."
+    },
+    {
+      "repo": "engine",
+      "path": "src/utils/llm-validated-call.ts",
+      "evidence": "Validate-and-retry orchestrator; calls `dispatchValidatedLlmCall` and owns the retry prompt."
+    },
+    {
+      "repo": "engine",
+      "path": "src/services/llm/cached-llm-client.ts",
+      "evidence": "Engine-side prompt-cache wrapper around `lumic.llm.call`; forwards cache_control intent."
+    },
+    {
+      "repo": "engine",
+      "path": "src/services/account-pipeline/model-router.ts",
+      "evidence": "Selects provider and model tier for account decisions from `PROVIDER_DEFAULT_MODELS`."
+    },
+    {
+      "repo": "engine",
+      "path": "src/utils/llm-provider.ts",
+      "evidence": "Resolves vendor from a model id against the lumic model registry."
+    },
+    {
+      "repo": "engine",
+      "path": "src/services/account-pipeline/utils/llm-distiller.ts",
+      "evidence": "Map-reduce distillation calling `lumic.llm.call` and `callLLMWithValidation`."
+    },
+    {
+      "repo": "engine",
+      "path": "src/services/account-pipeline/account-decision-session-manager.ts",
+      "evidence": "Account decision session; imports `PROVIDER_DEFAULT_MODELS` and names vendor model ids."
+    },
+    {
+      "repo": "engine",
+      "path": "src/services/llm-explainability.ts",
+      "evidence": "Four `lumic.llm.call` invocations producing decision explanations."
+    },
+    {
+      "repo": "engine",
+      "path": "src/services/risk/governance/ai-recovery-evaluator.ts",
+      "evidence": "`lumic.llm.call` on the drawdown-recovery governance path."
+    },
+    {
+      "repo": "engine",
+      "path": "src/services/signal-monitoring/decision-decomposition/turn-orchestrator.ts",
+      "evidence": "`lumic.llm.call` driving the multi-turn decision decomposition."
+    },
+    {
+      "repo": "engine",
+      "path": "src/services/signal-monitoring/gpt-analysis-service.ts",
+      "evidence": "`callLLMWithCaching` and `callLLMWithTools` on the signal analysis path."
+    },
+    {
+      "repo": "engine",
+      "path": "src/services/signal-monitoring/signal-coordination-service.ts",
+      "evidence": "`callLLMWithTools` during signal coordination."
+    },
+    {
+      "repo": "engine",
+      "path": "src/services/signal-monitoring/analysis-services.ts",
+      "evidence": "`callLLMWithValidation` wrapper for the signal analysis services."
+    },
+    {
+      "repo": "engine",
+      "path": "src/services/signal-pre-analysis/trend-analyzer.ts",
+      "evidence": "Two `callLLMWithValidation` invocations for EMA and narrative trend reads."
+    },
+    {
+      "repo": "engine",
+      "path": "src/services/signals/sentiment/market-sentiment/llm-sentiment-analyzer.ts",
+      "evidence": "`callLLMWithValidation` for market sentiment scoring."
+    },
+    {
+      "repo": "engine",
+      "path": "src/services/trade-horizon/performance-projector.ts",
+      "evidence": "`lumic.llm.call` projecting trade performance over a horizon."
+    },
+    {
+      "repo": "engine",
+      "path": "src/services/trading-core/lifecycle/trade-lifecycle/utilities/horizon-evaluator.ts",
+      "evidence": "`lumic.llm.call` evaluating horizon state inside the trade lifecycle."
+    },
+    {
+      "repo": "engine",
+      "path": "src/services/exit-framework/tier-c-llm-advisory/cached-llm-reeval-adapter.ts",
+      "evidence": "Tier-C exit advisory adapter over the cached LLM client; uses cache breakpoints."
+    },
+    {
+      "repo": "engine",
+      "path": "src/services/threshold-governance/graduation/graduation-llm-judge.ts",
+      "evidence": "Graduation judge; pins a lumic model constant."
+    },
+    {
+      "repo": "engine",
+      "path": "src/services/telemetry/threshold-expectancy-audit/llm-analyst.ts",
+      "evidence": "`callLLMWithValidation` for the threshold expectancy audit narrative."
+    },
+    {
+      "repo": "engine",
+      "path": "src/services/security/sessions/session-aware-analyzer.ts",
+      "evidence": "`callLLMWithValidation` for session-aware security forecasting."
+    },
+    {
+      "repo": "engine",
+      "path": "src/services/health/lumic-llm-probe.ts",
+      "evidence": "Boot probe calling each provider; names provider key env vars and vendor model ids."
+    },
+    {
+      "repo": "engine",
+      "path": "src/services/smart-command-service.ts",
+      "evidence": "Consumes the OpenAI SDK types for command interpretation."
+    },
+    {
+      "repo": "engine",
+      "path": "src/functions/early-market-analysis.ts",
+      "evidence": "`callLLMWithValidation` producing the pre-open market forecast."
+    },
+    {
+      "repo": "engine",
+      "path": "src/backtest/simulators/llm/llm-replay-client.ts",
+      "evidence": "Backtest replay client mirroring the `lumic.llm.call` signature."
+    },
+    {
+      "repo": "engine",
+      "path": "src/cli/shadow-replay-adapters.ts",
+      "evidence": "Shadow replay harness issuing candidate calls through `lumic.llm.call`."
+    },
+    {
+      "repo": "lumic-utils",
+      "path": "src/functions/llm-call.ts",
+      "evidence": "`makeLLMCall` and `makeResponsesCall`: the shared package's provider-routing entry points."
+    },
+    {
+      "repo": "lumic-utils",
+      "path": "src/functions/llm-openai.ts",
+      "evidence": "Direct OpenAI SDK client for chat completions and the Responses API."
+    },
+    {
+      "repo": "lumic-utils",
+      "path": "src/functions/llm-anthropic.ts",
+      "evidence": "Direct Anthropic SDK client (`makeAnthropicCall`)."
+    },
+    {
+      "repo": "lumic-utils",
+      "path": "src/functions/llm-openai-compatible.ts",
+      "evidence": "OpenAI-compatible client used for every non-first-party host."
+    },
+    {
+      "repo": "lumic-utils",
+      "path": "src/functions/llm-deepseek.ts",
+      "evidence": "DeepSeek client (`makeDeepseekCall`)."
+    },
+    {
+      "repo": "lumic-utils",
+      "path": "src/functions/llm-images.ts",
+      "evidence": "Image-generation client over the OpenAI SDK."
+    },
+    {
+      "repo": "lumic-utils",
+      "path": "src/functions/json-llm-tools.ts",
+      "evidence": "`fixJsonWithAI`: repairs malformed JSON with a direct OpenAI client."
+    },
+    {
+      "repo": "lumic-utils",
+      "path": "src/functions/llm-utils.ts",
+      "evidence": "Response parsing and model-name normalisation shared by every provider path."
+    },
+    {
+      "repo": "lumic-utils",
+      "path": "src/llm-tools.ts",
+      "evidence": "Tool definitions typed against the OpenAI SDK tool schema."
+    },
+    {
+      "repo": "lumic-utils",
+      "path": "src/index.ts",
+      "evidence": "Assembles the `lumic.llm` surface and re-exports every provider entry point."
+    }
+  ]
+}

@@ -25,6 +25,16 @@ import * as volatilityNs from "./volatility";
 import { alpaca as alpacaSDK } from "./alpaca";
 
 // Logger utilities
+// Alias-resolving LLM client.
+//
+// Application code names a semantic alias (llm.reason, llm.fast, ...) and the
+// route table decides which provider and model answer it, under a hard timeout,
+// a per-route circuit breaker and an ordered fallback chain ending at a closed
+// incumbent. Exported from the package root so a consumer never has to reach
+// into a subpath — a deep import is how a call site ends up outside the
+// controls this module exists to apply.
+export * from "./llm";
+
 export { getLogger, resetLogger, setLogger, type Logger } from "./logger";
 
 // Error utilities

@@ -1,0 +1,547 @@
+{
+  "schema_version": 1,
+  "policy_source": "docs/llm-provider-migration.md#3-routing-policy (v1.1)",
+  "revised": "2026-09-10",
+  "defaults": {
+    "request_timeout_ms": {
+      "hot-path": 30000,
+      "background": 90000,
+      "batch": 300000
+    },
+    "retries_per_leg": 1,
+    "circuit_breaker": {
+      "failure_threshold": 5,
+      "cooldown_ms": 60000,
+      "half_open_probes": 1
+    }
+  },
+  "providers": {
+    "anthropic": {
+      "display_name": "Anthropic",
+      "tier": "closed",
+      "api_style": "anthropic",
+      "base_url": null,
+      "base_url_env": null,
+      "api_key_env": "ANTHROPIC_API_KEY",
+      "secret_path": "llm/anthropic/apiKey",
+      "account_status": "live",
+      "lumic_provider": "anthropic",
+      "published_rpm": null,
+      "published_tpm": null,
+      "limits_source": null,
+      "docs_url": "https://docs.claude.com/en/api/overview",
+      "notes": "Permanent designated tier. Retained, keyed, budgeted and continuously exercised as the revert target of every alias (PD-11)."
+    },
+    "openai": {
+      "display_name": "OpenAI",
+      "tier": "closed",
+      "api_style": "openai-compatible",
+      "base_url": null,
+      "base_url_env": null,
+      "api_key_env": "OPENAI_API_KEY",
+      "secret_path": "llm/openai/apiKey",
+      "account_status": "live",
+      "lumic_provider": "openai",
+      "published_rpm": null,
+      "published_tpm": null,
+      "limits_source": null,
+      "docs_url": "https://platform.openai.com/docs/api-reference",
+      "notes": "Permanent designated tier. No alias routes to it today; it stays keyed and budgeted so a per-alias revert to an OpenAI incumbent is a config change (PD-11)."
+    },
+    "deepinfra": {
+      "display_name": "DeepInfra",
+      "tier": "open",
+      "api_style": "openai-compatible",
+      "base_url": "https://api.deepinfra.com/v1/openai",
+      "base_url_env": "DEEPINFRA_BASE_URL",
+      "api_key_env": "DEEPINFRA_API_KEY",
+      "secret_path": "llm/deepinfra/apiKey",
+      "account_status": "pending-onboarding",
+      "lumic_provider": null,
+      "published_rpm": null,
+      "published_tpm": null,
+      "limits_source": null,
+      "docs_url": "https://deepinfra.com/docs",
+      "notes": "Rate limits and exact model ids are transcribed from the provider console at W3-02, never guessed."
+    },
+    "fireworks": {
+      "display_name": "Fireworks AI",
+      "tier": "open",
+      "api_style": "openai-compatible",
+      "base_url": "https://api.fireworks.ai/inference/v1",
+      "base_url_env": "FIREWORKS_BASE_URL",
+      "api_key_env": "FIREWORKS_API_KEY",
+      "secret_path": "llm/fireworks/apiKey",
+      "account_status": "pending-onboarding",
+      "lumic_provider": null,
+      "published_rpm": null,
+      "published_tpm": null,
+      "limits_source": null,
+      "docs_url": "https://docs.fireworks.ai",
+      "notes": "Onboarded as a capacity backstop. No alias routes to it until its published RPM ceiling is recorded in provider-limits (W4-04)."
+    },
+    "zai": {
+      "display_name": "Z.ai",
+      "tier": "open",
+      "api_style": "openai-compatible",
+      "base_url": "https://api.z.ai/api/paas/v4",
+      "base_url_env": "ZAI_BASE_URL",
+      "api_key_env": "ZAI_API_KEY",
+      "secret_path": "llm/zai/apiKey",
+      "account_status": "pending-onboarding",
+      "lumic_provider": null,
+      "published_rpm": null,
+      "published_tpm": null,
+      "limits_source": null,
+      "docs_url": "https://docs.z.ai",
+      "notes": "First-party GLM host. Section 3 anchors first-party GLM below the converged multi-host price, so it is the primary leg for llm.reason."
+    },
+    "deepseek": {
+      "display_name": "DeepSeek",
+      "tier": "open",
+      "api_style": "openai-compatible",
+      "base_url": "https://api.deepseek.com",
+      "base_url_env": "DEEPSEEK_BASE_URL",
+      "api_key_env": "DEEPSEEK_API_KEY",
+      "secret_path": "llm/deepseek/apiKey",
+      "account_status": "live",
+      "lumic_provider": "deepseek",
+      "published_rpm": null,
+      "published_tpm": null,
+      "limits_source": null,
+      "docs_url": "https://api-docs.deepseek.com",
+      "notes": "Already a registered lumic provider, so its legs can also be served by the degraded direct transport. Off-peak windows are captured in gateway config at W3-05 for batch scheduling."
+    },
+    "groq": {
+      "display_name": "Groq",
+      "tier": "open",
+      "api_style": "openai-compatible",
+      "base_url": "https://api.groq.com/openai/v1",
+      "base_url_env": "GROQ_BASE_URL",
+      "api_key_env": "GROQ_API_KEY",
+      "secret_path": "llm/groq/apiKey",
+      "account_status": "not-in-scope",
+      "lumic_provider": null,
+      "published_rpm": null,
+      "published_tpm": null,
+      "limits_source": null,
+      "docs_url": "https://console.groq.com/docs",
+      "notes": "Section 3 names Groq or Cerebras as the llm.fast primary, but the W3 onboarding list does not include either. See open item OI-01: until an owner resolves it, llm.fast's primary leg is unreachable and the alias serves from its secondary and closed legs."
+    },
+    "openrouter": {
+      "display_name": "OpenRouter",
+      "tier": "aggregator",
+      "api_style": "openai-compatible",
+      "base_url": "https://openrouter.ai/api/v1",
+      "base_url_env": "OPENROUTER_BASE_URL",
+      "api_key_env": "OPENROUTER_API_KEY",
+      "secret_path": "llm/openrouter/apiKey",
+      "account_status": "pending-onboarding",
+      "lumic_provider": null,
+      "published_rpm": null,
+      "published_tpm": null,
+      "limits_source": null,
+      "docs_url": "https://openrouter.ai/docs",
+      "notes": "Aggregator backstop. Reaches an open-weight model when its dedicated host is down, without a new account. Not a chain leg by default: an aggregator hides which upstream served a call, which defeats per-provider attribution."
+    }
+  },
+  "aliases": {
+    "llm.reason": {
+      "workload": "Deep reasoning, audit loops, config tuning",
+      "latency_class": "background",
+      "criticality": "ops",
+      "isolation_capable": true,
+      "eval_gate": "free-text-judge",
+      "budget": {
+        "basis": "provisional-pre-baseline",
+        "monthly_usd": 750,
+        "alert_pct": [50, 80, 100]
+      },
+      "routes": [
+        {
+          "role": "primary",
+          "provider": "zai",
+          "model_id": null,
+          "model_id_status": "pending-provider-confirmation",
+          "model_id_source": null,
+          "model_family": "GLM-5.3",
+          "lumic_model": null,
+          "params": {
+            "temperature": null,
+            "max_output_tokens": null,
+            "supports_temperature": true,
+            "supports_json_schema": true,
+            "supports_tools": true,
+            "supports_cache_control": false,
+            "supports_vision": false
+          },
+          "price_per_mtok": {
+            "input": 1.09,
+            "output": 3.43,
+            "as_of": "2026-09-10",
+            "source": "docs/llm-provider-migration.md#3 first-party GLM-5.3 anchor; re-verify at W2-02"
+          }
+        },
+        {
+          "role": "secondary",
+          "provider": "deepinfra",
+          "model_id": null,
+          "model_id_status": "pending-provider-confirmation",
+          "model_id_source": null,
+          "model_family": "DeepSeek V4 Pro",
+          "lumic_model": null,
+          "params": {
+            "temperature": null,
+            "max_output_tokens": null,
+            "supports_temperature": true,
+            "supports_json_schema": true,
+            "supports_tools": true,
+            "supports_cache_control": false,
+            "supports_vision": false
+          },
+          "price_per_mtok": {
+            "input": 1.3,
+            "output": 2.6,
+            "as_of": "2026-09-10",
+            "source": "docs/llm-provider-migration.md#3 DeepInfra anchor; re-verify at W2-02"
+          }
+        },
+        {
+          "role": "closed_incumbent",
+          "provider": "anthropic",
+          "model_id": "claude-opus-4-7",
+          "model_id_status": "confirmed",
+          "model_id_source": "lumic-utils/src/types/openai-types.ts SUPPORTED_MODELS — already routed on in production",
+          "model_family": "Opus-class",
+          "lumic_model": "claude-opus-4-7",
+          "params": {
+            "temperature": null,
+            "max_output_tokens": 128000,
+            "supports_temperature": true,
+            "supports_json_schema": true,
+            "supports_tools": true,
+            "supports_cache_control": true,
+            "supports_vision": true,
+            "context_window": 1000000
+          },
+          "price_per_mtok": {
+            "input": 5,
+            "output": 25,
+            "as_of": "2026-09-10",
+            "source": "docs/llm-provider-migration.md#3 Opus-class anchor; matches lumic-utils/src/functions/llm-config.ts"
+          }
+        }
+      ]
+    },
+    "llm.agentic": {
+      "workload": "Hardest long-horizon agentic work",
+      "latency_class": "background",
+      "criticality": "ops",
+      "isolation_capable": true,
+      "eval_gate": "tool-call",
+      "policy_note": "Section 3 names the primary as Fable-class. The strongest Anthropic model registered in the lumic model registry — the table this codebase actually routes on — is claude-opus-4-7, so that is the configured id. Registering a Fable-class model in @adaptic/lumic-utils would change live model selection for every consumer of the advanced tier and is therefore a separate, evidence-gated decision, recorded as open item OI-02 rather than smuggled in here.",
+      "budget": {
+        "basis": "provisional-pre-baseline",
+        "monthly_usd": 1500,
+        "alert_pct": [50, 80, 100]
+      },
+      "routes": [
+        {
+          "role": "primary",
+          "provider": "anthropic",
+          "model_id": "claude-opus-4-7",
+          "model_id_status": "confirmed",
+          "model_id_source": "lumic-utils/src/types/openai-types.ts SUPPORTED_MODELS — already routed on in production",
+          "model_family": "Fable-class (see policy_note)",
+          "lumic_model": "claude-opus-4-7",
+          "params": {
+            "temperature": null,
+            "max_output_tokens": 128000,
+            "supports_temperature": true,
+            "supports_json_schema": true,
+            "supports_tools": true,
+            "supports_cache_control": true,
+            "supports_vision": true,
+            "context_window": 1000000
+          },
+          "price_per_mtok": {
+            "input": 10,
+            "output": 50,
+            "as_of": "2026-09-10",
+            "source": "docs/llm-provider-migration.md#3 Fable-class anchor"
+          }
+        },
+        {
+          "role": "secondary",
+          "provider": "deepinfra",
+          "model_id": null,
+          "model_id_status": "pending-provider-confirmation",
+          "model_id_source": null,
+          "model_family": "Kimi K3",
+          "lumic_model": null,
+          "shadow_only": true,
+          "params": {
+            "temperature": null,
+            "max_output_tokens": null,
+            "supports_temperature": true,
+            "supports_json_schema": true,
+            "supports_tools": true,
+            "supports_cache_control": false,
+            "supports_vision": false
+          },
+          "price_per_mtok": {
+            "input": 2.85,
+            "output": 14.25,
+            "as_of": "2026-09-10",
+            "source": "docs/llm-provider-migration.md#3 DeepInfra anchor; re-verify at W2-02"
+          },
+          "notes": "Shadow-eval only per Section 3. Configured and scored, never served to a caller, so the hardest agentic path keeps its closed primary while the open candidate accrues evidence."
+        }
+      ]
+    },
+    "llm.fast": {
+      "workload": "Latency-critical paths",
+      "latency_class": "hot-path",
+      "criticality": "trading-adjacent",
+      "isolation_capable": false,
+      "eval_gate": "structured-output",
+      "policy_note": "Trading-adjacent and hot-path, so under Section 7 this alias is the LAST to promote: no hot-path alias reaches LIVE until every background alias has completed W5-03 and held steady state for a week.",
+      "budget": {
+        "basis": "provisional-pre-baseline",
+        "monthly_usd": 400,
+        "alert_pct": [50, 80, 100]
+      },
+      "routes": [
+        {
+          "role": "primary",
+          "provider": "groq",
+          "model_id": null,
+          "model_id_status": "pending-provider-confirmation",
+          "model_id_source": null,
+          "model_family": "gpt-oss-120B",
+          "lumic_model": null,
+          "params": {
+            "temperature": null,
+            "max_output_tokens": null,
+            "supports_temperature": true,
+            "supports_json_schema": true,
+            "supports_tools": true,
+            "supports_cache_control": false,
+            "supports_vision": false
+          },
+          "price_per_mtok": {
+            "input": 0.039,
+            "output": 0.19,
+            "as_of": "2026-09-10",
+            "source": "docs/llm-provider-migration.md#3 gpt-oss-120B anchor (DeepInfra price; Groq price unconfirmed pending OI-01)"
+          },
+          "notes": "Unreachable until OI-01 is resolved — Groq is not on the W3 onboarding list."
+        },
+        {
+          "role": "secondary",
+          "provider": "deepinfra",
+          "model_id": null,
+          "model_id_status": "pending-provider-confirmation",
+          "model_id_source": null,
+          "model_family": "gpt-oss-120B",
+          "lumic_model": null,
+          "params": {
+            "temperature": null,
+            "max_output_tokens": null,
+            "supports_temperature": true,
+            "supports_json_schema": true,
+            "supports_tools": true,
+            "supports_cache_control": false,
+            "supports_vision": false
+          },
+          "price_per_mtok": {
+            "input": 0.039,
+            "output": 0.19,
+            "as_of": "2026-09-10",
+            "source": "docs/llm-provider-migration.md#3 DeepInfra anchor; re-verify at W2-02"
+          }
+        },
+        {
+          "role": "closed_incumbent",
+          "provider": "anthropic",
+          "model_id": "claude-haiku-4-5",
+          "model_id_status": "confirmed",
+          "model_id_source": "lumic-utils/src/types/openai-types.ts SUPPORTED_MODELS — already routed on in production",
+          "model_family": "Haiku-class",
+          "lumic_model": "claude-haiku-4-5",
+          "params": {
+            "temperature": null,
+            "max_output_tokens": 64000,
+            "supports_temperature": true,
+            "supports_json_schema": true,
+            "supports_tools": true,
+            "supports_cache_control": true,
+            "supports_vision": true,
+            "context_window": 200000
+          },
+          "price_per_mtok": {
+            "input": 1,
+            "output": 5,
+            "as_of": "2026-09-10",
+            "source": "docs/llm-provider-migration.md#3 Haiku-class anchor"
+          }
+        }
+      ]
+    },
+    "llm.extract": {
+      "workload": "High-volume extraction, classification, log analysis",
+      "latency_class": "batch",
+      "criticality": "internal",
+      "isolation_capable": true,
+      "eval_gate": "structured-output",
+      "budget": {
+        "basis": "provisional-pre-baseline",
+        "monthly_usd": 300,
+        "alert_pct": [50, 80, 100]
+      },
+      "routes": [
+        {
+          "role": "primary",
+          "provider": "deepseek",
+          "model_id": "deepseek-v4-flash",
+          "model_id_status": "confirmed",
+          "model_id_source": "lumic-utils/src/types/openai-types.ts SUPPORTED_MODELS — already routed on in production",
+          "model_family": "DeepSeek V4 Flash",
+          "lumic_model": "deepseek-v4-flash",
+          "params": {
+            "temperature": null,
+            "max_output_tokens": 64000,
+            "supports_temperature": true,
+            "supports_json_schema": true,
+            "supports_tools": true,
+            "supports_cache_control": true,
+            "supports_vision": false,
+            "context_window": 1000000
+          },
+          "price_per_mtok": {
+            "input": 0.14,
+            "output": 0.28,
+            "as_of": "2026-09-10",
+            "source": "docs/llm-provider-migration.md#3 V4 Flash anchor; re-verify at W2-02"
+          }
+        },
+        {
+          "role": "secondary",
+          "provider": "zai",
+          "model_id": null,
+          "model_id_status": "pending-provider-confirmation",
+          "model_id_source": null,
+          "model_family": "GLM 5.3 Flash",
+          "lumic_model": null,
+          "params": {
+            "temperature": null,
+            "max_output_tokens": null,
+            "supports_temperature": true,
+            "supports_json_schema": true,
+            "supports_tools": true,
+            "supports_cache_control": false,
+            "supports_vision": false
+          },
+          "price_per_mtok": {
+            "input": 1.09,
+            "output": 3.43,
+            "as_of": "2026-09-10",
+            "source": "docs/llm-provider-migration.md#3 GLM first-party anchor; Flash-tier price unconfirmed, re-verify at W2-02"
+          }
+        },
+        {
+          "role": "closed_incumbent",
+          "provider": "anthropic",
+          "model_id": "claude-haiku-4-5",
+          "model_id_status": "confirmed",
+          "model_id_source": "lumic-utils/src/types/openai-types.ts SUPPORTED_MODELS — already routed on in production",
+          "model_family": "Haiku-class",
+          "lumic_model": "claude-haiku-4-5",
+          "params": {
+            "temperature": null,
+            "max_output_tokens": 64000,
+            "supports_temperature": true,
+            "supports_json_schema": true,
+            "supports_tools": true,
+            "supports_cache_control": true,
+            "supports_vision": true,
+            "context_window": 200000
+          },
+          "price_per_mtok": {
+            "input": 1,
+            "output": 5,
+            "as_of": "2026-09-10",
+            "source": "docs/llm-provider-migration.md#3 Haiku-class anchor"
+          }
+        }
+      ]
+    },
+    "llm.judge": {
+      "workload": "Eval judging only",
+      "latency_class": "batch",
+      "criticality": "internal",
+      "isolation_capable": false,
+      "pinned": true,
+      "eval_gate": "none-pinned-judge",
+      "policy_note": "PD-6: pinned and never auto-swapped, and deliberately carries no fallback. A judge that silently failed over would grade one model's output against another model's standard, which would corrupt every gate decided by it — so it fails loud instead.",
+      "budget": {
+        "basis": "provisional-pre-baseline",
+        "monthly_usd": 150,
+        "alert_pct": [50, 80, 100]
+      },
+      "routes": [
+        {
+          "role": "primary",
+          "provider": "anthropic",
+          "model_id": "claude-sonnet-4-6",
+          "model_id_status": "confirmed",
+          "model_id_source": "lumic-utils/src/types/openai-types.ts SUPPORTED_MODELS — already routed on in production",
+          "model_family": "Sonnet-class",
+          "lumic_model": "claude-sonnet-4-6",
+          "params": {
+            "temperature": 0,
+            "max_output_tokens": 64000,
+            "supports_temperature": true,
+            "supports_json_schema": true,
+            "supports_tools": true,
+            "supports_cache_control": true,
+            "supports_vision": true,
+            "context_window": 1000000
+          },
+          "price_per_mtok": {
+            "input": 3,
+            "output": 15,
+            "as_of": "2026-09-10",
+            "source": "lumic-utils/src/functions/llm-config.ts anthropicModelCosts"
+          }
+        }
+      ]
+    }
+  },
+  "open_items": [
+    {
+      "id": "OI-01",
+      "question": "Section 3 makes Groq or Cerebras the llm.fast primary, but neither appears in the W3 onboarding provider list (DeepInfra, Fireworks, Z.ai, DeepSeek, aggregator). Which host serves llm.fast's primary leg, and is it added to W3?",
+      "blocks": "llm.fast primary reachability; W5-03 canary for llm.fast",
+      "owner": "CEO"
+    },
+    {
+      "id": "OI-02",
+      "question": "Section 3 names a Fable-class primary for llm.agentic, but the lumic model registry's strongest registered Anthropic model is claude-opus-4-7. Register a Fable-class model in @adaptic/lumic-utils, or accept opus-4-7 as the llm.agentic primary?",
+      "blocks": "llm.agentic primary fidelity to Section 3",
+      "owner": "CEO"
+    },
+    {
+      "id": "OI-03",
+      "question": "Every alias budget is provisional-pre-baseline because Section 9's baseline monthly spend is still FILL. Which caps apply once W1-03 produces the billing baseline?",
+      "blocks": "PD-7 layer 3 calibration; Section 9 savings target measurement",
+      "owner": "CEO"
+    },
+    {
+      "id": "OI-04",
+      "question": "llm.agentic's serving chain is one leg long because Section 3 makes its primary the closed incumbent and its only secondary shadow-eval-only. An Anthropic outage therefore leaves the alias with no configured fallback. Widen it (a second closed provider, or promoting the Kimi leg out of shadow), or accept the single leg?",
+      "blocks": "llm.agentic availability under a primary-provider outage",
+      "owner": "CEO"
+    }
+  ]
+}

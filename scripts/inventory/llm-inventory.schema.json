@@ -1,0 +1,120 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://adaptic.ai/schemas/llm-inventory.v1.json",
+  "title": "LLM call-site inventory",
+  "description": "The W1 audit artefact: every place application code in engine, utils, lumic-utils or backend-legacy can reach a language model. Site objects carry exactly the authoritative Section-4 keys of docs/llm-provider-migration.md and no others, so a hand edit that invents a field fails the schema gate rather than silently entering the mapping pass.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "heuristics_version",
+    "generator",
+    "repos",
+    "sites",
+    "registries"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "heuristics_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "description": "Version of the path-heuristic table that produced latency_class and criticality, so the W1-02 classification pass can state what it overrode."
+    },
+    "generator": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Repo-relative path of the producing script. A stale artefact must be traceable to the code that emitted it."
+    },
+    "repos": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "sites": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "site_id",
+          "model_current",
+          "features",
+          "latency_class",
+          "criticality",
+          "monthly_tokens",
+          "alias",
+          "needs_adapter",
+          "eval_gate",
+          "status"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9-]+/[^#]+#L[1-9][0-9]*$",
+            "description": "<repo>/<repo-relative path>#L<line>."
+          },
+          "model_current": {
+            "description": "Vendor model literal named at this site. Null when the site names none: absence is recorded as absence rather than defaulted.",
+            "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
+          },
+          "features": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "enum": [
+                "cache_control",
+                "json_schema",
+                "streaming",
+                "tool_use",
+                "vision"
+              ]
+            }
+          },
+          "latency_class": {
+            "type": "string",
+            "enum": ["hot-path", "background", "batch"]
+          },
+          "criticality": {
+            "type": "string",
+            "enum": ["trading-adjacent", "ops", "internal"]
+          },
+          "monthly_tokens": {
+            "type": "object",
+            "required": ["in", "out"],
+            "additionalProperties": false,
+            "properties": {
+              "in": { "type": "integer", "minimum": 0 },
+              "out": { "type": "integer", "minimum": 0 }
+            },
+            "description": "Zero from the scanner, which cannot observe volume. Joined from billing exports at W1-03."
+          },
+          "alias": {
+            "description": "Semantic alias the site already names. Null until the W4 codemods assign one.",
+            "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
+          },
+          "needs_adapter": { "type": "boolean" },
+          "eval_gate": {
+            "type": "null",
+            "description": "Assigned at W2-01; always null in the discovered seed."
+          },
+          "status": { "type": "string", "const": "discovered" }
+        }
+      }
+    },
+    "registries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "reason"],
+        "additionalProperties": false,
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "reason": { "type": "string", "minLength": 1 }
+        }
+      },
+      "description": "Files that hold vendor strings as data rather than as a call. Recorded with a reason so an excluded file is auditable, never silently dropped."
+    }
+  }
+}

@@ -1,0 +1,78 @@
+{
+  "_readme": "Client-side rate and concurrency limits per provider (W4-04). Held in config rather than in code so a limit can be corrected from a provider console without a release — a rate limit discovered at 3am should be a config change, not a deploy. Every entry states where its numbers came from: `published` means transcribed from that provider's documented ceiling with a source link, `conservative-default` means the ceiling is not yet known and the client is deliberately slower than it needs to be. A guessed high limit and a known high limit look identical in config and behave identically right up until the provider starts refusing requests, so they are never allowed to look the same here.",
+  "schema_version": 1,
+  "revised": "2026-09-10",
+  "defaults": {
+    "_readme": "Applied to any provider whose published ceiling is unknown. Chosen to be comfortably below the slowest plausible published limit: being slower than necessary costs latency, while being faster than permitted costs 429s that the fallback chain will read as provider ill-health and use to open a circuit breaker. The asymmetry is what makes the conservative side the correct default.",
+    "basis": "conservative-default",
+    "requests_per_minute": 60,
+    "max_concurrent": 4,
+    "acquire_timeout_ms": 15000
+  },
+  "providers": {
+    "anthropic": {
+      "basis": "conservative-default",
+      "requests_per_minute": 50,
+      "max_concurrent": 4,
+      "acquire_timeout_ms": 15000,
+      "source": null,
+      "note": "Anthropic publishes tier-dependent limits; the account's tier is not recorded here. Transcribe the real ceiling from the console at W3-07 and set basis to published."
+    },
+    "openai": {
+      "basis": "conservative-default",
+      "requests_per_minute": 60,
+      "max_concurrent": 4,
+      "acquire_timeout_ms": 15000,
+      "source": null,
+      "note": "Tier-dependent. No alias routes here today; the entry exists so a revert to an OpenAI incumbent inherits a bounded client rather than an unbounded one."
+    },
+    "deepseek": {
+      "basis": "conservative-default",
+      "requests_per_minute": 60,
+      "max_concurrent": 4,
+      "acquire_timeout_ms": 30000,
+      "source": null,
+      "note": "Serves llm.extract, a batch-class alias, so a longer acquire timeout is appropriate: a batch caller can afford to queue where a hot-path caller cannot."
+    },
+    "deepinfra": {
+      "basis": "conservative-default",
+      "requests_per_minute": 60,
+      "max_concurrent": 4,
+      "acquire_timeout_ms": 15000,
+      "source": null,
+      "note": "Awaiting W3-02. Transcribe the published ceiling then."
+    },
+    "fireworks": {
+      "basis": "conservative-default",
+      "requests_per_minute": 60,
+      "max_concurrent": 4,
+      "acquire_timeout_ms": 15000,
+      "source": null,
+      "note": "The backlog calls out recording Fireworks' published RPM ceiling specifically (W3-03 -> W4-04). Do that at onboarding."
+    },
+    "zai": {
+      "basis": "conservative-default",
+      "requests_per_minute": 60,
+      "max_concurrent": 4,
+      "acquire_timeout_ms": 15000,
+      "source": null,
+      "note": "Awaiting W3-04."
+    },
+    "groq": {
+      "basis": "conservative-default",
+      "requests_per_minute": 30,
+      "max_concurrent": 2,
+      "acquire_timeout_ms": 10000,
+      "source": null,
+      "note": "Declared primary of the hot-path llm.fast alias but blocked on open item OI-01. Held tighter than the default because a hot-path caller cannot afford to queue: if the limit binds, failing fast into the chain beats waiting."
+    },
+    "openrouter": {
+      "basis": "conservative-default",
+      "requests_per_minute": 30,
+      "max_concurrent": 2,
+      "acquire_timeout_ms": 15000,
+      "source": null,
+      "note": "Aggregator backstop, reached by explicit route only. Held tight because its own limits are a function of whichever upstream it selects, which the client cannot observe."
+    }
+  }
+}

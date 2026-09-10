@@ -1,0 +1,11 @@
+import { callLLMWithValidation } from "@/utils/llm-validated-call";
+
+export class Coordinator {
+  constructor(private readonly analysis: { callLLMWithTools(symbol: string): Promise<string> }) {}
+
+  async run(symbol: string): Promise<string> {
+    const direct = await callLLMWithValidation<string>({ prompt: symbol });
+    const mediated = await this.analysis.callLLMWithTools(symbol);
+    return `${direct}${mediated}`;
+  }
+}

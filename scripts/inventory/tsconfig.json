@@ -1,0 +1,19 @@
+{
+  "//": "Type-checks the LLM inventory scanner core and its Vitest suite. The core deliberately lives outside src/ so that its static `typescript` import never reaches the published @adaptic/utils declaration graph; that also puts it outside the root config's rootDir, so it needs its own project. Emit is off because nothing here is built - the CLI transpiles the core on demand and the suite runs through Vitest.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noImplicitAny": true,
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": ["./**/*.ts", "../../src/__tests__/llm/inventory/**/*.ts"],
+  "exclude": ["node_modules"]
+}
