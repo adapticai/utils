@@ -98,10 +98,13 @@ export function llmBreakers(): CircuitBreakerRegistry {
 /**
  * Resolve the gateway transport, building it on first use.
  *
- * @param chain The chain being served, used to derive each leg's gateway name.
+ * Takes no chain: the transport is cached for the life of the process and
+ * resolves each request's chain from that request's own route, so binding one
+ * here would tie every later alias to whichever alias happened to build it.
+ *
  * @returns The transport, or null when no gateway is configured.
  */
-function gatewayFor(chain: ResolvedChain): LlmTransport | null {
+function gatewayFor(): LlmTransport | null {
   if (config.gatewayTransport !== undefined) {
     return config.gatewayTransport;
   }
@@ -233,7 +236,7 @@ export async function callLLMByAlias<T = unknown>(
     );
   }
 
-  const gateway = gatewayFor(chain);
+  const gateway = gatewayFor();
   const attemptLog: AliasAttemptRecord[] = [];
 
   /**
