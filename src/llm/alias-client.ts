@@ -113,7 +113,20 @@ function gatewayFor(chain: ResolvedChain): LlmTransport | null {
     gatewayTransport = createGatewayTransport({
       baseUrl,
       apiKeyEnv: config.gatewayApiKeyEnv ?? DEFAULT_GATEWAY_KEY_ENV,
-      modelNameFor: (request) => gatewayModelNameFor(request.route, chain),
+      // The chain is re-resolved from the request's own route rather than
+      // captured from the caller above. The transport is cached for the life of
+      // the process, so a captured chain would bind every later alias to
+      // whichever alias happened to dispatch first: its head leg would never
+      // match, would be addressed as "<alias>.fallback.primary" — a name the
+      // gateway does not register — and the 400 would be absorbed by the
+      // fallback chain. The call still succeeds, from the SECONDARY leg, which
+      // is why this reads as healthy traffic while every alias but one quietly
+      // stops using the model it was chosen for.
+      modelNameFor: (request) =>
+        gatewayModelNameFor(
+          request.route,
+          resolveChain(request.route.alias, { isolated: request.route.isolated }),
+        ),
     });
   }
   return gatewayTransport;
