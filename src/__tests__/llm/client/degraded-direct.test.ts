@@ -148,7 +148,18 @@ describe("degraded direct path", () => {
     expect(result.response).toBe(GATEWAY_ANSWER);
     expect(direct.calls).toHaveLength(0);
     expect(gateway.routeKeys).toEqual(chain.routes.map((route) => route.routeKey));
-    expect(result.attempts.map((attempt) => attempt.outcome)).toEqual(["error", "ok"]);
+    // Derived from the chain rather than written out, so adding an open-weight
+    // fallback leg to the alias does not read as a regression here. What the
+    // case actually asserts is the SHAPE: every open leg is relayed the
+    // provider error and the closed incumbent answers — not that the chain
+    // happens to be two legs long.
+    expect(result.attempts.map((attempt) => attempt.outcome)).toEqual(
+      chain.routes.map((route) => (route.provider.tier === "closed" ? "ok" : "error")),
+    );
+    // Anchors the shape: without an open leg to fail and a closed one to
+    // answer, the expectation above would be satisfied vacuously.
+    expect(chain.routes.filter((route) => route.provider.tier !== "closed").length).toBeGreaterThan(0);
+    expect(chain.routes.filter((route) => route.provider.tier === "closed").length).toBe(1);
   });
 
   it("exhausts the chain rather than degrading when every leg is relayed a provider error", async () => {

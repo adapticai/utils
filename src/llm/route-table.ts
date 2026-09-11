@@ -179,6 +179,56 @@ export interface ResolvedChain {
 }
 
 /**
+ * Whether one route may serve, and if not, why.
+ *
+ * Extracted from the chain resolver rather than left inline so the admission
+ * rules can be exercised directly. Inline, the only way to prove an exclusion
+ * rule works was to point it at the live table and hope the table still
+ * contained something excludable — which made the proof a statement about how
+ * incomplete the routing policy happened to be that week, and turned finishing
+ * the policy into a test failure. A rule worth enforcing has to be provable on
+ * a route constructed to violate it.
+ *
+ * Order matters: shadow-only is checked before model-id confirmation because a
+ * shadow leg is held back by policy regardless of whether its id is confirmed,
+ * and reporting it as "unconfirmed" would misdescribe a deliberate choice as an
+ * unfinished one.
+ *
+ * The admitting branch carries the confirmed model id rather than leaving the
+ * caller to re-read it. The id is the very thing admission validated, so
+ * handing it back is what lets the caller use it without a non-null assertion
+ * re-stating a check that already happened.
+ *
+ * @param route The authored route.
+ * @param provider The provider entry the route names.
+ * @returns Admission with the confirmed model id, or the reason for exclusion.
+ */
+export function routeAdmission(
+  route: LlmRoute,
+  provider: LlmProvider,
+): { admit: true; modelId: string } | { admit: false; reason: string } {
+  if (route.shadow_only === true) {
+    return {
+      admit: false,
+      reason: "shadow-only: configured and scored, never served to a caller",
+    };
+  }
+  if (route.model_id_status !== "confirmed" || route.model_id === null) {
+    return {
+      admit: false,
+      reason: `model id unconfirmed (${route.model_family}); it is transcribed from the provider console at onboarding, never guessed`,
+    };
+  }
+  if (provider.account_status !== "live") {
+    return {
+      admit: false,
+      reason: `provider account status is "${provider.account_status}"`,
+    };
+  }
+  return { admit: true, modelId: route.model_id };
+}
+
+/**
  * Resolve an alias to the ordered chain of legs that can serve it today.
  *
  * Exclusions are returned rather than discarded so an exhausted chain can say
@@ -215,28 +265,13 @@ export function resolveChain(
 
   for (const route of orderedRoutes(definition)) {
     const provider = providerEntry(route.provider);
+    const admission = routeAdmission(route, provider);
 
-    if (route.shadow_only === true) {
+    if (!admission.admit) {
       exclusions.push({
         role: route.role,
         provider: route.provider,
-        reason: "shadow-only: configured and scored, never served to a caller",
-      });
-      continue;
-    }
-    if (route.model_id_status !== "confirmed" || route.model_id === null) {
-      exclusions.push({
-        role: route.role,
-        provider: route.provider,
-        reason: `model id unconfirmed (${route.model_family}); it is transcribed from the provider console at onboarding, never guessed`,
-      });
-      continue;
-    }
-    if (provider.account_status !== "live") {
-      exclusions.push({
-        role: route.role,
-        provider: route.provider,
-        reason: `provider account status is "${provider.account_status}"`,
+        reason: admission.reason,
       });
       continue;
     }
@@ -247,7 +282,7 @@ export function resolveChain(
       role: route.role,
       providerName: route.provider,
       provider,
-      modelId: route.model_id,
+      modelId: admission.modelId,
       lumicModel: route.lumic_model ?? null,
       params: route.params ?? {},
       routeKey: routeKeyFor(alias, isolated, route.role),

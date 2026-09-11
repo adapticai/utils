@@ -232,7 +232,11 @@ function judgeTable(overrides: {
 } = {}): LlmRouteTable {
   const primary: LlmRoute = {
     role: "primary",
-    provider: "anthropic",
+    // Both halves of the identity come from the pin. A fixture that takes the
+    // model id from PINNED_JUDGE but names a vendor of its own is not a
+    // correctly-pinned table — it is the same drift this suite exists to
+    // catch, one level down, and it fails the moment the pin moves provider.
+    provider: PINNED_JUDGE.provider,
     model_id: overrides.modelId ?? PINNED_JUDGE.modelId,
     model_id_status: "confirmed",
     model_family: "synthetic-judge",
@@ -254,7 +258,7 @@ function judgeTable(overrides: {
     schema_version: 1,
     policy_source: "synthetic fixture",
     defaults: SYNTHETIC_DEFAULTS,
-    providers: { anthropic: SYNTHETIC_PROVIDER },
+    providers: { [PINNED_JUDGE.provider]: SYNTHETIC_PROVIDER },
     aliases: { [PINNED_JUDGE.alias]: judge },
   };
 }

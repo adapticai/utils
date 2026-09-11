@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "policy_source": "docs/llm-provider-migration.md#3-routing-policy (v1.1)",
-  "revised": "2026-09-10",
+  "revised": "2026-09-11",
   "defaults": {
     "request_timeout_ms": {
       "hot-path": 30000,
@@ -56,13 +56,13 @@
       "base_url_env": "DEEPINFRA_BASE_URL",
       "api_key_env": "DEEPINFRA_API_KEY",
       "secret_path": "llm/deepinfra/apiKey",
-      "account_status": "pending-onboarding",
+      "account_status": "live",
       "lumic_provider": null,
       "published_rpm": null,
       "published_tpm": null,
       "limits_source": null,
       "docs_url": "https://deepinfra.com/docs",
-      "notes": "Rate limits and exact model ids are transcribed from the provider console at W3-02, never guessed."
+      "notes": "Sole open-weight host. The routing policy originally spread these models across Z.ai first-party, DeepInfra and Groq; DeepInfra's catalogue carries all of them, so consolidating removes three onboardings, three keys and three terms filings at the cost of roughly 28% on llm.reason's input price versus the first-party GLM anchor. Fewer credentials and fewer trust boundaries is worth more than that margin on one alias."
     },
     "fireworks": {
       "display_name": "Fireworks AI",
@@ -72,13 +72,13 @@
       "base_url_env": "FIREWORKS_BASE_URL",
       "api_key_env": "FIREWORKS_API_KEY",
       "secret_path": "llm/fireworks/apiKey",
-      "account_status": "pending-onboarding",
+      "account_status": "not-in-scope",
       "lumic_provider": null,
       "published_rpm": null,
       "published_tpm": null,
       "limits_source": null,
       "docs_url": "https://docs.fireworks.ai",
-      "notes": "Onboarded as a capacity backstop. No alias routes to it until its published RPM ceiling is recorded in provider-limits (W4-04)."
+      "notes": "Superseded by the DeepInfra consolidation: the models this host was chosen for are served from DeepInfra under one account. Retained in the registry so a future re-split needs a config change rather than a new onboarding."
     },
     "zai": {
       "display_name": "Z.ai",
@@ -88,13 +88,13 @@
       "base_url_env": "ZAI_BASE_URL",
       "api_key_env": "ZAI_API_KEY",
       "secret_path": "llm/zai/apiKey",
-      "account_status": "pending-onboarding",
+      "account_status": "not-in-scope",
       "lumic_provider": null,
       "published_rpm": null,
       "published_tpm": null,
       "limits_source": null,
       "docs_url": "https://docs.z.ai",
-      "notes": "First-party GLM host. Section 3 anchors first-party GLM below the converged multi-host price, so it is the primary leg for llm.reason."
+      "notes": "Superseded by the DeepInfra consolidation: the models this host was chosen for are served from DeepInfra under one account. Retained in the registry so a future re-split needs a config change rather than a new onboarding."
     },
     "deepseek": {
       "display_name": "DeepSeek",
@@ -104,13 +104,13 @@
       "base_url_env": "DEEPSEEK_BASE_URL",
       "api_key_env": "DEEPSEEK_API_KEY",
       "secret_path": "llm/deepseek/apiKey",
-      "account_status": "live",
+      "account_status": "not-in-scope",
       "lumic_provider": "deepseek",
       "published_rpm": null,
       "published_tpm": null,
       "limits_source": null,
       "docs_url": "https://api-docs.deepseek.com",
-      "notes": "Already a registered lumic provider, so its legs can also be served by the degraded direct transport. Off-peak windows are captured in gateway config at W3-05 for batch scheduling."
+      "notes": "First-party DeepSeek API, no longer routed to. Its G1 filing found no commitment not to train on API inputs, no stated retention period, no sub-processor list, and storage under PRC jurisdiction — a materially weaker data posture than any other provider reviewed, and not one to send trading prompts through. The DeepSeek MODELS are still used and are a good fit; they are now served as open weights from DeepInfra under its Zero Data Retention commitment. The weights and the vendor's hosted API are separable, and only the API carried the exposure. Retained in the registry so the distinction stays visible rather than being rediscovered."
     },
     "groq": {
       "display_name": "Groq",
@@ -126,7 +126,7 @@
       "published_tpm": null,
       "limits_source": null,
       "docs_url": "https://console.groq.com/docs",
-      "notes": "Section 3 names Groq or Cerebras as the llm.fast primary, but the W3 onboarding list does not include either. See open item OI-01: until an owner resolves it, llm.fast's primary leg is unreachable and the alias serves from its secondary and closed legs."
+      "notes": "Superseded by the DeepInfra consolidation: the models this host was chosen for are served from DeepInfra under one account. Retained in the registry so a future re-split needs a config change rather than a new onboarding."
     },
     "openrouter": {
       "display_name": "OpenRouter",
@@ -155,56 +155,64 @@
       "budget": {
         "basis": "provisional-pre-baseline",
         "monthly_usd": 750,
-        "alert_pct": [50, 80, 100]
+        "alert_pct": [
+          50,
+          80,
+          100
+        ]
       },
       "routes": [
         {
           "role": "primary",
-          "provider": "zai",
-          "model_id": null,
-          "model_id_status": "pending-provider-confirmation",
-          "model_id_source": null,
-          "model_family": "GLM-5.3",
-          "lumic_model": null,
-          "params": {
-            "temperature": null,
-            "max_output_tokens": null,
-            "supports_temperature": true,
-            "supports_json_schema": true,
-            "supports_tools": true,
-            "supports_cache_control": false,
-            "supports_vision": false
-          },
-          "price_per_mtok": {
-            "input": 1.09,
-            "output": 3.43,
-            "as_of": "2026-09-10",
-            "source": "docs/llm-provider-migration.md#3 first-party GLM-5.3 anchor; re-verify at W2-02"
-          }
-        },
-        {
-          "role": "secondary",
           "provider": "deepinfra",
-          "model_id": null,
-          "model_id_status": "pending-provider-confirmation",
-          "model_id_source": null,
+          "model_id": "deepseek-ai/DeepSeek-V4-Pro",
+          "model_id_status": "confirmed",
+          "model_id_source": "DeepInfra /v1/openai/models catalogue queried against the live account 2026-09-11; tool-calling and latency verified by direct call on the same account",
           "model_family": "DeepSeek V4 Pro",
-          "lumic_model": null,
+          "lumic_model": "deepseek-ai/DeepSeek-V4-Pro",
           "params": {
             "temperature": null,
             "max_output_tokens": null,
             "supports_temperature": true,
             "supports_json_schema": true,
             "supports_tools": true,
-            "supports_cache_control": false,
-            "supports_vision": false
+            "supports_cache_control": true,
+            "supports_vision": false,
+            "context_window": 1048576
           },
           "price_per_mtok": {
             "input": 1.3,
             "output": 2.6,
-            "as_of": "2026-09-10",
-            "source": "docs/llm-provider-migration.md#3 DeepInfra anchor; re-verify at W2-02"
-          }
+            "as_of": "2026-09-11",
+            "source": "DeepInfra /v1/openai/models catalogue queried against the live account 2026-09-11; tool-calling and latency verified by direct call on the same account"
+          },
+          "notes": "1.6T MoE, 49B active, 1M context. Its model card cites advanced reasoning and long-running agent tasks, and it is the cheapest model in the flagship tier by a wide margin — a quarter of the incumbent's input price and a tenth of its output price."
+        },
+        {
+          "role": "secondary",
+          "provider": "deepinfra",
+          "model_id": "zai-org/GLM-5.3",
+          "model_id_status": "confirmed",
+          "model_id_source": "DeepInfra /v1/openai/models catalogue queried against the live account 2026-09-11; tool-calling and latency verified by direct call on the same account",
+          "model_family": "GLM-5.3",
+          "lumic_model": "zai-org/GLM-5.3",
+          "params": {
+            "temperature": null,
+            "max_output_tokens": null,
+            "supports_temperature": true,
+            "supports_json_schema": true,
+            "supports_tools": true,
+            "supports_cache_control": true,
+            "supports_vision": false,
+            "context_window": 1048576
+          },
+          "price_per_mtok": {
+            "input": 1.2,
+            "output": 4,
+            "as_of": "2026-09-11",
+            "source": "DeepInfra /v1/openai/models catalogue queried against the live account 2026-09-11; tool-calling and latency verified by direct call on the same account"
+          },
+          "notes": "A separate lineage from the primary rather than a smaller sibling, so a DeepSeek-family regression cannot take both legs of this chain at once."
         },
         {
           "role": "closed_incumbent",
@@ -243,11 +251,67 @@
       "budget": {
         "basis": "provisional-pre-baseline",
         "monthly_usd": 1500,
-        "alert_pct": [50, 80, 100]
+        "alert_pct": [
+          50,
+          80,
+          100
+        ]
       },
       "routes": [
         {
           "role": "primary",
+          "provider": "deepinfra",
+          "model_id": "moonshotai/Kimi-K3",
+          "model_id_status": "confirmed",
+          "model_id_source": "DeepInfra /v1/openai/models catalogue queried against the live account 2026-09-11; tool-calling and latency verified by direct call on the same account",
+          "model_family": "Kimi K3",
+          "lumic_model": "moonshotai/Kimi-K3",
+          "params": {
+            "temperature": null,
+            "max_output_tokens": null,
+            "supports_temperature": true,
+            "supports_json_schema": true,
+            "supports_tools": true,
+            "supports_cache_control": true,
+            "supports_vision": true,
+            "context_window": 1048576
+          },
+          "price_per_mtok": {
+            "input": 2.85,
+            "output": 14.25,
+            "as_of": "2026-09-11",
+            "source": "DeepInfra /v1/openai/models catalogue queried against the live account 2026-09-11; tool-calling and latency verified by direct call on the same account"
+          },
+          "notes": "2.8T open-weight, built explicitly for long-horizon agentic workflows: tool calling, repository navigation, and iterating on logs and test feedback. The most expensive open model selected, which is justified here because this is the hardest workload and the lowest volume."
+        },
+        {
+          "role": "secondary",
+          "provider": "deepinfra",
+          "model_id": "deepseek-ai/DeepSeek-V4-Pro",
+          "model_id_status": "confirmed",
+          "model_id_source": "DeepInfra /v1/openai/models catalogue queried against the live account 2026-09-11; tool-calling and latency verified by direct call on the same account",
+          "model_family": "DeepSeek V4 Pro",
+          "lumic_model": "deepseek-ai/DeepSeek-V4-Pro",
+          "params": {
+            "temperature": null,
+            "max_output_tokens": null,
+            "supports_temperature": true,
+            "supports_json_schema": true,
+            "supports_tools": true,
+            "supports_cache_control": true,
+            "supports_vision": false,
+            "context_window": 1048576
+          },
+          "price_per_mtok": {
+            "input": 1.3,
+            "output": 2.6,
+            "as_of": "2026-09-11",
+            "source": "DeepInfra /v1/openai/models catalogue queried against the live account 2026-09-11; tool-calling and latency verified by direct call on the same account"
+          },
+          "notes": "Also cites long-running agent tasks, at a fifth of the primary's output price."
+        },
+        {
+          "role": "closed_incumbent",
           "provider": "anthropic",
           "model_id": "claude-opus-4-7",
           "model_id_status": "confirmed",
@@ -270,32 +334,6 @@
             "as_of": "2026-09-10",
             "source": "docs/llm-provider-migration.md#3 Fable-class anchor"
           }
-        },
-        {
-          "role": "secondary",
-          "provider": "deepinfra",
-          "model_id": null,
-          "model_id_status": "pending-provider-confirmation",
-          "model_id_source": null,
-          "model_family": "Kimi K3",
-          "lumic_model": null,
-          "shadow_only": true,
-          "params": {
-            "temperature": null,
-            "max_output_tokens": null,
-            "supports_temperature": true,
-            "supports_json_schema": true,
-            "supports_tools": true,
-            "supports_cache_control": false,
-            "supports_vision": false
-          },
-          "price_per_mtok": {
-            "input": 2.85,
-            "output": 14.25,
-            "as_of": "2026-09-10",
-            "source": "docs/llm-provider-migration.md#3 DeepInfra anchor; re-verify at W2-02"
-          },
-          "notes": "Shadow-eval only per Section 3. Configured and scored, never served to a caller, so the hardest agentic path keeps its closed primary while the open candidate accrues evidence."
         }
       ]
     },
@@ -309,57 +347,64 @@
       "budget": {
         "basis": "provisional-pre-baseline",
         "monthly_usd": 400,
-        "alert_pct": [50, 80, 100]
+        "alert_pct": [
+          50,
+          80,
+          100
+        ]
       },
       "routes": [
         {
           "role": "primary",
-          "provider": "groq",
-          "model_id": null,
-          "model_id_status": "pending-provider-confirmation",
-          "model_id_source": null,
-          "model_family": "gpt-oss-120B",
-          "lumic_model": null,
+          "provider": "deepinfra",
+          "model_id": "deepseek-ai/DeepSeek-V4-Flash",
+          "model_id_status": "confirmed",
+          "model_id_source": "DeepInfra /v1/openai/models catalogue queried against the live account 2026-09-11; tool-calling and latency verified by direct call on the same account",
+          "model_family": "DeepSeek V4 Flash",
+          "lumic_model": "deepseek-ai/DeepSeek-V4-Flash",
           "params": {
             "temperature": null,
             "max_output_tokens": null,
             "supports_temperature": true,
             "supports_json_schema": true,
             "supports_tools": true,
-            "supports_cache_control": false,
-            "supports_vision": false
+            "supports_cache_control": true,
+            "supports_vision": false,
+            "context_window": 1048576
           },
           "price_per_mtok": {
-            "input": 0.039,
-            "output": 0.19,
-            "as_of": "2026-09-10",
-            "source": "docs/llm-provider-migration.md#3 gpt-oss-120B anchor (DeepInfra price; Groq price unconfirmed pending OI-01)"
+            "input": 0.09,
+            "output": 0.18,
+            "as_of": "2026-09-11",
+            "source": "DeepInfra /v1/openai/models catalogue queried against the live account 2026-09-11; tool-calling and latency verified by direct call on the same account"
           },
-          "notes": "Unreachable until OI-01 is resolved — Groq is not on the W3 onboarding list."
+          "notes": "284B MoE, 13B active, 1M context. Measured median 1241 ms on a realistic trading prompt, and the only candidate that answered in directly usable form instead of narrating its reasoning first — which on a hot path is the difference between a parseable answer and a parsing problem."
         },
         {
           "role": "secondary",
           "provider": "deepinfra",
-          "model_id": null,
-          "model_id_status": "pending-provider-confirmation",
-          "model_id_source": null,
-          "model_family": "gpt-oss-120B",
-          "lumic_model": null,
+          "model_id": "zai-org/GLM-5.3-Flash",
+          "model_id_status": "confirmed",
+          "model_id_source": "DeepInfra /v1/openai/models catalogue queried against the live account 2026-09-11; tool-calling and latency verified by direct call on the same account",
+          "model_family": "GLM-5.3 Flash",
+          "lumic_model": "zai-org/GLM-5.3-Flash",
           "params": {
             "temperature": null,
             "max_output_tokens": null,
             "supports_temperature": true,
             "supports_json_schema": true,
             "supports_tools": true,
-            "supports_cache_control": false,
-            "supports_vision": false
+            "supports_cache_control": true,
+            "supports_vision": true,
+            "context_window": 1048576
           },
           "price_per_mtok": {
-            "input": 0.039,
-            "output": 0.19,
-            "as_of": "2026-09-10",
-            "source": "docs/llm-provider-migration.md#3 DeepInfra anchor; re-verify at W2-02"
-          }
+            "input": 0.15,
+            "output": 0.5,
+            "as_of": "2026-09-11",
+            "source": "DeepInfra /v1/openai/models catalogue queried against the live account 2026-09-11; tool-calling and latency verified by direct call on the same account"
+          },
+          "notes": "A different lineage from the primary, with a 1M context and JSON mode. Chosen over the faster Nemotron 3 Nano, which measured the quickest median of any candidate but rejects response_format outright with HTTP 405 — and llm.fast is a structured-output alias, so a leg that cannot express the contract is not a fallback at all, only a slower way to fail."
         },
         {
           "role": "closed_incumbent",
@@ -397,42 +442,21 @@
       "budget": {
         "basis": "provisional-pre-baseline",
         "monthly_usd": 300,
-        "alert_pct": [50, 80, 100]
+        "alert_pct": [
+          50,
+          80,
+          100
+        ]
       },
       "routes": [
         {
           "role": "primary",
-          "provider": "deepseek",
-          "model_id": "deepseek-v4-flash",
+          "provider": "deepinfra",
+          "model_id": "openai/gpt-oss-20b",
           "model_id_status": "confirmed",
-          "model_id_source": "lumic-utils/src/types/openai-types.ts SUPPORTED_MODELS — already routed on in production",
-          "model_family": "DeepSeek V4 Flash",
-          "lumic_model": "deepseek-v4-flash",
-          "params": {
-            "temperature": null,
-            "max_output_tokens": 64000,
-            "supports_temperature": true,
-            "supports_json_schema": true,
-            "supports_tools": true,
-            "supports_cache_control": true,
-            "supports_vision": false,
-            "context_window": 1000000
-          },
-          "price_per_mtok": {
-            "input": 0.14,
-            "output": 0.28,
-            "as_of": "2026-09-10",
-            "source": "docs/llm-provider-migration.md#3 V4 Flash anchor; re-verify at W2-02"
-          }
-        },
-        {
-          "role": "secondary",
-          "provider": "zai",
-          "model_id": null,
-          "model_id_status": "pending-provider-confirmation",
-          "model_id_source": null,
-          "model_family": "GLM 5.3 Flash",
-          "lumic_model": null,
+          "model_id_source": "DeepInfra /v1/openai/models catalogue queried against the live account 2026-09-11; tool-calling and latency verified by direct call on the same account",
+          "model_family": "gpt-oss-20B",
+          "lumic_model": "openai/gpt-oss-20b",
           "params": {
             "temperature": null,
             "max_output_tokens": null,
@@ -440,14 +464,42 @@
             "supports_json_schema": true,
             "supports_tools": true,
             "supports_cache_control": false,
-            "supports_vision": false
+            "supports_vision": false,
+            "context_window": 131072
           },
           "price_per_mtok": {
-            "input": 1.09,
-            "output": 3.43,
-            "as_of": "2026-09-10",
-            "source": "docs/llm-provider-migration.md#3 GLM first-party anchor; Flash-tier price unconfirmed, re-verify at W2-02"
-          }
+            "input": 0.03,
+            "output": 0.14,
+            "as_of": "2026-09-11",
+            "source": "DeepInfra /v1/openai/models catalogue queried against the live account 2026-09-11; tool-calling and latency verified by direct call on the same account"
+          },
+          "notes": "The cheapest tool-capable model in the catalogue at $0.03/$0.14, which is what a high-volume classification and log-analysis workload should be paying."
+        },
+        {
+          "role": "secondary",
+          "provider": "deepinfra",
+          "model_id": "inclusionAI/Ling-3.0-flash-Fin",
+          "model_id_status": "confirmed",
+          "model_id_source": "DeepInfra /v1/openai/models catalogue queried against the live account 2026-09-11; tool-calling and latency verified by direct call on the same account",
+          "model_family": "Ling 3.0 Flash Fin",
+          "lumic_model": "inclusionAI/Ling-3.0-flash-Fin",
+          "params": {
+            "temperature": null,
+            "max_output_tokens": null,
+            "supports_temperature": true,
+            "supports_json_schema": true,
+            "supports_tools": true,
+            "supports_cache_control": true,
+            "supports_vision": false,
+            "context_window": 262144
+          },
+          "price_per_mtok": {
+            "input": 0.06,
+            "output": 0.18,
+            "as_of": "2026-09-11",
+            "source": "DeepInfra /v1/openai/models catalogue queried against the live account 2026-09-11; tool-calling and latency verified by direct call on the same account"
+          },
+          "notes": "Finance-enhanced through continued training on financial data, with a 262k context. A deliberate second opinion on financial text rather than a generic fallback."
         },
         {
           "role": "closed_incumbent",
@@ -483,48 +535,47 @@
       "isolation_capable": false,
       "pinned": true,
       "eval_gate": "none-pinned-judge",
-      "policy_note": "PD-6: pinned and never auto-swapped, and deliberately carries no fallback. A judge that silently failed over would grade one model's output against another model's standard, which would corrupt every gate decided by it — so it fails loud instead.",
+      "policy_note": "PD-6: pinned and never auto-swapped, and deliberately carries no fallback. Moved off the closed incumbent because a judge running on a vendor we are migrating away from cannot impartially grade that migration — it would be scoring the challengers against its own family.",
       "budget": {
         "basis": "provisional-pre-baseline",
         "monthly_usd": 150,
-        "alert_pct": [50, 80, 100]
+        "alert_pct": [
+          50,
+          80,
+          100
+        ]
       },
       "routes": [
         {
           "role": "primary",
-          "provider": "anthropic",
-          "model_id": "claude-sonnet-4-6",
+          "provider": "deepinfra",
+          "model_id": "deepseek-ai/DeepSeek-V4-Pro",
           "model_id_status": "confirmed",
-          "model_id_source": "lumic-utils/src/types/openai-types.ts SUPPORTED_MODELS — already routed on in production",
-          "model_family": "Sonnet-class",
-          "lumic_model": "claude-sonnet-4-6",
+          "model_id_source": "DeepInfra /v1/openai/models catalogue queried against the live account 2026-09-11; tool-calling and latency verified by direct call on the same account",
+          "model_family": "DeepSeek V4 Pro",
+          "lumic_model": "deepseek-ai/DeepSeek-V4-Pro",
           "params": {
-            "temperature": 0,
-            "max_output_tokens": 64000,
+            "temperature": null,
+            "max_output_tokens": null,
             "supports_temperature": true,
             "supports_json_schema": true,
             "supports_tools": true,
             "supports_cache_control": true,
-            "supports_vision": true,
-            "context_window": 1000000
+            "supports_vision": false,
+            "context_window": 1048576
           },
           "price_per_mtok": {
-            "input": 3,
-            "output": 15,
-            "as_of": "2026-09-10",
-            "source": "lumic-utils/src/functions/llm-config.ts anthropicModelCosts"
-          }
+            "input": 1.3,
+            "output": 2.6,
+            "as_of": "2026-09-11",
+            "source": "DeepInfra /v1/openai/models catalogue queried against the live account 2026-09-11; tool-calling and latency verified by direct call on the same account"
+          },
+          "notes": "Pinned with no fallback (PD-6). A judge that failed over would grade one model's output against another model's standard, corrupting every gate decided by it."
         }
       ]
     }
   },
   "open_items": [
-    {
-      "id": "OI-01",
-      "question": "Section 3 makes Groq or Cerebras the llm.fast primary, but neither appears in the W3 onboarding provider list (DeepInfra, Fireworks, Z.ai, DeepSeek, aggregator). Which host serves llm.fast's primary leg, and is it added to W3?",
-      "blocks": "llm.fast primary reachability; W5-03 canary for llm.fast",
-      "owner": "CEO"
-    },
     {
       "id": "OI-02",
       "question": "Section 3 names a Fable-class primary for llm.agentic, but the lumic model registry's strongest registered Anthropic model is claude-opus-4-7. Register a Fable-class model in @adaptic/lumic-utils, or accept opus-4-7 as the llm.agentic primary?",

@@ -55,8 +55,8 @@ export interface PinnedJudgeIdentity {
  */
 export const PINNED_JUDGE: PinnedJudgeIdentity = {
   alias: "llm.judge",
-  provider: "anthropic",
-  modelId: "claude-sonnet-4-6",
+  provider: "deepinfra",
+  modelId: "deepseek-ai/DeepSeek-V4-Pro",
 };
 
 /**
