@@ -383,28 +383,28 @@
         {
           "role": "secondary",
           "provider": "deepinfra",
-          "model_id": "zai-org/GLM-5.3-Flash",
+          "model_id": "openai/gpt-oss-20b",
           "model_id_status": "confirmed",
           "model_id_source": "DeepInfra /v1/openai/models catalogue queried against the live account 2026-09-11; tool-calling and latency verified by direct call on the same account",
-          "model_family": "GLM-5.3 Flash",
-          "lumic_model": "zai-org/GLM-5.3-Flash",
+          "model_family": "gpt-oss-20B",
+          "lumic_model": "openai/gpt-oss-20b",
           "params": {
             "temperature": null,
             "max_output_tokens": null,
             "supports_temperature": true,
             "supports_json_schema": true,
             "supports_tools": true,
-            "supports_cache_control": true,
-            "supports_vision": true,
-            "context_window": 1048576
+            "supports_cache_control": false,
+            "supports_vision": false,
+            "context_window": 131072
           },
           "price_per_mtok": {
-            "input": 0.15,
-            "output": 0.5,
+            "input": 0.03,
+            "output": 0.14,
             "as_of": "2026-09-11",
             "source": "DeepInfra /v1/openai/models catalogue queried against the live account 2026-09-11; tool-calling and latency verified by direct call on the same account"
           },
-          "notes": "A different lineage from the primary, with a 1M context and JSON mode. Chosen over the faster Nemotron 3 Nano, which measured the quickest median of any candidate but rejects response_format outright with HTTP 405 — and llm.fast is a structured-output alias, so a leg that cannot express the contract is not a fallback at all, only a slower way to fail."
+          "notes": "A different lineage from the primary, so one family's regression cannot take both serving legs, and fast enough to be a real fallback: median 5.5s against this alias's 30s hot-path budget on a production-scale prompt. It replaces GLM-5.3-Flash, which was chosen for the same lineage reason on a TRIVIAL prompt and measured 13-23s once put against production-sized input — close enough to the budget that the fallback was timing out and returning 408 instead of covering the primary. A fallback with no latency headroom is not a fallback; it is a slower way to fail, which is the exact test this alias's previous secondary was chosen to satisfy and then failed itself."
         },
         {
           "role": "closed_incumbent",
