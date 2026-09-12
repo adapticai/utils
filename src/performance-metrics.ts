@@ -19,8 +19,8 @@ import {
   TimeFrame,
 } from "./types/alpaca-types";
 import { Period, IntradayReporting } from "./types/market-time-types";
-import { types } from "@adaptic/backend-legacy";
-import adaptic from "@adaptic/backend-legacy";
+import { types } from "@adaptic/backend";
+import adaptic from "@adaptic/backend";
 import { getSharedApolloClient } from "./adaptic";
 import {
   PerformanceMetrics,

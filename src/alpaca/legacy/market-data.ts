@@ -2,8 +2,8 @@
  * Legacy Alpaca Market Data Functions
  * Quotes and news retrieval using AlpacaAuth pattern with direct fetch calls.
  */
-import { types } from "@adaptic/backend-legacy";
-import adaptic from "@adaptic/backend-legacy";
+import { types } from "@adaptic/backend";
+import adaptic from "@adaptic/backend";
 import { getSharedApolloClient } from "../../adaptic";
 import {
   AlpacaAuth,

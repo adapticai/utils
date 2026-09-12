@@ -8,7 +8,7 @@ import {
   type TokenProvider,
   type ApolloClientType,
   type NormalizedCacheObject,
-} from "@adaptic/backend-legacy";
+} from "@adaptic/backend";
 import { createTimeoutSignal, DEFAULT_TIMEOUTS } from "./http-timeout";
 
 // Re-export TokenProvider type for consumers
@@ -25,7 +25,7 @@ let authConfigured = false;
 /**
  * Configure the Apollo client authentication with a dynamic token provider.
  * This should be called once during app initialization before making any
- * @adaptic/backend-legacy API calls.
+ * @adaptic/backend API calls.
  *
  * The token provider function will be called for each GraphQL request,
  * allowing for dynamic token retrieval (e.g., from session storage, SecretsManager, etc.)
@@ -77,7 +77,7 @@ export const isAuthConfigured = (): boolean => {
 
 /**
  * Returns a shared Apollo client instance with connection pooling.
- * This should be used for all @adaptic/backend-legacy operations.
+ * This should be used for all @adaptic/backend operations.
  *
  * @returns {Promise<ApolloClientInstance>} The shared Apollo client instance.
  */

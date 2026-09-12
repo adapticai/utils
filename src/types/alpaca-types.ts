@@ -3,8 +3,8 @@
 import {
   ApolloClientType,
   NormalizedCacheObject,
-} from "@adaptic/backend-legacy";
-import { types } from "@adaptic/backend-legacy";
+} from "@adaptic/backend";
+import { types } from "@adaptic/backend";
 import type Alpaca from "@alpacahq/alpaca-trade-api";
 
 // ──────────────────────────────────────────────────────────────────────────────

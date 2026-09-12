@@ -1,9 +1,9 @@
 import {
   ApolloClientType,
   NormalizedCacheObject,
-} from "@adaptic/backend-legacy";
+} from "@adaptic/backend";
 import { PortfolioHistoryParams } from "./alpaca-types";
-import { types } from "@adaptic/backend-legacy";
+import { types } from "@adaptic/backend";
 
 export interface FetchPerformanceMetricsProps {
   params?: PortfolioHistoryParams;

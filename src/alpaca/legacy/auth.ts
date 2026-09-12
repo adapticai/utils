@@ -2,8 +2,8 @@
  * Legacy Alpaca Authentication
  * Validates and resolves AlpacaAuth credentials for API calls.
  */
-import { types } from "@adaptic/backend-legacy";
-import adaptic from "@adaptic/backend-legacy";
+import { types } from "@adaptic/backend";
+import adaptic from "@adaptic/backend";
 import { getSharedApolloClient } from "../../adaptic";
 import { UnsupportedBrokerError } from "../../errors";
 import { AlpacaAuth } from "../../types/alpaca-types";

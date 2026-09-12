@@ -6,7 +6,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("@adaptic/backend-legacy", () => ({
+vi.mock("@adaptic/backend", () => ({
   default: {
     alpacaAccount: { get: vi.fn() },
   },
@@ -24,7 +24,7 @@ vi.mock("../risk-free-rate", () => ({
 }));
 
 import fetchTradeMetrics, { calculateMaxDrawdown } from "../metrics-calcs";
-import { types } from "@adaptic/backend-legacy";
+import { types } from "@adaptic/backend";
 import { Bar, BenchmarkBar } from "../types/alpaca-types";
 
 /** Closing prices whose long drawdown and short drawdown are both non-trivial. */

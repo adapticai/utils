@@ -3,7 +3,7 @@ import { getLogger } from "./logger";
 
 import { Bar, BenchmarkBar } from "./types/alpaca-types";
 import { computeTotalFees } from "./price-utils";
-import { types } from "@adaptic/backend-legacy";
+import { types } from "@adaptic/backend";
 import { CalculateBetaResult, TradeMetrics } from "./types";
 import { getRiskFreeRate } from "./risk-free-rate";
 /**

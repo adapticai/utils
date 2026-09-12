@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Mock dependencies before importing module under test
-vi.mock("@adaptic/backend-legacy", () => ({
+vi.mock("@adaptic/backend", () => ({
   default: {
     alpacaAccount: { get: vi.fn() },
   },
@@ -25,7 +25,7 @@ vi.mock("../logger", () => ({
   }),
 }));
 
-import adaptic from "@adaptic/backend-legacy";
+import adaptic from "@adaptic/backend";
 import {
   resolveBrokerCredentials,
   validateAuth,

@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
 
-// Mock @adaptic/backend-legacy before importing the module under test.
-// performance-metrics.ts has a top-level import of @adaptic/backend-legacy,
+// Mock @adaptic/backend before importing the module under test.
+// performance-metrics.ts has a top-level import of @adaptic/backend,
 // which transitively requires graphql-fields (not installed in utils).
-vi.mock("@adaptic/backend-legacy", () => ({
+vi.mock("@adaptic/backend", () => ({
   default: {
     alpacaAccount: { get: vi.fn() },
   },

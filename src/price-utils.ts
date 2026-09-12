@@ -1,6 +1,6 @@
 // price-utils.ts
 
-import adaptic, { types } from "@adaptic/backend-legacy";
+import adaptic, { types } from "@adaptic/backend";
 import { EquityPoint, AlpacaPortfolioHistory } from "./types/index";
 import { getDateInNY, MarketTimeUtil } from "./market-time";
 import { getOrder } from "./alpaca/legacy";

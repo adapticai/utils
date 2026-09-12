@@ -3,8 +3,8 @@
  * Account details, portfolio history, and configuration management
  * using AlpacaAuth pattern with direct fetch calls.
  */
-import { types } from "@adaptic/backend-legacy";
-import adaptic from "@adaptic/backend-legacy";
+import { types } from "@adaptic/backend";
+import adaptic from "@adaptic/backend";
 import { getSharedApolloClient } from "../../adaptic";
 import {
   AlpacaAccountDetails,
@@ -247,7 +247,7 @@ export async function getConfiguration(
     }
     if (!freshAlpacaAccount) {
       throw new Error(
-        "Failed to get Alpaca Account from @adaptic/backend-legacy.",
+        "Failed to get Alpaca Account from @adaptic/backend.",
       );
     }
 
@@ -503,7 +503,7 @@ export async function updateConfiguration(
     const alpacaData = (await alpacaResponse.json()) as AccountConfiguration;
     if (!updatedAlpacaAccount) {
       throw new Error(
-        "Failed to update Alpaca Account in @adaptic/backend-legacy.",
+        "Failed to update Alpaca Account in @adaptic/backend.",
       );
     }
 

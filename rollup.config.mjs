@@ -15,7 +15,7 @@ const isAnalyze = process.env.ANALYZE_BUNDLE === "true";
 const external = [
   "react",
   "react-dom",
-  "@adaptic/backend-legacy",
+  "@adaptic/backend",
   "date-fns",
   "date-fns-tz",
   "date-holidays",

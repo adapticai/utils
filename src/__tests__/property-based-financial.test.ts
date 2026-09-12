@@ -1,8 +1,8 @@
 import fc from "fast-check";
 import { describe, expect, it, vi } from "vitest";
 
-// Mock @adaptic/backend-legacy before importing the modules under test.
-vi.mock("@adaptic/backend-legacy", () => ({
+// Mock @adaptic/backend before importing the modules under test.
+vi.mock("@adaptic/backend", () => ({
   default: {
     alpacaAccount: { get: vi.fn() },
   },

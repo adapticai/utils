@@ -36,7 +36,7 @@ Lint: PRs target 0 errors. The standing warnings are `@alpacahq/alpaca-trade-api
 The `AlpacaAccount` → `BrokerageAccount` backend indirection lands by changing **exactly one function** — `resolveBrokerCredentials` — in this strict order:
 
 1. backend-legacy publishes a `stable` (`0.0.x`) version exporting `BrokerageAccount` (`adaptic.brokerageAccount.*` + `types.BrokerageAccount`). Verify against the **published `.d.ts`**, not a schema branch — field casing (`APIKey`/`APISecret`) must match.
-2. utils bumps its `@adaptic/backend-legacy` dependency and switches the helper (`alpacaAccount.get` → `brokerageAccount.get`) inside `resolveBrokerCredentials` only.
+2. utils bumps its `@adaptic/backend` dependency and switches the helper (`alpacaAccount.get` → `brokerageAccount.get`) inside `resolveBrokerCredentials` only.
 3. utils publishes the next `0.0.x` from `main`.
 4. engine bumps its `@adaptic/utils` pin in a coordinated PR.
 

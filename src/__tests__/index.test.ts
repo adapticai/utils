@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 // Mock all heavy transitive dependencies so vitest can import ../index
 // without needing the full node_modules graph (ws, graphql-fields, etc.).
-vi.mock("@adaptic/backend-legacy", () => ({
+vi.mock("@adaptic/backend", () => ({
   default: {
     alpacaAccount: { get: vi.fn() },
     allocation: { update: vi.fn(), create: vi.fn() },

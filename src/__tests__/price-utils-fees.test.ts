@@ -7,7 +7,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("@adaptic/backend-legacy", () => ({
+vi.mock("@adaptic/backend", () => ({
   default: {
     alpacaAccount: { get: vi.fn() },
   },
@@ -23,7 +23,7 @@ vi.mock("../adaptic", () => ({
   getSharedApolloClient: vi.fn(),
 }));
 
-import { types } from "@adaptic/backend-legacy";
+import { types } from "@adaptic/backend";
 import { calculateFees } from "../price-utils";
 
 /** Published fee-schedule rates the model must reproduce. */
