@@ -1,7 +1,7 @@
-# Changelog — `@adaptic/utils` (stable-release / 0.0.x lineage)
+# Changelog — `@adaptic/utils` (`main` / 0.0.x production lineage)
 
 Notable behavioral contract changes for consumers of the published package.
-Versions are stamped by CI on push to `stable-release`; entries reference the
+Versions are stamped by CI on push to `main`; entries reference the
 first version carrying the change.
 
 ## Unreleased (next 0.0.x after 0.0.1007)

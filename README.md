@@ -8,20 +8,23 @@ NPM repo: https://www.npmjs.com/package/@adaptic/utils
 
 This repo has two publish lineages:
 
-- `master` -> `@adaptic/utils@0.1.x` on npm dist-tag `latest`. What external
-  unpinned `npm install @adaptic/utils` will pull.
-- `stable-release` -> `@adaptic/utils@0.0.x` (0.0.992+) on npm dist-tag
-  `stable`. What `engine` and `backend-legacy` actually consume via pinned
+- `main` -> `@adaptic/utils@0.0.x` on npm dist-tag `stable`. The production
+  lineage — what `engine` and `backend-legacy` actually consume via pinned
   versions.
+- `master` -> `@adaptic/utils@0.1.x` on npm dist-tag `latest`. The legacy
+  external line, and what an unpinned `npm install @adaptic/utils` pulls. Its
+  only consumer inside the workspace is `@adaptic/lumic-utils`.
 
-All new work lands on `stable-release`. `master` is only updated when
-intentionally cutting a 0.1.x patch for legacy external consumers.
+All new work lands on `main`, the production branch since the 2026-09-12
+cutover; `stable-release` now mirrors it and is retained only for
+compatibility. `master` is only updated when intentionally cutting a 0.1.x
+patch for legacy external consumers.
 
 ## Installation
 
 ```bash
-npm install @adaptic/utils       # 0.1.x from master
-npm install @adaptic/utils@stable # 0.0.x from stable-release (engine pins this)
+npm install @adaptic/utils        # 0.1.x from master (legacy external line)
+npm install @adaptic/utils@stable # 0.0.x from main (the production line; engine pins this)
 ```
 
 ## Usage

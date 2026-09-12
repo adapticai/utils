@@ -4,9 +4,9 @@ Financial-calculation library and the vendor boundary: pure metrics/TA/money mat
 
 ## Branch & lineage (deltas to the root model)
 
-- **All new work lands on `stable-release`** (`0.0.x`, `@stable`). `master` (`0.1.x`, `@latest`) is touched only to intentionally patch the legacy external line.
-- The branches have diverged: `stable-release` carries trading-policy, ATR/risk/volatility/strategy primitives, multi-broker crypto, and production hardening absent from `master`. Audit and refactor against `stable-release` unless explicitly working the legacy line.
-- **Never merge `master`/`main` into `stable-release`** — the `lineage-guard` GitHub workflow enforces the observable signatures of that failure; the `53cca09` cross-lineage merge is the cautionary case.
+- **All new work lands on `main`** (`0.0.x`, `@stable`) — the production branch since the 2026-09-12 cutover. `stable-release` now mirrors `main` and is retained only for compatibility. `master` (`0.1.x`, `@latest`) is touched only to intentionally patch the legacy external line, whose sole consumer is `@adaptic/lumic-utils`.
+- The lineages have diverged: `main` carries trading-policy, ATR/risk/volatility/strategy primitives, multi-broker crypto, and production hardening absent from `master`. Audit and refactor against `main` unless explicitly working the legacy line.
+- **Never merge `master` into the `0.0.x` lineage** — the `lineage-guard` GitHub workflow enforces the observable signatures of that failure; the `53cca09` cross-lineage merge is the cautionary case.
 
 ## Commands
 
@@ -37,14 +37,14 @@ The `AlpacaAccount` → `BrokerageAccount` backend indirection lands by changing
 
 1. backend-legacy publishes a `stable` (`0.0.x`) version exporting `BrokerageAccount` (`adaptic.brokerageAccount.*` + `types.BrokerageAccount`). Verify against the **published `.d.ts`**, not a schema branch — field casing (`APIKey`/`APISecret`) must match.
 2. utils bumps its `@adaptic/backend-legacy` dependency and switches the helper (`alpacaAccount.get` → `brokerageAccount.get`) inside `resolveBrokerCredentials` only.
-3. utils publishes the next `0.0.x` from `stable-release`.
+3. utils publishes the next `0.0.x` from `main`.
 4. engine bumps its `@adaptic/utils` pin in a coordinated PR.
 
 Never reference `brokerageAccount` / `types.BrokerageAccount` anywhere in this package before step 1 completes — premature references against a pinned backend-legacy lacking the model are exactly what broke the `53cca09` merge.
 
-## Publish mechanics (stable-release)
+## Publish mechanics (`main`, the `0.0.x` production lineage)
 
-`.github/workflows/auto-publish-npm.yml` publishes on any push touching `src/**`, root `*.json`/`*.ts`/`*.mjs`, or `types/**`. CI derives the version itself (reads the `stable` dist-tag, increments the patch; falls back to `0.0.900`), publishes `--tag stable`, and **pushes a `ci: bump version` commit back to `stable-release` — pull after every publish before continuing work.** Never hand-race that bump. Markdown/docs and workflow-file changes do not trigger a publish. Pushes to `master` publish the legacy `0.1.x` as `latest` via the reusable `adapticai/workflows` publish. Cross-repo propagation follows the root's sequential chain; do not publish on guard `DIRTY_TREE` / `WRONG_BRANCH` / `AHEAD_BEHIND` / `NO_UPSTREAM`, and confirm the publish landed on npm before updating consumers.
+`.github/workflows/auto-publish-npm.yml` publishes on any push touching `src/**`, root `*.json`/`*.ts`/`*.mjs`, or `types/**`. CI derives the version itself (reads the `stable` dist-tag, increments the patch; falls back to `0.0.900`), publishes `--tag stable`, and **pushes a `ci: bump version` commit back to the branch it published from — pull after every publish before continuing work.** Never hand-race that bump. Markdown/docs and workflow-file changes do not trigger a publish. Pushes to `master` publish the legacy `0.1.x` as `latest` via the reusable `adapticai/workflows` publish. Cross-repo propagation follows the root's sequential chain; do not publish on guard `DIRTY_TREE` / `WRONG_BRANCH` / `AHEAD_BEHIND` / `NO_UPSTREAM`, and confirm the publish landed on npm before updating consumers.
 
 ## Codebase graph
 

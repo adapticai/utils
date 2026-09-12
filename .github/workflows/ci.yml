@@ -2,12 +2,12 @@ name: CI
 
 on:
   push:
-    branches: [stable-release, master]
+    branches: [main, stable-release, master]
     paths-ignore:
       - "**/*.md"
       - "docs/**"
   pull_request:
-    branches: [stable-release, master]
+    branches: [main, stable-release, master]
   schedule:
     - cron: "41 6 * * 1" # Mondays 06:41 UTC — weekly hygiene baseline
   workflow_dispatch:
