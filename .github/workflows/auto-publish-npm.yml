@@ -3,6 +3,7 @@ name: Auto Publish NPM Package
 on:
   push:
     branches:
+      - main
       - master
       - stable-release
     paths:
@@ -23,9 +24,15 @@ jobs:
     secrets:
       NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-  # Stable-release branch: standalone publish with stable dist-tag
+  # Production branch (main) plus stable-release during the cutover: publish the
+  # 0.0.x production train under the `stable` dist-tag.
+  #
+  # `latest` is deliberately NOT moved here, unlike the sibling packages. utils
+  # ships a second live lineage — 0.1.x from `master`, the only consumer of
+  # which is @adaptic/lumic-utils — and `latest` names that lineage. Pointing it
+  # at 0.0.x would make an unqualified install silently cross lineages.
   publish-stable:
-    if: github.ref == 'refs/heads/stable-release'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/stable-release'
     runs-on: ubuntu-latest
     env:
       GIT_USER_NAME: ${{ github.actor }}
@@ -92,4 +99,4 @@ jobs:
 
       - name: Push version bump back
         run: |
-          git push origin HEAD:stable-release
+          git push origin "HEAD:${GITHUB_REF_NAME}"

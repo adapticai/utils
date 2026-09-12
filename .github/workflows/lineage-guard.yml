@@ -15,10 +15,12 @@ name: Lineage Guard
 on:
   push:
     branches:
+      - main
       - stable-release
       - platform-alignment
   pull_request:
     branches:
+      - main
       - stable-release
       - platform-alignment
 
