@@ -386,7 +386,7 @@
           "model_id": "openai/gpt-oss-20b",
           "model_id_status": "confirmed",
           "model_id_source": "DeepInfra /v1/openai/models catalogue queried against the live account 2026-09-11; tool-calling and latency verified by direct call on the same account",
-          "model_family": "gpt-oss-20B",
+          "model_family": "gpt-oss-20b",
           "lumic_model": "openai/gpt-oss-20b",
           "params": {
             "temperature": null,
@@ -455,7 +455,7 @@
           "model_id": "openai/gpt-oss-20b",
           "model_id_status": "confirmed",
           "model_id_source": "DeepInfra /v1/openai/models catalogue queried against the live account 2026-09-11; tool-calling and latency verified by direct call on the same account",
-          "model_family": "gpt-oss-20B",
+          "model_family": "gpt-oss-20b",
           "lumic_model": "openai/gpt-oss-20b",
           "params": {
             "temperature": null,
@@ -481,7 +481,7 @@
           "model_id": "inclusionAI/Ling-3.0-flash-Fin",
           "model_id_status": "confirmed",
           "model_id_source": "DeepInfra /v1/openai/models catalogue queried against the live account 2026-09-11; tool-calling and latency verified by direct call on the same account",
-          "model_family": "Ling 3.0 Flash Fin",
+          "model_family": "Ling 3.0 flash Fin",
           "lumic_model": "inclusionAI/Ling-3.0-flash-Fin",
           "params": {
             "temperature": null,
