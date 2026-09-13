@@ -120,8 +120,16 @@ export function createDirectTransport(
       }
 
       const call = await config.resolveCaller();
+      // `developerPrompt` and `context` are named options on lumic's own call
+      // surface, not body parameters, so they are forwarded explicitly rather
+      // than through `request.params` — which transports send verbatim and which
+      // therefore never carried them.
       const result = await call<T>(request.content, request.responseFormat, {
         ...request.params,
+        ...(request.developerPrompt !== undefined
+          ? { developerPrompt: request.developerPrompt }
+          : {}),
+        ...(request.context !== undefined ? { context: request.context } : {}),
         model: route.lumicModel,
         signal: request.signal,
         timeout: route.timeoutMs,

@@ -222,7 +222,21 @@ export function createGatewayTransport(
 function buildMessages(request: LlmTransportRequest): Record<string, unknown>[] {
   const content =
     typeof request.content === "string" ? request.content : [...request.content];
-  return [{ role: "user", content }];
+  const messages: Record<string, unknown>[] = [];
+  // Order is the contract: the developer instruction must precede the history it
+  // governs, and the history must precede the turn it is the memory for. A
+  // transport that emitted only the final turn would not be sending a shorter
+  // prompt — it would be asking a different question, of an unprompted model.
+  if (request.developerPrompt !== undefined && request.developerPrompt !== "") {
+    messages.push({ role: "system", content: request.developerPrompt });
+  }
+  if (request.context !== undefined) {
+    for (const turn of request.context) {
+      messages.push(turn as Record<string, unknown>);
+    }
+  }
+  messages.push({ role: "user", content });
+  return messages;
 }
 
 /**

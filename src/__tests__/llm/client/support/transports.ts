@@ -28,6 +28,9 @@ export interface ScriptedCall {
   readonly route: ResolvedRoute;
   readonly content: string | readonly unknown[];
   readonly params: Readonly<Record<string, unknown>>;
+  /** The developer prompt and prior turns, so a test can assert they arrived. */
+  readonly developerPrompt?: string;
+  readonly context?: readonly unknown[];
   readonly responseFormat: LlmResponseFormat;
   /** The per-leg signal, kept live so a test can observe an abort after the fact. */
   readonly signal: AbortSignal;
@@ -172,6 +175,8 @@ export class ScriptedTransport implements LlmTransport {
       route: request.route,
       content: request.content,
       params: request.params,
+      developerPrompt: request.developerPrompt,
+      context: request.context,
       responseFormat: request.responseFormat,
       signal: request.signal,
       correlationId: request.correlationId,

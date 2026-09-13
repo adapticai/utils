@@ -53,6 +53,13 @@ export interface ChainExecution {
   readonly legs: readonly ChainLeg[];
   readonly content: string | readonly unknown[];
   readonly responseFormat: LlmTransportRequest["responseFormat"];
+  /**
+   * System/developer instruction and prior turns, carried alongside `content`
+   * rather than inside `params`, because they become MESSAGES rather than body
+   * parameters and every leg must rebuild them in its provider's shape.
+   */
+  readonly developerPrompt?: string;
+  readonly context?: readonly unknown[];
   readonly breakers: CircuitBreakerRegistry;
   readonly correlationId?: string;
   /** The caller's own cancellation, honoured ahead of any per-leg budget. */
@@ -213,6 +220,8 @@ async function runLeg<T>(
           content: execution.content,
           responseFormat: execution.responseFormat,
           params,
+          developerPrompt: execution.developerPrompt,
+          context: execution.context,
           signal: controller.signal,
           correlationId: execution.correlationId,
         }),

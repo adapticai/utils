@@ -299,6 +299,26 @@ export interface LlmTransportRequest {
   readonly responseFormat: LlmResponseFormat;
   /** Provider-normalised parameters. A transport sends these verbatim. */
   readonly params: Readonly<Record<string, unknown>>;
+  /**
+   * System/developer instruction that must precede the conversation.
+   *
+   * Carried separately from {@link params} because it is not a body parameter:
+   * every transport has to turn it into a message, and the message shape differs
+   * per provider. A transport that ignores it sends an UNPROMPTED model — which
+   * on a tool-carrying call site means the hardening that constrains which tools
+   * may fire is simply absent.
+   */
+  readonly developerPrompt?: string;
+  /**
+   * Prior turns of the conversation, in provider message shape, that must sit
+   * between the developer prompt and `content`.
+   *
+   * Also not a body parameter, and not optional in effect: a caller that splits
+   * "latest user message" into `content` and "everything before it" into context
+   * is handing the model its entire memory here. Dropping it does not degrade
+   * the answer, it changes the question.
+   */
+  readonly context?: readonly unknown[];
   readonly signal: AbortSignal;
   readonly correlationId?: string;
 }
