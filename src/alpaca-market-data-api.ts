@@ -249,6 +249,54 @@ export interface LastTradeResponse {
 }
 
 /**
+ * How a stream close should interact with the auto-reconnect chain.
+ *
+ * @remarks
+ * The close handler reconnects on any code other than 1000, which is the right
+ * default for the common case: a close this process did not ask for (a network
+ * drop, a server-side cut, a stale-feed forced cycle) should re-establish
+ * itself. A bare `close()` sends NO status code, so the close event reports
+ * 1005 — "no status received" — which is not 1000, and therefore reconnects.
+ * That makes a bare close a REQUEST FOR A FRESH SOCKET, never a way to put a
+ * stream down and keep it down.
+ *
+ * Some callers need the opposite and cannot express it: a caller handing a
+ * single-writer vendor entitlement to another process must know the socket
+ * stays shut, because a resurrection after the handover puts two connections on
+ * one key. `intentional: true` closes with 1000 so the handler's own rule
+ * suppresses the reconnect at source.
+ */
+export interface StreamDisconnectOptions {
+  /**
+   * Close with code 1000 so the auto-reconnect chain does not re-establish the
+   * stream. Default `false`, preserving the reconnect-on-close behaviour that
+   * forced-cycle callers depend on.
+   */
+  readonly intentional?: boolean;
+}
+
+/** Close code that the close handler treats as "do not reconnect". */
+const INTENTIONAL_CLOSE_CODE = 1000;
+
+/** Reason text carried on an intentional close, for server-side logs. */
+const INTENTIONAL_CLOSE_REASON = "intentional disconnect";
+
+
+/**
+ * Close a stream, optionally in the way the close handler treats as final.
+ *
+ * @param ws - The socket to close.
+ * @param options - Whether this close is intentional.
+ */
+function closeStream(ws: WebSocket, options: StreamDisconnectOptions): void {
+  if (options.intentional === true) {
+    ws.close(INTENTIONAL_CLOSE_CODE, INTENTIONAL_CLOSE_REASON);
+    return;
+  }
+  ws.close();
+}
+
+/**
  * Singleton class for interacting with Alpaca Market Data API
  * Provides methods for fetching historical bars, latest bars, last trades, latest trades, latest quotes, and latest quote for a single symbol
  */
@@ -742,21 +790,21 @@ export class AlpacaMarketDataAPI extends EventEmitter {
     }
   }
 
-  public disconnectStockStream(): void {
+  public disconnectStockStream(options: StreamDisconnectOptions = {}): void {
     if (this.stockWs) {
-      this.stockWs.close();
+      closeStream(this.stockWs, options);
     }
   }
 
-  public disconnectOptionStream(): void {
+  public disconnectOptionStream(options: StreamDisconnectOptions = {}): void {
     if (this.optionWs) {
-      this.optionWs.close();
+      closeStream(this.optionWs, options);
     }
   }
 
-  public disconnectCryptoStream(): void {
+  public disconnectCryptoStream(options: StreamDisconnectOptions = {}): void {
     if (this.cryptoWs) {
-      this.cryptoWs.close();
+      closeStream(this.cryptoWs, options);
     }
   }
 
