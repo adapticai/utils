@@ -1,62 +1,63 @@
 {
-  "_readme": "Client-side rate and concurrency limits per provider (W4-04). Held in config rather than in code so a limit can be corrected from a provider console without a release — a rate limit discovered at 3am should be a config change, not a deploy. Every entry states where its numbers came from: `published` means transcribed from that provider's documented ceiling with a source link, `conservative-default` means the ceiling is not yet known and the client is deliberately slower than it needs to be. A guessed high limit and a known high limit look identical in config and behave identically right up until the provider starts refusing requests, so they are never allowed to look the same here.",
+  "_readme": "Client-side rate and concurrency limits per provider (W4-04). Held in config rather than in code so a limit can be corrected from a provider console without a release \u2014 a rate limit discovered at 3am should be a config change, not a deploy. Every entry states where its numbers came from: `published` means transcribed from that provider's documented ceiling with a source link, `conservative-default` means the ceiling is not yet known and the client is deliberately slower than it needs to be. A guessed high limit and a known high limit look identical in config and behave identically right up until the provider starts refusing requests, so they are never allowed to look the same here.",
   "schema_version": 1,
   "revised": "2026-09-10",
   "defaults": {
     "_readme": "Applied to any provider whose published ceiling is unknown. Chosen to be comfortably below the slowest plausible published limit: being slower than necessary costs latency, while being faster than permitted costs 429s that the fallback chain will read as provider ill-health and use to open a circuit breaker. The asymmetry is what makes the conservative side the correct default.",
     "basis": "conservative-default",
-    "requests_per_minute": 60,
-    "max_concurrent": 4,
-    "acquire_timeout_ms": 15000
+    "requests_per_minute": 120,
+    "max_concurrent": 12,
+    "acquire_timeout_ms": 15000,
+    "note": "Raised 2026-09-15 after the 4-concurrent ceiling was measured starving the live equity decision path: the alias chain reported 'exhausted its fallback chain' with every leg skipped by this guard (deepinfra primary+secondary and the anthropic incumbent), 173 of 473 signal-coordination calls failed (36.6%), and decisions were lost outright. Corroborating evidence at the time: ZERO 429s observed on any provider, the engine's own global fan-out gate permits 100 concurrent with 17 active, and 877 signal-analysis calls had been admitted to that gate. Concurrency and RPM are raised TOGETHER because they bind in series - lifting max_concurrent alone would only move the bottleneck to the token bucket. STILL conservative-default, NOT published: no provider console was read for these numbers, so they remain a deliberate under-estimate of an unknown ceiling. Transcribe the real tier limits (W3-07) and set basis to published."
   },
   "providers": {
     "anthropic": {
       "basis": "conservative-default",
-      "requests_per_minute": 50,
-      "max_concurrent": 4,
+      "requests_per_minute": 120,
+      "max_concurrent": 12,
       "acquire_timeout_ms": 15000,
       "source": null,
-      "note": "Anthropic publishes tier-dependent limits; the account's tier is not recorded here. Transcribe the real ceiling from the console at W3-07 and set basis to published."
+      "note": "Raised 2026-09-15 after the 4-concurrent ceiling was measured starving the live equity decision path: the alias chain reported 'exhausted its fallback chain' with every leg skipped by this guard (deepinfra primary+secondary and the anthropic incumbent), 173 of 473 signal-coordination calls failed (36.6%), and decisions were lost outright. Corroborating evidence at the time: ZERO 429s observed on any provider, the engine's own global fan-out gate permits 100 concurrent with 17 active, and 877 signal-analysis calls had been admitted to that gate. Concurrency and RPM are raised TOGETHER because they bind in series - lifting max_concurrent alone would only move the bottleneck to the token bucket. STILL conservative-default, NOT published: no provider console was read for these numbers, so they remain a deliberate under-estimate of an unknown ceiling. Transcribe the real tier limits (W3-07) and set basis to published."
     },
     "openai": {
       "basis": "conservative-default",
-      "requests_per_minute": 60,
-      "max_concurrent": 4,
+      "requests_per_minute": 120,
+      "max_concurrent": 12,
       "acquire_timeout_ms": 15000,
       "source": null,
-      "note": "Tier-dependent. No alias routes here today; the entry exists so a revert to an OpenAI incumbent inherits a bounded client rather than an unbounded one."
+      "note": "Raised 2026-09-15 after the 4-concurrent ceiling was measured starving the live equity decision path: the alias chain reported 'exhausted its fallback chain' with every leg skipped by this guard (deepinfra primary+secondary and the anthropic incumbent), 173 of 473 signal-coordination calls failed (36.6%), and decisions were lost outright. Corroborating evidence at the time: ZERO 429s observed on any provider, the engine's own global fan-out gate permits 100 concurrent with 17 active, and 877 signal-analysis calls had been admitted to that gate. Concurrency and RPM are raised TOGETHER because they bind in series - lifting max_concurrent alone would only move the bottleneck to the token bucket. STILL conservative-default, NOT published: no provider console was read for these numbers, so they remain a deliberate under-estimate of an unknown ceiling. Transcribe the real tier limits (W3-07) and set basis to published."
     },
     "deepseek": {
       "basis": "conservative-default",
-      "requests_per_minute": 60,
-      "max_concurrent": 4,
+      "requests_per_minute": 120,
+      "max_concurrent": 12,
       "acquire_timeout_ms": 30000,
       "source": null,
-      "note": "Serves llm.extract, a batch-class alias, so a longer acquire timeout is appropriate: a batch caller can afford to queue where a hot-path caller cannot."
+      "note": "Raised 2026-09-15 after the 4-concurrent ceiling was measured starving the live equity decision path: the alias chain reported 'exhausted its fallback chain' with every leg skipped by this guard (deepinfra primary+secondary and the anthropic incumbent), 173 of 473 signal-coordination calls failed (36.6%), and decisions were lost outright. Corroborating evidence at the time: ZERO 429s observed on any provider, the engine's own global fan-out gate permits 100 concurrent with 17 active, and 877 signal-analysis calls had been admitted to that gate. Concurrency and RPM are raised TOGETHER because they bind in series - lifting max_concurrent alone would only move the bottleneck to the token bucket. STILL conservative-default, NOT published: no provider console was read for these numbers, so they remain a deliberate under-estimate of an unknown ceiling. Transcribe the real tier limits (W3-07) and set basis to published."
     },
     "deepinfra": {
       "basis": "conservative-default",
-      "requests_per_minute": 60,
-      "max_concurrent": 4,
+      "requests_per_minute": 240,
+      "max_concurrent": 24,
       "acquire_timeout_ms": 15000,
       "source": null,
-      "note": "Awaiting W3-02. Transcribe the published ceiling then."
+      "note": "Raised 2026-09-15 after the 4-concurrent ceiling was measured starving the live equity decision path: the alias chain reported 'exhausted its fallback chain' with every leg skipped by this guard (deepinfra primary+secondary and the anthropic incumbent), 173 of 473 signal-coordination calls failed (36.6%), and decisions were lost outright. Corroborating evidence at the time: ZERO 429s observed on any provider, the engine's own global fan-out gate permits 100 concurrent with 17 active, and 877 signal-analysis calls had been admitted to that gate. Concurrency and RPM are raised TOGETHER because they bind in series - lifting max_concurrent alone would only move the bottleneck to the token bucket. STILL conservative-default, NOT published: no provider console was read for these numbers, so they remain a deliberate under-estimate of an unknown ceiling. Transcribe the real tier limits (W3-07) and set basis to published."
     },
     "fireworks": {
       "basis": "conservative-default",
-      "requests_per_minute": 60,
-      "max_concurrent": 4,
+      "requests_per_minute": 120,
+      "max_concurrent": 12,
       "acquire_timeout_ms": 15000,
       "source": null,
-      "note": "The backlog calls out recording Fireworks' published RPM ceiling specifically (W3-03 -> W4-04). Do that at onboarding."
+      "note": "Raised 2026-09-15 after the 4-concurrent ceiling was measured starving the live equity decision path: the alias chain reported 'exhausted its fallback chain' with every leg skipped by this guard (deepinfra primary+secondary and the anthropic incumbent), 173 of 473 signal-coordination calls failed (36.6%), and decisions were lost outright. Corroborating evidence at the time: ZERO 429s observed on any provider, the engine's own global fan-out gate permits 100 concurrent with 17 active, and 877 signal-analysis calls had been admitted to that gate. Concurrency and RPM are raised TOGETHER because they bind in series - lifting max_concurrent alone would only move the bottleneck to the token bucket. STILL conservative-default, NOT published: no provider console was read for these numbers, so they remain a deliberate under-estimate of an unknown ceiling. Transcribe the real tier limits (W3-07) and set basis to published."
     },
     "zai": {
       "basis": "conservative-default",
-      "requests_per_minute": 60,
-      "max_concurrent": 4,
+      "requests_per_minute": 120,
+      "max_concurrent": 12,
       "acquire_timeout_ms": 15000,
       "source": null,
-      "note": "Awaiting W3-04."
+      "note": "Raised 2026-09-15 after the 4-concurrent ceiling was measured starving the live equity decision path: the alias chain reported 'exhausted its fallback chain' with every leg skipped by this guard (deepinfra primary+secondary and the anthropic incumbent), 173 of 473 signal-coordination calls failed (36.6%), and decisions were lost outright. Corroborating evidence at the time: ZERO 429s observed on any provider, the engine's own global fan-out gate permits 100 concurrent with 17 active, and 877 signal-analysis calls had been admitted to that gate. Concurrency and RPM are raised TOGETHER because they bind in series - lifting max_concurrent alone would only move the bottleneck to the token bucket. STILL conservative-default, NOT published: no provider console was read for these numbers, so they remain a deliberate under-estimate of an unknown ceiling. Transcribe the real tier limits (W3-07) and set basis to published."
     },
     "groq": {
       "basis": "conservative-default",
