@@ -25,6 +25,7 @@ import type {
   AccountConfiguration,
   AlpacaAccountDetails,
   AlpacaOrder,
+  AlpacaPosition,
   PortfolioHistoryResponse,
 } from "../types/alpaca-types";
 
@@ -45,6 +46,22 @@ import type { AlpacaCalendarDay, AlpacaClock } from "./trading/clock";
 export type SdkPortfolioHistoryResponse = PortfolioHistoryResponse &
   Pick<AlpacaPortfolioHistory, "timeframe">;
 
+/**
+ * One entry of the multi-status body returned by `DELETE /v2/orders`.
+ *
+ * The endpoint answers 207 with a per-order outcome rather than failing as a
+ * whole, so the caller has to inspect each entry's HTTP status to learn which
+ * cancellations actually succeeded.
+ */
+export interface AlpacaCancelAllOrdersEntry {
+  /** Id of the order this outcome refers to. */
+  id: string;
+  /** Per-order HTTP status; values >= 400 mark a cancellation that failed. */
+  status: number;
+  /** Echoed order payload, present only on success. */
+  body?: unknown;
+}
+
 /** SDK methods whose return type this package supersedes. */
 type SupersededSdkMethod =
   | "getAccount"
@@ -56,7 +73,14 @@ type SupersededSdkMethod =
   | "getOrderByClientId"
   | "getOrders"
   | "createOrder"
-  | "replaceOrder";
+  | "replaceOrder"
+  | "getPositions"
+  | "getPosition"
+  | "closePosition"
+  | "cancelOrder"
+  | "cancelAllOrders"
+  | "updateAccountConfigurations"
+  | "sendRequest";
 
 /**
  * The Alpaca SDK as this package consumes it: the vendor surface, with the
@@ -75,4 +99,27 @@ export type AlpacaSdk = Omit<Alpaca, SupersededSdkMethod> & {
   getOrders(params?: unknown): Promise<AlpacaOrder[]>;
   createOrder(params: unknown): Promise<AlpacaOrder>;
   replaceOrder(orderId: string, params: unknown): Promise<AlpacaOrder>;
+  getPositions(): Promise<AlpacaPosition[]>;
+  getPosition(symbol: string): Promise<AlpacaPosition>;
+  /** `DELETE /v2/positions/{symbol}` answers with the closing order. */
+  closePosition(symbol: string): Promise<AlpacaOrder>;
+  /** `DELETE /v2/orders/{id}` answers 204 with no body. */
+  cancelOrder(orderId: string): Promise<void>;
+  cancelAllOrders(): Promise<AlpacaCancelAllOrdersEntry[]>;
+  updateAccountConfigurations(
+    config: unknown,
+  ): Promise<AccountConfiguration>;
+  /**
+   * Escape hatch for endpoints the SDK exposes no method for.
+   *
+   * The response is whatever that endpoint returns, so it stays `unknown`:
+   * this is the one method whose payload cannot be named in advance, and
+   * every caller must narrow it against the endpoint it actually invoked.
+   */
+  sendRequest(
+    endpoint: string,
+    queryParams?: unknown,
+    body?: unknown,
+    method?: string,
+  ): Promise<unknown>;
 };
