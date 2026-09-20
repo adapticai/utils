@@ -2,7 +2,18 @@ import { describe, it, expect } from "vitest";
 import http from "http";
 import https from "https";
 
-type AgentWithKeepAlive = http.Agent & { keepAlive: boolean };
+/**
+ * Read an agent's runtime `keepAlive` flag.
+ *
+ * Node sets `keepAlive` on the agent instance, but `@types/node` declares
+ * neither it nor `options` on `http.Agent`, so no typed path to the value
+ * exists. Reading it as `unknown` states that honestly: these tests assert the
+ * observed runtime value, rather than asserting an intersection type the
+ * declarations do not support — which the compiler rejects for `https.Agent`
+ * precisely because the two types do not overlap.
+ */
+const runtimeKeepAlive = (agent: http.Agent | https.Agent): unknown =>
+  (agent as unknown as { keepAlive?: unknown }).keepAlive;
 
 import {
   KEEP_ALIVE_DEFAULTS,
@@ -40,7 +51,7 @@ describe("httpAgent", () => {
   });
 
   it("should have keepAlive enabled", () => {
-    expect((httpAgent as AgentWithKeepAlive).keepAlive).toBe(true);
+    expect(runtimeKeepAlive(httpAgent)).toBe(true);
   });
 
   it("should have correct maxSockets", () => {
@@ -58,7 +69,7 @@ describe("httpsAgent", () => {
   });
 
   it("should have keepAlive enabled", () => {
-    expect((httpsAgent as AgentWithKeepAlive).keepAlive).toBe(true);
+    expect(runtimeKeepAlive(httpsAgent)).toBe(true);
   });
 
   it("should have correct maxSockets", () => {
@@ -149,13 +160,13 @@ describe("Connection pooling documentation verification", () => {
 
   it("should confirm http.Agent supports keepAlive", () => {
     const agent = new http.Agent({ keepAlive: true });
-    expect((agent as AgentWithKeepAlive).keepAlive).toBe(true);
+    expect(runtimeKeepAlive(agent)).toBe(true);
     agent.destroy();
   });
 
   it("should confirm https.Agent supports keepAlive", () => {
     const agent = new https.Agent({ keepAlive: true });
-    expect((agent as AgentWithKeepAlive).keepAlive).toBe(true);
+    expect(runtimeKeepAlive(agent)).toBe(true);
     agent.destroy();
   });
 });

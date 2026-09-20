@@ -203,7 +203,7 @@ export async function getPortfolioHistory(
     log(
       `Portfolio history fetched successfully with ${history.equity?.length || 0} data points`,
     );
-    return history as PortfolioHistoryResponse;
+    return history;
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";

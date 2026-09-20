@@ -1,6 +1,6 @@
 {
   "name": "@adaptic/utils",
-  "version": "0.0.1027",
+  "version": "0.0.1028",
   "author": "Adaptic.ai",
   "description": "Utility functions used in Adaptic app and Lambda functions",
   "always-build-npm": true,
@@ -28,6 +28,7 @@
     "prepublishOnly": "npm run build",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
+    "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
@@ -38,7 +39,7 @@
     "changelog": "conventional-changelog -p angular -i CHANGELOG.md -s"
   },
   "dependencies": {
-    "@adaptic/backend": "0.0.1032",
+    "@adaptic/backend": "0.0.1034",
     "@alpacahq/alpaca-trade-api": "^3.1.3",
     "@apollo/client": "^3.13.8",
     "chalk": "^5.4.1",

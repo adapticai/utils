@@ -382,7 +382,19 @@ interface LoaderInvocationState {
  */
 export class StampedeProtectedCache<T> {
   private readonly cache: LRUCache<string, CacheEntry<T>>;
-  private readonly options: Required<StampedeProtectedCacheOptions>;
+  /**
+   * Options with every defaultable field resolved.
+   *
+   * `onEvent` is deliberately excluded from the `Required` half: it is an
+   * observability hook with no meaningful default, so its absence is a real
+   * state rather than a gap to fill. Declaring it required would force a
+   * no-op stand-in and erase the difference between "no observer attached"
+   * and "an observer that does nothing".
+   */
+  private readonly options: Required<
+    Omit<StampedeProtectedCacheOptions, "onEvent">
+  > &
+    Pick<StampedeProtectedCacheOptions, "onEvent">;
   private readonly pendingRefreshes = new Map<string, Promise<T>>();
   private readonly stats = {
     totalGets: 0,

@@ -3,6 +3,8 @@
  * Provides unified access to Alpaca Trading API using official SDK
  */
 import Alpaca from "@alpacahq/alpaca-trade-api";
+
+import type { AlpacaSdk } from "./sdk-types";
 import { getTradingApiUrl } from "../config/api-endpoints";
 import { createTimeoutSignal, DEFAULT_TIMEOUTS } from "../http-timeout";
 import { log as baseLog } from "../logging";
@@ -47,7 +49,7 @@ export interface ValidatedCredentials extends AlpacaClientConfig {
  * - Direct API access for endpoints not covered by SDK
  */
 export class AlpacaClient {
-  private sdk: Alpaca;
+  private sdk: AlpacaSdk;
   private config: AlpacaClientConfig;
   private isConnected: boolean = false;
   private apiBaseUrl: string;
@@ -79,7 +81,7 @@ export class AlpacaClient {
   /**
    * Get the underlying SDK instance for direct access
    */
-  getSDK(): Alpaca {
+  getSDK(): AlpacaSdk {
     return this.sdk;
   }
 

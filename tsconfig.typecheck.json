@@ -1,0 +1,10 @@
+{
+  "//": "Typecheck-only project. The build config roots at ./src so the emitted dist layout mirrors the source tree, but the test suite legitimately imports the repo's own scripts/ tooling, which sits outside that root. Emitting is disabled here, so rootDir carries no layout meaning and can widen to the repository to cover every file that is actually part of the program.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "."
+  },
+  "include": ["src/**/*.ts", "scripts/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}
