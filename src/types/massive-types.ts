@@ -328,3 +328,73 @@ export interface MassiveErrorResponse extends MassiveBaseResponse {
   /** The error message. */
   message: string;
 }
+
+/**
+ * The ticker-details payload as `GET /v3/reference/tickers/{ticker}` returns
+ * it, before this package validates it.
+ *
+ * Every field is optional here even though {@link MassiveTickerInfo} declares
+ * most of them required: the endpoint's coverage varies with asset class and
+ * listing state, and a lookup that resolves nothing still answers 200 with a
+ * `NOT_FOUND` status. Modelling the received payload as partial is what makes
+ * the fetcher's required-field check expressible — against the already-required
+ * {@link MassiveTickerInfo} the check could not be written, and the absence it
+ * exists to catch would reach consumers as a field typed `string` holding
+ * `undefined`.
+ */
+export type MassiveTickerInfoPayload = Partial<MassiveTickerInfo>;
+
+/**
+ * Envelope returned by `GET /v3/reference/tickers/{ticker}`.
+ */
+export interface MassiveTickerDetailsResponse extends MassiveBaseResponse {
+  /** `"OK"` when the ticker resolved; `"NOT_FOUND"` when no such ticker exists. */
+  status: string;
+  /** The ticker payload. Absent when the lookup resolved nothing. */
+  results?: MassiveTickerInfoPayload;
+}
+
+/**
+ * Envelope returned by the aggregates endpoint
+ * `GET /v2/aggs/ticker/{ticker}/range/{multiplier}/{timespan}/{from}/{to}`.
+ *
+ * Two properties of this endpoint drive the optionality below. Results are
+ * paginated, so a window wider than the server's page size answers with a
+ * `next_url` cursor that has to be followed until the field is absent; and a
+ * window containing no bars omits `results` entirely rather than returning an
+ * empty array, so an absent field means "no data for this window", not
+ * "malformed response".
+ */
+export interface MassiveAggregatesResponse extends MassiveBaseResponse {
+  /** Ticker the bars belong to. The bars themselves do not repeat it. */
+  ticker?: string;
+  /** Whether the bars are split- and dividend-adjusted. */
+  adjusted?: boolean;
+  /** Number of base aggregates the server read to build this page. */
+  queryCount?: number;
+  /** Number of bars on this page. */
+  resultsCount?: number;
+  /** Bars for this page, in the requested sort order. Absent when there are none. */
+  results?: RawMassivePriceData[];
+  /** Cursor for the next page. Absent on the final page. */
+  next_url?: string;
+}
+
+/**
+ * Envelope returned by
+ * `GET /v2/aggs/grouped/locale/us/market/stocks/{date}` as received.
+ *
+ * It matches {@link MassiveGroupedDailyResponse} except that its bars carry the
+ * vendor's single-letter field names; the reshaped form is what consumers of
+ * this package are handed.
+ */
+export interface MassiveGroupedDailyRawResponse extends MassiveBaseResponse {
+  /** Whether the bars are split- and dividend-adjusted. */
+  adjusted: boolean;
+  /** Number of base aggregates the server read to build the response. */
+  queryCount: number;
+  /** Number of bars returned. */
+  resultsCount: number;
+  /** One bar per ticker that traded on the requested date. */
+  results: RawMassivePriceData[];
+}

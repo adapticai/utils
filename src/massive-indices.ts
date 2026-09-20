@@ -13,6 +13,7 @@ import {
   MassiveIndicesAggregatesParams,
   MassiveIndicesAggregatesResponse,
   MassiveIndicesDailyOpenCloseResponse,
+  MassiveIndicesErrorResponse,
   MassiveIndicesPrevCloseResponse,
   MassiveIndicesSnapshotParams,
   MassiveIndicesSnapshotResponse,
@@ -22,10 +23,7 @@ import {
 // Backward-compat: ALPACA_INDICES_API_KEY is the pre-2026-Q2 name (vendor was
 // renamed Alpaca → Massive); MASSIVE_INDICES_API_KEY is preferred. The fallback
 // stays so consumers that haven't migrated env vars don't break.
-const { MASSIVE_INDICES_API_KEY, ALPACA_INDICES_API_KEY } = process.env as Record<
-  string,
-  string
->;
+const { MASSIVE_INDICES_API_KEY, ALPACA_INDICES_API_KEY } = process.env;
 
 // Define concurrency limits for API
 const MASSIVE_INDICES_CONCURRENCY_LIMIT = 5;
@@ -46,6 +44,22 @@ const validateApiKey = (apiKey?: string): string => {
   }
   return key;
 };
+
+/**
+ * Narrows a decoded Massive Indices body to its error form.
+ *
+ * The API reports failures in band: the transport answers 200 and the `status`
+ * word carries the outcome, so the body has to be classified before any of its
+ * success fields can be read. Expressing that classification as a type guard is
+ * what lets each fetcher return its payload directly rather than asserting a
+ * success shape over a body that may be an error.
+ *
+ * @param body - A decoded Massive Indices response body.
+ * @returns True when the body reports an error rather than a payload.
+ */
+const isIndicesErrorResponse = (body: {
+  status: string;
+}): body is MassiveIndicesErrorResponse => body.status === "ERROR";
 
 /**
  * Fetches aggregate bars for an index over a given date range in custom time window sizes.
@@ -97,13 +111,15 @@ export const fetchIndicesAggregates = async (
         3,
         300,
       );
-      const data = await response.json();
+      const data = (await response.json()) as
+        | MassiveIndicesAggregatesResponse
+        | MassiveIndicesErrorResponse;
 
-      if (data.status === "ERROR") {
+      if (isIndicesErrorResponse(data)) {
         throw new Error(`Massive API Error: ${data.error}`);
       }
 
-      return data as MassiveIndicesAggregatesResponse;
+      return data;
     } catch (error) {
       getLogger().error("Error fetching indices aggregates:", error);
       throw error;
@@ -143,13 +159,15 @@ export const fetchIndicesPreviousClose = async (
         3,
         300,
       );
-      const data = await response.json();
+      const data = (await response.json()) as
+        | MassiveIndicesPrevCloseResponse
+        | MassiveIndicesErrorResponse;
 
-      if (data.status === "ERROR") {
+      if (isIndicesErrorResponse(data)) {
         throw new Error(`Massive API Error: ${data.error}`);
       }
 
-      return data as MassiveIndicesPrevCloseResponse;
+      return data;
     } catch (error) {
       getLogger().error("Error fetching indices previous close:", error);
       throw error;
@@ -191,13 +209,15 @@ export const fetchIndicesDailyOpenClose = async (
         3,
         300,
       );
-      const data = await response.json();
+      const data = (await response.json()) as
+        | MassiveIndicesDailyOpenCloseResponse
+        | MassiveIndicesErrorResponse;
 
-      if (data.status === "ERROR") {
+      if (isIndicesErrorResponse(data)) {
         throw new Error(`Massive API Error: ${data.error}`);
       }
 
-      return data as MassiveIndicesDailyOpenCloseResponse;
+      return data;
     } catch (error) {
       getLogger().error("Error fetching indices daily open/close:", error);
       throw error;
@@ -251,13 +271,15 @@ export const fetchIndicesSnapshot = async (
         3,
         300,
       );
-      const data = await response.json();
+      const data = (await response.json()) as
+        | MassiveIndicesSnapshotResponse
+        | MassiveIndicesErrorResponse;
 
-      if (data.status === "ERROR") {
+      if (isIndicesErrorResponse(data)) {
         throw new Error(`Massive API Error: ${data.error}`);
       }
 
-      return data as MassiveIndicesSnapshotResponse;
+      return data;
     } catch (error) {
       getLogger().error("Error fetching indices snapshot:", error);
       throw error;
@@ -325,9 +347,11 @@ export const fetchUniversalSnapshot = async (
         3,
         300,
       );
-      const data = await response.json();
+      const data = (await response.json()) as
+        | MassiveIndicesSnapshotResponse
+        | MassiveIndicesErrorResponse;
 
-      if (data.status === "ERROR") {
+      if (isIndicesErrorResponse(data)) {
         throw new Error(`Massive API Error: ${data.error}`);
       }
 

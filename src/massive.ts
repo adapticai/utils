@@ -6,16 +6,20 @@ import pLimit from "p-limit";
 import { getLogger } from "./logger";
 import { fetchWithRetry, hideApiKeyFromurl, logIfDebug } from "./misc-utils";
 import {
+  MassiveAggregatesResponse,
   MassiveDailyOpenClose,
   MassiveErrorResponse,
   MassiveFreshness,
+  MassiveGroupedDailyRawResponse,
   MassiveGroupedDailyResponse,
   MassivePriceData,
   MassiveQuote,
   MassiveQuotesResponse,
   MassiveResult,
   MassiveSpreadInfo,
+  MassiveTickerDetailsResponse,
   MassiveTickerInfo,
+  MassiveTickerInfoPayload,
   MassiveTradesResponse,
   RawMassivePriceData,
 } from "./types";
@@ -133,6 +137,51 @@ function normalizeMassiveSymbol(symbol: string): string {
   return `X:${base.toUpperCase()}-${quote.toUpperCase()}`;
 }
 
+/**
+ * Fields of {@link MassiveTickerInfo} that carry no sensible default and whose
+ * absence therefore makes a ticker-details response unusable rather than
+ * merely sparse.
+ */
+const REQUIRED_TICKER_FIELDS = [
+  "active",
+  "currency_name",
+  "locale",
+  "market",
+  "name",
+  "primary_exchange",
+  "ticker",
+  "type",
+] as const satisfies readonly (keyof MassiveTickerInfo)[];
+
+/**
+ * A ticker payload known to carry every field in {@link REQUIRED_TICKER_FIELDS}.
+ */
+type ValidatedTickerPayload = MassiveTickerInfoPayload &
+  Required<Pick<MassiveTickerInfo, (typeof REQUIRED_TICKER_FIELDS)[number]>>;
+
+/**
+ * Rejects a ticker payload that is missing a field {@link MassiveTickerInfo}
+ * declares as required, naming the first field found absent.
+ *
+ * The vendor answers 200 for a partially-populated ticker, so without this
+ * check an absent field would be published to consumers as a value typed
+ * `string` that holds `undefined` — an unknown masquerading as a reading.
+ *
+ * @param results - The ticker payload as received from the vendor.
+ * @throws When any required field is absent.
+ */
+function assertRequiredTickerFields(
+  results: MassiveTickerInfoPayload,
+): asserts results is ValidatedTickerPayload {
+  for (const field of REQUIRED_TICKER_FIELDS) {
+    if (results[field] === undefined) {
+      throw new Error(
+        `Missing required field in Massive API response: ${field}`,
+      );
+    }
+  }
+}
+
 // Use to update general information about stocks
 /**
  * Fetches general information about a stock ticker.
@@ -167,7 +216,7 @@ export const fetchTickerInfo = async (
         3,
         1000,
       );
-      const data = await response.json();
+      const data = (await response.json()) as MassiveTickerDetailsResponse;
 
       // Check for "NOT_FOUND" status and return null
       if (data.status === "NOT_FOUND") {
@@ -182,31 +231,14 @@ export const fetchTickerInfo = async (
       }
 
       // Validate required fields
-      const requiredFields = [
-        "active",
-        "currency_name",
-        "locale",
-        "market",
-        "name",
-        "primary_exchange",
-        "ticker",
-        "type",
-      ];
-
-      for (const field of requiredFields) {
-        if (results[field] === undefined) {
-          throw new Error(
-            `Missing required field in Massive API response: ${field}`,
-          );
-        }
-      }
+      assertRequiredTickerFields(results);
 
       // Handle optional share_class_shares_outstanding field
       if (results.share_class_shares_outstanding === undefined) {
         results.share_class_shares_outstanding = null;
       }
 
-      const tickerInfo = {
+      const tickerInfo: MassiveTickerInfo = {
         ticker: results.ticker,
         type: results.type,
         active: results.active,
@@ -219,7 +251,7 @@ export const fetchTickerInfo = async (
         primary_exchange: results.primary_exchange,
         share_class_shares_outstanding: results.share_class_shares_outstanding,
       };
-      return tickerInfo as MassiveTickerInfo;
+      return tickerInfo;
     } catch (error: unknown) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error occurred";
@@ -314,9 +346,7 @@ const fetchLastTradeImpl = async (
         | MassiveErrorResponse;
 
       if ("message" in data) {
-        throw new Error(
-          `Massive.com API error: ${(data as MassiveErrorResponse).message}`,
-        );
+        throw new Error(`Massive.com API error: ${data.message}`);
       }
 
       if (
@@ -415,12 +445,10 @@ export const fetchLastQuote = async (
         | MassiveErrorResponse;
 
       if ("message" in data) {
-        throw new Error(
-          `Massive.com API error: ${(data as MassiveErrorResponse).message}`,
-        );
+        throw new Error(`Massive.com API error: ${data.message}`);
       }
 
-      const results = (data as MassiveQuotesResponse).results;
+      const results = data.results;
       if (!Array.isArray(results) || results.length === 0) {
         throw new Error(
           `Massive.com API error: No quote results for ${symbol}`,
@@ -547,7 +575,7 @@ export const fetchPrices = async (
           3,
           1000,
         );
-        const data = await response.json();
+        const data = (await response.json()) as MassiveAggregatesResponse;
 
         if (!MASSIVE_VALID_STATUSES.has(data.status)) {
           throw new Error(
@@ -585,7 +613,7 @@ export const fetchPrices = async (
         ...(aggregatedStatus === "DELAYED" ? { delayedSince: null } : {}),
       };
 
-      return allResults.map((entry: RawMassivePriceData) => ({
+      const bars = allResults.map((entry: RawMassivePriceData) => ({
         date: new Date(entry.t).toLocaleString("en-US", {
           year: "numeric",
           month: "short",
@@ -606,7 +634,14 @@ export const fetchPrices = async (
         vwap: entry.vw,
         trades: entry.n,
         _freshness: freshness,
-      })) as MassivePriceData[];
+      }));
+
+      // The aggregates endpoint names the ticker once on the envelope rather
+      // than on each bar, and this mapping does not copy it down, so the bars
+      // carry every field of `MassivePriceData` except `symbol`. The assertion
+      // records that divergence at the single point where it arises instead of
+      // leaving it implicit in an untyped payload.
+      return bars as MassivePriceData[];
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error occurred";
@@ -794,7 +829,7 @@ export const fetchGroupedDaily = async (
         3,
         1000,
       );
-      const data = await response.json();
+      const data = (await response.json()) as MassiveGroupedDailyRawResponse;
 
       if (!MASSIVE_VALID_STATUSES.has(data.status)) {
         throw new Error(
@@ -820,6 +855,11 @@ export const fetchGroupedDaily = async (
           trades: result.n,
         })),
       };
+
+      // Grouped daily bars are keyed by timestamp only; this mapping does not
+      // derive the human-readable `date` string that `MassivePriceData` also
+      // declares, so the reshaped bars carry every field except that one. The
+      // assertion records that divergence at its single point of origin.
       return groupedDaily as MassiveGroupedDailyResponse;
     } catch (error) {
       const errorMessage =
@@ -913,7 +953,7 @@ export const fetchDailyOpenClose = async (
         3,
         1000,
       );
-      const data = await response.json();
+      const data = (await response.json()) as MassiveDailyOpenClose;
 
       if (!MASSIVE_VALID_STATUSES.has(data.status)) {
         throw new Error(
