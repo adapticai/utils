@@ -60,8 +60,7 @@ export const fetchQuote = async (
             `Failed to fetch quote for ${ticker}: ${response.status}`,
           );
         }
-        const data = await response.json();
-        return data as AlphaVantageQuoteResponse;
+        return (await response.json()) as AlphaVantageQuoteResponse;
       },
       API_RETRY_CONFIGS.ALPHA_VANTAGE,
       `AlphaVantage.fetchQuote(${ticker})`,

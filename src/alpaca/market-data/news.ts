@@ -74,11 +74,14 @@ function stripHtml(html: string): string {
     .replace(/&lsquo;/g, "'")
     .replace(/&rsquo;/g, "'");
 
-  // Decode numeric HTML entities
-  text = text.replace(/&#(\d+);/g, (_, code) =>
+  // Decode numeric HTML entities. The replacer's capture arguments are declared
+  // by `String.prototype.replace` as `...args: any[]`, since their count depends
+  // on the pattern; each pattern here has exactly one capture group, and a
+  // matched group is always a string, so the parameters are named accordingly.
+  text = text.replace(/&#(\d+);/g, (_match: string, code: string) =>
     String.fromCharCode(parseInt(code, 10)),
   );
-  text = text.replace(/&#x([0-9a-fA-F]+);/g, (_, code) =>
+  text = text.replace(/&#x([0-9a-fA-F]+);/g, (_match: string, code: string) =>
     String.fromCharCode(parseInt(code, 16)),
   );
 
