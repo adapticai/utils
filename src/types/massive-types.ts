@@ -149,8 +149,15 @@ export interface MassiveTickerInfo {
   locale: string;
   /** The market in which the ticker operates. */
   market: "stocks" | "crypto" | "indices" | "fx" | "otc";
-  /** The market capitalization. */
-  market_cap: number;
+  /**
+   * Market capitalization, or `null` when the vendor did not report one.
+   *
+   * Nullable rather than defaulted: a market cap is a measured quantity, and a
+   * missing one substituted with `0` is indistinguishable to every consumer
+   * from a genuine reading. An absent value must stay absent so a caller can
+   * decide what to do about not knowing.
+   */
+  market_cap: number | null;
   /** The name of the ticker. */
   name: string;
   /** The primary exchange for the ticker. */

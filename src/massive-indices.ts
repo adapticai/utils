@@ -62,6 +62,21 @@ const isIndicesErrorResponse = (body: {
 }): body is MassiveIndicesErrorResponse => body.status === "ERROR";
 
 /**
+ * Extract the failure reason from an indices error body.
+ *
+ * The API carries the reason under `error` on some endpoints and `message` on
+ * others, so reading only one of them discards the reason whenever the vendor
+ * used the other and leaves the operator with "undefined" in place of the
+ * diagnosis. Both are consulted, and an body carrying neither says so plainly
+ * rather than rendering an absent field as text.
+ *
+ * @param body - The error body returned by an indices endpoint.
+ * @returns The reported reason, or a statement that none was reported.
+ */
+const indicesFailureReason = (body: MassiveIndicesErrorResponse): string =>
+  body.error ?? body.message ?? "no reason reported by the API";
+
+/**
  * Fetches aggregate bars for an index over a given date range in custom time window sizes.
  *
  * @param {MassiveIndicesAggregatesParams} params - Parameters for the aggregates request
@@ -116,7 +131,7 @@ export const fetchIndicesAggregates = async (
         | MassiveIndicesErrorResponse;
 
       if (isIndicesErrorResponse(data)) {
-        throw new Error(`Massive API Error: ${data.error}`);
+        throw new Error(`Massive API Error: ${indicesFailureReason(data)}`);
       }
 
       return data;
@@ -164,7 +179,7 @@ export const fetchIndicesPreviousClose = async (
         | MassiveIndicesErrorResponse;
 
       if (isIndicesErrorResponse(data)) {
-        throw new Error(`Massive API Error: ${data.error}`);
+        throw new Error(`Massive API Error: ${indicesFailureReason(data)}`);
       }
 
       return data;
@@ -214,7 +229,7 @@ export const fetchIndicesDailyOpenClose = async (
         | MassiveIndicesErrorResponse;
 
       if (isIndicesErrorResponse(data)) {
-        throw new Error(`Massive API Error: ${data.error}`);
+        throw new Error(`Massive API Error: ${indicesFailureReason(data)}`);
       }
 
       return data;
@@ -276,7 +291,7 @@ export const fetchIndicesSnapshot = async (
         | MassiveIndicesErrorResponse;
 
       if (isIndicesErrorResponse(data)) {
-        throw new Error(`Massive API Error: ${data.error}`);
+        throw new Error(`Massive API Error: ${indicesFailureReason(data)}`);
       }
 
       return data;
@@ -352,7 +367,7 @@ export const fetchUniversalSnapshot = async (
         | MassiveIndicesErrorResponse;
 
       if (isIndicesErrorResponse(data)) {
-        throw new Error(`Massive API Error: ${data.error}`);
+        throw new Error(`Massive API Error: ${indicesFailureReason(data)}`);
       }
 
       return data;

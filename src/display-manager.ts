@@ -1,4 +1,12 @@
+import * as nodeFs from "node:fs";
+import * as nodePath from "node:path";
+import {
+  clearLine as nodeClearLine,
+  cursorTo as nodeCursorTo,
+} from "node:readline";
+
 import chalk from "chalk";
+
 import { LogOptions } from "./types/logging-types";
 
 // Detect whether we are running in a Node.js environment with a real stdout.
@@ -9,50 +17,27 @@ const isNode =
   typeof process.stdout !== "undefined" &&
   typeof process.stdout.write === "function";
 
-/** The Node builtins this module loads, mapped to their declared module types. */
-interface NodeBuiltins {
-  fs: typeof import("fs");
-  path: typeof import("path");
-  readline: typeof import("readline");
-}
-
-/**
- * `require`, narrowed to the builtin ids this module loads.
- *
- * `@types/node` declares `require` as returning `any`, because the module behind
- * an arbitrary id is only knowable at runtime. The ids loaded below are literals
- * for which TypeScript already ships declarations, so the loader is described
- * once against those declarations; without it every binding taken from a loaded
- * module enters this file untyped and the compiler can no longer tell that, say,
- * `readline.clearLine` exists or what it accepts.
- */
-type LoadNodeBuiltin = <Id extends keyof NodeBuiltins>(
-  id: Id,
-) => NodeBuiltins[Id];
-
-// Lazy-load Node-only dependencies so bundlers can tree-shake / stub them.
-// chalk is kept as a static import (ESM-only in v5) — Rollup handles it.
-// readline, fs, and path are loaded at runtime only in Node.
-let clearLine: typeof import("readline").clearLine | undefined;
-let cursorTo: typeof import("readline").cursorTo | undefined;
-let fs: typeof import("fs") | undefined;
-let path: typeof import("path") | undefined;
-
-if (isNode) {
-  try {
-    // Referenced inside the guard: in a browser bundle `require` is not defined,
-    // and touching the identifier at module scope would throw before the catch
-    // below could degrade the module to no-ops.
-    const loadNodeBuiltin: LoadNodeBuiltin = require;
-    const readline = loadNodeBuiltin("readline");
-    clearLine = readline.clearLine;
-    cursorTo = readline.cursorTo;
-    fs = loadNodeBuiltin("fs");
-    path = loadNodeBuiltin("path");
-  } catch {
-    // Silently degrade — all operations will be no-ops.
-  }
-}
+// Node builtins are imported statically. They were previously pulled in with a
+// bare `require` inside a try/catch so a browser bundle could degrade to
+// no-ops, but this package declares `engines.node >= 20`, ships no browser
+// entry, and its ESM bundle already imports fs/path/url/os/crypto statically —
+// so the browser path the indirection protected does not exist.
+//
+// The indirection was not merely redundant, it was a silent failure: a bare
+// `require` is emitted verbatim into the ESM bundle, where `require` is not
+// defined, so every ESM consumer threw `ReferenceError` into a catch that
+// discarded it. File logging then no-opped while appearing to succeed, and
+// clearLine/cursorTo did nothing — a caller's logs were simply never written.
+// A static import fails loudly at build time in any environment that genuinely
+// cannot provide these modules, which is the honest outcome.
+const clearLine: typeof nodeClearLine | undefined = isNode
+  ? nodeClearLine
+  : undefined;
+const cursorTo: typeof nodeCursorTo | undefined = isNode
+  ? nodeCursorTo
+  : undefined;
+const fs: typeof nodeFs | undefined = isNode ? nodeFs : undefined;
+const path: typeof nodePath | undefined = isNode ? nodePath : undefined;
 
 export class DisplayManager {
   private static instance: DisplayManager;

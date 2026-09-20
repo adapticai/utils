@@ -1,9 +1,6 @@
 // src/types/alpaca-types.ts
 
-import {
-  ApolloClientType,
-  NormalizedCacheObject,
-} from "@adaptic/backend";
+import { ApolloClientType, NormalizedCacheObject } from "@adaptic/backend";
 import { types } from "@adaptic/backend";
 import type Alpaca from "@alpacahq/alpaca-trade-api";
 
@@ -1076,18 +1073,38 @@ export interface OptionAccountActivity {
   status: "executed";
 }
 
+/**
+ * Every order-lifecycle event the Alpaca trade-updates stream emits.
+ *
+ * Declared once here because two partial copies drift: the stream emits all of
+ * these names, and a union that omits some of them forces a cast at the point
+ * of receipt, which silently accepts any string and defeats the union's purpose.
+ * Terminal-rejection events (`rejected`, `order_cancel_rejected`,
+ * `order_replace_rejected`) matter most — a consumer that cannot name them
+ * cannot distinguish a refused order from one still working.
+ */
+export type AlpacaTradeUpdateEvent =
+  | "new"
+  | "fill"
+  | "partial_fill"
+  | "canceled"
+  | "expired"
+  | "done_for_day"
+  | "replaced"
+  | "rejected"
+  | "pending_new"
+  | "pending_cancel"
+  | "pending_replace"
+  | "calculated"
+  | "suspended"
+  | "order_cancel_rejected"
+  | "order_replace_rejected"
+  | "stopped"
+  | "accepted"
+  | "accepted_for_bidding";
+
 export interface TradeUpdate {
-  event:
-    | "new"
-    | "fill"
-    | "partial_fill"
-    | "canceled"
-    | "expired"
-    | "pending_new"
-    | "pending_cancel"
-    | "pending_replace"
-    | "replaced"
-    | "done_for_day";
+  event: AlpacaTradeUpdateEvent;
   price?: string;
   timestamp: string;
   qty?: string;

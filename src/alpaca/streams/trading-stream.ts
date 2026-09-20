@@ -26,32 +26,18 @@
  */
 import { AlpacaClient } from "../client";
 import { BaseStream, isStreamFrame, StreamConfig } from "./base-stream";
-import { TradeUpdate } from "../../types/alpaca-types";
+import { AlpacaTradeUpdateEvent, TradeUpdate } from "../../types/alpaca-types";
 import { getTradingWebSocketUrl } from "../../config/api-endpoints";
 
 /**
  * Trading stream event names representing all possible order status changes.
- * These events are emitted when order state changes occur.
+ *
+ * Alias of the canonical {@link AlpacaTradeUpdateEvent}, which is declared with
+ * the owned types so the stream and the `TradeUpdate` payload it carries cannot
+ * drift apart. Re-exported here because this is where consumers already import
+ * it from.
  */
-export type TradingStreamEvent =
-  | "new" // Order has been received and created
-  | "fill" // Order has been completely filled
-  | "partial_fill" // Order has been partially filled
-  | "canceled" // Order has been canceled
-  | "expired" // Order has expired (e.g., day order at market close)
-  | "done_for_day" // Order is done for the day (not canceled or expired)
-  | "replaced" // Order has been replaced by another order
-  | "rejected" // Order has been rejected
-  | "pending_new" // Order is pending acceptance
-  | "pending_cancel" // Order cancellation is pending
-  | "pending_replace" // Order replacement is pending
-  | "calculated" // Order has been calculated (for multi-leg orders)
-  | "suspended" // Order has been suspended
-  | "order_cancel_rejected" // Order cancellation was rejected
-  | "order_replace_rejected" // Order replacement was rejected
-  | "stopped" // Order has been stopped
-  | "accepted" // Order has been accepted
-  | "accepted_for_bidding"; // Order has been accepted for bidding (auction)
+export type TradingStreamEvent = AlpacaTradeUpdateEvent;
 
 /**
  * Trading stream event map for type-safe event handling.
@@ -273,9 +259,10 @@ export class TradingStream extends BaseStream {
     // Emit the generic trade_update event
     this.emit("trade_update", update);
 
-    // Emit specific event based on update type
-    const event = update.event as TradingStreamEvent;
-    this.emit(event, update);
+    // Emit the specific lifecycle event. No assertion is needed: `event` is
+    // already the canonical union, so a name the stream can emit is a name
+    // this type admits.
+    this.emit(update.event, update);
 
     // Call the global callback if set
     if (this.tradeUpdateCallback) {

@@ -27,6 +27,11 @@ import { rateLimiters } from "./rate-limiter";
 import { createTimeoutSignal, DEFAULT_TIMEOUTS } from "./http-timeout";
 import { validateMassiveApiKey } from "./utils/auth-validator";
 import { isTransientNetworkError } from "./utils/retry";
+import {
+  MassiveAggregatesResponseSchema,
+  MassiveGroupedDailyResponseSchema,
+  MassiveTickerDetailsResponseSchema,
+} from "./schemas/massive-schemas";
 
 /**
  * Set of Massive API response statuses that indicate valid, usable data.
@@ -57,6 +62,66 @@ const massiveLimit = pLimit(MASSIVE_CONCURRENCY_LIMIT);
  * request settles, so subsequent calls after resolution make a fresh request.
  */
 const fetchLastTradeInflight = new Map<string, Promise<MassiveQuote>>();
+
+/**
+ * Check a vendor payload against its schema and report any divergence.
+ *
+ * OBSERVES, never rejects. Schemas for these endpoints existed in this package
+ * but were wired to nothing, so a vendor contract change could only be found
+ * once it had already produced wrong numbers downstream. Running them turns
+ * that into a signal.
+ *
+ * It does not throw, and it does not substitute a parsed value for the caller's
+ * payload. This feed is the primary real-time US-equities source, and a schema
+ * asserting more than the vendor actually guarantees would take the feed down
+ * mid-session the first time a field went missing — a worse failure than the
+ * drift it is meant to catch. Enforcement is a separate decision that belongs
+ * to evidence: once these warnings stay silent across live sessions, the parse
+ * result can become authoritative.
+ *
+ * @param schema - Zod schema describing the expected payload.
+ * @param payload - The parsed JSON body as received.
+ * @param endpoint - Endpoint name, for the log line.
+ */
+function observeMassivePayload(
+  schema: {
+    safeParse: (value: unknown) => { success: boolean; error?: unknown };
+  },
+  payload: unknown,
+  endpoint: string,
+): void {
+  const result = schema.safeParse(payload);
+  if (result.success) return;
+  getLogger().warn(
+    `Massive payload diverged from its schema at ${endpoint} — downstream types may not describe this response`,
+    { endpoint, issues: result.error },
+  );
+}
+
+/**
+ * Render a bar's UTC epoch as the human-readable exchange-local timestamp that
+ * {@link MassivePriceData.date} carries.
+ *
+ * Bars arrive keyed by epoch milliseconds only. The displayed form is always
+ * America/New_York because that is the session the US equities tape is quoted
+ * in, so a bar's date reads identically regardless of where the process runs.
+ *
+ * @param timestampMs - Bar timestamp, UTC epoch milliseconds.
+ * @returns The formatted exchange-local timestamp.
+ */
+function formatMassiveBarDate(timestampMs: number): string {
+  return new Date(timestampMs).toLocaleString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    timeZone: "America/New_York",
+    timeZoneName: "short",
+    hourCycle: "h23",
+  });
+}
 
 /**
  * Check if a symbol is a crypto pair based on common patterns.
@@ -238,6 +303,12 @@ export const fetchTickerInfo = async (
         results.share_class_shares_outstanding = null;
       }
 
+      observeMassivePayload(
+        MassiveTickerDetailsResponseSchema,
+        data,
+        "v3/reference/tickers",
+      );
+
       const tickerInfo: MassiveTickerInfo = {
         ticker: results.ticker,
         type: results.type,
@@ -246,7 +317,7 @@ export const fetchTickerInfo = async (
         description: results.description ?? "No description available",
         locale: results.locale,
         market: results.market,
-        market_cap: results.market_cap ?? 0,
+        market_cap: results.market_cap ?? null,
         name: results.name,
         primary_exchange: results.primary_exchange,
         share_class_shares_outstanding: results.share_class_shares_outstanding,
@@ -597,6 +668,11 @@ export const fetchPrices = async (
         }
 
         if (data.results) {
+          observeMassivePayload(
+            MassiveAggregatesResponseSchema,
+            data,
+            "v2/aggs/ticker",
+          );
           allResults = [...allResults, ...data.results];
         }
 
@@ -613,35 +689,29 @@ export const fetchPrices = async (
         ...(aggregatedStatus === "DELAYED" ? { delayedSince: null } : {}),
       };
 
-      const bars = allResults.map((entry: RawMassivePriceData) => ({
-        date: new Date(entry.t).toLocaleString("en-US", {
-          year: "numeric",
-          month: "short",
-          day: "2-digit",
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-          timeZone: "America/New_York",
-          timeZoneName: "short",
-          hourCycle: "h23",
+      const bars: MassivePriceData[] = allResults.map(
+        (entry: RawMassivePriceData) => ({
+          symbol: ticker,
+          date: formatMassiveBarDate(entry.t),
+          timeStamp: entry.t,
+          open: entry.o,
+          high: entry.h,
+          low: entry.l,
+          close: entry.c,
+          vol: entry.v,
+          vwap: entry.vw,
+          trades: entry.n,
+          _freshness: freshness,
         }),
-        timeStamp: entry.t,
-        open: entry.o,
-        high: entry.h,
-        low: entry.l,
-        close: entry.c,
-        vol: entry.v,
-        vwap: entry.vw,
-        trades: entry.n,
-        _freshness: freshness,
-      }));
+      );
 
       // The aggregates endpoint names the ticker once on the envelope rather
-      // than on each bar, and this mapping does not copy it down, so the bars
-      // carry every field of `MassivePriceData` except `symbol`. The assertion
-      // records that divergence at the single point where it arises instead of
-      // leaving it implicit in an untyped payload.
-      return bars as MassivePriceData[];
+      // than on each bar, so the symbol is stamped down here. Without it the
+      // bars satisfied `MassivePriceData` only by assertion, and every consumer
+      // reading `bar.symbol` received `undefined` typed as `string` — a bar
+      // that cannot say which instrument it belongs to is unusable the moment
+      // two symbols share a collection.
+      return bars;
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error occurred";
@@ -837,7 +907,13 @@ export const fetchGroupedDaily = async (
         );
       }
 
-      const groupedDaily = {
+      observeMassivePayload(
+        MassiveGroupedDailyResponseSchema,
+        data,
+        "v2/aggs/grouped",
+      );
+
+      const groupedDaily: MassiveGroupedDailyResponse = {
         adjusted: data.adjusted,
         queryCount: data.queryCount,
         request_id: data.request_id,
@@ -845,6 +921,7 @@ export const fetchGroupedDaily = async (
         status: data.status,
         results: data.results.map((result: RawMassivePriceData) => ({
           symbol: result.T,
+          date: formatMassiveBarDate(result.t),
           timeStamp: result.t,
           open: result.o,
           high: result.h,
@@ -856,11 +933,7 @@ export const fetchGroupedDaily = async (
         })),
       };
 
-      // Grouped daily bars are keyed by timestamp only; this mapping does not
-      // derive the human-readable `date` string that `MassivePriceData` also
-      // declares, so the reshaped bars carry every field except that one. The
-      // assertion records that divergence at its single point of origin.
-      return groupedDaily as MassiveGroupedDailyResponse;
+      return groupedDaily;
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error occurred";
