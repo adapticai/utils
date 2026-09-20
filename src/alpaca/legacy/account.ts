@@ -92,8 +92,7 @@ export async function fetchAccountDetails({
       );
     }
 
-    const data = await response.json();
-    return data;
+    return (await response.json()) as AlpacaAccountDetails;
   } catch (error) {
     getLogger().error("Error in fetchAccountDetails:", error);
     throw error;
@@ -193,8 +192,7 @@ export async function fetchPortfolioHistory({
       );
     }
 
-    const data = await response.json();
-    return data;
+    return (await response.json()) as PortfolioHistoryResponse;
   } catch (error) {
     getLogger().error(
       "[fetchPortfolioHistory] Error fetching portfolio history call to Alpaca:",

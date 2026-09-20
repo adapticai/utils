@@ -83,7 +83,7 @@ export async function makeRequest<T = unknown>(
 
     // Handle 207 Multi-Status responses (used by closeAll positions)
     if (response.status === 207 || response.ok) {
-      return await response.json();
+      return (await response.json()) as T;
     }
 
     const errorText = await response.text();

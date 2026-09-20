@@ -80,11 +80,14 @@ export async function fetchBars(
             );
           }
 
-          const data: Omit<CryptoBarsResponse, "bars"> & {
+          const data = (await response.json()) as Omit<
+            CryptoBarsResponse,
+            "bars"
+          > & {
             bars: {
               [symbol: string]: Array<Omit<CryptoBar, "t"> & { t: string }>;
             };
-          } = await response.json();
+          };
 
           // Convert timestamp strings to Date objects and merge bars
           Object.entries(data.bars).forEach(([symbol, bars]) => {
@@ -217,8 +220,10 @@ export async function fetchNews(
           );
         }
 
-        const data: { news: RawNewsArticle[]; next_page_token?: string } =
-          await response.json();
+        const data = (await response.json()) as {
+          news: RawNewsArticle[];
+          next_page_token?: string;
+        };
         const pageArticles = (data.news ?? []).map(
           (article): AlpacaNewsArticle => ({
             id: article.id,
@@ -318,7 +323,7 @@ export async function fetchLatestTrades(
         throw new Error(`Alpaca API error (${response.status}): ${errorText}`);
       }
 
-      const data: LatestTradesResponse = await response.json();
+      const data = (await response.json()) as LatestTradesResponse;
 
       logIfDebug(
         `Received latest trades for ${Object.keys(data.trades).length} symbols`,
@@ -384,7 +389,7 @@ export async function fetchLatestQuotes(
         throw new Error(`Alpaca API error (${response.status}): ${errorText}`);
       }
 
-      const data: LatestQuotesResponse = await response.json();
+      const data = (await response.json()) as LatestQuotesResponse;
 
       logIfDebug(
         `Received latest quotes for ${Object.keys(data.quotes).length} symbols`,
