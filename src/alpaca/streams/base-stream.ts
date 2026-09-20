@@ -58,6 +58,38 @@ export interface SubscriptionRequest {
 }
 
 /**
+ * Narrows a decoded JSON value to a stream frame: a non-null, non-array object.
+ *
+ * `JSON.parse` is typed `any`, so every property read on its result is
+ * unchecked. Narrowing here is what lets a frame's discriminator be read as
+ * data rather than asserted. Arrays are excluded because a frame is addressed
+ * by named field (`T`, `stream`), which an array does not carry.
+ *
+ * @param value - The decoded JSON value to test.
+ * @returns true when the value is a non-null object that is not an array.
+ */
+export function isStreamFrame(
+  value: unknown,
+): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Splits a decoded stream payload into the individual frames it carries.
+ *
+ * Alpaca's stream endpoints deliver either a single JSON value or an array of
+ * them in one WebSocket message, so both shapes are flattened to the same list.
+ * Frames stay `unknown` here: whether a given frame is usable is the caller's
+ * question, and dropping one is the caller's decision to record.
+ *
+ * @param payload - The decoded JSON payload of one WebSocket message.
+ * @returns The frames the payload carries, in arrival order.
+ */
+function toStreamFrames(payload: unknown): unknown[] {
+  return Array.isArray(payload) ? payload : [payload];
+}
+
+/**
  * Abstract base class for all Alpaca WebSocket streams
  */
 export abstract class BaseStream extends EventEmitter {
@@ -154,8 +186,10 @@ export abstract class BaseStream extends EventEmitter {
             this.reconnectAttempts = 0;
             resolve();
           })
-          .catch((error) => {
-            this.log(`Authentication failed: ${error.message}`, {
+          .catch((error: unknown) => {
+            const reason =
+              error instanceof Error ? error.message : String(error);
+            this.log(`Authentication failed: ${reason}`, {
               type: "error",
             });
             this.ws?.close();
@@ -278,12 +312,13 @@ export abstract class BaseStream extends EventEmitter {
         reject(new Error("Authentication timeout"));
       }, this.config.authTimeout);
 
-      const handleAuthResponse = (data: WebSocket.Data) => {
+      const handleAuthResponse = (data: WebSocket.Data): void => {
         try {
-          const messages = JSON.parse(data.toString());
-          for (const message of Array.isArray(messages)
-            ? messages
-            : [messages]) {
+          const frames = toStreamFrames(JSON.parse(data.toString()));
+          for (const message of frames) {
+            if (!isStreamFrame(message)) {
+              continue;
+            }
             if (message.T === "success" && message.msg === "authenticated") {
               clearTimeout(authTimeout);
               this.ws?.removeListener("message", handleAuthResponse);
@@ -302,11 +337,17 @@ export abstract class BaseStream extends EventEmitter {
             } else if (message.T === "error") {
               clearTimeout(authTimeout);
               this.ws?.removeListener("message", handleAuthResponse);
-              reject(new Error(message.msg || "Authentication failed"));
+              // The server states the rejection reason in `msg`; any other
+              // shape leaves the reason unknown rather than inventing one.
+              const reason =
+                typeof message.msg === "string" && message.msg.length > 0
+                  ? message.msg
+                  : "Authentication failed";
+              reject(new Error(reason));
               return;
             }
           }
-        } catch (error) {
+        } catch {
           // Continue waiting for auth response
         }
       };
@@ -386,9 +427,19 @@ export abstract class BaseStream extends EventEmitter {
   protected handleMessage(data: WebSocket.Data): void {
     try {
       const rawData = data.toString();
-      const messages = JSON.parse(rawData);
+      const frames = toStreamFrames(JSON.parse(rawData));
 
-      for (const message of Array.isArray(messages) ? messages : [messages]) {
+      for (const message of frames) {
+        // A frame that is not an object carries no discriminator for a
+        // subclass to dispatch on. It is reported rather than dropped
+        // quietly, because it means the stream sent a shape this client
+        // does not model.
+        if (!isStreamFrame(message)) {
+          this.log(`Ignored stream frame of type ${typeof message}`, {
+            type: "warn",
+          });
+          continue;
+        }
         this.processMessage(message);
       }
     } catch (error) {

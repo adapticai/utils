@@ -281,11 +281,16 @@ export class StreamManager extends EventEmitter {
     ]);
 
     const failed = results.filter(
-      (r) => r.status === "rejected",
-    ) as PromiseRejectedResult[];
+      (r): r is PromiseRejectedResult => r.status === "rejected",
+    );
     if (failed.length > 0) {
+      // A settled rejection carries an unknown reason, so only an Error's own
+      // message is reported as one; anything else stays unexplained rather
+      // than being rendered as a message it does not have.
       const errors = failed
-        .map((f) => f.reason?.message || "Unknown error")
+        .map((f) =>
+          f.reason instanceof Error ? f.reason.message : "Unknown error",
+        )
         .join(", ");
       log(`Some streams failed to connect: ${errors}`, { type: "warn" });
     }

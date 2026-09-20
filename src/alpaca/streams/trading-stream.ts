@@ -25,7 +25,7 @@
  * ```
  */
 import { AlpacaClient } from "../client";
-import { BaseStream, StreamConfig } from "./base-stream";
+import { BaseStream, isStreamFrame, StreamConfig } from "./base-stream";
 import { TradeUpdate } from "../../types/alpaca-types";
 import { getTradingWebSocketUrl } from "../../config/api-endpoints";
 
@@ -92,6 +92,26 @@ export interface TradingStreamEventMap {
 }
 
 /**
+ * Narrows a decoded `trade_updates` payload to a {@link TradeUpdate}.
+ *
+ * The check covers exactly the fields this stream and its consumers read
+ * unconditionally: the event name, and the order the event refers to,
+ * identified by id. It deliberately covers nothing more — order fields vary by
+ * order type (`qty` for share orders, `notional` for dollar orders), so
+ * requiring them would discard legitimate fills.
+ *
+ * @param value - A decoded frame payload.
+ * @returns true when the payload carries an event name and an identified order.
+ */
+function isTradeUpdate(value: unknown): value is TradeUpdate {
+  if (!isStreamFrame(value) || typeof value.event !== "string") {
+    return false;
+  }
+  const order = value.order;
+  return isStreamFrame(order) && typeof order.id === "string";
+}
+
+/**
  * Trading Stream class for receiving real-time order updates.
  *
  * Connects to Alpaca's trading WebSocket and provides real-time
@@ -138,26 +158,36 @@ export class TradingStream extends BaseStream {
         reject(new Error("Authentication timeout"));
       }, this.config.authTimeout);
 
-      const handleAuthResponse = (data: Buffer | ArrayBuffer | Buffer[]) => {
+      const handleAuthResponse = (
+        data: Buffer | ArrayBuffer | Buffer[],
+      ): void => {
         try {
-          const message = JSON.parse(data.toString());
-          if (message.stream === "authorization") {
+          const message: unknown = JSON.parse(data.toString());
+          if (isStreamFrame(message) && message.stream === "authorization") {
             clearTimeout(authTimeout);
             this.ws?.removeListener("message", handleAuthResponse);
 
-            if (message.data?.status === "authorized") {
+            const payload = isStreamFrame(message.data)
+              ? message.data
+              : undefined;
+            if (payload?.status === "authorized") {
               this.state = "authenticated";
               this.log("Trading stream authenticated");
               this.emit("authenticated");
               this.subscribeToTradeUpdates();
               resolve();
             } else {
-              reject(
-                new Error(message.data?.message || "Authentication failed"),
-              );
+              // The server states the rejection reason in `data.message`; any
+              // other shape leaves the reason unknown rather than inventing one.
+              const reason =
+                typeof payload?.message === "string" &&
+                payload.message.length > 0
+                  ? payload.message
+                  : "Authentication failed";
+              reject(new Error(reason));
             }
           }
-        } catch (error) {
+        } catch {
           // Continue waiting for auth response
         }
       };
@@ -193,8 +223,9 @@ export class TradingStream extends BaseStream {
    * Process incoming messages
    */
   protected processMessage(message: Record<string, unknown>): void {
-    const stream = message.stream as string;
-    const data = message.data as Record<string, unknown>;
+    const stream =
+      typeof message.stream === "string" ? message.stream : undefined;
+    const data = isStreamFrame(message.data) ? message.data : undefined;
 
     switch (stream) {
       case "authorization":
@@ -202,15 +233,26 @@ export class TradingStream extends BaseStream {
         break;
 
       case "listening":
-        this.handleListeningMessage(data);
+        if (data) {
+          this.handleListeningMessage(data);
+        }
         break;
 
       case "trade_updates":
-        this.handleTradeUpdate(data as unknown as TradeUpdate);
+        // A frame whose payload lacks the fields every consumer of a
+        // TradeUpdate reads cannot be delivered as one; it is reported rather
+        // than passed on as a partially-populated update.
+        if (isTradeUpdate(data)) {
+          this.handleTradeUpdate(data);
+        } else {
+          this.log("Discarded malformed trade update frame", { type: "error" });
+        }
         break;
 
       default:
-        this.log(`Unknown stream type: ${stream}`, { type: "debug" });
+        this.log(`Unknown stream type: ${JSON.stringify(message.stream)}`, {
+          type: "debug",
+        });
     }
   }
 
@@ -218,8 +260,8 @@ export class TradingStream extends BaseStream {
    * Handle listening confirmation message
    */
   private handleListeningMessage(data: Record<string, unknown>): void {
-    const streams = data.streams as string[] | undefined;
-    if (streams?.includes("trade_updates")) {
+    const streams: unknown[] = Array.isArray(data.streams) ? data.streams : [];
+    if (streams.includes("trade_updates")) {
       this.log("Successfully subscribed to trade updates");
     }
   }
