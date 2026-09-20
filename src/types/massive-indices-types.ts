@@ -20,6 +20,12 @@ export interface MassiveIndicesErrorResponse extends MassiveIndicesBaseResponse 
   status: "ERROR" | "NOT_AUTHORIZED" | string;
   /** The error message. */
   message: string;
+  /**
+   * Alternative carrier for the failure reason. This API reports the reason
+   * under either `error` or `message` depending on the endpoint, so a reader
+   * that needs the reason has to consider both fields rather than assume one.
+   */
+  error?: string;
 }
 
 /**
