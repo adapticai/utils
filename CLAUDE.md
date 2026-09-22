@@ -15,7 +15,13 @@ npm run build && npm run lint && npm test
 # single ad-hoc check: this is a Rollup single-entry bundle (everything re-exports
 # through src/index.ts) — you cannot compile/run arbitrary TS files. Either add a
 # call in src/test.ts and `npm run test`, or build then `node dist/path/to/file.js`.
+# (Vitest itself does run a single file: `npx vitest run src/__tests__/<file>.test.ts`.)
+
+npm run fixtures:indicator-parity:check   # recursive-indicator golden master is current
+npm run fixtures:indicator-parity         # regenerate it after changing the recorded SURFACE
 ```
+
+Recursive indicators (EMA/Wilder family) are protected by a prefix-parity golden master: `src/__tests__/indicator-prefix-parity.test.ts` re-derives every value from an INDEPENDENT reference written from each indicator's definition, and any disagreement must be declared in `DECLARED_DEVIATIONS` with its mechanism. Regenerating the fixture does not silence an undeclared disagreement — that is the point, so a defect can never be recorded as the specification.
 
 Lint: PRs target 0 errors. The standing warnings are `@alpacahq/alpaca-trade-api` SDK type-gap legacy (`no-unsafe-*` family) — never add to them; burn down opportunistically by declaring strict local types in `src/types/`.
 

@@ -32,6 +32,7 @@ import {
   calculateBetaFromReturns,
   alignReturnsByDate,
 } from "../performance-metrics";
+import { measured } from "./support/statistic";
 
 describe("calculateDailyReturns", () => {
   it("should calculate log returns for simple price series", () => {
@@ -262,7 +263,7 @@ describe("calculateDrawdownMetrics", () => {
 describe("calculateBetaFromReturns", () => {
   it("should return beta of 1 when portfolio matches benchmark", () => {
     const returns = [0.01, -0.02, 0.03, -0.01, 0.02];
-    const result = calculateBetaFromReturns(returns, returns);
+    const result = measured(calculateBetaFromReturns(returns, returns));
 
     expect(result.beta).toBeCloseTo(1.0, 6);
     expect(result.covariance).toBeCloseTo(result.variance, 6);
@@ -272,7 +273,7 @@ describe("calculateBetaFromReturns", () => {
     // Perfectly uncorrelated: portfolio is constant, benchmark varies
     const portfolioReturns = [0, 0, 0, 0, 0];
     const benchmarkReturns = [0.01, -0.02, 0.03, -0.01, 0.02];
-    const result = calculateBetaFromReturns(portfolioReturns, benchmarkReturns);
+    const result = measured(calculateBetaFromReturns(portfolioReturns, benchmarkReturns));
 
     expect(result.beta).toBe(0);
   });
@@ -280,7 +281,7 @@ describe("calculateBetaFromReturns", () => {
   it("should return beta > 1 for amplified returns", () => {
     const benchmarkReturns = [0.01, -0.02, 0.03, -0.01, 0.02];
     const portfolioReturns = benchmarkReturns.map((r) => r * 2); // 2x amplified
-    const result = calculateBetaFromReturns(portfolioReturns, benchmarkReturns);
+    const result = measured(calculateBetaFromReturns(portfolioReturns, benchmarkReturns));
 
     expect(result.beta).toBeCloseTo(2.0, 1);
   });
@@ -288,31 +289,69 @@ describe("calculateBetaFromReturns", () => {
   it("should return negative beta for inversely correlated returns", () => {
     const benchmarkReturns = [0.01, -0.02, 0.03, -0.01, 0.02];
     const portfolioReturns = benchmarkReturns.map((r) => -r); // Inverse
-    const result = calculateBetaFromReturns(portfolioReturns, benchmarkReturns);
+    const result = measured(calculateBetaFromReturns(portfolioReturns, benchmarkReturns));
 
     expect(result.beta).toBeCloseTo(-1.0, 1);
   });
 
-  it("should handle empty returns arrays", () => {
+  it("reports no usable samples for empty returns arrays rather than a beta of 0", () => {
     const result = calculateBetaFromReturns([], []);
 
-    expect(result.beta).toBe(0);
-    expect(result.covariance).toBe(0);
-    expect(result.variance).toBe(0);
+    // A beta of 0 is the claim "this portfolio does not move with the market",
+    // which downstream alpha believes. Absence must not be able to make it.
+    expect(result.available).toBe(false);
+    expect(result).toMatchObject({
+      available: false,
+      reason: "no_usable_samples",
+      sampleCount: 0,
+      requestedCount: 0,
+      coverage: 0,
+    });
   });
 
-  it("should return near-zero beta when benchmark has near-zero variance", () => {
+  it("reports mismatched series lengths as invalid input instead of averaging one series over the other's length", () => {
+    const result = calculateBetaFromReturns([0.01, -0.02, 0.03], [0.01, -0.02]);
+
+    expect(result).toMatchObject({
+      available: false,
+      reason: "invalid_input",
+      requestedCount: 3,
+      sampleCount: 0,
+    });
+  });
+
+  it("carries the cohort on every available beta", () => {
+    const benchmarkReturns = [0.01, -0.02, 0.03, -0.01, 0.02];
+    const portfolioReturns = benchmarkReturns.map((r) => r * 2);
+    const result = calculateBetaFromReturns(portfolioReturns, benchmarkReturns);
+
+    expect(result).toMatchObject({
+      available: true,
+      sampleCount: 5,
+      requestedCount: 5,
+      coverage: 1,
+    });
+  });
+
+  it("reports a degenerate population when the benchmark never moved", () => {
     // Integer values divide cleanly, so variance is exactly 0 here and the
-    // guard triggers on the exact-zero branch of the noise-floor check.
+    // guard triggers on the exact-zero branch of the noise-floor check. A
+    // benchmark with no variance has no beta to regress against — that is an
+    // undefined ratio, not a measured zero.
     const portfolioReturns = [1, -2, 3];
     const benchmarkReturns = [5, 5, 5]; // Constant benchmark, integer values
     const result = calculateBetaFromReturns(portfolioReturns, benchmarkReturns);
 
-    expect(result.beta).toBe(0);
-    expect(result.variance).toBe(0);
+    expect(result).toMatchObject({
+      available: false,
+      reason: "degenerate_population",
+      sampleCount: 3,
+      requestedCount: 3,
+      coverage: 1,
+    });
   });
 
-  it("should return beta of 0 for a non-integer constant benchmark whose variance is floating-point noise", () => {
+  it("reports a degenerate population for a non-integer constant benchmark whose variance is floating-point noise", () => {
     // Regression: with a constant benchmark of -6.952 over 34 points, the
     // computed mean differs from the constant by an ulp, producing a
     // variance of ~8.1e-31 (pure summation noise). The pre-noise-floor
@@ -326,9 +365,12 @@ describe("calculateBetaFromReturns", () => {
     const benchmarkReturns = Array.from({ length: 34 }, () => -6.952);
     const result = calculateBetaFromReturns(portfolioReturns, benchmarkReturns);
 
-    expect(result.beta).toBe(0);
-    expect(result.variance).toBeGreaterThanOrEqual(0);
-    expect(result.variance).toBeLessThanOrEqual(1e-27);
+    expect(result).toMatchObject({
+      available: false,
+      reason: "degenerate_population",
+      sampleCount: 34,
+      requestedCount: 34,
+    });
   });
 
   it("does not swallow genuinely small benchmark variance", () => {
@@ -336,7 +378,7 @@ describe("calculateBetaFromReturns", () => {
     // orders of magnitude above the noise floor and must NOT be zeroed.
     const benchmarkReturns = [0.0005, 0.0007, 0.0003, 0.0006, 0.0004];
     const portfolioReturns = benchmarkReturns.map((r) => r * 2);
-    const result = calculateBetaFromReturns(portfolioReturns, benchmarkReturns);
+    const result = measured(calculateBetaFromReturns(portfolioReturns, benchmarkReturns));
 
     expect(result.variance).toBeGreaterThan(0);
     expect(result.beta).toBeCloseTo(2.0, 6);
@@ -345,7 +387,7 @@ describe("calculateBetaFromReturns", () => {
   it("should calculate correct average returns", () => {
     const portfolioReturns = [0.1, 0.2, 0.3];
     const benchmarkReturns = [0.05, 0.15, 0.25];
-    const result = calculateBetaFromReturns(portfolioReturns, benchmarkReturns);
+    const result = measured(calculateBetaFromReturns(portfolioReturns, benchmarkReturns));
 
     expect(result.averagePortfolioReturn).toBeCloseTo(0.2, 6);
     expect(result.averageBenchmarkReturn).toBeCloseTo(0.15, 6);
@@ -354,7 +396,9 @@ describe("calculateBetaFromReturns", () => {
   it("should calculate covariance correctly", () => {
     const portfolioReturns = [0.01, 0.02, 0.03];
     const benchmarkReturns = [0.01, 0.02, 0.03];
-    const result = calculateBetaFromReturns(portfolioReturns, benchmarkReturns);
+    const result = measured(
+      calculateBetaFromReturns(portfolioReturns, benchmarkReturns),
+    );
 
     // For identical arrays, covariance should equal variance
     expect(result.covariance).toBeCloseTo(result.variance, 6);

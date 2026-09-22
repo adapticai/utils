@@ -27,6 +27,11 @@ import {
   FetchPerformanceMetricsProps,
 } from "./types/metrics-types";
 import { getRiskFreeRate } from "./risk-free-rate";
+import {
+  availableStatistic,
+  sampleCohort,
+  unavailableStatistic,
+} from "./sample-statistic";
 import { marketDataAPI } from "./alpaca-market-data-api";
 
 /**
@@ -641,7 +646,21 @@ export async function calculateAlphaAndBeta(
     alignedBenchmarkReturns,
   );
 
-  if (!isFinite(beta.beta)) {
+  // Alpha is what remains after subtracting the benchmark term, so an unknown
+  // beta leaves alpha unknown. Any numeric stand-in — zero above all — would
+  // attribute the entire benchmark move to the strategy.
+  if (!beta.available) {
+    getLogger().warn(
+      `Alpha unavailable: beta could not be computed (${beta.reason}: ${beta.detail}).`,
+    );
+    return {
+      alpha: "N/A",
+      alphaAnnualized: "N/A",
+      beta: "N/A",
+    };
+  }
+
+  if (!isFinite(beta.value.beta)) {
     getLogger().warn("Beta calculation resulted in a non-finite value.");
     return {
       alpha: "N/A",
@@ -659,7 +678,7 @@ export async function calculateAlphaAndBeta(
 
   const alpha =
     portfolioAvgReturn -
-    (riskFreeRateDaily + beta.beta * (benchmarkAvgReturn - riskFreeRateDaily));
+    (riskFreeRateDaily + beta.value.beta * (benchmarkAvgReturn - riskFreeRateDaily));
 
   const alphaAnnualized = alpha * tradingDaysPerYear;
 
@@ -675,7 +694,7 @@ export async function calculateAlphaAndBeta(
   return {
     alpha: `${(alpha * 100).toFixed(2)}`,
     alphaAnnualized: `${(alphaAnnualized * 100).toFixed(2)}`,
-    beta: `${(beta.beta * 100).toFixed(2)}`,
+    beta: `${(beta.value.beta * 100).toFixed(2)}`,
   };
 }
 
@@ -1069,34 +1088,58 @@ function isValidUnixTimestamp(timestamp: number): boolean {
 }
 
 /**
- * Calculates the beta of the portfolio compared to a benchmark.
- * @param portfolioReturns - Array of portfolio returns.
- * @param benchmarkReturns - Array of benchmark returns.
- * @returns An object containing beta and intermediate calculations.
+ * Beta of a portfolio against a benchmark, from paired period returns.
+ *
+ * The two series are index-aligned pairs by contract: every mean, covariance
+ * and variance below is taken over the SAME row set. A length mismatch is
+ * therefore reported as invalid input rather than absorbed, because dividing
+ * one series' sum by the other series' length produces a mean of a population
+ * that does not exist — a number with no cohort, which is the failure this
+ * return type exists to make impossible.
+ *
+ * An uncomputable beta is returned as the unavailable branch, never as `0`.
+ * Zero beta is a claim of no market exposure, and downstream alpha attributes
+ * the entire benchmark move to the strategy when it believes that claim.
+ *
+ * @param portfolioReturns - Portfolio period returns.
+ * @param benchmarkReturns - Benchmark period returns, index-aligned to the portfolio.
+ * @returns The beta components with their cohort, or a typed unavailable result.
  */
 export function calculateBetaFromReturns(
   portfolioReturns: number[],
   benchmarkReturns: number[],
 ): CalculateBetaResult {
-  const n = portfolioReturns.length;
-  if (n === 0) {
-    getLogger().warn("No returns to calculate beta.");
-    return {
-      beta: 0,
-      covariance: 0,
-      variance: 0,
-      averagePortfolioReturn: 0,
-      averageBenchmarkReturn: 0,
-    };
+  const requestedCount = portfolioReturns.length;
+  if (portfolioReturns.length !== benchmarkReturns.length) {
+    getLogger().warn(
+      `Beta unavailable: series lengths differ (portfolio ${portfolioReturns.length}, benchmark ${benchmarkReturns.length}).`,
+    );
+    return unavailableStatistic(
+      "invalid_input",
+      `series lengths differ: portfolio ${portfolioReturns.length}, benchmark ${benchmarkReturns.length}`,
+      sampleCohort(requestedCount, 0),
+    );
   }
 
-  // Calculate average returns
+  // Bessel-corrected estimators need one degree of freedom, so two paired
+  // observations is the floor below which no sample variance exists.
+  const MIN_PAIRS_FOR_SAMPLE_VARIANCE = 2;
+  const n = requestedCount;
+  if (n < MIN_PAIRS_FOR_SAMPLE_VARIANCE) {
+    getLogger().warn(`Beta unavailable: ${n} paired returns offered.`);
+    return unavailableStatistic(
+      n === 0 ? "no_usable_samples" : "insufficient_samples",
+      `beta needs at least ${MIN_PAIRS_FOR_SAMPLE_VARIANCE} paired returns; ${n} were offered`,
+      sampleCohort(requestedCount, n),
+    );
+  }
+  const cohort = sampleCohort(requestedCount, n);
+
   const averagePortfolioReturn =
     portfolioReturns.reduce((sum, ret) => sum + ret, 0) / n;
   const averageBenchmarkReturn =
     benchmarkReturns.reduce((sum, ret) => sum + ret, 0) / n;
 
-  // Calculate covariance and variance
   let covariance = 0;
   let variance = 0;
 
@@ -1108,43 +1151,38 @@ export function calculateBetaFromReturns(
   }
 
   // Use sample (Bessel-corrected) estimators — divide by (n - 1), not n.
-  // For n === 1 there is no degrees-of-freedom left; treat as zero variance
-  // so beta falls through to the zero-variance guard below.
-  const denom = n > 1 ? n - 1 : 1;
-  covariance /= denom;
-  variance /= denom;
+  covariance /= n - 1;
+  variance /= n - 1;
 
-  // Handle zero (or numerically-degenerate) variance. A constant benchmark
-  // series can still produce a tiny nonzero variance because the computed
-  // mean differs from the constant by an ulp; dividing covariance by that
-  // rounding noise yields a meaningless beta. Treat any variance at or
-  // below the summation noise floor — (n * eps * |mean|)^2, the square of
-  // the worst-case naive-summation error — as zero. When the mean is
-  // exactly 0 this reduces to the exact zero check.
+  // A constant benchmark series can still produce a tiny nonzero variance
+  // because the computed mean differs from the constant by an ulp; dividing
+  // covariance by that rounding noise yields a meaningless beta. Treat any
+  // variance at or below the summation noise floor — (n * eps * |mean|)^2, the
+  // square of the worst-case naive-summation error — as no variance at all.
+  // When the mean is exactly 0 this reduces to the exact zero check.
   const varianceNoiseFloor =
     (n * Number.EPSILON * Math.abs(averageBenchmarkReturn)) ** 2;
   if (variance <= varianceNoiseFloor) {
     getLogger().warn(
-      "Benchmark variance is zero or below the floating-point noise floor. Setting beta to 0.",
+      "Beta unavailable: benchmark variance is zero or below the floating-point noise floor.",
     );
-    return {
-      beta: 0,
+    return unavailableStatistic(
+      "degenerate_population",
+      `benchmark variance ${variance} is at or below the summation noise floor ${varianceNoiseFloor}; beta is undefined`,
+      cohort,
+    );
+  }
+
+  return availableStatistic(
+    {
+      beta: covariance / variance,
       covariance,
       variance,
       averagePortfolioReturn,
       averageBenchmarkReturn,
-    };
-  }
-
-  const beta = covariance / variance;
-
-  return {
-    beta,
-    covariance,
-    variance,
-    averagePortfolioReturn,
-    averageBenchmarkReturn,
-  };
+    },
+    cohort,
+  );
 }
 
 /**

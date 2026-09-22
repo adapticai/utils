@@ -36,6 +36,7 @@ import {
   calculateRSI,
 } from "../technical-analysis";
 import { MassivePriceData } from "../types/massive-types";
+import { measured } from "./support/statistic";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -174,7 +175,7 @@ describe("Property-based: Beta calculations", () => {
         const variance =
           returns.reduce((s, r) => s + (r - mean) ** 2, 0) / returns.length;
         if (variance < 1e-8) return;
-        const result = calculateBetaFromReturns(returns, returns);
+        const result = measured(calculateBetaFromReturns(returns, returns));
         expect(result.beta).toBeCloseTo(1.0, 4);
       }),
       { numRuns: 300 },
@@ -192,9 +193,8 @@ describe("Property-based: Beta calculations", () => {
           benchmarkReturns.length;
         if (variance < 1e-8) return;
         const leveragedReturns = benchmarkReturns.map((r) => r * 2);
-        const result = calculateBetaFromReturns(
-          leveragedReturns,
-          benchmarkReturns,
+        const result = measured(
+          calculateBetaFromReturns(leveragedReturns, benchmarkReturns),
         );
         expect(result.beta).toBeCloseTo(2.0, 2);
       }),
@@ -213,9 +213,8 @@ describe("Property-based: Beta calculations", () => {
           benchmarkReturns.length;
         if (variance < 1e-8) return;
         const inverseReturns = benchmarkReturns.map((r) => -r);
-        const result = calculateBetaFromReturns(
-          inverseReturns,
-          benchmarkReturns,
+        const result = measured(
+          calculateBetaFromReturns(inverseReturns, benchmarkReturns),
         );
         expect(result.beta).toBeCloseTo(-1.0, 2);
       }),
@@ -223,7 +222,7 @@ describe("Property-based: Beta calculations", () => {
     );
   });
 
-  it("zero-variance benchmark produces beta of 0 (handled gracefully)", () => {
+  it("zero-variance benchmark yields a typed unavailable result, never a numeric beta", () => {
     fc.assert(
       fc.property(
         returnsArray(3, 50),
@@ -241,8 +240,16 @@ describe("Property-based: Beta calculations", () => {
             portfolioReturns,
             benchmarkReturns,
           );
-          // The function should detect zero/near-zero variance and return 0
-          expect(Math.abs(result.beta)).toBeLessThanOrEqual(1e-6);
+          // A benchmark that never moved has no beta. The property under test
+          // is that no number is produced at all — a near-zero beta would
+          // still be a number a caller could read and act on.
+          expect(result.available).toBe(false);
+          expect(result).toMatchObject({
+            available: false,
+            reason: "degenerate_population",
+            sampleCount: portfolioReturns.length,
+            requestedCount: portfolioReturns.length,
+          });
         },
       ),
       { numRuns: 200 },
@@ -256,7 +263,7 @@ describe("Property-based: Beta calculations", () => {
         const variance =
           returns.reduce((s, r) => s + (r - mean) ** 2, 0) / returns.length;
         if (variance < 1e-8) return;
-        const result = calculateBetaFromReturns(returns, returns);
+        const result = measured(calculateBetaFromReturns(returns, returns));
         expect(result.covariance).toBeCloseTo(result.variance, 6);
       }),
       { numRuns: 200 },
@@ -277,9 +284,8 @@ describe("Property-based: Beta calculations", () => {
             benchmarkReturns.length;
           if (variance < 1e-8 || Math.abs(multiplier) < 1e-6) return;
           const scaledReturns = benchmarkReturns.map((r) => r * multiplier);
-          const result = calculateBetaFromReturns(
-            scaledReturns,
-            benchmarkReturns,
+          const result = measured(
+            calculateBetaFromReturns(scaledReturns, benchmarkReturns),
           );
           expect(result.beta).toBeCloseTo(multiplier, 1);
         },

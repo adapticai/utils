@@ -3,6 +3,7 @@
 import { ApolloClientType, NormalizedCacheObject } from "@adaptic/backend";
 import { types } from "@adaptic/backend";
 import type Alpaca from "@alpacahq/alpaca-trade-api";
+import type { SampleStatistic } from "../sample-statistic";
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Alpaca SDK adapter types
@@ -146,15 +147,39 @@ export interface BenchmarkBar {
 }
 
 /**
- * Result of the beta calculation.
+ * The components of a beta measurement, all derived from the same paired
+ * observations.
+ *
+ * They travel together because they are one measurement, not five: a
+ * `covariance` reported next to a `variance` taken over a different set of
+ * rows is not a beta, it is two numbers that look like one.
  */
-export interface CalculateBetaResult {
-  beta: number; // Beta value
-  covariance: number; // Covariance value
-  variance: number; // Variance value
-  averagePortfolioReturn: number; // Average portfolio return
-  averageBenchmarkReturn: number; // Average benchmark return
+export interface BetaComponents {
+  /** Slope of portfolio returns on benchmark returns: `covariance / variance`. */
+  beta: number;
+  /** Sample covariance of the paired returns (Bessel-corrected). */
+  covariance: number;
+  /** Sample variance of the benchmark returns (Bessel-corrected). */
+  variance: number;
+  /** Mean portfolio return over the surviving pairs. */
+  averagePortfolioReturn: number;
+  /** Mean benchmark return over the surviving pairs. */
+  averageBenchmarkReturn: number;
 }
+
+/**
+ * Result of the beta calculation, inseparable from the cohort it was measured
+ * on.
+ *
+ * Beta is a ratio of two second moments, so it is meaningless without the
+ * number of paired observations behind it and the fraction of the offered rows
+ * that survived pairing and finiteness filtering. Returning the components
+ * alone lets a caller read a beta computed from two usable rows out of nine
+ * hundred as though it were the whole series, and lets an uncomputable beta
+ * arrive as a `0` that reads as "no market exposure" — which is a measurement,
+ * and a consequential one, rather than the absence it actually is.
+ */
+export type CalculateBetaResult = SampleStatistic<BetaComponents>;
 
 /**
  * Represents a position in the portfolio.

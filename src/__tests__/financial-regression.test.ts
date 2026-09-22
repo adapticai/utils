@@ -29,6 +29,7 @@ import {
   calculateDrawdownMetrics,
   calculateMaxDrawdown,
 } from "../performance-metrics";
+import { measured } from "./support/statistic";
 import {
   calculateBollingerBands,
   calculateEMA,
@@ -70,7 +71,7 @@ describe("Regression: Beta calculation against known values", () => {
       0.0012, -0.0045, 0.0078, -0.0023, 0.0056, -0.0011, 0.0034, -0.0067,
       0.0089, -0.0015,
     ];
-    const result = calculateBetaFromReturns(spyReturns, spyReturns);
+    const result = measured(calculateBetaFromReturns(spyReturns, spyReturns));
     expect(result.beta).toBeCloseTo(1.0, 10);
   });
 
@@ -81,7 +82,7 @@ describe("Regression: Beta calculation against known values", () => {
     ];
     // Portfolio that moves 1.5x the benchmark
     const portfolioReturns = benchmarkReturns.map((r) => r * 1.5);
-    const result = calculateBetaFromReturns(portfolioReturns, benchmarkReturns);
+    const result = measured(calculateBetaFromReturns(portfolioReturns, benchmarkReturns));
     expect(result.beta).toBeCloseTo(1.5, 4);
   });
 
@@ -90,7 +91,7 @@ describe("Regression: Beta calculation against known values", () => {
       0.01, -0.005, 0.008, -0.003, 0.012, -0.007, 0.006, -0.004, 0.009, -0.002,
     ];
     const portfolioReturns = benchmarkReturns.map((r) => r * 0.5);
-    const result = calculateBetaFromReturns(portfolioReturns, benchmarkReturns);
+    const result = measured(calculateBetaFromReturns(portfolioReturns, benchmarkReturns));
     expect(result.beta).toBeCloseTo(0.5, 4);
   });
 
@@ -99,7 +100,7 @@ describe("Regression: Beta calculation against known values", () => {
       0.01, -0.005, 0.008, -0.003, 0.012, -0.007, 0.006, -0.004, 0.009, -0.002,
     ];
     const portfolioReturns = benchmarkReturns.map((r) => r * -0.8);
-    const result = calculateBetaFromReturns(portfolioReturns, benchmarkReturns);
+    const result = measured(calculateBetaFromReturns(portfolioReturns, benchmarkReturns));
     expect(result.beta).toBeCloseTo(-0.8, 4);
   });
 
@@ -110,7 +111,7 @@ describe("Regression: Beta calculation against known values", () => {
       0.01, -0.005, 0.008, -0.003, 0.012, -0.007, 0.006, -0.004, 0.009, -0.002,
     ];
     const portfolioReturns = benchmarkReturns.map((r) => r * 1.2 + 0.001);
-    const result = calculateBetaFromReturns(portfolioReturns, benchmarkReturns);
+    const result = measured(calculateBetaFromReturns(portfolioReturns, benchmarkReturns));
     // Adding constant alpha does not change beta
     expect(result.beta).toBeCloseTo(1.2, 4);
   });
@@ -119,7 +120,7 @@ describe("Regression: Beta calculation against known values", () => {
     const portfolioReturns = [0.05, -0.02, 0.03];
     const benchmarkReturns = [0.03, -0.01, 0.02];
 
-    const result = calculateBetaFromReturns(portfolioReturns, benchmarkReturns);
+    const result = measured(calculateBetaFromReturns(portfolioReturns, benchmarkReturns));
 
     // Manual calculation:
     // avgP = (0.05 - 0.02 + 0.03) / 3 = 0.02
@@ -159,7 +160,7 @@ describe("Regression: Beta calculation against known values", () => {
     // denominator directly.
     const portfolioReturns = [0, 1, 2];
     const benchmarkReturns = [0, 1, 2];
-    const result = calculateBetaFromReturns(portfolioReturns, benchmarkReturns);
+    const result = measured(calculateBetaFromReturns(portfolioReturns, benchmarkReturns));
 
     const populationVariance = 2 / 3;
     const sampleVariance = 2 / 2;
