@@ -21,6 +21,7 @@
 import type { CircuitBreakerRegistry } from "./circuit-breaker";
 import { UnsupportedCapabilityError } from "./param-matrix";
 import { RateGuardTimeoutError, withProviderGuards } from "./rate-guard";
+import { LlmResponseFormatError } from "./structured-content";
 import type {
   AliasAttemptRecord,
   LlmTransport,
@@ -211,7 +212,9 @@ async function runLeg<T>(
     // The guards wrap the transport rather than the whole leg, so the per-leg
     // timeout above still bounds the total wait: a caller queued behind the
     // rate limiter is spending its budget just as surely as one waiting on the
-    // provider, and only one clock should govern both.
+    // provider, and only one clock should govern both. The leg's own signal is
+    // handed to the guard as well, so a leg whose budget or caller is gone
+    // leaves the queue at once instead of holding its place in it.
     return await withProviderGuards(
       leg.route.providerName,
       () =>
@@ -226,6 +229,7 @@ async function runLeg<T>(
           correlationId: execution.correlationId,
         }),
       budgetMs,
+      { modelId: leg.route.modelId, signal: controller.signal },
     );
   } finally {
     clearTimeout(timer);
@@ -351,7 +355,7 @@ export async function executeChain<T>(
     }
 
     const startedAt = now();
-    execution.breakers.onAttemptStart(route.routeKey);
+    const holdsProbe = execution.breakers.onAttemptStart(route.routeKey);
 
     try {
       const response = await runLeg<T>(leg, leg.params, execution);
@@ -376,7 +380,15 @@ export async function executeChain<T>(
       );
       if (countsAgainstHealth) {
         execution.breakers.onFailure(route.routeKey);
+      } else if (holdsProbe) {
+        // No verdict on the route's health, but the probe slot this attempt
+        // took must come back, or a half-open route admits no probe ever again.
+        execution.breakers.onAttemptAbandoned(route.routeKey);
       }
+      // A provider that answered with unparseable content still billed for the
+      // answer; the spend belongs in the total whether or not a later leg serves.
+      const billed = error instanceof LlmResponseFormatError ? error.usage : undefined;
+      totalUsage = sumUsage(totalUsage, billed);
       const record: AliasAttemptRecord = {
         routeKey: route.routeKey,
         role: route.role,
@@ -385,6 +397,7 @@ export async function executeChain<T>(
         outcome,
         durationMs: now() - startedAt,
         reason,
+        ...(billed === undefined ? {} : { usage: billed }),
       };
       attempts.push(record);
       execution.onAttempt?.(record);

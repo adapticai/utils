@@ -68,6 +68,36 @@ function checkConfig() {
         failures.push(`${name}: ${field} must be a positive number`);
       }
     }
+    // The unit a limit applies in is a claim about the provider, held to the
+    // same standard as a number: a per-model scope multiplies the client's
+    // total admission by the number of models, so an unsourced one is a guess
+    // that loosens every guard at once.
+    if (entry.scope !== undefined && entry.scope !== "provider" && entry.scope !== "model") {
+      failures.push(`${name}: scope must be "provider" or "model", got ${JSON.stringify(entry.scope)}`);
+    }
+    const scopeSourced =
+      (entry.basis === "published" && typeof entry.source === "string" && entry.source.length > 0) ||
+      (typeof entry.scope_source === "string" && entry.scope_source.length > 0);
+    if (entry.scope === "model" && !scopeSourced) {
+      failures.push(
+        `${name}: claims its provider enforces limits per model but cites no source for that unit (source or scope_source)`,
+      );
+    }
+    if (
+      entry.requests_per_minute_basis !== undefined &&
+      entry.requests_per_minute_basis !== "published" &&
+      entry.requests_per_minute_basis !== "conservative-default"
+    ) {
+      failures.push(
+        `${name}: requests_per_minute_basis must be "published" or "conservative-default", got ${JSON.stringify(entry.requests_per_minute_basis)}`,
+      );
+    }
+    if (
+      entry.requests_per_minute_basis === "published" &&
+      (typeof entry.source !== "string" || entry.source.length === 0)
+    ) {
+      failures.push(`${name}: claims a published per-minute ceiling but cites no source`);
+    }
   }
 
   // Every provider the router can reach must have a limit, or the first call to
@@ -123,6 +153,21 @@ function checkWiring() {
   }
   if (!/finally\s*\{[\s\S]{0,400}?release\(\);/.test(guard)) {
     failures.push("the concurrency permit is not released on every path; failures would shrink the limit permanently");
+  }
+  if (!/withProviderGuards\([\s\S]{0,800}?modelId: leg\.route\.modelId/.test(chain)) {
+    failures.push(
+      "the chain does not tell the guard which model a leg addresses, so a per-model scope in the limits config is never applied and every model of a provider shares one guard",
+    );
+  }
+  if (!/withProviderGuards\([\s\S]{0,800}?signal: controller\.signal \}/.test(chain)) {
+    failures.push(
+      "the chain does not hand the leg's signal to the guard, so a leg whose budget or caller is gone keeps its place in the queue until the wait budget runs out",
+    );
+  }
+  if (!chain.includes("onAttemptAbandoned")) {
+    failures.push(
+      "the chain never returns a half-open probe slot for an attempt that ended without a verdict, so one refused probe wedges its route shut",
+    );
   }
 
   return failures;

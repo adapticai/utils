@@ -32,13 +32,18 @@ const DEFAULT_PAGINATION_DELAY_MS = 300;
 const MAX_ORDERS_PER_REQUEST = 500;
 
 /**
- * Order statuses that are considered "open"
+ * Order statuses that are considered "open".
+ *
+ * `held` is included because a held conditional leg (a bracket's stop-loss,
+ * say) is a working order resting at the broker, returned by Alpaca's own
+ * `status=open` listing and cancelable like any other open order.
  */
 const OPEN_ORDER_STATUSES: OrderStatus[] = [
   "new",
   "accepted",
   "pending_new",
   "accepted_for_bidding",
+  "held",
   "partially_filled",
 ];
 
@@ -48,13 +53,15 @@ const OPEN_ORDER_STATUSES: OrderStatus[] = [
 const FILLED_ORDER_STATUSES: OrderStatus[] = ["filled"];
 
 /**
- * Order statuses that can still potentially be filled
+ * Order statuses that can still potentially be filled. A `held` leg fills once
+ * its parent fills or its trigger is met.
  */
 const FILLABLE_ORDER_STATUSES: OrderStatus[] = [
   "new",
   "accepted",
   "pending_new",
   "accepted_for_bidding",
+  "held",
   "partially_filled",
 ];
 

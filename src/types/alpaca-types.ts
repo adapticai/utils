@@ -229,7 +229,14 @@ export type TimeInForce = "day" | "gtc" | "opg" | "cls" | "ioc" | "fok";
 export type OrderClass = "simple" | "oco" | "oto" | "bracket" | "mleg";
 
 /**
- * Represents the status of an order.
+ * Represents the status of an order, as Alpaca reports it.
+ *
+ * `held` is the status of a conditional leg that is resting at the broker but
+ * not yet live: the take-profit and stop-loss legs of a bracket, OCO or OTO
+ * order sit in `held` until their parent fills or their trigger condition is
+ * met. A held stop leg is the position's protection, so a consumer that cannot
+ * name this status cannot tell a protected position from a naked one without
+ * widening the value to `string` and losing the union's exhaustiveness.
  */
 export type OrderStatus =
   | "new"
@@ -244,6 +251,7 @@ export type OrderStatus =
   | "accepted"
   | "pending_new"
   | "accepted_for_bidding"
+  | "held"
   | "stopped"
   | "rejected"
   | "suspended"

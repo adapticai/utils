@@ -128,6 +128,7 @@ const OrderStatusSchema = z.enum([
   "accepted",
   "pending_new",
   "accepted_for_bidding",
+  "held",
   "stopped",
   "rejected",
   "suspended",
