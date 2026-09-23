@@ -32,6 +32,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "fixtures:indicator-parity": "node scripts/generate-indicator-parity-fixture.mjs",
+    "fixtures:indicator-parity:check": "node scripts/generate-indicator-parity-fixture.mjs --check",
     "test:legacy": "npm run build && node dist/test.js",
     "build:analyze": "ANALYZE_BUNDLE=true npm run build",
     "docs": "typedoc",

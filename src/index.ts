@@ -238,6 +238,22 @@ export {
 // Trading Policy schemas, types, enums, and defaults
 export * as tradingPolicy from "./trading-policy";
 
+// Statistics that cannot be read apart from the cohort they were measured on.
+// Exported at the top level rather than behind a namespace because it is the
+// return type of the beta and rolling-metric surfaces, and a consumer cannot
+// narrow a result whose type it cannot name.
+export {
+  availableStatistic,
+  isAvailable,
+  sampleCohort,
+  unavailableStatistic,
+  type AvailableStatistic,
+  type SampleCohort,
+  type SampleStatistic,
+  type StatisticUnavailableReason,
+  type UnavailableStatistic,
+} from "./sample-statistic";
+
 // Risk-protection math primitives (P0 Wave)
 export * as atr from "./atr";
 export * as volatility from "./volatility";
