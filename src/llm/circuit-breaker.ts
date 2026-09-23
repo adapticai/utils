@@ -107,11 +107,36 @@ export class CircuitBreakerRegistry {
    * Register that an attempt is starting, so half-open probes stay bounded.
    *
    * @param routeKey The route's stable key.
-   * @returns void
+   * @returns Whether the attempt took a half-open probe slot. A caller holding
+   *   one must end the attempt with {@link onSuccess}, {@link onFailure} or
+   *   {@link onAttemptAbandoned}, or the slot is never returned.
    */
-  public onAttemptStart(routeKey: string): void {
+  public onAttemptStart(routeKey: string): boolean {
     if (this.stateOf(routeKey) === "half-open") {
       this.recordFor(routeKey).probesInFlight += 1;
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Return a half-open probe slot whose attempt ended without a verdict.
+   *
+   * A probe that never tested the provider — refused by the client's own
+   * pacing guard, cancelled by its caller, or found to be the wrong leg for the
+   * request — says nothing about whether the route has recovered, so neither a
+   * success nor a failure is recorded. The slot must still come back. Without
+   * it the half-open route admits no further probe, no probe can ever close or
+   * re-open the breaker, and the route stays excluded for the life of the
+   * process while its traffic is quietly served by the next leg.
+   *
+   * @param routeKey The route's stable key.
+   * @returns void
+   */
+  public onAttemptAbandoned(routeKey: string): void {
+    const record = this.records.get(routeKey);
+    if (record !== undefined && record.probesInFlight > 0) {
+      record.probesInFlight -= 1;
     }
   }
 

@@ -18,6 +18,7 @@
  * @module llm/transports/gateway
  */
 
+import { parseStructuredContent } from "../structured-content";
 import type {
   LlmTransport,
   LlmTransportRequest,
@@ -201,10 +202,14 @@ export function createGatewayTransport(
         | { message?: { content?: unknown; tool_calls?: unknown } }[]
         | undefined;
       const message = choices?.[0]?.message;
+      // Usage is read before the content is interpreted. The provider billed for
+      // this answer whether or not it parses, and a parse failure that dropped
+      // the count would report the attempt as free.
+      const usage = readUsage(payload, request);
 
       return {
-        response: parseContent<T>(message?.content, request.responseFormat),
-        usage: readUsage(payload, request),
+        response: interpretContent<T>(message?.content, request.responseFormat, usage),
+        usage,
         tool_calls: Array.isArray(message?.tool_calls)
           ? (message.tool_calls as LlmTransportResponse<T>["tool_calls"])
           : undefined,
@@ -242,29 +247,24 @@ function buildMessages(request: LlmTransportRequest): Record<string, unknown>[] 
 /**
  * Interpret the model's content according to the requested format.
  *
- * A JSON format that does not parse is an error, not an empty object. Returning
- * a default here would hand the caller a well-typed value that means nothing,
- * and the failure would surface much later as a decision made on absent data.
+ * Text is returned as sent. A structured format is parsed under the strict
+ * single-fence rule of {@link parseStructuredContent}; a structured answer that
+ * does not parse is an error carrying what the provider billed for it, never an
+ * empty object.
  *
  * @param content The raw content.
  * @param responseFormat The format the caller asked for.
- * @returns The parsed value.
+ * @param usage What the provider billed for this answer.
+ * @returns The interpreted value.
+ * @throws {LlmResponseFormatError} When a structured answer does not parse.
  */
-function parseContent<T>(
+function interpretContent<T>(
   content: unknown,
   responseFormat: LlmTransportRequest["responseFormat"],
+  usage: LlmUsageRecord,
 ): T {
-  const text = typeof content === "string" ? content : "";
   if (responseFormat === "text") {
-    return text as unknown as T;
+    return (typeof content === "string" ? content : "") as unknown as T;
   }
-  try {
-    return JSON.parse(text) as T;
-  } catch (error) {
-    throw new Error(
-      `LLM returned content that is not valid JSON for a ${
-        typeof responseFormat === "string" ? responseFormat : "json_schema"
-      } request: ${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
+  return parseStructuredContent<T>(content, responseFormat, usage);
 }

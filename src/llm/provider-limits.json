@@ -1,7 +1,7 @@
 {
-  "_readme": "Client-side rate and concurrency limits per provider (W4-04). Held in config rather than in code so a limit can be corrected from a provider console without a release \u2014 a rate limit discovered at 3am should be a config change, not a deploy. Every entry states where its numbers came from: `published` means transcribed from that provider's documented ceiling with a source link, `conservative-default` means the ceiling is not yet known and the client is deliberately slower than it needs to be. A guessed high limit and a known high limit look identical in config and behave identically right up until the provider starts refusing requests, so they are never allowed to look the same here.",
+  "_readme": "Client-side rate and concurrency limits per provider (W4-04). Held as data beside their sources rather than in code, so every limit's provenance is reviewable where the number lives. The file is bundled into @adaptic/utils at build time: changing a limit ships as a release of this package and a consumer bump, not as a runtime switch. Every entry states where its numbers came from: `published` means transcribed from that provider's documented ceiling with a source link, `conservative-default` means the ceiling is not yet known and the client is deliberately slower than it needs to be. A guessed high limit and a known high limit look identical in config and behave identically right up until the provider starts refusing requests, so they are never allowed to look the same here. `scope` states the unit the provider enforces its limits in: `model` keeps one independent guard per model, `provider` (the default) one guard for all of the provider's models; a `model` scope cites its source like any published number (`source` when the entry is published, `scope_source` otherwise). `requests_per_minute_basis` overrides `basis` for the per-minute number when a provider publishes one bound and not the other, so the unpublished number never borrows the published label.",
   "schema_version": 1,
-  "revised": "2026-09-10",
+  "revised": "2026-09-23",
   "defaults": {
     "_readme": "Applied to any provider whose published ceiling is unknown. Chosen to be comfortably below the slowest plausible published limit: being slower than necessary costs latency, while being faster than permitted costs 429s that the fallback chain will read as provider ill-health and use to open a circuit breaker. The asymmetry is what makes the conservative side the correct default.",
     "basis": "conservative-default",
@@ -13,11 +13,13 @@
   "providers": {
     "anthropic": {
       "basis": "conservative-default",
+      "scope": "model",
+      "scope_source": "https://platform.claude.com/docs/en/api/rate-limits",
       "requests_per_minute": 120,
       "max_concurrent": 12,
       "acquire_timeout_ms": 15000,
       "source": null,
-      "note": "Raised 2026-09-15 after the 4-concurrent ceiling was measured starving the live equity decision path: the alias chain reported 'exhausted its fallback chain' with every leg skipped by this guard (deepinfra primary+secondary and the anthropic incumbent), 173 of 473 signal-coordination calls failed (36.6%), and decisions were lost outright. Corroborating evidence at the time: ZERO 429s observed on any provider, the engine's own global fan-out gate permits 100 concurrent with 17 active, and 877 signal-analysis calls had been admitted to that gate. Concurrency and RPM are raised TOGETHER because they bind in series - lifting max_concurrent alone would only move the bottleneck to the token bucket. STILL conservative-default, NOT published: no provider console was read for these numbers, so they remain a deliberate under-estimate of an unknown ceiling. Transcribe the real tier limits (W3-07) and set basis to published."
+      "note": "The unit is per model: the scope_source states 'Rate limits are applied separately for each model; therefore you can use different models up to their respective limits simultaneously', measured as requests, input tokens and output tokens per minute for each model class, with no concurrency ceiling. Each model therefore gets its own guard, so traffic on one model class (an Opus incumbent serving background aliases) cannot refuse calls to another (the Haiku incumbent of the hot-path alias). The NUMBERS stay conservative-default: the organisation's usage tier sets the real ceilings and is read only from the Claude Console rate-limits page, which has not been transcribed. The lowest standard tier listed at the source allows 1,000 requests per minute per model; organisations with limited history can start on an evaluation tier below that, which is why these values are held well under it. Transcribe the tier's limits (W3-07) and set basis to published."
     },
     "openai": {
       "basis": "conservative-default",
@@ -36,12 +38,14 @@
       "note": "Raised 2026-09-15 after the 4-concurrent ceiling was measured starving the live equity decision path: the alias chain reported 'exhausted its fallback chain' with every leg skipped by this guard (deepinfra primary+secondary and the anthropic incumbent), 173 of 473 signal-coordination calls failed (36.6%), and decisions were lost outright. Corroborating evidence at the time: ZERO 429s observed on any provider, the engine's own global fan-out gate permits 100 concurrent with 17 active, and 877 signal-analysis calls had been admitted to that gate. Concurrency and RPM are raised TOGETHER because they bind in series - lifting max_concurrent alone would only move the bottleneck to the token bucket. STILL conservative-default, NOT published: no provider console was read for these numbers, so they remain a deliberate under-estimate of an unknown ceiling. Transcribe the real tier limits (W3-07) and set basis to published."
     },
     "deepinfra": {
-      "basis": "conservative-default",
+      "basis": "published",
+      "scope": "model",
       "requests_per_minute": 240,
-      "max_concurrent": 24,
+      "requests_per_minute_basis": "conservative-default",
+      "max_concurrent": 200,
       "acquire_timeout_ms": 15000,
-      "source": null,
-      "note": "Raised 2026-09-15 after the 4-concurrent ceiling was measured starving the live equity decision path: the alias chain reported 'exhausted its fallback chain' with every leg skipped by this guard (deepinfra primary+secondary and the anthropic incumbent), 173 of 473 signal-coordination calls failed (36.6%), and decisions were lost outright. Corroborating evidence at the time: ZERO 429s observed on any provider, the engine's own global fan-out gate permits 100 concurrent with 17 active, and 877 signal-analysis calls had been admitted to that gate. Concurrency and RPM are raised TOGETHER because they bind in series - lifting max_concurrent alone would only move the bottleneck to the token bucket. STILL conservative-default, NOT published: no provider console was read for these numbers, so they remain a deliberate under-estimate of an unknown ceiling. Transcribe the real tier limits (W3-07) and set basis to published."
+      "source": "https://docs.deepinfra.com/account/rate-limits",
+      "note": "Transcribed 2026-09-23 from the source, which states 'Every account has a default limit of 200 concurrent requests per model', that two models queried simultaneously allow 400 in total (200 per model), and that 'The rate limit is on concurrent requests, not per-minute volume.' Concurrency is therefore the bound DeepInfra enforces, and it is enforced per MODEL, so each model gets its own guard at 200. One guard shared by the whole account enforced a ceiling DeepInfra does not impose, and because an alias's primary and secondary are both served from this account, it refused the secondary exactly when the primary's queue was full. DeepInfra publishes no per-minute ceiling, so requests_per_minute is the client's own pacing backstop (requests_per_minute_basis: conservative-default), keyed per model like the bound DeepInfra does enforce. Exceeding the ceiling returns HTTP 429, and a very busy model can return 429 below it. The ceiling belongs to the account and this guard to one process, so every process calling the same model through the same account shares the 200."
     },
     "fireworks": {
       "basis": "conservative-default",

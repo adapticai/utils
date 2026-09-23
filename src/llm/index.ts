@@ -40,7 +40,16 @@ export {
   resetProviderGuards,
   withProviderGuards,
 } from "./rate-guard";
-export type { GuardSnapshot, ProviderLimits } from "./rate-guard";
+export type {
+  GuardCallScope,
+  GuardSnapshot,
+  ProviderLimitBasis,
+  ProviderLimitScope,
+  ProviderLimits,
+} from "./rate-guard";
+
+export { LlmResponseFormatError } from "./structured-content";
+export type { StructuredResponseFormat } from "./structured-content";
 
 export { CircuitBreakerRegistry } from "./circuit-breaker";
 export type { BreakerSnapshot, BreakerState } from "./circuit-breaker";

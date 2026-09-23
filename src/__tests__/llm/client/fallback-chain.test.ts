@@ -4,6 +4,7 @@ import { CircuitBreakerRegistry } from "../../../llm/circuit-breaker";
 import { ChainExhaustedError, executeChain, sumUsage } from "../../../llm/fallback-chain";
 import type { ChainLeg } from "../../../llm/fallback-chain";
 import { routeTable } from "../../../llm/route-table";
+import { LlmResponseFormatError } from "../../../llm/structured-content";
 import type { AliasAttemptRecord, LlmUsageRecord, ResolvedRoute } from "../../../llm/types";
 import { rejection } from "./support/rejections";
 import { makeThreeLegChain } from "./support/routes";
@@ -212,5 +213,74 @@ describe("ordered fallback chain (PD-3)", () => {
       expect(error.message).toContain(`${route.role} provider returned 503`);
     }
     expect(transport.calls).toHaveLength(routes.length);
+  });
+
+  describe("an answer the provider billed for but that did not parse", () => {
+    it("adds the billed tokens to the total and the attempt, while the next leg serves", async () => {
+      const routes = makeThreeLegChain(ALIAS);
+      const transport = new ScriptedTransport("gateway", (call) => {
+        if (call.route.role === "primary") {
+          return fails(
+            new LlmResponseFormatError(
+              "json",
+              usageFor(call.route, PRIMARY_USAGE),
+              true,
+              new SyntaxError("Unexpected token 's'"),
+            ),
+          );
+        }
+        return answers({ ok: true }, usageFor(call.route, SECONDARY_USAGE));
+      });
+
+      const outcome = await executeChain<{ ok: boolean }>(ALIAS, {
+        legs: legsOf(routes, transport),
+        content: "prompt",
+        responseFormat: "json",
+        breakers,
+      });
+
+      expect(outcome.servedBy.routeKey).toBe(routes[1].routeKey);
+      expect(outcome.totalUsage.prompt_tokens).toBe(
+        PRIMARY_USAGE.promptTokens + SECONDARY_USAGE.promptTokens,
+      );
+      expect(outcome.totalUsage.completion_tokens).toBe(
+        PRIMARY_USAGE.completionTokens + SECONDARY_USAGE.completionTokens,
+      );
+      expect(outcome.totalUsage.cost).toBeCloseTo(
+        PRIMARY_USAGE.cost + SECONDARY_USAGE.cost,
+        COST_PRECISION_DIGITS,
+      );
+      expect(outcome.attempts[0].outcome).toBe("error");
+      expect(outcome.attempts[0].usage?.prompt_tokens).toBe(PRIMARY_USAGE.promptTokens);
+    });
+
+    it("reports that spend on an exhausted chain, so a chain that failed everywhere is not recorded as free", async () => {
+      const routes = makeThreeLegChain(ALIAS);
+      const transport = new ScriptedTransport("gateway", (call) =>
+        fails(
+          new LlmResponseFormatError(
+            "json",
+            usageFor(call.route, PRIMARY_USAGE),
+            false,
+            new SyntaxError("Unexpected token 'I'"),
+          ),
+        ),
+      );
+
+      const error = await rejection(
+        executeChain<unknown>(ALIAS, {
+          legs: legsOf(routes, transport),
+          content: "prompt",
+          responseFormat: "json",
+          breakers,
+        }),
+        ChainExhaustedError,
+      );
+
+      expect(error.totalUsage.prompt_tokens).toBe(PRIMARY_USAGE.promptTokens * routes.length);
+      expect(error.totalUsage.completion_tokens).toBe(
+        PRIMARY_USAGE.completionTokens * routes.length,
+      );
+    });
   });
 });
