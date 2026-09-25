@@ -2,10 +2,10 @@
 # yarn lockfile v1
 
 
-"@adaptic/backend@0.0.1038":
-  version "0.0.1038"
-  resolved "https://registry.npmjs.org/@adaptic/backend/-/backend-0.0.1038.tgz"
-  integrity sha512-ay0nZceniEccGRI+l0OgAdjCQBG09t2zuPVcOKcUufkulzo76pcQvi+PAxhtifhVo2XXcO9YTdL1z78MDl6E0Q==
+"@adaptic/backend@0.0.1039":
+  version "0.0.1039"
+  resolved "https://registry.npmjs.org/@adaptic/backend/-/backend-0.0.1039.tgz"
+  integrity sha512-nZQXICk/r7pQr/yT/XVS/VESXYcrlbnMnxPOYBga//sISxK/KaqNfPvd5ESpKPjwoe/m+hfEiYSmqpl7RN3jdA==
   dependencies:
     "@prisma/client" "^6.19.0"
     cross-fetch "^4.0.0"
