@@ -100,13 +100,35 @@ export {
   type RateLimiterConfig,
 } from "./rate-limiter";
 
-// Retry utilities with exponential backoff
+// Retry utilities with exponential backoff, plus the typed failure
+// classification (`classifyRetryError` → `RetryErrorDetails`) consumers use as
+// the vendor-tier reason code for a failed call.
 export {
   API_RETRY_CONFIGS,
+  classifyRetryError,
   isTransientNetworkError,
   withRetry,
   type RetryConfig,
+  type RetryErrorDetails,
+  type RetryErrorType,
 } from "./utils/retry";
+
+// Trade-update receipt stamping, for consumers that parse Alpaca's
+// trade_updates stream themselves and need the same receipt the library's own
+// parse sites attach.
+export {
+  SYSTEM_TRADE_UPDATE_RECEIPT_CLOCK,
+  TradeUpdateReceiptStamper,
+  type TradeUpdateReceiptClock,
+} from "./trade-update-receipt";
+
+// Lineage-encoded client_order_id codec: the reversible id the order verbs
+// submit when given a `lineage`, and its decoder for attributing fills.
+export {
+  LINEAGE_CLIENT_ORDER_ID_PREFIX,
+  decodeLineageClientOrderId,
+  encodeLineageClientOrderId,
+} from "./client-order-lineage";
 
 // Per-host circuit-breaker error used by fetchWithRetry to fail-fast
 // during sustained upstream outages.

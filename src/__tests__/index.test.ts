@@ -130,9 +130,15 @@ import {
   createBrokerClient,
   isAlpacaBrokerCredentials,
   UnsupportedBrokerError,
+  classifyRetryError,
+  TradeUpdateReceiptStamper,
+  decodeLineageClientOrderId,
+  encodeLineageClientOrderId,
+  type RetryErrorDetails,
 } from "../index";
 import { createBrokerClient as factoryCreateBrokerClient } from "../broker/factory";
 import { UnsupportedBrokerError as errorsUnsupportedBrokerError } from "../errors";
+import { classifyRetryError as retryClassifyRetryError } from "../utils/retry";
 
 describe("namespace exports", () => {
   it("exports atr namespace via top-level export", () => {
@@ -171,6 +177,28 @@ describe("namespace exports", () => {
     expect(typeof strategy.calculateRollingSortino).toBe("function");
     expect(typeof strategy.calculateBacktestDivergenceZ).toBe("function");
     expect(typeof adaptic.strategy.calculateRollingExpectancy).toBe("function");
+  });
+});
+
+describe("vendor-boundary observability exports", () => {
+  it("exports classifyRetryError and its RetryErrorDetails verdict from the package root", () => {
+    expect(classifyRetryError).toBe(retryClassifyRetryError);
+    const verdict: RetryErrorDetails = classifyRetryError(
+      new Response(null, { status: 503 }),
+    );
+    expect(verdict).toMatchObject({
+      type: "SERVER_ERROR",
+      status: 503,
+      isRetryable: true,
+    });
+  });
+
+  it("exports the trade-update receipt stamper and the lineage codec from the package root", () => {
+    expect(typeof TradeUpdateReceiptStamper).toBe("function");
+    const lineage = { tradeIntentId: "intent-1", attempt: 3 };
+    expect(
+      decodeLineageClientOrderId(encodeLineageClientOrderId(lineage)),
+    ).toEqual(lineage);
   });
 });
 

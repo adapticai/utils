@@ -9,11 +9,11 @@ import {
   MassiveDailyOpenClose,
   MassiveErrorResponse,
   MassiveFreshness,
+  MassiveFreshnessResult,
   MassiveGroupedDailyResponse,
   MassivePriceData,
   MassiveQuote,
   MassiveQuotesResponse,
-  MassiveResult,
   MassiveSpreadInfo,
   MassiveTickerInfo,
   MassiveTradesResponse,
@@ -662,10 +662,16 @@ export const fetchPrices = async (
  * DE-006: closes the loop for callers that need to know when the Massive feed
  * is on a delayed plan (e.g. free tier, market-data outage downgrade).
  *
+ * When no bar carries a freshness stamp (an empty window), there is no
+ * measurement to report, so the result's `status` and `receivedAt` are `null`
+ * — never a presumed `"OK"` stamped with the current time, which would present
+ * an unmeasured result as a live one.
+ *
  * @param params - Same parameters accepted by {@link fetchPrices}.
  * @param options - Same options accepted by {@link fetchPrices}.
- * @returns A {@link MassiveResult} carrying the bar array plus freshness
- *          metadata.
+ * @returns A measured {@link MassiveResult} carrying the bar array plus its
+ *          freshness, or a {@link MassiveUnmeasuredResult} when freshness was
+ *          not measured.
  */
 export const fetchPricesWithFreshness = async (
   params: {
@@ -678,26 +684,26 @@ export const fetchPricesWithFreshness = async (
     adjusted?: boolean;
   },
   options?: { apiKey?: string },
-): Promise<MassiveResult<MassivePriceData[]>> => {
+): Promise<MassiveFreshnessResult<MassivePriceData[]>> => {
   const data = await fetchPrices(params, options);
 
   // Bars are stamped uniformly inside `fetchPrices`; reading the first one is
-  // sufficient. If the result is empty (no bars in the requested window) we
-  // default to OK with the current wall clock — there is no upstream signal
-  // to contradict it.
+  // sufficient. With no stamped bar there is no upstream status and no receipt
+  // instant, and the result says so rather than presuming a live feed.
   const sampleFreshness = data[0]?._freshness;
-  const status: "OK" | "DELAYED" = sampleFreshness?.status ?? "OK";
-  const receivedAt = sampleFreshness?.receivedAt ?? new Date();
+  if (sampleFreshness === undefined) {
+    return { status: null, data, receivedAt: null };
+  }
 
-  if (status === "DELAYED") {
+  if (sampleFreshness.status === "DELAYED") {
     return {
       status: "DELAYED",
       data,
-      receivedAt,
-      delayedSince: sampleFreshness?.delayedSince ?? null,
+      receivedAt: sampleFreshness.receivedAt,
+      delayedSince: sampleFreshness.delayedSince ?? null,
     };
   }
-  return { status: "OK", data, receivedAt };
+  return { status: "OK", data, receivedAt: sampleFreshness.receivedAt };
 };
 
 /**

@@ -15,6 +15,9 @@ import {
   OptionContract,
   OptionContractsResponse,
   AlpacaOrder,
+  AlpacaOrderWithClientOrderIdSource,
+  ClientOrderIdSource,
+  ClientOrderLineage,
   OrderLeg,
   TradeUpdate,
   CreateOrderParams,
@@ -34,8 +37,11 @@ import {
   alpacaHttpError,
   DuplicateClientOrderIdError,
   enrichAlpacaError,
+  ValidationError,
 } from "./errors";
 import { isTransientNetworkError } from "./utils/retry";
+import { TradeUpdateReceiptStamper } from "./trade-update-receipt";
+import { encodeLineageClientOrderId } from "./client-order-lineage";
 import { createTimeoutSignal, DEFAULT_TIMEOUTS } from "./http-timeout";
 
 const limitPriceSlippagePercent100 = 0.1; // 0.1%
@@ -168,6 +174,8 @@ export class AlpacaTradingAPI {
     (data: AlpacaWebSocketMessage["data"]) => void
   > = new Map();
   private debugLogging = false;
+  /** Stamps each trade update parsed off this client's socket with its receipt. */
+  private readonly receiptStamper = new TradeUpdateReceiptStamper();
 
   /**
    * Constructor for AlpacaTradingAPI
@@ -331,14 +339,85 @@ export class AlpacaTradingAPI {
   }
 
   /**
+   * Choose the `client_order_id` for an order and record where it came from.
+   *
+   * A lineage is encoded reversibly, so fills can be attributed to the trade
+   * intent; an explicit id is used verbatim; only when the caller supplies
+   * neither does the one-way derived default apply. Supplying both a lineage
+   * and an explicit id is refused, because either choice would silently
+   * discard an identity the caller asked for.
+   *
+   * @param options - The explicit id, lineage, and derive parts of the order.
+   * @returns The id to submit and its {@link ClientOrderIdSource}.
+   * @throws ValidationError when both an explicit id and a lineage are given,
+   *   or the lineage cannot be encoded within Alpaca's id limits.
+   */
+  private resolveClientOrderId(options: {
+    explicitClientOrderId?: string;
+    lineage?: ClientOrderLineage;
+    deriveParts: ReadonlyArray<string | number | boolean | undefined>;
+  }): { clientOrderId: string; source: ClientOrderIdSource } {
+    if (options.lineage !== undefined) {
+      if (options.explicitClientOrderId !== undefined) {
+        throw new ValidationError(
+          "An order was given both an explicit client_order_id and a lineage; supply exactly one identity source",
+          "alpaca",
+          "lineage",
+        );
+      }
+      return {
+        clientOrderId: encodeLineageClientOrderId(options.lineage),
+        source: "lineage",
+      };
+    }
+    if (options.explicitClientOrderId !== undefined) {
+      return {
+        clientOrderId: options.explicitClientOrderId,
+        source: "explicit",
+      };
+    }
+    return {
+      clientOrderId: this.deriveClientOrderId(options.deriveParts),
+      source: "derived",
+    };
+  }
+
+  /**
+   * Attach the `client_order_id` provenance to an order returned by an order
+   * verb. The property is non-enumerable so the object still serializes,
+   * spreads and compares exactly as the broker's order payload.
+   *
+   * @param order - The order the broker returned.
+   * @param source - How the submitted `client_order_id` was produced.
+   * @returns The same order, carrying `clientOrderIdSource`.
+   */
+  private withClientOrderIdSource(
+    order: AlpacaOrder,
+    source: ClientOrderIdSource,
+  ): AlpacaOrderWithClientOrderIdSource {
+    if (typeof order !== "object" || order === null) {
+      return order;
+    }
+    Object.defineProperty(order, "clientOrderIdSource", {
+      value: source,
+      enumerable: false,
+      writable: false,
+      configurable: true,
+    });
+    return order;
+  }
+
+  /**
    * POST an order body with duplicate-`client_order_id` recovery.
    *
-   * Sets `client_order_id` (explicit id wins; otherwise derived from
-   * `deriveParts`), submits, and on Alpaca's 422 duplicate rejection:
+   * Sets `client_order_id` via {@link resolveClientOrderId} (lineage, else
+   * explicit id, else derived from `deriveParts`), submits, and on Alpaca's
+   * 422 duplicate rejection:
    *
-   * - **Caller-supplied id**: throws a typed
-   *   {@link DuplicateClientOrderIdError} — the caller owns idempotency
-   *   semantics and must decide whether the duplicate is success or a bug.
+   * - **Caller-supplied or lineage-encoded id**: throws a typed
+   *   {@link DuplicateClientOrderIdError} — the caller owns that identity and
+   *   must decide whether the duplicate is success or a bug; a salted resubmit
+   *   would also destroy the lineage encoding.
    * - **Derived id, colliding order live/filled**: returns the existing order
    *   as idempotent success (this is the timeout+retry case the derived id
    *   exists to de-duplicate).
@@ -354,34 +433,39 @@ export class AlpacaTradingAPI {
    * Both recovery outcomes increment log-visible counters.
    *
    * @param body - The order payload (its `client_order_id` is set here).
-   * @param options - Idempotency inputs: optional explicit id and the derive
-   *   parts used both for the default id and for the salted resubmit.
-   * @returns The created (or pre-existing, on idempotent recovery) order.
+   * @param options - Idempotency inputs: optional explicit id, optional
+   *   lineage, and the derive parts used both for the default id and for the
+   *   salted resubmit.
+   * @returns The created (or pre-existing, on idempotent recovery) order,
+   *   carrying its `clientOrderIdSource`.
    */
   private async postOrderWithIdempotencyRecovery(
     body: CreateOrderParams | CreateMultiLegOrderParams,
     options: {
       explicitClientOrderId?: string;
+      lineage?: ClientOrderLineage;
       deriveParts: ReadonlyArray<string | number | boolean | undefined>;
       logSymbol?: string;
     },
-  ): Promise<AlpacaOrder> {
-    const derived = options.explicitClientOrderId === undefined;
-    const clientOrderId =
-      options.explicitClientOrderId ??
-      this.deriveClientOrderId(options.deriveParts);
+  ): Promise<AlpacaOrderWithClientOrderIdSource> {
+    const { clientOrderId, source } = this.resolveClientOrderId(options);
     body.client_order_id = clientOrderId;
 
     const requestBody = body as unknown as Record<string, unknown>;
     try {
-      return await this.makeRequest<AlpacaOrder>("/orders", "POST", requestBody);
+      return this.withClientOrderIdSource(
+        await this.makeRequest<AlpacaOrder>("/orders", "POST", requestBody),
+        source,
+      );
     } catch (error) {
       if (!this.isDuplicateClientOrderIdRejection(error)) {
         throw error;
       }
-      if (!derived) {
+      if (source !== "derived") {
         throw new DuplicateClientOrderIdError(
-          `Duplicate client_order_id "${clientOrderId}" rejected by Alpaca (caller-supplied id)`,
+          `Duplicate client_order_id "${clientOrderId}" rejected by Alpaca (${
+            source === "lineage" ? "lineage-encoded" : "caller-supplied"
+          } id)`,
           clientOrderId,
           false,
           error,
@@ -425,7 +509,7 @@ export class AlpacaTradingAPI {
             },
           },
         );
-        return existing;
+        return this.withClientOrderIdSource(existing, source);
       }
 
       const saltedId = this.deriveClientOrderId([
@@ -449,10 +533,9 @@ export class AlpacaTradingAPI {
       );
       body.client_order_id = saltedId;
       try {
-        return await this.makeRequest<AlpacaOrder>(
-          "/orders",
-          "POST",
-          requestBody,
+        return this.withClientOrderIdSource(
+          await this.makeRequest<AlpacaOrder>("/orders", "POST", requestBody),
+          source,
         );
       } catch (resubmitError) {
         if (this.isDuplicateClientOrderIdRejection(resubmitError)) {
@@ -617,16 +700,26 @@ export class AlpacaTradingAPI {
     }
   }
 
+  /**
+   * Stamp a parsed trade update with its receipt, then deliver it.
+   *
+   * The receipt is taken for every trade update — even with no callback
+   * registered — so the per-connection sequence counts every update this
+   * socket received and a gap in it always means a lost frame.
+   *
+   * @param data - The trade update parsed from the socket frame.
+   */
   private handleTradeUpdate(data: TradeUpdate): void {
+    const update = this.receiptStamper.stamp(data);
     if (this.tradeUpdateCallback) {
       this.log(
-        `Trade update: ${data.event} to ${data.order.side} ${data.order.qty} shares, type ${data.order.type}`,
+        `Trade update: ${update.event} to ${update.order.side} ${update.order.qty} shares, type ${update.order.type}`,
         {
-          symbol: data.order.symbol,
+          symbol: update.order.symbol,
           type: "debug",
         },
       );
-      this.tradeUpdateCallback(data);
+      this.tradeUpdateCallback(update);
     }
   }
 
@@ -674,6 +767,8 @@ export class AlpacaTradingAPI {
     this.log(`Connecting to WebSocket at ${this.wsUrl}...`);
 
     this.ws = new WebSocket(this.wsUrl);
+    // Every socket is a new receipt connection: fresh id, sequence from 1.
+    this.receiptStamper.beginConnection();
 
     this.ws.on("open", async () => {
       try {
@@ -1041,7 +1136,12 @@ export class AlpacaTradingAPI {
    * @param idempotencyNonce - Optional attempt/signal discriminator folded into
    *   the derived idempotency key so an intentionally-repeated identical order
    *   inside one derivation window receives a distinct id.
-   * @returns The created AlpacaOrder with order ID and details
+   * @param lineage - Optional trade intent (and attempt) the order executes;
+   *   when supplied, the `client_order_id` is a reversible encoding of it
+   *   instead of the one-way derived default. Mutually exclusive with
+   *   `clientOrderId`.
+   * @returns The created AlpacaOrder with order ID and details, carrying its
+   *   `clientOrderIdSource`
    */
   async createTrailingStop(
     symbol: string,
@@ -1055,7 +1155,8 @@ export class AlpacaTradingAPI {
       | "sell_to_close",
     clientOrderId?: string,
     idempotencyNonce?: string | number,
-  ): Promise<AlpacaOrder> {
+    lineage?: ClientOrderLineage,
+  ): Promise<AlpacaOrderWithClientOrderIdSource> {
     this.log(
       `Creating trailing stop ${side.toUpperCase()} ${qty} shares for ${symbol} with trail percent ${trailPercent100}%`,
       {
@@ -1077,6 +1178,7 @@ export class AlpacaTradingAPI {
     try {
       const order = await this.postOrderWithIdempotencyRecovery(body, {
         explicitClientOrderId: clientOrderId,
+        lineage,
         deriveParts: [
           "trailing_stop",
           symbol,
@@ -1114,6 +1216,11 @@ export class AlpacaTradingAPI {
    * @param idempotencyNonce - Optional attempt/signal discriminator folded into
    *   the derived idempotency key so an intentionally-repeated identical order
    *   inside one derivation window receives a distinct id.
+   * @param lineage - Optional trade intent (and attempt) the order executes;
+   *   when supplied, the `client_order_id` is a reversible encoding of it
+   *   instead of the one-way derived default. Mutually exclusive with
+   *   `client_order_id`.
+   * @returns The created order, carrying its `clientOrderIdSource`.
    */
   async createMarketOrder(
     symbol: string,
@@ -1126,7 +1233,8 @@ export class AlpacaTradingAPI {
       | "sell_to_close",
     client_order_id?: string,
     idempotencyNonce?: string | number,
-  ): Promise<AlpacaOrder> {
+    lineage?: ClientOrderLineage,
+  ): Promise<AlpacaOrderWithClientOrderIdSource> {
     this.log(
       `Creating market order for ${symbol}: ${side} ${qty} shares (${position_intent})`,
       {
@@ -1146,6 +1254,7 @@ export class AlpacaTradingAPI {
     try {
       return await this.postOrderWithIdempotencyRecovery(body, {
         explicitClientOrderId: client_order_id,
+        lineage,
         deriveParts: [
           "market",
           symbol,
@@ -1372,6 +1481,11 @@ export class AlpacaTradingAPI {
    * @param idempotencyNonce - Optional attempt/signal discriminator folded into
    *   the derived idempotency key so an intentionally-repeated identical order
    *   inside one derivation window receives a distinct id.
+   * @param lineage - Optional trade intent (and attempt) the order executes;
+   *   when supplied, the `client_order_id` is a reversible encoding of it
+   *   instead of the one-way derived default. Mutually exclusive with
+   *   `client_order_id`.
+   * @returns The created order, carrying its `clientOrderIdSource`.
    */
   async createLimitOrder(
     symbol: string,
@@ -1386,7 +1500,8 @@ export class AlpacaTradingAPI {
     extended_hours: boolean = false,
     client_order_id?: string,
     idempotencyNonce?: string | number,
-  ): Promise<AlpacaOrder> {
+    lineage?: ClientOrderLineage,
+  ): Promise<AlpacaOrderWithClientOrderIdSource> {
     this.log(
       `Creating limit order for ${symbol}: ${side} ${qty} shares at $${limitPrice.toFixed(2)} (${position_intent})`,
       {
@@ -1408,6 +1523,7 @@ export class AlpacaTradingAPI {
     try {
       return await this.postOrderWithIdempotencyRecovery(body, {
         explicitClientOrderId: client_order_id,
+        lineage,
         deriveParts: [
           "limit",
           symbol,
@@ -1647,7 +1763,11 @@ export class AlpacaTradingAPI {
    * @param idempotencyNonce Optional attempt/signal discriminator folded into
    *   the derived idempotency key so an intentionally-repeated identical order
    *   inside one derivation window receives a distinct id.
-   * @returns The created order
+   * @param lineage Optional trade intent (and attempt) the order executes;
+   *   when supplied, the `client_order_id` is a reversible encoding of it
+   *   instead of the one-way derived default. Mutually exclusive with
+   *   `clientOrderId`.
+   * @returns The created order, carrying its `clientOrderIdSource`
    */
   async createOptionOrder(
     symbol: string,
@@ -1662,7 +1782,8 @@ export class AlpacaTradingAPI {
     limitPrice?: number,
     clientOrderId?: string,
     idempotencyNonce?: string | number,
-  ): Promise<AlpacaOrder> {
+    lineage?: ClientOrderLineage,
+  ): Promise<AlpacaOrderWithClientOrderIdSource> {
     if (!Number.isInteger(qty) || qty <= 0) {
       this.log("Quantity must be a positive whole number for option orders", {
         type: "error",
@@ -1699,6 +1820,7 @@ export class AlpacaTradingAPI {
 
     return this.postOrderWithIdempotencyRecovery(orderData, {
       explicitClientOrderId: clientOrderId,
+      lineage,
       deriveParts: [
         "option",
         type,
@@ -1728,7 +1850,11 @@ export class AlpacaTradingAPI {
    * @param idempotencyNonce Optional attempt/signal discriminator folded into
    *   the derived idempotency key so an intentionally-repeated identical order
    *   inside one derivation window receives a distinct id.
-   * @returns The created multi-leg order
+   * @param lineage Optional trade intent (and attempt) the order executes;
+   *   when supplied, the `client_order_id` is a reversible encoding of it
+   *   instead of the one-way derived default. Mutually exclusive with
+   *   `clientOrderId`.
+   * @returns The created multi-leg order, carrying its `clientOrderIdSource`
    */
   async createMultiLegOptionOrder(
     legs: OrderLeg[],
@@ -1737,7 +1863,8 @@ export class AlpacaTradingAPI {
     limitPrice?: number,
     clientOrderId?: string,
     idempotencyNonce?: string | number,
-  ): Promise<AlpacaOrder> {
+    lineage?: ClientOrderLineage,
+  ): Promise<AlpacaOrderWithClientOrderIdSource> {
     if (!Number.isInteger(qty) || qty <= 0) {
       this.log("Quantity must be a positive whole number for option orders", {
         type: "error",
@@ -1776,6 +1903,7 @@ export class AlpacaTradingAPI {
 
     return this.postOrderWithIdempotencyRecovery(orderData, {
       explicitClientOrderId: clientOrderId,
+      lineage,
       deriveParts: [
         "mleg",
         type,
@@ -2323,8 +2451,10 @@ export class AlpacaTradingAPI {
   /**
    * Create a complete equities trade with optional stop loss and take profit
    * @param params Trade parameters including symbol, qty, side, and optional referencePrice
-   * @param options Trade options including order type, extended hours, stop loss, and take profit settings
-   * @returns The created order
+   * @param options Trade options including order type, extended hours, stop
+   *   loss, take profit, and the order's identity (`clientOrderId` or
+   *   `lineage`)
+   * @returns The created order, carrying its `clientOrderIdSource`
    */
   async createEquitiesTrade(
     params: {
@@ -2350,8 +2480,14 @@ export class AlpacaTradingAPI {
        * window receives a distinct id.
        */
       idempotencyNonce?: string | number;
+      /**
+       * Trade intent (and attempt) the order executes; when supplied, the
+       * `client_order_id` is a reversible encoding of it instead of the
+       * one-way derived default. Mutually exclusive with `clientOrderId`.
+       */
+      lineage?: ClientOrderLineage;
     },
-  ): Promise<AlpacaOrder> {
+  ): Promise<AlpacaOrderWithClientOrderIdSource> {
     const { symbol, qty, side, referencePrice } = params;
     const {
       type = "market",
@@ -2365,6 +2501,7 @@ export class AlpacaTradingAPI {
       takeProfitPercent100,
       clientOrderId,
       idempotencyNonce,
+      lineage,
     } = options || {};
 
     // Validation: Extended hours + market order is not allowed
@@ -2549,6 +2686,7 @@ export class AlpacaTradingAPI {
     try {
       return await this.postOrderWithIdempotencyRecovery(orderData, {
         explicitClientOrderId: clientOrderId,
+        lineage,
         deriveParts,
         logSymbol: symbol,
       });

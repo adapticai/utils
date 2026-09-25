@@ -44,6 +44,29 @@ export type MassiveResult<T> =
     };
 
 /**
+ * A Massive result whose freshness was never measured — no returned record
+ * carried a freshness stamp (for example, a request window that contains no
+ * bars). `status` and `receivedAt` are `null`: absence is reported as absence,
+ * so no consumer can mistake an unmeasured result for a live one, or read the
+ * time of the call as the time data was received.
+ */
+export type MassiveUnmeasuredResult<T> = {
+  status: null;
+  data: T;
+  receivedAt: null;
+};
+
+/**
+ * What a freshness-reporting Massive fetch returns: a measured
+ * {@link MassiveResult} (`"OK"` or `"DELAYED"`), or a
+ * {@link MassiveUnmeasuredResult} when there was nothing to measure. Consumers
+ * that gate on freshness must branch on `status === null` explicitly.
+ */
+export type MassiveFreshnessResult<T> =
+  | MassiveResult<T>
+  | MassiveUnmeasuredResult<T>;
+
+/**
  * Represents a unit of price data for a specific symbol on a given date.
  */
 export type MassivePriceData = {

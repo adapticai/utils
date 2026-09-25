@@ -828,7 +828,7 @@ describe("fetchPricesWithFreshness (DE-006)", () => {
     }
   });
 
-  it("defaults to status 'OK' on an empty result set", async () => {
+  it("reports an empty result set as unmeasured (null status and receipt), not a presumed live 'OK'", async () => {
     mockFetchWithRetry.mockResolvedValueOnce({
       json: () =>
         Promise.resolve({
@@ -842,9 +842,9 @@ describe("fetchPricesWithFreshness (DE-006)", () => {
       { apiKey: "test-key" },
     );
 
-    expect(result.status).toBe("OK");
+    expect(result.status).toBeNull();
     expect(result.data).toHaveLength(0);
-    expect(result.receivedAt).toBeInstanceOf(Date);
+    expect(result.receivedAt).toBeNull();
   });
 });
 

@@ -28,6 +28,7 @@ import { AlpacaClient } from "../client";
 import { BaseStream, StreamConfig } from "./base-stream";
 import { TradeUpdate } from "../../types/alpaca-types";
 import { getTradingWebSocketUrl } from "../../config/api-endpoints";
+import { TradeUpdateReceiptStamper } from "../../trade-update-receipt";
 
 /**
  * Trading stream event names representing all possible order status changes.
@@ -105,6 +106,8 @@ export class TradingStream extends BaseStream {
   private tradeUpdateCallback: ((update: TradeUpdate) => void) | null = null;
   private orderCallbacks: Map<string, (update: TradeUpdate) => void> =
     new Map();
+  /** Stamps each trade update parsed off this stream with its receipt. */
+  private readonly receiptStamper = new TradeUpdateReceiptStamper();
 
   constructor(client: AlpacaClient, config: Partial<StreamConfig> = {}) {
     super(client, config);
@@ -118,9 +121,13 @@ export class TradingStream extends BaseStream {
   }
 
   /**
-   * Override authenticate to use trading stream format
+   * Override authenticate to use trading stream format.
+   *
+   * Authentication runs exactly once per opened socket, before any trade
+   * update can arrive on it, so it is where a new receipt connection begins.
    */
   protected authenticate(): Promise<void> {
+    this.receiptStamper.beginConnection();
     return new Promise((resolve, reject) => {
       if (!this.ws || this.ws.readyState !== 1) {
         reject(new Error("WebSocket not ready for authentication"));
@@ -206,7 +213,9 @@ export class TradingStream extends BaseStream {
         break;
 
       case "trade_updates":
-        this.handleTradeUpdate(data as unknown as TradeUpdate);
+        this.handleTradeUpdate(
+          this.receiptStamper.stamp(data as unknown as TradeUpdate),
+        );
         break;
 
       default:

@@ -1076,6 +1076,80 @@ export interface OptionAccountActivity {
   status: "executed";
 }
 
+/**
+ * Long/short position breakdown Alpaca attaches to a trade update for accounts
+ * that can hold both sides of a symbol. Each side is Alpaca's decimal-string
+ * quantity (the short side as a magnitude); a side the payload omits is absent,
+ * never zero.
+ */
+export interface TradeUpdatePositionQtys {
+  /** Long-side position quantity after this event. */
+  long?: string;
+  /** Short-side position quantity (magnitude) after this event. */
+  short?: string;
+}
+
+/**
+ * One executed leg of a multi-leg (options) trade update. Each leg carries its
+ * own broker `execution_id`, which is the per-leg fill identity exactly-once
+ * fill accounting needs for a multi-leg execution.
+ */
+export interface TradeUpdateLeg {
+  /** Broker execution id of this leg's fill; unique per execution. */
+  execution_id?: string;
+  /** Broker order id of the leg. */
+  order_id?: string;
+  /** Contract symbol of the leg. */
+  symbol?: string;
+  /** Quantity filled on this leg, as Alpaca's decimal string. */
+  qty?: string;
+  /** Fill price of this leg, as Alpaca's decimal string. */
+  price?: string;
+  /** Broker timestamp of this leg's fill. */
+  timestamp?: string;
+}
+
+/**
+ * Library-stamped receipt of a trade update: when this process received it,
+ * on which socket connection, and in what order.
+ *
+ * Broker timestamps say when the broker acted; only a receipt taken at the
+ * socket says when this process learned of it, which is what fill-to-decision
+ * latency and feed-gap detection are measured against. The receipt is added by
+ * the library's trade-update parse sites (and by
+ * `TradeUpdateReceiptStamper` for consumers that parse the stream
+ * themselves); it is never part of the broker payload.
+ */
+export interface TradeUpdateReceipt {
+  /**
+   * Wall-clock receipt instant, epoch milliseconds. Joinable with other
+   * systems' timestamps, but subject to wall-clock adjustment.
+   */
+  receivedAtMs: number;
+  /**
+   * Monotonic receipt instant, milliseconds on this process's
+   * `performance.now()` clock. Immune to wall-clock steps; comparable only
+   * with other monotonic readings taken in the same process.
+   */
+  receivedAtMono: number;
+  /**
+   * Id of the socket connection the update arrived on. A new id is minted for
+   * every connection, so a reconnect is visible in the data.
+   */
+  connectionId: string;
+  /**
+   * 1-based position of this update among the trade updates received on
+   * `connectionId`. A gap exposes a lost frame; a restart at 1 under a new
+   * `connectionId` is a reconnect.
+   */
+  seq: number;
+}
+
+/**
+ * One event from Alpaca's `trade_updates` stream: an order lifecycle change
+ * (new, fill, partial fill, cancel, …) together with the order's state after
+ * it.
+ */
 export interface TradeUpdate {
   event:
     | "new"
@@ -1093,7 +1167,80 @@ export interface TradeUpdate {
   qty?: string;
   position_qty?: string;
   order: AlpacaOrder;
+  /**
+   * Broker execution id of this fill — unique per execution, so it is distinct
+   * for every partial of one order and stable across redeliveries of the same
+   * fill. Present on fill and partial-fill events; the natural exactly-once key
+   * for a fill.
+   */
+  execution_id?: string;
+  /** Broker id of this trade-update event. */
+  event_id?: string;
+  /** Broker timestamp of this event. */
+  at?: string;
+  /** Long/short position breakdown after this event, when Alpaca sends it. */
+  position_qtys?: TradeUpdatePositionQtys;
+  /** Executed legs of a multi-leg order's fill, each with its own execution id. */
+  legs?: TradeUpdateLeg[];
+  /**
+   * Receipt stamped by this library when the update was parsed off the socket.
+   * Absent on updates that did not come through a stamping parse site (for
+   * example, hand-built fixtures).
+   */
+  _receipt?: TradeUpdateReceipt;
 }
+
+/**
+ * Causal lineage an order is placed under: the trade intent it executes and,
+ * optionally, which attempt at that intent it is.
+ *
+ * Supplying a lineage makes the order's `client_order_id` an encoding of this
+ * value, so every fill the broker reports can be decoded back to the intent
+ * that produced it (see `decodeLineageClientOrderId`).
+ */
+export interface ClientOrderLineage {
+  /**
+   * Id of the trade intent the order executes. Must be non-empty and use only
+   * `[A-Za-z0-9._-]`: Alpaca's accepted `client_order_id` characters, minus the
+   * `:` separator used to append the attempt.
+   */
+  tradeIntentId: string;
+  /**
+   * Non-negative integer distinguishing successive orders placed for the same
+   * intent (a resubmit, a replacement). Absent when the caller does not number
+   * attempts; decoding then returns no attempt rather than a guessed one.
+   */
+  attempt?: number;
+}
+
+/**
+ * Where an order's `client_order_id` came from.
+ *
+ * - `"lineage"` — encoded from a {@link ClientOrderLineage}; decodable back to
+ *   the trade intent and attempt.
+ * - `"explicit"` — supplied verbatim by the caller.
+ * - `"derived"` — the library's one-way SHA-256 idempotency default, built from
+ *   the order's parameters; it deduplicates retries but cannot be traced back
+ *   to an intent.
+ */
+export type ClientOrderIdSource = "lineage" | "explicit" | "derived";
+
+/**
+ * Provenance the order verbs attach to the order they return.
+ *
+ * `clientOrderIdSource` is set as a non-enumerable property so the returned
+ * object still serializes (and spreads) exactly as the broker's order payload.
+ * It is declared optional so that order objects not produced by these verbs
+ * (fixtures, simulators) remain assignable.
+ */
+export interface ClientOrderIdProvenance {
+  /** How the submitted `client_order_id` was produced. */
+  readonly clientOrderIdSource?: ClientOrderIdSource;
+}
+
+/** An order returned by an order verb, carrying its `client_order_id` provenance. */
+export type AlpacaOrderWithClientOrderIdSource = AlpacaOrder &
+  ClientOrderIdProvenance;
 
 export type AlpacaAccountType = "PAPER" | "LIVE";
 export type AlpacaOrderType = "limit" | "market" | "options";
