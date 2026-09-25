@@ -19,7 +19,11 @@
  */
 
 import type { CircuitBreakerRegistry } from "./circuit-breaker";
-import { UnsupportedCapabilityError } from "./param-matrix";
+import {
+  ToolChoiceIgnoredError,
+  UnsupportedCapabilityError,
+  assertToolChoiceHonoured,
+} from "./param-matrix";
 import { RateGuardTimeoutError, withProviderGuards } from "./rate-guard";
 import { LlmResponseFormatError } from "./structured-content";
 import type {
@@ -65,6 +69,13 @@ export interface ChainExecution {
   readonly correlationId?: string;
   /** The caller's own cancellation, honoured ahead of any per-leg budget. */
   readonly callerSignal?: AbortSignal;
+  /**
+   * The instant, on {@link ChainExecution.now}'s clock, at which the caller's
+   * whole-call deadline expires. Every leg's budget is cut to what remains of
+   * it, and a leg reached after it has expired is not dispatched. Absent, each
+   * leg runs for its route budget.
+   */
+  readonly deadlineAtMs?: number;
   /** Clock, injected so elapsed time is observable in tests without waiting. */
   readonly now?: () => number;
   /** Invoked once per leg after it settles, for metrics and shadow comparison. */
@@ -133,6 +144,9 @@ export class ChainExhaustedError extends Error {
  * understate spend by exactly the amount the failures cost — which is the
  * amount a fallback chain is most likely to run up.
  *
+ * A count one attempt did not report makes the total for that count unknown
+ * (`null`): a sum that skipped it would present a partial figure as complete.
+ *
  * @param a The running total.
  * @param b The attempt to add, if any.
  * @returns The combined usage.
@@ -145,8 +159,8 @@ export function sumUsage(
     return a;
   }
   return {
-    prompt_tokens: a.prompt_tokens + b.prompt_tokens,
-    completion_tokens: a.completion_tokens + b.completion_tokens,
+    prompt_tokens: addKnown(a.prompt_tokens, b.prompt_tokens),
+    completion_tokens: addKnown(a.completion_tokens, b.completion_tokens),
     reasoning_tokens:
       a.reasoning_tokens === undefined && b.reasoning_tokens === undefined
         ? undefined
@@ -157,8 +171,43 @@ export function sumUsage(
         : (a.cached_tokens ?? 0) + (b.cached_tokens ?? 0),
     provider: b.provider,
     model: b.model,
-    cost: a.cost + b.cost,
+    cost: addKnown(a.cost, b.cost),
   };
+}
+
+/**
+ * Add two measured quantities, either of which may be unreported.
+ *
+ * @param a The running total, or null when already unknown.
+ * @param b The value to add, or null when unreported.
+ * @returns The sum, or null when either side is unknown.
+ */
+function addKnown(a: number | null, b: number | null): number | null {
+  return a === null || b === null ? null : a + b;
+}
+
+/**
+ * The budget one leg may spend.
+ *
+ * The route's own budget, cut to what remains of the caller's deadline. The
+ * route budget is never widened, so a caller with a long deadline still has a
+ * slow leg abandoned in time for the next one to run; and the deadline is never
+ * exceeded, so the last leg reached ends when the caller stops waiting.
+ *
+ * @param routeBudgetMs The leg's route budget.
+ * @param deadlineAtMs The caller's deadline instant, if any.
+ * @param nowMs The current instant on the same clock.
+ * @returns The leg's budget in milliseconds; zero or less means none is left.
+ */
+export function legBudgetMs(
+  routeBudgetMs: number,
+  deadlineAtMs: number | undefined,
+  nowMs: number,
+): number {
+  if (deadlineAtMs === undefined) {
+    return routeBudgetMs;
+  }
+  return Math.min(routeBudgetMs, deadlineAtMs - nowMs);
 }
 
 /** Raised internally when a leg exceeds its budget. */
@@ -183,15 +232,16 @@ class LegTimeoutError extends Error {
  * @param leg The leg to run.
  * @param params Normalised parameters for this leg.
  * @param execution The call context.
+ * @param budgetMs The leg's budget: its route budget cut to the caller's deadline.
  * @returns The provider's answer.
  */
 async function runLeg<T>(
   leg: ChainLeg,
   params: Record<string, unknown>,
   execution: ChainExecution,
+  budgetMs: number,
 ): Promise<LlmTransportResponse<T>> {
   const controller = new AbortController();
-  const budgetMs = leg.route.timeoutMs;
 
   const timer = setTimeout(() => {
     controller.abort(new LegTimeoutError(leg.route.routeKey, budgetMs));
@@ -215,7 +265,7 @@ async function runLeg<T>(
     // provider, and only one clock should govern both. The leg's own signal is
     // handed to the guard as well, so a leg whose budget or caller is gone
     // leaves the queue at once instead of holding its place in it.
-    return await withProviderGuards(
+    const response = await withProviderGuards(
       leg.route.providerName,
       () =>
         leg.transport.execute<T>({
@@ -231,6 +281,8 @@ async function runLeg<T>(
       budgetMs,
       { modelId: leg.route.modelId, signal: controller.signal },
     );
+    assertToolChoiceHonoured(leg.route, params, response.tool_calls);
+    return response;
   } finally {
     clearTimeout(timer);
     execution.callerSignal?.removeEventListener("abort", forwardAbort);
@@ -265,6 +317,11 @@ function classify(
   }
   if (error instanceof UnsupportedCapabilityError) {
     return { outcome: "skipped", reason: error.message, countsAgainstHealth: false };
+  }
+  if (error instanceof ToolChoiceIgnoredError) {
+    // The route answered; it broke a declared guarantee rather than failing to
+    // be available, so its breaker is not charged for it.
+    return { outcome: "error", reason: error.message, countsAgainstHealth: false };
   }
   if (error instanceof RateGuardTimeoutError) {
     // Self-inflicted pacing, not provider ill-health. Counting it would let the
@@ -354,11 +411,29 @@ export async function executeChain<T>(
       continue;
     }
 
+    const budgetMs = legBudgetMs(route.timeoutMs, execution.deadlineAtMs, now());
+    if (budgetMs <= 0) {
+      // The caller's deadline is spent. Dispatching now would start a call
+      // that is cancelled the moment it begins, and charge nothing but noise.
+      const record: AliasAttemptRecord = {
+        routeKey: route.routeKey,
+        role: route.role,
+        provider: route.providerName,
+        modelId: route.modelId,
+        outcome: "skipped",
+        durationMs: 0,
+        reason: "caller deadline exhausted before this leg",
+      };
+      attempts.push(record);
+      execution.onAttempt?.(record);
+      continue;
+    }
+
     const startedAt = now();
     const holdsProbe = execution.breakers.onAttemptStart(route.routeKey);
 
     try {
-      const response = await runLeg<T>(leg, leg.params, execution);
+      const response = await runLeg<T>(leg, leg.params, execution, budgetMs);
       execution.breakers.onSuccess(route.routeKey);
       totalUsage = sumUsage(totalUsage, response.usage);
       const record: AliasAttemptRecord = {
@@ -368,6 +443,8 @@ export async function executeChain<T>(
         modelId: route.modelId,
         outcome: "ok",
         durationMs: now() - startedAt,
+        budgetMs,
+        servedModel: response.servedModel ?? null,
         usage: response.usage,
       };
       attempts.push(record);
@@ -396,6 +473,7 @@ export async function executeChain<T>(
         modelId: route.modelId,
         outcome,
         durationMs: now() - startedAt,
+        budgetMs,
         reason,
         ...(billed === undefined ? {} : { usage: billed }),
       };

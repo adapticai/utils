@@ -191,6 +191,10 @@
                     "supports_json_schema": { "type": "boolean" },
                     "supports_tools": { "type": "boolean" },
                     "supports_cache_control": { "type": "boolean" },
+                    "supports_tool_choice": {
+                      "type": "boolean",
+                      "description": "Whether the route is MEASURED to honour a mandatory tool_choice (\"required\"). Only true licenses sending it; serving stacks accept the parameter and silently answer in prose, so an unmeasured route omits it. The measurement must offer a tool that FITS the question: a model that declines a nonsense tool is not ignoring the constraint. Evidence: the engine llm-bench tool-choice probe (engine scripts/llm-bench/capability.mjs probeToolChoice), which on DeepInfra found Kimi-K3, GLM-5.3 and Ling-3.0-flash-Fin calling the offered tool, gpt-oss-20b calling a fitting tool and declining an irrelevant one, and DeepSeek-V4-Pro answering in prose even when the tool fits (2026-09-15); and, for Anthropic, the Messages API contract that a forced tool choice returns a tool_use block. A route whose exact model id that probe has not run on (DeepSeek-V4-Flash) stays false until it does."
+                    },
                     "supports_vision": { "type": "boolean" },
                     "context_window": { "type": "integer", "minimum": 1 }
                   }

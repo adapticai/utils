@@ -13,6 +13,7 @@ export { callLLMByAlias, configureLlmClient, llmAliases, llmBreakers } from "./a
 
 export {
   ChainExhaustedError,
+  legBudgetMs,
   sumUsage,
 } from "./fallback-chain";
 export type { AliasAttemptRecord } from "./types";
@@ -30,7 +31,13 @@ export {
 } from "./route-table";
 export type { ResolvedChain, RouteExclusion } from "./route-table";
 
-export { UnsupportedCapabilityError, normaliseParams, routeSupports } from "./param-matrix";
+export {
+  ToolChoiceIgnoredError,
+  UnsupportedCapabilityError,
+  assertToolChoiceHonoured,
+  normaliseParams,
+  routeSupports,
+} from "./param-matrix";
 
 export {
   RateGuardTimeoutError,
@@ -106,6 +113,7 @@ export type {
   LlmRouteRole,
   LlmRouteTable,
   LlmToolCall,
+  LlmToolChoice,
   LlmTransport,
   LlmTransportRequest,
   LlmTransportResponse,
