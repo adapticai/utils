@@ -371,6 +371,82 @@ export class DuplicateClientOrderIdError extends AlpacaApiError {
   }
 }
 
+/** Stable `code` carried by {@link PendingCancelError}. */
+export const PENDING_CANCEL_ERROR_CODE = "ORDER_PENDING_CANCEL" as const;
+
+/**
+ * Alpaca's numeric code for an unprocessable order request. It is shared by
+ * many distinct reasons (pending cancel, not cancelable, bad replace), so the
+ * reason text is what separates them.
+ */
+const ALPACA_UNPROCESSABLE_BROKER_CODE = 42210000;
+
+/** HTTP status Alpaca answers an unprocessable order request on. */
+const HTTP_UNPROCESSABLE_STATUS = 422;
+
+/** Alpaca's reason text for an order it already holds in `pending_cancel`. */
+const PENDING_CANCEL_REASON = /pending[ _]cancel/i;
+
+/**
+ * Alpaca refused a DELETE because it has already accepted a cancel for the
+ * order and holds it in `pending_cancel` until the venue confirms (HTTP 422,
+ * code 42210000, "order pending cancel").
+ *
+ * This is a distinct broker answer from "not cancelable" (the order already
+ * filled or is otherwise terminal): the order is being torn down, so it is
+ * NOT live protection, and a second DELETE only returns the same 422. A caller
+ * must treat the order as dying and wait for terminal truth (a `canceled` or
+ * `filled` trade update, or a GET), never re-cancel it and never count it as
+ * kept.
+ *
+ * The `message` is kept byte-identical to the generic rewrite
+ * ("Order X is not cancelable") so consumers that still match that text keep
+ * their behaviour; new consumers branch on the type, on
+ * {@link PENDING_CANCEL_ERROR_CODE}, or on {@link isPendingCancelRejection}.
+ * Never retryable.
+ */
+export class PendingCancelError extends AlpacaApiError {
+  constructor(
+    message: string,
+    /** The broker order id the DELETE targeted. */
+    public readonly orderId: string,
+    cause?: unknown,
+  ) {
+    super(
+      message,
+      PENDING_CANCEL_ERROR_CODE,
+      HTTP_UNPROCESSABLE_STATUS,
+      cause,
+      extractAlpacaBrokerError(cause),
+    );
+  }
+}
+
+/**
+ * Did Alpaca answer that the order is already pending cancel?
+ *
+ * True for a {@link PendingCancelError}, and for any thrown value whose broker
+ * payload (on the value or its `cause` chain) is a 422 / 42210000 whose reason
+ * names `pending cancel` / `pending_cancel`. A payload with no reason text is
+ * never read as pending cancel: absence stays unknown.
+ *
+ * @param error - The thrown value.
+ * @returns Whether the broker holds the order in `pending_cancel`.
+ */
+export function isPendingCancelRejection(error: unknown): boolean {
+  if (error instanceof PendingCancelError) {
+    return true;
+  }
+  const detail = extractAlpacaBrokerError(error);
+  if (detail === undefined || detail.brokerMessage === null) {
+    return false;
+  }
+  const unprocessable =
+    detail.statusCode === HTTP_UNPROCESSABLE_STATUS ||
+    detail.brokerCode === ALPACA_UNPROCESSABLE_BROKER_CODE;
+  return unprocessable && PENDING_CANCEL_REASON.test(detail.brokerMessage);
+}
+
 /** Max depth walked along the `error.cause` chain when locating a broker payload. */
 const MAX_BROKER_ERROR_CAUSE_DEPTH = 6;
 

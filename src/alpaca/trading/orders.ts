@@ -4,7 +4,12 @@
  */
 import { createHash, randomUUID } from "node:crypto";
 import { AlpacaClient } from "../client";
-import { DuplicateClientOrderIdError, enrichAlpacaError } from "../../errors";
+import {
+  DuplicateClientOrderIdError,
+  enrichAlpacaError,
+  isPendingCancelRejection,
+  PendingCancelError,
+} from "../../errors";
 import { classifyRetryError } from "../../utils/retry";
 import { log as baseLog } from "../../logging";
 import { LogOptions } from "../../types/logging-types";
@@ -655,6 +660,8 @@ export async function getOrders(
  *
  * @param client - The AlpacaClient instance
  * @param orderId - The unique identifier of the order to cancel
+ * @throws PendingCancelError if the broker already holds the order in
+ *   `pending_cancel` (the order is dying; never cancel it again)
  * @throws Error if order cannot be canceled (e.g., already filled or canceled)
  *
  * @example
@@ -678,6 +685,19 @@ export async function cancelOrder(
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";
+
+    // A cancel the broker already accepted: the order is dying, not kept.
+    if (isPendingCancelRejection(error)) {
+      log(
+        `Order ${orderId} is already pending cancel at the broker; not re-cancelling`,
+        { type: "warn" },
+      );
+      throw new PendingCancelError(
+        `Order ${orderId} is not cancelable`,
+        orderId,
+        error,
+      );
+    }
 
     // Check for specific error conditions
     if (

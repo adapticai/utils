@@ -34,6 +34,8 @@ import {
   alpacaHttpError,
   DuplicateClientOrderIdError,
   enrichAlpacaError,
+  isPendingCancelRejection,
+  PendingCancelError,
 } from "./errors";
 import { isTransientNetworkError } from "./utils/retry";
 import { createTimeoutSignal, DEFAULT_TIMEOUTS } from "./http-timeout";
@@ -1330,6 +1332,9 @@ export class AlpacaTradingAPI {
   /**
    * Cancel a specific order by its ID
    * @param orderId The id of the order to cancel
+   * @throws PendingCancelError if the broker already holds the order in
+   *   `pending_cancel` (422 / 42210000 "order pending cancel"): the order is
+   *   being torn down, so it is not live and must not be cancelled again
    * @throws Error if the order is not cancelable (status 422) or if the order doesn't exist
    * @returns Promise that resolves when the order is successfully canceled
    */
@@ -1340,6 +1345,19 @@ export class AlpacaTradingAPI {
       await this.makeRequest(`/orders/${orderId}`, "DELETE");
       this.log(`Successfully canceled order ${orderId}`);
     } catch (error) {
+      // A cancel the broker already accepted: the order is dying, not kept.
+      // Typed so callers stop reading it as "not cancelable, still live".
+      if (isPendingCancelRejection(error)) {
+        this.log(
+          `Order ${orderId} is already pending cancel at the broker; not re-cancelling`,
+          { type: "warn" },
+        );
+        throw new PendingCancelError(
+          `Order ${orderId} is not cancelable`,
+          orderId,
+          error,
+        );
+      }
       // If the error is a 422, it means the order is not cancelable
       if (error instanceof Error && error.message.includes("422")) {
         this.log(`Order ${orderId} is not cancelable`, {

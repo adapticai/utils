@@ -14,7 +14,11 @@ import { getTradingApiUrl } from "../../config/api-endpoints";
 import { getLogger } from "../../logger";
 import { isTransientNetworkError } from "../../utils/retry";
 import { createTimeoutSignal, DEFAULT_TIMEOUTS } from "../../http-timeout";
-import { alpacaHttpError } from "../../errors";
+import {
+  alpacaHttpError,
+  isPendingCancelRejection,
+  PendingCancelError,
+} from "../../errors";
 
 const PAGINATION_DELAY_MS = 300;
 const ORDER_CHUNK_SIZE = 500;
@@ -368,6 +372,9 @@ export async function replaceOrder(
  * @param auth - The authentication details for Alpaca
  * @param orderId - The ID of the order to cancel
  * @returns Success status and optional message if order not found
+ * @throws PendingCancelError if the broker already holds the order in
+ *   `pending_cancel` (the order is dying; never cancel it again). The message
+ *   is the same "Failed to cancel order: ..." text as any other refusal.
  */
 export async function cancelOrder(
   auth: AlpacaAuth,
@@ -391,11 +398,17 @@ export async function cancelOrder(
       if (response.status === 404) {
         return { success: false, message: `Order not found: ${orderId}` };
       } else {
-        throw alpacaHttpError(
+        const httpError = alpacaHttpError(
           `Failed to cancel order: ${response.status} ${response.statusText} ${errorText}`,
           response.status,
           errorText,
         );
+        // A cancel the broker already accepted: the order is dying, not kept,
+        // and a second DELETE only returns the same 422.
+        if (isPendingCancelRejection(httpError)) {
+          throw new PendingCancelError(httpError.message, orderId, httpError);
+        }
+        throw httpError;
       }
     }
 
