@@ -281,7 +281,7 @@ async function runLeg<T>(
       budgetMs,
       { modelId: leg.route.modelId, signal: controller.signal },
     );
-    assertToolChoiceHonoured(leg.route, params, response.tool_calls);
+    assertToolChoiceHonoured(leg.route, params, response);
     return response;
   } finally {
     clearTimeout(timer);
@@ -354,6 +354,23 @@ function classify(
  */
 function isAborted(signal: AbortSignal | undefined): boolean {
   return signal !== undefined && signal.aborted;
+}
+
+/**
+ * The usage a failed leg was billed for, when the leg reached an answer.
+ *
+ * A leg that failed after the provider answered — content that does not parse,
+ * or prose where a tool call was mandatory — was still charged. A leg that
+ * never answered (timeout, outage, skip) carries no usage, and none is invented.
+ *
+ * @param error The thrown value.
+ * @returns The billed usage, or undefined when the leg never produced an answer.
+ */
+function billedUsageOf(error: unknown): LlmUsageRecord | undefined {
+  if (error instanceof LlmResponseFormatError || error instanceof ToolChoiceIgnoredError) {
+    return error.usage;
+  }
+  return undefined;
 }
 
 /**
@@ -462,9 +479,11 @@ export async function executeChain<T>(
         // took must come back, or a half-open route admits no probe ever again.
         execution.breakers.onAttemptAbandoned(route.routeKey);
       }
-      // A provider that answered with unparseable content still billed for the
-      // answer; the spend belongs in the total whether or not a later leg serves.
-      const billed = error instanceof LlmResponseFormatError ? error.usage : undefined;
+      // A provider that answered — with unparseable content, or in prose where a
+      // tool call was mandatory — still billed for the answer; the spend belongs
+      // in the total whether or not a later leg serves.
+      const billed = billedUsageOf(error);
+      const answeredBy = error instanceof ToolChoiceIgnoredError ? error.servedModel : undefined;
       totalUsage = sumUsage(totalUsage, billed);
       const record: AliasAttemptRecord = {
         routeKey: route.routeKey,
@@ -475,6 +494,7 @@ export async function executeChain<T>(
         durationMs: now() - startedAt,
         budgetMs,
         reason,
+        ...(answeredBy === undefined ? {} : { servedModel: answeredBy }),
         ...(billed === undefined ? {} : { usage: billed }),
       };
       attempts.push(record);

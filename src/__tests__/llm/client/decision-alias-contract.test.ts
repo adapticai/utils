@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { callLLMByAlias, configureLlmClient } from "../../../llm/alias-client";
 import { CircuitBreakerRegistry } from "../../../llm/circuit-breaker";
-import { executeChain, legBudgetMs, sumUsage } from "../../../llm/fallback-chain";
+import { ChainExhaustedError, executeChain, legBudgetMs, sumUsage } from "../../../llm/fallback-chain";
 import type { ChainLeg } from "../../../llm/fallback-chain";
 import { normaliseParams } from "../../../llm/param-matrix";
 import { createDirectTransport } from "../../../llm/transports/direct";
@@ -199,6 +199,53 @@ describe("a mandatory tool choice reaches only a route measured to honour it", (
     expect(outcome.attempts[0].outcome).toBe("error");
     expect(outcome.attempts[0].reason).toContain("supports_tool_choice");
     expect(breakers.snapshot(primary.routeKey).consecutiveFailures).toBe(0);
+  });
+
+  it("keeps the spend of a leg that answered in prose in the total and on its attempt record", async () => {
+    const primary = makeRoute({ alias: CHAIN_ALIAS, role: "primary" });
+    const secondary = makeRoute({ alias: CHAIN_ALIAS, role: "secondary" });
+    const transport = new ScriptedTransport("gateway", (call) =>
+      call.route.role === "primary"
+        ? answers("prose instead of a tool call", usageFor(call.route, { promptTokens: PROMPT_A }))
+        : answers("", usageFor(call.route, { promptTokens: PROMPT_B }), [TOOL_CALL]),
+    );
+    const breakers = new CircuitBreakerRegistry(routeTable.defaults.circuit_breaker, () =>
+      Date.now(),
+    );
+
+    const outcome = await executeChain<string>(CHAIN_ALIAS, {
+      legs: legsOf([primary, secondary], transport, { tool_choice: "required" }),
+      content: "prompt",
+      responseFormat: "text",
+      breakers,
+    });
+
+    expect(outcome.totalUsage.prompt_tokens).toBe(PROMPT_A + PROMPT_B);
+    expect(outcome.attempts[0].usage?.prompt_tokens).toBe(PROMPT_A);
+    expect(outcome.attempts[0].usage?.model).toBe(primary.modelId);
+    // The leg answered, so its serving model is recorded: null when unreported, never absent.
+    expect(outcome.attempts[0].servedModel).toBeNull();
+  });
+
+  it("counts a prose-answering leg's spend when no leg serves at all", async () => {
+    const primary = makeRoute({ alias: CHAIN_ALIAS, role: "primary" });
+    const transport = new ScriptedTransport("gateway", (call) =>
+      answers("prose instead of a tool call", usageFor(call.route, { promptTokens: PROMPT_A })),
+    );
+    const breakers = new CircuitBreakerRegistry(routeTable.defaults.circuit_breaker, () =>
+      Date.now(),
+    );
+
+    const exhausted = await executeChain<string>(CHAIN_ALIAS, {
+      legs: legsOf([primary], transport, { tool_choice: "required" }),
+      content: "prompt",
+      responseFormat: "text",
+      breakers,
+    }).catch((error: unknown) => error);
+
+    expect(exhausted).toBeInstanceOf(ChainExhaustedError);
+    expect((exhausted as ChainExhaustedError).totalUsage.prompt_tokens).toBe(PROMPT_A);
+    expect((exhausted as ChainExhaustedError).attempts[0].usage?.prompt_tokens).toBe(PROMPT_A);
   });
 });
 
