@@ -21,6 +21,8 @@
 import type {
   AliasCallOptions,
   LlmResponseFormat,
+  LlmTransportResponse,
+  LlmUsageRecord,
   ResolvedRoute,
 } from "./types";
 
@@ -150,21 +152,22 @@ function normaliseToolChoice(
  *
  * @param route The leg that answered.
  * @param params The parameters it was sent.
- * @param toolCalls The tool calls it returned.
+ * @param response The leg's answer: its tool calls, and the usage and serving
+ *   model the error carries so the leg's spend and attribution are not lost.
  * @throws {ToolChoiceIgnoredError} When a mandatory choice produced no tool call.
  */
 export function assertToolChoiceHonoured(
   route: ResolvedRoute,
   params: Readonly<Record<string, unknown>>,
-  toolCalls: readonly unknown[] | undefined,
+  response: Pick<LlmTransportResponse<unknown>, "tool_calls" | "usage" | "servedModel">,
 ): void {
   if (params[TOOL_CHOICE_KEY] !== TOOL_CHOICE_REQUIRED) {
     return;
   }
-  if (toolCalls !== undefined && toolCalls.length > 0) {
+  if (response.tool_calls !== undefined && response.tool_calls.length > 0) {
     return;
   }
-  throw new ToolChoiceIgnoredError(route);
+  throw new ToolChoiceIgnoredError(route, response.usage, response.servedModel ?? null);
 }
 
 /**
@@ -173,22 +176,34 @@ export function assertToolChoiceHonoured(
  *
  * Distinct from a provider outage: the route answered, but not in the form it
  * is declared to guarantee. The chain advances, and the route's health is not
- * charged, because the fault is in the declaration, not in availability.
+ * charged, because the fault is in the declaration, not in availability. The
+ * provider still billed for the answer, so the error carries the leg's usage:
+ * the spend belongs in the chain's total whether or not a later leg serves.
  */
 export class ToolChoiceIgnoredError extends Error {
   /** The leg that ignored the choice. */
   public readonly routeKey: string;
 
+  /** What the provider billed for the answer that carried no tool call. */
+  public readonly usage: LlmUsageRecord;
+
+  /** The model the provider reports as having answered, or `null` when unreported. */
+  public readonly servedModel: string | null;
+
   /**
    * @param route The leg.
+   * @param usage What the provider billed for the answer.
+   * @param servedModel The provider-reported serving model, or `null`.
    */
-  public constructor(route: ResolvedRoute) {
+  public constructor(route: ResolvedRoute, usage: LlmUsageRecord, servedModel: string | null) {
     super(
       `route ${route.routeKey} (${route.providerName}/${route.modelId}) was sent tool_choice "required" ` +
         "and answered without a tool call; its supports_tool_choice declaration no longer holds",
     );
     this.name = "ToolChoiceIgnoredError";
     this.routeKey = route.routeKey;
+    this.usage = usage;
+    this.servedModel = servedModel;
   }
 }
 
