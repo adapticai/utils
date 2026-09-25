@@ -40,6 +40,12 @@ const MAX_TOKENS_PARAM_BY_API_STYLE: Readonly<Record<string, string>> = {
 /** The response-format key an OpenAI-compatible provider expects. */
 const RESPONSE_FORMAT_KEY = "response_format";
 
+/** The tool-choice key, in the OpenAI-compatible vocabulary the gateway speaks. */
+export const TOOL_CHOICE_KEY = "tool_choice";
+
+/** The mandatory tool-choice value: the answer must be a tool call. */
+const TOOL_CHOICE_REQUIRED = "required";
+
 /**
  * Normalise a caller's options into the exact parameter set one leg accepts.
  *
@@ -96,6 +102,10 @@ export function normaliseParams(
     // tool calls concurrently reorders its own effects, and ordering is part
     // of the meaning of a sequence of trading actions.
     params.parallel_tool_calls = false;
+    const toolChoice = normaliseToolChoice(options.toolChoice, route);
+    if (toolChoice !== undefined) {
+      params[TOOL_CHOICE_KEY] = toolChoice;
+    }
   }
 
   if (options.metadata !== undefined) {
@@ -103,6 +113,83 @@ export function normaliseParams(
   }
 
   return params;
+}
+
+/**
+ * Translate the caller's tool-choice policy into the value one leg is sent.
+ *
+ * `"auto"` is every provider's default once tools are present, so it is never
+ * sent. `"required"` is sent only to a route MEASURED to honour it: serving
+ * stacks accept the parameter and silently answer in prose anyway, so sending
+ * it to an unmeasured route would assert a constraint nobody checked. Omitting
+ * it there leaves that leg exactly as it was, with the caller's own validation
+ * as the guard.
+ *
+ * @param toolChoice The caller's policy, if any.
+ * @param route The leg being prepared.
+ * @returns The value to send, or undefined to omit the parameter.
+ */
+function normaliseToolChoice(
+  toolChoice: AliasCallOptions["toolChoice"],
+  route: ResolvedRoute,
+): string | undefined {
+  if (toolChoice !== TOOL_CHOICE_REQUIRED) {
+    return undefined;
+  }
+  return route.params.supports_tool_choice === true ? TOOL_CHOICE_REQUIRED : undefined;
+}
+
+/**
+ * Fail a leg that was sent a mandatory tool choice and answered without a tool call.
+ *
+ * The parameter is sent only to a route declared to honour it, so an answer
+ * with no tool call means the declaration no longer holds for this leg — a
+ * serving-stack upgrade can drop the constraint without an error. Returning
+ * that answer would hand a caller prose where it demanded an action; failing
+ * the leg lets the chain advance and names the broken declaration.
+ *
+ * @param route The leg that answered.
+ * @param params The parameters it was sent.
+ * @param toolCalls The tool calls it returned.
+ * @throws {ToolChoiceIgnoredError} When a mandatory choice produced no tool call.
+ */
+export function assertToolChoiceHonoured(
+  route: ResolvedRoute,
+  params: Readonly<Record<string, unknown>>,
+  toolCalls: readonly unknown[] | undefined,
+): void {
+  if (params[TOOL_CHOICE_KEY] !== TOOL_CHOICE_REQUIRED) {
+    return;
+  }
+  if (toolCalls !== undefined && toolCalls.length > 0) {
+    return;
+  }
+  throw new ToolChoiceIgnoredError(route);
+}
+
+/**
+ * Thrown when a route declared to honour a mandatory tool choice answered
+ * without a tool call.
+ *
+ * Distinct from a provider outage: the route answered, but not in the form it
+ * is declared to guarantee. The chain advances, and the route's health is not
+ * charged, because the fault is in the declaration, not in availability.
+ */
+export class ToolChoiceIgnoredError extends Error {
+  /** The leg that ignored the choice. */
+  public readonly routeKey: string;
+
+  /**
+   * @param route The leg.
+   */
+  public constructor(route: ResolvedRoute) {
+    super(
+      `route ${route.routeKey} (${route.providerName}/${route.modelId}) was sent tool_choice "required" ` +
+        "and answered without a tool call; its supports_tool_choice declaration no longer holds",
+    );
+    this.name = "ToolChoiceIgnoredError";
+    this.routeKey = route.routeKey;
+  }
 }
 
 /**

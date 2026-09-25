@@ -6,10 +6,12 @@
  * never in application code (PD-5), which is what makes a model swap a config
  * change rather than a deploy.
  *
- * The client still walks its own chain on top of the gateway's, and the
- * duplication is deliberate. The gateway's fallbacks cover a provider being
- * down; the client's cover the gateway being down. Only one of those two can
- * cover the other, so the outer chain is the one that must exist.
+ * The client's chain is the single fallback owner: every leg is addressed to the
+ * gateway by its own model name, so the gateway serves one deployment per leg
+ * and needs no fallback of its own. A proxy-side fallback inside a leg would
+ * spend the leg's budget on a model the chain did not choose and report the
+ * answer as the leg's; the served model is read from the response body so such
+ * a substitution stays visible while any remains configured.
  *
  * The gateway key is read from the environment by NAME at call time and never
  * stored, logged, or included in an error (PD-2). Reading it per call rather
@@ -31,6 +33,12 @@ const RETRYABLE_STATUSES = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
 
 /** Maximum characters of an error body echoed into a message. */
 const ERROR_BODY_EXCERPT = 400;
+
+/** Response header in which the LiteLLM proxy reports the call's cost in USD. */
+const RESPONSE_COST_HEADER = "x-litellm-response-cost";
+
+/** Response header naming the proxy deployment that served the call. */
+const DEPLOYMENT_ID_HEADER = "x-litellm-model-id";
 
 /** Configuration for the gateway transport. */
 export interface GatewayTransportConfig {
@@ -115,18 +123,23 @@ function readGatewayKey(envVar: string): string {
 /**
  * Extract usage from a chat-completion response.
  *
- * Absent counts stay zero rather than being estimated. A fabricated token count
- * would flow straight into the budget accounting that the spend controls are
- * built on, and a budget computed from invented numbers is worse than one that
- * knows it is missing a call.
+ * A count the provider did not report is `null`, never zero and never an
+ * estimate. A fabricated count — zero included — would flow straight into the
+ * budget accounting the spend controls are built on, where a zero reads as a
+ * free call and can never trip a limit.
+ *
+ * Cost is read from the body's `usage.response_cost` or, failing that, from the
+ * proxy's cost header, which is where the LiteLLM proxy reports it.
  *
  * @param payload The parsed response body.
  * @param request The request it answers.
+ * @param headers The response headers.
  * @returns The usage record.
  */
 function readUsage(
   payload: Record<string, unknown>,
   request: LlmTransportRequest,
+  headers: Headers | undefined,
 ): LlmUsageRecord {
   const usage = (payload.usage ?? {}) as Record<string, unknown>;
   const details = (usage.prompt_tokens_details ?? {}) as Record<string, unknown>;
@@ -135,15 +148,49 @@ function readUsage(
   const reasoning = reasoningDetails.reasoning_tokens;
 
   return {
-    prompt_tokens: typeof usage.prompt_tokens === "number" ? usage.prompt_tokens : 0,
-    completion_tokens:
-      typeof usage.completion_tokens === "number" ? usage.completion_tokens : 0,
+    prompt_tokens: finiteOrNull(usage.prompt_tokens),
+    completion_tokens: finiteOrNull(usage.completion_tokens),
     reasoning_tokens: typeof reasoning === "number" ? reasoning : undefined,
     cached_tokens: typeof cached === "number" ? cached : undefined,
     provider: request.route.providerName,
     model: request.route.modelId,
-    cost: typeof usage.response_cost === "number" ? usage.response_cost : 0,
+    cost: finiteOrNull(usage.response_cost) ?? headerNumber(headers, RESPONSE_COST_HEADER),
   };
+}
+
+/**
+ * A reported number, or null when it was not reported as a finite number.
+ *
+ * @param value The raw value.
+ * @returns The number, or null.
+ */
+function finiteOrNull(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+/**
+ * A numeric response header, or null when absent or not a finite number.
+ *
+ * @param headers The response headers, if the transport exposes them.
+ * @param name The header name.
+ * @returns The number, or null.
+ */
+function headerNumber(headers: Headers | undefined, name: string): number | null {
+  const raw = headers?.get(name);
+  if (raw === undefined || raw === null || raw.trim() === "") {
+    return null;
+  }
+  return finiteOrNull(Number(raw));
+}
+
+/**
+ * A non-empty string, or null.
+ *
+ * @param value The raw value.
+ * @returns The string, or null.
+ */
+function nonEmptyOrNull(value: unknown): string | null {
+  return typeof value === "string" && value.trim() !== "" ? value : null;
 }
 
 /**
@@ -205,7 +252,7 @@ export function createGatewayTransport(
       // Usage is read before the content is interpreted. The provider billed for
       // this answer whether or not it parses, and a parse failure that dropped
       // the count would report the attempt as free.
-      const usage = readUsage(payload, request);
+      const usage = readUsage(payload, request, response.headers);
 
       return {
         response: interpretContent<T>(message?.content, request.responseFormat, usage),
@@ -213,6 +260,10 @@ export function createGatewayTransport(
         tool_calls: Array.isArray(message?.tool_calls)
           ? (message.tool_calls as LlmTransportResponse<T>["tool_calls"])
           : undefined,
+        // The model the provider says answered, which a proxy-side fallback can
+        // make differ from the leg's route model; unreported stays null.
+        servedModel: nonEmptyOrNull(payload.model),
+        servedDeploymentId: nonEmptyOrNull(response.headers?.get(DEPLOYMENT_ID_HEADER)),
       };
     },
   };

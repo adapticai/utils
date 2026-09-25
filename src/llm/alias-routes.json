@@ -178,6 +178,7 @@
             "supports_tools": true,
             "supports_cache_control": true,
             "supports_vision": false,
+            "supports_tool_choice": false,
             "context_window": 1048576
           },
           "price_per_mtok": {
@@ -204,6 +205,7 @@
             "supports_tools": true,
             "supports_cache_control": true,
             "supports_vision": false,
+            "supports_tool_choice": true,
             "context_window": 1048576
           },
           "price_per_mtok": {
@@ -230,6 +232,7 @@
             "supports_tools": true,
             "supports_cache_control": true,
             "supports_vision": true,
+            "supports_tool_choice": true,
             "context_window": 1000000
           },
           "price_per_mtok": {
@@ -274,6 +277,7 @@
             "supports_tools": true,
             "supports_cache_control": true,
             "supports_vision": true,
+            "supports_tool_choice": true,
             "context_window": 1048576
           },
           "price_per_mtok": {
@@ -300,6 +304,7 @@
             "supports_tools": true,
             "supports_cache_control": true,
             "supports_vision": false,
+            "supports_tool_choice": false,
             "context_window": 1048576
           },
           "price_per_mtok": {
@@ -326,6 +331,7 @@
             "supports_tools": true,
             "supports_cache_control": true,
             "supports_vision": true,
+            "supports_tool_choice": true,
             "context_window": 1000000
           },
           "price_per_mtok": {
@@ -370,6 +376,7 @@
             "supports_tools": true,
             "supports_cache_control": true,
             "supports_vision": false,
+            "supports_tool_choice": false,
             "context_window": 1048576
           },
           "price_per_mtok": {
@@ -396,6 +403,7 @@
             "supports_tools": true,
             "supports_cache_control": false,
             "supports_vision": false,
+            "supports_tool_choice": true,
             "context_window": 131072
           },
           "price_per_mtok": {
@@ -422,6 +430,7 @@
             "supports_tools": true,
             "supports_cache_control": true,
             "supports_vision": true,
+            "supports_tool_choice": true,
             "context_window": 200000
           },
           "price_per_mtok": {
@@ -465,6 +474,7 @@
             "supports_tools": true,
             "supports_cache_control": false,
             "supports_vision": false,
+            "supports_tool_choice": true,
             "context_window": 131072
           },
           "price_per_mtok": {
@@ -491,6 +501,7 @@
             "supports_tools": true,
             "supports_cache_control": true,
             "supports_vision": false,
+            "supports_tool_choice": true,
             "context_window": 262144
           },
           "price_per_mtok": {
@@ -517,6 +528,7 @@
             "supports_tools": true,
             "supports_cache_control": true,
             "supports_vision": true,
+            "supports_tool_choice": true,
             "context_window": 200000
           },
           "price_per_mtok": {
@@ -562,6 +574,7 @@
             "supports_tools": true,
             "supports_cache_control": true,
             "supports_vision": false,
+            "supports_tool_choice": false,
             "context_window": 1048576
           },
           "price_per_mtok": {
@@ -571,6 +584,105 @@
             "source": "DeepInfra /v1/openai/models catalogue queried against the live account 2026-09-11; tool-calling and latency verified by direct call on the same account"
           },
           "notes": "Pinned with no fallback (PD-6). A judge that failed over would grade one model's output against another model's standard, corrupting every gate decided by it."
+        }
+      ]
+    },
+    "llm.decide": {
+      "workload": "Per-symbol trading decision: a multi-turn tool-calling read that ends in exactly one decision tool call",
+      "latency_class": "hot-path",
+      "criticality": "trading-adjacent",
+      "isolation_capable": false,
+      "eval_gate": "tool-call",
+      "policy_note": "The dedicated decision alias. The per-symbol decision call is a trading decision, not a latency-critical extraction, so it gets its own chain instead of borrowing llm.fast's. It is evaluated in SHADOW beside the live llm.fast path (schema-valid rate, latency, served model, action agreement) and serves live traffic only through the engine's governed routing flag after that evidence. Leg budgets are the hot-path class's today; budgets set from each model's measured p95 are a separate, evidence-gated change. Its monthly budget bounds the shadow's own spend and is added to the gateway total, so the shadow cannot consume the live aliases' budget.",
+      "budget": {
+        "basis": "provisional-pre-baseline",
+        "monthly_usd": 600,
+        "alert_pct": [
+          50,
+          80,
+          100
+        ]
+      },
+      "routes": [
+        {
+          "role": "primary",
+          "provider": "deepinfra",
+          "model_id": "deepseek-ai/DeepSeek-V4-Pro",
+          "model_id_status": "confirmed",
+          "model_id_source": "DeepInfra /v1/openai/models catalogue queried against the live account 2026-09-11; tool-calling and latency verified by direct call on the same account",
+          "model_family": "DeepSeek V4 Pro",
+          "lumic_model": "deepseek-ai/DeepSeek-V4-Pro",
+          "params": {
+            "temperature": null,
+            "max_output_tokens": null,
+            "supports_temperature": true,
+            "supports_json_schema": true,
+            "supports_tools": true,
+            "supports_cache_control": true,
+            "supports_vision": false,
+            "supports_tool_choice": false,
+            "context_window": 1048576
+          },
+          "price_per_mtok": {
+            "input": 1.3,
+            "output": 2.6,
+            "as_of": "2026-09-11",
+            "source": "DeepInfra /v1/openai/models catalogue queried against the live account 2026-09-11; tool-calling and latency verified by direct call on the same account"
+          },
+          "notes": "The advanced tier the per-symbol decision prompt was written for: a long, multi-turn, tool-calling read of about 21k prompt tokens, where the hot-path alias's small models answer faster but lose the schema contract more often. It ignores a mandatory tool_choice (measured), so the decision contract's own validation stays the guard on this leg."
+        },
+        {
+          "role": "secondary",
+          "provider": "deepinfra",
+          "model_id": "deepseek-ai/DeepSeek-V4-Flash",
+          "model_id_status": "confirmed",
+          "model_id_source": "DeepInfra /v1/openai/models catalogue queried against the live account 2026-09-11; tool-calling and latency verified by direct call on the same account",
+          "model_family": "DeepSeek V4 Flash",
+          "lumic_model": "deepseek-ai/DeepSeek-V4-Flash",
+          "params": {
+            "temperature": null,
+            "max_output_tokens": null,
+            "supports_temperature": true,
+            "supports_json_schema": true,
+            "supports_tools": true,
+            "supports_cache_control": true,
+            "supports_vision": false,
+            "supports_tool_choice": false,
+            "context_window": 1048576
+          },
+          "price_per_mtok": {
+            "input": 0.09,
+            "output": 0.18,
+            "as_of": "2026-09-11",
+            "source": "DeepInfra /v1/openai/models catalogue queried against the live account 2026-09-11; tool-calling and latency verified by direct call on the same account"
+          },
+          "notes": "The current decision model, kept as the secondary so a slow or failing primary falls back to the model the decision path already runs on."
+        },
+        {
+          "role": "closed_incumbent",
+          "provider": "anthropic",
+          "model_id": "claude-haiku-4-5",
+          "model_id_status": "confirmed",
+          "model_id_source": "lumic-utils/src/types/openai-types.ts SUPPORTED_MODELS — already routed on in production",
+          "model_family": "Haiku-class",
+          "lumic_model": "claude-haiku-4-5",
+          "params": {
+            "temperature": null,
+            "max_output_tokens": 64000,
+            "supports_temperature": true,
+            "supports_json_schema": true,
+            "supports_tools": true,
+            "supports_cache_control": true,
+            "supports_vision": true,
+            "supports_tool_choice": true,
+            "context_window": 200000
+          },
+          "price_per_mtok": {
+            "input": 1,
+            "output": 5,
+            "as_of": "2026-09-10",
+            "source": "docs/llm-provider-migration.md#3 Haiku-class anchor"
+          }
         }
       ]
     }

@@ -22,7 +22,8 @@ export type LlmAlias =
   | "llm.agentic"
   | "llm.fast"
   | "llm.extract"
-  | "llm.judge";
+  | "llm.judge"
+  | "llm.decide";
 
 /** How urgently a caller needs an answer, which fixes the per-leg timeout budget. */
 export type LlmLatencyClass = "hot-path" | "background" | "batch";
@@ -65,6 +66,17 @@ export interface LlmRouteParams {
   readonly supports_tools?: boolean;
   readonly supports_cache_control?: boolean;
   readonly supports_vision?: boolean;
+  /**
+   * Whether the route is MEASURED to honour a mandatory `tool_choice`
+   * (`"required"`): the provider returns a tool call rather than prose.
+   *
+   * Only `true` licenses sending the parameter. Serving stacks accept the
+   * parameter and silently ignore it, answering in prose with no error, so an
+   * unmeasured route is treated as not honouring it and the parameter is
+   * omitted: a caller that relies on the constraint must still validate the
+   * answer, and a declared-but-ignored constraint is detected, never assumed.
+   */
+  readonly supports_tool_choice?: boolean;
   readonly context_window?: number;
 }
 
@@ -182,15 +194,23 @@ export interface ResolvedRoute {
   readonly retriesPerLeg: number;
 }
 
-/** Token accounting for one attempt, mirroring the incumbent client's shape. */
+/**
+ * Token accounting for one attempt, mirroring the incumbent client's shape.
+ *
+ * A count or cost the provider did not report is `null`, never zero. A zero
+ * reads as "this call was free", flows into spend and token budgets, and can
+ * never trip them; `null` says the number is missing, so a consumer has to
+ * decide what an unmeasured call means instead of inheriting a fabricated one.
+ */
 export interface LlmUsageRecord {
-  readonly prompt_tokens: number;
-  readonly completion_tokens: number;
+  readonly prompt_tokens: number | null;
+  readonly completion_tokens: number | null;
   readonly reasoning_tokens?: number;
   readonly cached_tokens?: number;
   readonly provider: string;
+  /** The model the route table credits for the leg (its `model_id`). */
   readonly model: string;
-  readonly cost: number;
+  readonly cost: number | null;
 }
 
 /** A tool call the model asked for. */
@@ -205,6 +225,17 @@ export interface LlmTransportResponse<T> {
   readonly response: T;
   readonly usage: LlmUsageRecord;
   readonly tool_calls?: readonly LlmToolCall[];
+  /**
+   * The model the provider reports as having produced the answer (the
+   * response body's `model`), or `null` when it reported none.
+   *
+   * Distinct from {@link LlmUsageRecord.model}, which is the model the route
+   * table credits for the leg. A proxy with a fallback of its own can answer
+   * one leg from a different model, and only this field can show it.
+   */
+  readonly servedModel?: string | null;
+  /** The proxy's deployment id for the answer (`x-litellm-model-id`), or `null`. */
+  readonly servedDeploymentId?: string | null;
 }
 
 /** What the caller receives, with the routing decision attached for attribution. */
@@ -217,6 +248,12 @@ export interface AliasCallResult<T> extends LlmTransportResponse<T> {
   readonly degraded: boolean;
   /** Usage summed across every attempt, so budget accounting counts what was actually spent. */
   readonly totalUsage: LlmUsageRecord;
+  /**
+   * The model the provider reports as having produced the answer, or `null`
+   * when it reported none; absent on a result built by a consumer's own double.
+   * See {@link LlmTransportResponse.servedModel}.
+   */
+  readonly servedModel?: string | null;
 }
 
 /** One attempt against one leg. */
@@ -227,9 +264,26 @@ export interface AliasAttemptRecord {
   readonly modelId: string;
   readonly outcome: "ok" | "error" | "timeout" | "breaker-open" | "skipped";
   readonly durationMs: number;
+  /**
+   * The budget this leg was given: its route budget, cut to what remained of
+   * the caller's deadline. Absent on a leg that was never dispatched.
+   */
+  readonly budgetMs?: number;
+  /** Provider-reported serving model of an answered leg; `null` when unreported. */
+  readonly servedModel?: string | null;
   readonly reason?: string;
   readonly usage?: LlmUsageRecord;
 }
+
+/**
+ * A caller's tool-choice policy.
+ *
+ * `"auto"` lets the model answer in prose or call a tool; `"required"` asks
+ * for exactly a tool call. `"required"` is sent only to a route that declares
+ * {@link LlmRouteParams.supports_tool_choice}; elsewhere it is omitted, and on
+ * a route that declares it but answers without a tool call the leg fails.
+ */
+export type LlmToolChoice = "auto" | "required";
 
 /**
  * Outcome of validating a structured payload.
@@ -265,10 +319,19 @@ export interface AliasCallOptions<T = unknown> {
   readonly maxOutputTokens?: number;
   readonly reasoningEffort?: "low" | "medium" | "high";
   readonly tools?: readonly unknown[];
+  /** Tool-choice policy for a tool-carrying call. See {@link LlmToolChoice}. */
+  readonly toolChoice?: LlmToolChoice;
   readonly developerPrompt?: string;
   readonly context?: readonly unknown[];
   readonly metadata?: Readonly<Record<string, string>>;
-  /** Overrides the latency class's per-leg budget. Never widens the caller's own deadline. */
+  /**
+   * The caller's whole-call deadline, in milliseconds, shared by every leg.
+   *
+   * Each leg runs for its route budget or for what remains of this deadline,
+   * whichever is shorter, so a slow primary can no longer consume the whole
+   * deadline and leave the fallback legs unreachable. It never widens a leg
+   * past its route budget. Absent, each leg runs for its route budget.
+   */
   readonly timeoutMs?: number;
   readonly signal?: AbortSignal;
   /**

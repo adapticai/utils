@@ -141,6 +141,11 @@ export function createDirectTransport(
         tool_calls: Array.isArray(result.tool_calls)
           ? (result.tool_calls as LlmTransportResponse<T>["tool_calls"])
           : undefined,
+        // The incumbent client reports the model it resolved; unreported stays null.
+        servedModel:
+          typeof result.usage?.model === "string" && result.usage.model !== ""
+            ? result.usage.model
+            : null,
       };
     },
   };
@@ -149,9 +154,9 @@ export function createDirectTransport(
 /**
  * Normalise the incumbent client's usage shape.
  *
- * Missing counts stay zero rather than being estimated, for the same reason
- * they do on the gateway path: an invented token count flows straight into the
- * budget accounting the spend controls depend on.
+ * A missing count is `null` rather than zero or an estimate, for the same
+ * reason as on the gateway path: an invented token count — zero included —
+ * flows straight into the budget accounting the spend controls depend on.
  *
  * @param usage The incumbent client's usage, if any.
  * @param request The request it answers.
@@ -162,13 +167,13 @@ function readUsage(
   request: LlmTransportRequest,
 ): LlmUsageRecord {
   return {
-    prompt_tokens: usage?.prompt_tokens ?? 0,
-    completion_tokens: usage?.completion_tokens ?? 0,
+    prompt_tokens: usage?.prompt_tokens ?? null,
+    completion_tokens: usage?.completion_tokens ?? null,
     reasoning_tokens: usage?.reasoning_tokens,
     cached_tokens: usage?.cached_tokens,
     provider: usage?.provider ?? request.route.providerName,
     model: usage?.model ?? request.route.modelId,
-    cost: usage?.cost ?? 0,
+    cost: usage?.cost ?? null,
   };
 }
 

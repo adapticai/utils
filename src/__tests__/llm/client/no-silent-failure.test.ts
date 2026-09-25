@@ -48,6 +48,19 @@ const UNAUTHORIZED = 401;
 /** The answer a healthy leg gives while reporting no usage block at all. */
 const ANSWER_WITHOUT_USAGE = "the model still answered";
 
+/** A model the proxy reports serving, distinct from any fixture route model. */
+const SERVED_BY_PROXY_FALLBACK = "vendor/fallback-model-served-by-proxy";
+
+/** A proxy deployment id, as the LiteLLM proxy reports it in a header. */
+const DEPLOYMENT_ID = "deployment-7f3a";
+
+/** Cost the proxy reports in its header, in USD. */
+const HEADER_COST_USD = 0.0042;
+
+/** Token counts a reporting provider returns. */
+const PROMPT_TOKENS = 1200;
+const COMPLETION_TOKENS = 80;
+
 /** Headers the transport actually sent, captured to prove the key was read. */
 interface CapturedRequest {
   authorization: string | null;
@@ -160,7 +173,7 @@ describe("no silent failure anywhere in the module", () => {
     await expect(transport.execute(requestFor("json"))).rejects.toThrow(/not valid JSON/);
   });
 
-  it("reports zero counts for a missing usage block, and still surfaces the real answer", async () => {
+  it("reports a missing usage block as unknown (null), never zero, and still surfaces the real answer", async () => {
     const captured: CapturedRequest = { authorization: null };
     const transport = gatewayOver(
       () =>
@@ -174,14 +187,72 @@ describe("no silent failure anywhere in the module", () => {
     const result = await transport.execute<string>(requestFor("text"));
 
     expect(result.response).toBe(ANSWER_WITHOUT_USAGE);
-    // An estimated token count flows straight into the budget accounting the
-    // spend controls are built on; a budget computed from invented numbers is
-    // worse than one that knows it is missing a call.
-    expect(result.usage.prompt_tokens).toBe(0);
-    expect(result.usage.completion_tokens).toBe(0);
-    expect(result.usage.cost).toBe(0);
+    // An estimated token count — zero included — flows straight into the
+    // budget accounting the spend controls are built on, where a zero reads as
+    // a free call; unknown must stay unknown to the consumer.
+    expect(result.usage.prompt_tokens).toBeNull();
+    expect(result.usage.completion_tokens).toBeNull();
+    expect(result.usage.cost).toBeNull();
     expect(result.usage.reasoning_tokens).toBeUndefined();
     expect(result.usage.cached_tokens).toBeUndefined();
+    // Nor is a serving model invented when the body names none.
+    expect(result.servedModel).toBeNull();
+    expect(result.servedDeploymentId).toBeNull();
+  });
+
+  it("keeps a reported zero as zero: only an absent count is unknown", async () => {
+    const captured: CapturedRequest = { authorization: null };
+    const transport = gatewayOver(
+      () =>
+        new Response(
+          JSON.stringify({
+            choices: [{ message: { content: ANSWER_WITHOUT_USAGE } }],
+            usage: { prompt_tokens: 0, completion_tokens: 0 },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      captured,
+    );
+
+    const result = await transport.execute<string>(requestFor("text"));
+
+    expect(result.usage.prompt_tokens).toBe(0);
+    expect(result.usage.completion_tokens).toBe(0);
+    expect(result.usage.cost).toBeNull();
+  });
+
+  it("reads the served model from the body and the cost and deployment from the proxy's headers", async () => {
+    const captured: CapturedRequest = { authorization: null };
+    const transport = gatewayOver(
+      () =>
+        new Response(
+          JSON.stringify({
+            model: SERVED_BY_PROXY_FALLBACK,
+            choices: [{ message: { content: ANSWER_WITHOUT_USAGE } }],
+            usage: { prompt_tokens: PROMPT_TOKENS, completion_tokens: COMPLETION_TOKENS },
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+              "x-litellm-response-cost": String(HEADER_COST_USD),
+              "x-litellm-model-id": DEPLOYMENT_ID,
+            },
+          },
+        ),
+      captured,
+    );
+
+    const result = await transport.execute<string>(requestFor("text"));
+
+    // The leg's route model stays the table's credit; the model that actually
+    // answered is reported beside it, so a proxy-side substitution is visible.
+    expect(result.usage.model).not.toBe(SERVED_BY_PROXY_FALLBACK);
+    expect(result.servedModel).toBe(SERVED_BY_PROXY_FALLBACK);
+    expect(result.servedDeploymentId).toBe(DEPLOYMENT_ID);
+    expect(result.usage.prompt_tokens).toBe(PROMPT_TOKENS);
+    expect(result.usage.completion_tokens).toBe(COMPLETION_TOKENS);
+    expect(result.usage.cost).toBe(HEADER_COST_USD);
   });
 
   it("names the unset environment variable when the gateway key is not provisioned", async () => {

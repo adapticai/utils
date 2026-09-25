@@ -17,7 +17,10 @@
  * table, per-provider parameter normalisation, a hard per-leg timeout, a
  * per-route circuit breaker, an ordered fallback chain ending at the closed
  * incumbent, and — where the caller supplies a validator — one schema-feedback
- * retry ahead of the chain. None of them is optional, because a control that a
+ * retry ahead of the chain. The caller's `timeoutMs` is ONE deadline for the
+ * whole call: each leg runs for its route budget or for what remains of that
+ * deadline, whichever is shorter, so the chain is the single fallback owner and
+ * a slow primary cannot spend the time its fallbacks need. None of them is optional, because a control that a
  * caller can switch off is a control that will be off on the call that needed
  * it.
  *
@@ -204,10 +207,15 @@ export async function callLLMByAlias<T = unknown>(
   responseFormat: LlmResponseFormat = "text",
   options: AliasCallOptions<T>,
 ): Promise<AliasCallResult<T>> {
-  const chain = resolveChain(options.alias, {
-    isolated: options.isolated,
-    timeoutMsOverride: options.timeoutMs,
-  });
+  // Legs keep their route budgets; the caller's timeout is the deadline they
+  // share, fixed once here so a validation retry and the degraded direct path
+  // spend what is left of it rather than starting a fresh one.
+  const chain = resolveChain(options.alias, { isolated: options.isolated });
+  const clock = config.now ?? Date.now;
+  const deadlineAtMs =
+    typeof options.timeoutMs === "number" && Number.isFinite(options.timeoutMs)
+      ? clock() + options.timeoutMs
+      : undefined;
 
   if (chain.routes.length === 0) {
     // Nothing is servable. The exclusions say why each leg was unavailable,
@@ -267,6 +275,7 @@ export async function callLLMByAlias<T = unknown>(
           breakers,
           correlationId: options.correlationId,
           callerSignal: options.signal,
+          deadlineAtMs,
           now: config.now,
           onAttempt: (record) => attemptLog.push(record),
         });
@@ -306,6 +315,7 @@ export async function callLLMByAlias<T = unknown>(
       breakers,
       correlationId: options.correlationId,
       callerSignal: options.signal,
+      deadlineAtMs,
       now: config.now,
       onAttempt: (record) => attemptLog.push(record),
     });
@@ -319,6 +329,7 @@ export async function callLLMByAlias<T = unknown>(
       usage: outcome.response.usage,
       tool_calls: outcome.response.tool_calls,
       servedBy: outcome.servedBy,
+      servedModel: outcome.response.servedModel ?? null,
       attempts: attemptLog,
       degraded: outcome.degraded,
       totalUsage: outcome.totalUsage,
@@ -367,6 +378,7 @@ export async function callLLMByAlias<T = unknown>(
     usage: validated.response.usage,
     tool_calls: validated.response.tool_calls,
     servedBy: routing.servedBy,
+    servedModel: validated.response.servedModel ?? null,
     attempts: attemptLog,
     degraded: routing.degraded,
     totalUsage: validated.totalUsage,
