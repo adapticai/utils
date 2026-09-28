@@ -18,7 +18,7 @@
  * @module llm/fallback-chain
  */
 
-import type { CircuitBreakerRegistry } from "./circuit-breaker";
+import type { BreakerFailureKind, CircuitBreakerRegistry } from "./circuit-breaker";
 import {
   ToolChoiceIgnoredError,
   UnsupportedCapabilityError,
@@ -290,12 +290,64 @@ async function runLeg<T>(
 }
 
 /**
+ * HTTP statuses a provider (or the gateway relaying it) uses to say it is full
+ * rather than that the request or the route is wrong: request timeout, too
+ * early, too many requests, service unavailable, and Anthropic's overloaded.
+ */
+const CAPACITY_STATUSES: ReadonlySet<number> = new Set([408, 425, 429, 503, 529]);
+
+/**
+ * Wording providers use for a capacity refusal when the status is lost on the
+ * way (a relayed body, a client library's own error). DeepInfra's is
+ * "Model busy, retry later"; Anthropic's is "Overloaded".
+ */
+const CAPACITY_WORDING =
+  /\b(busy|overloaded|capacity|rate[ -]?limit(ed)?|too many requests)\b/i;
+
+/**
+ * Whether a failure is the provider saying it is full rather than broken.
+ *
+ * Read by shape rather than by class, because the same signal reaches the
+ * chain from more than one transport and not every transport's error class is
+ * importable here.
+ *
+ * @param error The thrown value.
+ * @param reason Its message.
+ * @returns Whether it is a capacity signal.
+ */
+export function isCapacitySignal(error: unknown, reason: string): boolean {
+  if (typeof error === "object" && error !== null) {
+    const status = (error as { status?: unknown }).status;
+    if (typeof status === "number" && CAPACITY_STATUSES.has(status)) {
+      return true;
+    }
+  }
+  return CAPACITY_WORDING.test(reason);
+}
+
+/** What the chain learned from one failed leg. */
+interface LegFailure {
+  readonly outcome: AliasAttemptRecord["outcome"];
+  readonly reason: string;
+  readonly countsAgainstHealth: boolean;
+  /** Which cooldown the failure earns, when it counts against health. */
+  readonly failureKind: BreakerFailureKind;
+}
+
+/**
  * Classify why a leg failed.
  *
  * The distinction matters to the breaker: a timeout and a 5xx are evidence the
  * provider is unhealthy, while the caller cancelling is not. Counting a
  * cancellation as a provider failure would let a burst of user-cancelled
  * requests open the breaker on a perfectly healthy route.
+ *
+ * Among failures that do count, a capacity signal (the provider said it is
+ * busy, or the leg ran out its budget waiting on it) is told apart from a hard
+ * failure so the breaker can re-admit a busy route sooner than a broken one. A
+ * timeout is read as capacity: on a reachable provider it is what a full queue
+ * looks like from outside, and a provider that is actually down still costs no
+ * more than one probe per capacity cooldown.
  *
  * @param error The thrown value.
  * @param callerSignal The caller's cancellation signal, if any.
@@ -304,30 +356,51 @@ async function runLeg<T>(
 function classify(
   error: unknown,
   callerSignal: AbortSignal | undefined,
-): { outcome: AliasAttemptRecord["outcome"]; reason: string; countsAgainstHealth: boolean } {
+): LegFailure {
   if (callerSignal !== undefined && callerSignal.aborted) {
     return {
       outcome: "skipped",
       reason: "caller cancelled",
       countsAgainstHealth: false,
+      failureKind: "hard",
     };
   }
   if (error instanceof LegTimeoutError) {
-    return { outcome: "timeout", reason: error.message, countsAgainstHealth: true };
+    return {
+      outcome: "timeout",
+      reason: error.message,
+      countsAgainstHealth: true,
+      failureKind: "capacity",
+    };
   }
   if (error instanceof UnsupportedCapabilityError) {
-    return { outcome: "skipped", reason: error.message, countsAgainstHealth: false };
+    return {
+      outcome: "skipped",
+      reason: error.message,
+      countsAgainstHealth: false,
+      failureKind: "hard",
+    };
   }
   if (error instanceof ToolChoiceIgnoredError) {
     // The route answered; it broke a declared guarantee rather than failing to
     // be available, so its breaker is not charged for it.
-    return { outcome: "error", reason: error.message, countsAgainstHealth: false };
+    return {
+      outcome: "error",
+      reason: error.message,
+      countsAgainstHealth: false,
+      failureKind: "hard",
+    };
   }
+  // Self-inflicted pacing, not provider ill-health. Counting it would let the
+  // client's own throttling open a breaker on a perfectly healthy provider and
+  // permanently reroute traffic nobody chose to reroute.
   if (error instanceof RateGuardTimeoutError) {
-    // Self-inflicted pacing, not provider ill-health. Counting it would let the
-    // client's own throttling open a breaker on a perfectly healthy provider
-    // and permanently reroute traffic nobody chose to reroute.
-    return { outcome: "skipped", reason: error.message, countsAgainstHealth: false };
+    return {
+      outcome: "skipped",
+      reason: error.message,
+      countsAgainstHealth: false,
+      failureKind: "hard",
+    };
   }
   const reason = error instanceof Error ? error.message : String(error);
   if (/abort/i.test(reason)) {
@@ -335,9 +408,20 @@ function classify(
       outcome: "timeout",
       reason: `aborted: ${reason}`,
       countsAgainstHealth: true,
+      failureKind: "capacity",
     };
   }
-  return { outcome: "error", reason, countsAgainstHealth: true };
+  if (error instanceof LlmResponseFormatError) {
+    // The provider answered, badly. That is a route defect, not a full queue,
+    // whatever words the unparseable content happens to contain.
+    return { outcome: "error", reason, countsAgainstHealth: true, failureKind: "hard" };
+  }
+  return {
+    outcome: "error",
+    reason,
+    countsAgainstHealth: true,
+    failureKind: isCapacitySignal(error, reason) ? "capacity" : "hard",
+  };
 }
 
 /**
@@ -468,12 +552,12 @@ export async function executeChain<T>(
       execution.onAttempt?.(record);
       return { response, servedBy: route, attempts, totalUsage };
     } catch (error) {
-      const { outcome, reason, countsAgainstHealth } = classify(
+      const { outcome, reason, countsAgainstHealth, failureKind } = classify(
         error,
         execution.callerSignal,
       );
       if (countsAgainstHealth) {
-        execution.breakers.onFailure(route.routeKey);
+        execution.breakers.onFailure(route.routeKey, failureKind);
       } else if (holdsProbe) {
         // No verdict on the route's health, but the probe slot this attempt
         // took must come back, or a half-open route admits no probe ever again.

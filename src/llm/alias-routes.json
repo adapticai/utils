@@ -12,6 +12,7 @@
     "circuit_breaker": {
       "failure_threshold": 5,
       "cooldown_ms": 60000,
+      "capacity_cooldown_ms": 15000,
       "half_open_probes": 1
     }
   },

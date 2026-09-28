@@ -83,6 +83,28 @@ export interface ProviderLimits {
   /** Where a published limit was read from. Null while the basis is a conservative default. */
   readonly source?: string | null;
   readonly note?: string;
+  /**
+   * Per-model overrides, for a provider whose limits apply per model. An
+   * override replaces the provider's numbers for that model only and states its
+   * own provenance; it never applies to a provider scoped as a whole, where one
+   * guard covers every model and a per-model number would have nothing to bind.
+   */
+  readonly models?: Readonly<Record<string, ModelLimitOverride>>;
+}
+
+/**
+ * The numbers one model of a per-model provider runs at, where they differ
+ * from the provider's own. Carries its own basis and note, because a model
+ * held above its siblings is a separate decision with separate evidence.
+ */
+export interface ModelLimitOverride {
+  readonly basis: ProviderLimitBasis;
+  readonly requests_per_minute: number;
+  readonly requests_per_minute_basis?: ProviderLimitBasis;
+  readonly max_concurrent: number;
+  readonly acquire_timeout_ms: number;
+  readonly source?: string | null;
+  readonly note?: string;
 }
 
 /** The parsed limits config. */
@@ -96,18 +118,42 @@ interface LimitsConfig {
 const config = limitsConfig as unknown as LimitsConfig;
 
 /**
- * Resolve the limits that apply to a provider.
+ * Resolve the limits that apply to a provider, or to one of its models.
  *
  * An unregistered provider falls back to the conservative defaults rather than
  * to no limit at all. Treating "unknown" as "unlimited" would make every newly
  * onboarded provider the one most likely to be over-driven, which is exactly
  * backwards: a new provider is the one whose real ceiling is least understood.
  *
+ * A model with an override on a per-model provider runs at the override's
+ * numbers and provenance; every other model runs at the provider's. The
+ * override is ignored for a provider scoped as a whole, because that provider
+ * has one guard and a per-model number cannot be enforced on it.
+ *
  * @param provider The provider key.
+ * @param modelId The model, when the caller knows which one it addresses.
  * @returns Its limits.
  */
-export function limitsFor(provider: string): ProviderLimits {
-  return config.providers[provider] ?? config.defaults;
+export function limitsFor(provider: string, modelId?: string): ProviderLimits {
+  const limits = config.providers[provider] ?? config.defaults;
+  if (limits.scope !== "model" || modelId === undefined || modelId.length === 0) {
+    return limits;
+  }
+  const override = limits.models?.[modelId];
+  if (override === undefined) {
+    return limits;
+  }
+  const { models: _siblings, ...providerLimits } = limits;
+  return {
+    ...providerLimits,
+    basis: override.basis,
+    requests_per_minute: override.requests_per_minute,
+    requests_per_minute_basis: override.requests_per_minute_basis,
+    max_concurrent: override.max_concurrent,
+    acquire_timeout_ms: override.acquire_timeout_ms,
+    source: override.source ?? null,
+    note: override.note,
+  };
 }
 
 /** Every provider with a recorded limit, plus whether it is published or a default. */
@@ -372,7 +418,7 @@ const guardIdentities = new Map<string, GuardIdentity>();
 function rateLimiterFor(identity: GuardIdentity): TokenBucketRateLimiter {
   let limiter = rateLimiters.get(identity.key);
   if (limiter === undefined) {
-    const limits = limitsFor(identity.provider);
+    const limits = limitsFor(identity.provider, identity.modelId);
     limiter = new TokenBucketRateLimiter({
       maxTokens: limits.requests_per_minute,
       refillRate: limits.requests_per_minute / SECONDS_PER_MINUTE,
@@ -394,7 +440,10 @@ function rateLimiterFor(identity: GuardIdentity): TokenBucketRateLimiter {
 function concurrencyGateFor(identity: GuardIdentity): ConcurrencyGate {
   let gate = concurrencyGates.get(identity.key);
   if (gate === undefined) {
-    gate = new ConcurrencyGate(identity, limitsFor(identity.provider).max_concurrent);
+    gate = new ConcurrencyGate(
+      identity,
+      limitsFor(identity.provider, identity.modelId).max_concurrent,
+    );
     concurrencyGates.set(identity.key, gate);
     guardIdentities.set(identity.key, identity);
   }
@@ -430,8 +479,8 @@ export async function withProviderGuards<T>(
   maxWaitMs?: number,
   scope: GuardCallScope = {},
 ): Promise<T> {
-  const limits = limitsFor(provider);
   const identity = guardIdentity(provider, scope.modelId);
+  const limits = limitsFor(provider, identity.modelId);
   const waitBudgetMs =
     maxWaitMs === undefined
       ? limits.acquire_timeout_ms
@@ -482,7 +531,7 @@ export function guardSnapshots(): GuardSnapshot[] {
   return [...guardIdentities.values()]
     .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
     .map((identity) => {
-      const limits = limitsFor(identity.provider);
+      const limits = limitsFor(identity.provider, identity.modelId);
       const limiter = rateLimiters.get(identity.key);
       const gate = concurrencyGates.get(identity.key);
       return {

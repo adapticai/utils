@@ -100,6 +100,49 @@ function checkConfig() {
     }
   }
 
+  // A per-model override is a separate limit decision and carries the same
+  // burden of proof as a provider entry. It is only enforceable where the
+  // provider keeps one guard per model, and only meaningful for a model the
+  // route table actually sends to that provider.
+  for (const [providerName, entry] of Object.entries(limits.providers ?? {})) {
+    if (entry.models === undefined) {
+      continue;
+    }
+    if (entry.scope !== "model") {
+      failures.push(
+        `${providerName}: carries per-model overrides but its scope is not "model", so one provider-wide guard would ignore them`,
+      );
+    }
+    const routedModels = new Set();
+    for (const alias of Object.values(routes.aliases ?? {})) {
+      for (const route of alias.routes ?? []) {
+        if (route.provider === providerName && typeof route.model_id === "string") {
+          routedModels.add(route.model_id);
+        }
+      }
+    }
+    for (const [modelId, override] of Object.entries(entry.models)) {
+      const name = `${providerName}/${modelId}`;
+      if (override.basis !== "published" && override.basis !== "conservative-default") {
+        failures.push(`${name}: basis must be "published" or "conservative-default", got ${JSON.stringify(override.basis)}`);
+      }
+      if (override.basis === "published" && (typeof override.source !== "string" || override.source.length === 0)) {
+        failures.push(`${name}: claims a published ceiling but cites no source`);
+      }
+      for (const field of ["requests_per_minute", "max_concurrent", "acquire_timeout_ms"]) {
+        if (typeof override[field] !== "number" || override[field] < MIN_SENSIBLE_RPM) {
+          failures.push(`${name}: ${field} must be a positive number`);
+        }
+      }
+      if (typeof override.note !== "string" || override.note.length === 0) {
+        failures.push(`${name}: an override must say why this model runs at different numbers from its siblings`);
+      }
+      if (!routedModels.has(modelId)) {
+        failures.push(`${name}: overrides a model no route sends to ${providerName}, so it binds nothing`);
+      }
+    }
+  }
+
   // Every provider the router can reach must have a limit, or the first call to
   // a newly onboarded provider is the unbounded one.
   for (const providerName of Object.keys(routes.providers)) {

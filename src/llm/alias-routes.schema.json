@@ -42,6 +42,11 @@
           "properties": {
             "failure_threshold": { "type": "integer", "minimum": 1 },
             "cooldown_ms": { "type": "integer", "minimum": 1000 },
+            "capacity_cooldown_ms": {
+              "type": "integer",
+              "minimum": 1000,
+              "description": "Open window for a breaker tripped only by capacity signals (provider busy, 429, 503, 529, leg timeout). Shorter than cooldown_ms because a full provider sheds load it expects to take back within seconds; a run containing any hard failure keeps cooldown_ms."
+            },
             "half_open_probes": { "type": "integer", "minimum": 1 }
           }
         }

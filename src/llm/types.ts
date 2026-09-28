@@ -148,7 +148,13 @@ export interface LlmAliasDefinition {
 /** Circuit-breaker tuning shared by every route. */
 export interface LlmBreakerDefaults {
   readonly failure_threshold: number;
+  /** How long a breaker tripped by a run containing any hard failure stays open. */
   readonly cooldown_ms: number;
+  /**
+   * How long a breaker tripped only by capacity signals (provider busy, 429,
+   * 503, 529, leg timeout) stays open. Absent means `cooldown_ms`.
+   */
+  readonly capacity_cooldown_ms?: number;
   readonly half_open_probes: number;
 }
 
