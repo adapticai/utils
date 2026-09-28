@@ -20,7 +20,7 @@
  * @module llm/transports/gateway
  */
 
-import { parseStructuredContent } from "../structured-content";
+import { parseStructuredContentWithFence } from "../structured-content";
 import type {
   LlmTransport,
   LlmTransportRequest,
@@ -254,8 +254,10 @@ export function createGatewayTransport(
       // the count would report the attempt as free.
       const usage = readUsage(payload, request, response.headers);
 
+      const interpreted = interpretContent<T>(message?.content, request.responseFormat, usage);
       return {
-        response: interpretContent<T>(message?.content, request.responseFormat, usage),
+        response: interpreted.value,
+        fenceStripped: interpreted.fenceStripped,
         usage,
         tool_calls: Array.isArray(message?.tool_calls)
           ? (message.tool_calls as LlmTransportResponse<T>["tool_calls"])
@@ -299,23 +301,23 @@ function buildMessages(request: LlmTransportRequest): Record<string, unknown>[] 
  * Interpret the model's content according to the requested format.
  *
  * Text is returned as sent. A structured format is parsed under the strict
- * single-fence rule of {@link parseStructuredContent}; a structured answer that
+ * single-fence rule of {@link parseStructuredContentWithFence}; a structured answer that
  * does not parse is an error carrying what the provider billed for it, never an
  * empty object.
  *
  * @param content The raw content.
  * @param responseFormat The format the caller asked for.
  * @param usage What the provider billed for this answer.
- * @returns The interpreted value.
+ * @returns The interpreted value, and whether an enclosing fence was removed to read it.
  * @throws {LlmResponseFormatError} When a structured answer does not parse.
  */
 function interpretContent<T>(
   content: unknown,
   responseFormat: LlmTransportRequest["responseFormat"],
   usage: LlmUsageRecord,
-): T {
+): { value: T; fenceStripped: boolean } {
   if (responseFormat === "text") {
-    return (typeof content === "string" ? content : "") as unknown as T;
+    return { value: (typeof content === "string" ? content : "") as unknown as T, fenceStripped: false };
   }
-  return parseStructuredContent<T>(content, responseFormat, usage);
+  return parseStructuredContentWithFence<T>(content, responseFormat, usage);
 }

@@ -330,6 +330,9 @@ export async function callLLMByAlias<T = unknown>(
       tool_calls: outcome.response.tool_calls,
       servedBy: outcome.servedBy,
       servedModel: outcome.response.servedModel ?? null,
+      ...(outcome.response.fenceStripped === undefined
+        ? {}
+        : { fenceStripped: outcome.response.fenceStripped }),
       attempts: attemptLog,
       degraded: outcome.degraded,
       totalUsage: outcome.totalUsage,
@@ -379,6 +382,9 @@ export async function callLLMByAlias<T = unknown>(
     tool_calls: validated.response.tool_calls,
     servedBy: routing.servedBy,
     servedModel: validated.response.servedModel ?? null,
+    ...(validated.response.fenceStripped === undefined
+      ? {}
+      : { fenceStripped: validated.response.fenceStripped }),
     attempts: attemptLog,
     degraded: routing.degraded,
     totalUsage: validated.totalUsage,
