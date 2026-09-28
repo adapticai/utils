@@ -11,10 +11,13 @@
  * not content: the object inside it is the answer the model gave.
  *
  * So exactly ONE enclosing fence is removed before parsing, and nothing else is
- * forgiven. Prose before or after the fence, two fenced blocks, a fence that
- * never closes (a truncated answer), and a fence declaring another language all
- * still fail. Each of those is an answer whose meaning a parser would have to
- * guess, and a guessed object is a decision made on data no model produced.
+ * forgiven. The fence may carry any single-word language label (`json`,
+ * `jsonc`, `JSON`, or any `[A-Za-z0-9_-]+`) or none: the label is presentation
+ * too, and whether the body is JSON is decided by the parser, not the label.
+ * Prose before or after the fence, two fenced blocks, and a fence that never
+ * closes (a truncated answer) all still fail. Each of those is an answer whose
+ * meaning a parser would have to guess, and a guessed object is a decision made
+ * on data no model produced.
  *
  * Content that is not fenced is parsed exactly as it always was: JSON cannot
  * begin with a backtick, so every answer that parsed before this unwrapping
@@ -30,12 +33,13 @@ export type StructuredResponseFormat = Exclude<LlmResponseFormat, "text">;
 
 /**
  * One markdown fence enclosing the whole answer: an opening line of three
- * backticks, optionally labelled `json`, then the body, then three closing
- * backticks, with nothing but whitespace outside them. The body is anchored at
- * both ends, so an answer holding two fenced blocks captures the text between
- * them and fails to parse instead of yielding either block.
+ * backticks, optionally labelled with one `[A-Za-z0-9_-]+` word, then the body,
+ * then three closing backticks, with nothing but whitespace outside them. The
+ * body is anchored at both ends, so an answer holding two fenced blocks
+ * captures the text between them and fails to parse instead of yielding either
+ * block, and backticks inside a JSON string value stay part of the body.
  */
-const SINGLE_ENCLOSING_JSON_FENCE = /^\s*```(?:json)?[ \t]*\r?\n([\s\S]*?)\r?\n?[ \t]*```\s*$/i;
+const SINGLE_ENCLOSING_JSON_FENCE = /^\s*```[A-Za-z0-9_-]*[ \t]*\r?\n([\s\S]*?)\r?\n?[ \t]*```\s*$/;
 
 /**
  * Thrown when a provider answered a structured request with content that does
@@ -57,16 +61,25 @@ export class LlmResponseFormatError extends Error {
   public readonly fenced: boolean;
 
   /**
+   * The content exactly as the provider returned it, fence included. When a
+   * fence was removed the parser only saw the body, so this is the one place
+   * the original answer survives for an operator to inspect.
+   */
+  public readonly content: string;
+
+  /**
    * @param responseFormat The format the caller asked for.
    * @param usage What the provider billed for the answer.
    * @param fenced Whether one enclosing fence was removed before parsing.
    * @param cause The parser's own complaint.
+   * @param content The original content, before any fence was removed.
    */
   public constructor(
     responseFormat: "json" | "json_schema",
     usage: LlmUsageRecord,
     fenced: boolean,
     cause: unknown,
+    content = "",
   ) {
     super(
       `LLM returned content that is not valid JSON for a ${responseFormat} request` +
@@ -77,6 +90,7 @@ export class LlmResponseFormatError extends Error {
     this.responseFormat = responseFormat;
     this.usage = usage;
     this.fenced = fenced;
+    this.content = content;
   }
 }
 
@@ -89,6 +103,49 @@ export class LlmResponseFormatError extends Error {
 export function unwrapSingleJsonFence(text: string): string | null {
   const match = SINGLE_ENCLOSING_JSON_FENCE.exec(text);
   return match === null ? null : match[1];
+}
+
+/** A parsed structured answer, with whether an enclosing fence was removed to read it. */
+export interface ParsedStructuredContent<T> {
+  /** The parsed value. */
+  readonly value: T;
+  /** Whether one enclosing markdown fence was removed before parsing. */
+  readonly fenceStripped: boolean;
+}
+
+/**
+ * Parse a model's answer to a structured request, reporting whether a fence was removed.
+ *
+ * The same rule as {@link parseStructuredContent}; the flag lets a transport
+ * attribute the answer, so how often a leg needs its fence removed is visible
+ * in attempt telemetry rather than silently absorbed.
+ *
+ * @param content The raw content of the model's message.
+ * @param responseFormat The structured format the caller asked for.
+ * @param usage What the provider billed for this answer, carried on failure.
+ * @returns The parsed value and whether a fence was removed.
+ * @throws {LlmResponseFormatError} When the content is not JSON, fenced or not.
+ */
+export function parseStructuredContentWithFence<T>(
+  content: unknown,
+  responseFormat: StructuredResponseFormat,
+  usage: LlmUsageRecord,
+): ParsedStructuredContent<T> {
+  const text = typeof content === "string" ? content : "";
+  const fencedBody = unwrapSingleJsonFence(text);
+  let value: T;
+  try {
+    value = JSON.parse(fencedBody ?? text) as T;
+  } catch (error) {
+    throw new LlmResponseFormatError(
+      typeof responseFormat === "string" ? responseFormat : "json_schema",
+      usage,
+      fencedBody !== null,
+      error,
+      text,
+    );
+  }
+  return { value, fenceStripped: fencedBody !== null };
 }
 
 /**
@@ -109,16 +166,5 @@ export function parseStructuredContent<T>(
   responseFormat: StructuredResponseFormat,
   usage: LlmUsageRecord,
 ): T {
-  const text = typeof content === "string" ? content : "";
-  const fencedBody = unwrapSingleJsonFence(text);
-  try {
-    return JSON.parse(fencedBody ?? text) as T;
-  } catch (error) {
-    throw new LlmResponseFormatError(
-      typeof responseFormat === "string" ? responseFormat : "json_schema",
-      usage,
-      fencedBody !== null,
-      error,
-    );
-  }
+  return parseStructuredContentWithFence<T>(content, responseFormat, usage).value;
 }

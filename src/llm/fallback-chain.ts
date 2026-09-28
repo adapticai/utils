@@ -546,6 +546,7 @@ export async function executeChain<T>(
         durationMs: now() - startedAt,
         budgetMs,
         servedModel: response.servedModel ?? null,
+        ...(response.fenceStripped === undefined ? {} : { fenceStripped: response.fenceStripped }),
         usage: response.usage,
       };
       attempts.push(record);

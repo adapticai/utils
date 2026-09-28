@@ -242,6 +242,12 @@ export interface LlmTransportResponse<T> {
   readonly servedModel?: string | null;
   /** The proxy's deployment id for the answer (`x-litellm-model-id`), or `null`. */
   readonly servedDeploymentId?: string | null;
+  /**
+   * Whether the structured answer arrived inside one enclosing markdown fence
+   * that was removed before parsing. Absent when the transport does not parse
+   * the answer itself (the degraded direct path).
+   */
+  readonly fenceStripped?: boolean;
 }
 
 /** What the caller receives, with the routing decision attached for attribution. */
@@ -277,6 +283,8 @@ export interface AliasAttemptRecord {
   readonly budgetMs?: number;
   /** Provider-reported serving model of an answered leg; `null` when unreported. */
   readonly servedModel?: string | null;
+  /** On an answered leg, whether one enclosing markdown fence was removed to parse it. */
+  readonly fenceStripped?: boolean;
   readonly reason?: string;
   readonly usage?: LlmUsageRecord;
 }
