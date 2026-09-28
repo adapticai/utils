@@ -50,6 +50,7 @@ export {
 export type {
   GuardCallScope,
   GuardSnapshot,
+  ModelLimitOverride,
   ProviderLimitBasis,
   ProviderLimitScope,
   ProviderLimits,
@@ -59,7 +60,7 @@ export { LlmResponseFormatError } from "./structured-content";
 export type { StructuredResponseFormat } from "./structured-content";
 
 export { CircuitBreakerRegistry } from "./circuit-breaker";
-export type { BreakerSnapshot, BreakerState } from "./circuit-breaker";
+export type { BreakerFailureKind, BreakerSnapshot, BreakerState } from "./circuit-breaker";
 
 export { SchemaRetryExhaustedError, buildRetryPrompt, callWithValidation } from "./schema-retry";
 export type { ValidatedOutcome } from "./schema-retry";
