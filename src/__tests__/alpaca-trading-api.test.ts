@@ -23,6 +23,7 @@ global.fetch = mockFetch;
 
 import { AlpacaTradingAPI } from "../alpaca-trading-api";
 import { getAlpacaBrokerErrorCode } from "../errors";
+import { TrailUnitConversionRefusedError } from "../alpaca/trading/trail-unit";
 import { AlpacaCredentials, AlpacaOrder } from "../types/alpaca-types";
 
 const testCredentials: AlpacaCredentials = {
@@ -348,5 +349,61 @@ describe("AlpacaTradingAPI broker-code preservation (makeRequest fetch seam)", (
 
     expect(thrown.message).toBe("Order order-1 is not cancelable");
     expect(getAlpacaBrokerErrorCode(thrown)).toBe(42210000);
+  });
+});
+
+/**
+ * The class percent-modify path reads the resting stop before its PATCH.
+ * Alpaca reads the replace `trail` in that order's unit, so a percent sent to a
+ * dollar-trail order is refused with no PATCH, and a percent order is PATCHed
+ * byte-identically.
+ */
+describe("AlpacaTradingAPI.updateTrailingStop replace-unit guard", () => {
+  let api: AlpacaTradingAPI;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    api = new AlpacaTradingAPI(testCredentials);
+  });
+
+  it("refuses a percent modify on a dollar-trail order without PATCHing", async () => {
+    const dollarStop = {
+      id: "ts-d",
+      symbol: "AAPL",
+      type: "trailing_stop",
+      trail_percent: null,
+      trail_price: "4.50",
+      status: "new",
+    } as unknown as AlpacaOrder;
+    mockFetch.mockResolvedValueOnce(jsonResponse([dollarStop])); // GET /orders
+
+    const thrown = await api.updateTrailingStop("AAPL", 2.3).then(
+      () => null,
+      (e: unknown) => e,
+    );
+
+    expect(thrown).toBeInstanceOf(TrailUnitConversionRefusedError);
+    expect((thrown as TrailUnitConversionRefusedError).reason).toBe("percent_on_price_order");
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("no-op: PATCHes a percent-trail order with the unchanged percent", async () => {
+    const pctStop = {
+      id: "ts-p",
+      symbol: "AAPL",
+      type: "trailing_stop",
+      trail_percent: "2.0",
+      trail_price: null,
+      status: "new",
+    } as unknown as AlpacaOrder;
+    mockFetch
+      .mockResolvedValueOnce(jsonResponse([pctStop]))
+      .mockResolvedValueOnce(jsonResponse({ id: "ts-p2", replaces: "ts-p" }));
+
+    await api.updateTrailingStop("AAPL", 1.5);
+
+    const patch = mockFetch.mock.calls[1] as [string, { method: string; body: string }];
+    expect(patch[1].method).toBe("PATCH");
+    expect(JSON.parse(patch[1].body)).toEqual({ trail: "1.5" });
   });
 });

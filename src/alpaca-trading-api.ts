@@ -39,6 +39,7 @@ import {
 } from "./errors";
 import { isTransientNetworkError } from "./utils/retry";
 import { createTimeoutSignal, DEFAULT_TIMEOUTS } from "./http-timeout";
+import { resolveReplaceTrail } from "./alpaca/trading/trail-unit";
 
 const limitPriceSlippagePercent100 = 0.1; // 0.1%
 
@@ -1261,6 +1262,12 @@ export class AlpacaTradingAPI {
     }
 
     const originalOrderId = trailingStopOrder.id;
+    // Alpaca reads the replace `trail` in the resting order's unit. A percent
+    // sent to a dollar-trail order would be stored as dollars, so it is refused
+    // (typed, no replace sent) and the resting dollar trail keeps protecting.
+    const resolvedTrail = resolveReplaceTrail(originalOrderId, trailingStopOrder, {
+      trailPercent: trailPercent100,
+    });
     this.log(
       `Updating trailing stop for ${symbol} from ${currentTrailPercent}% to ${trailPercent100}% (orderId=${originalOrderId})`,
       {
@@ -1273,7 +1280,7 @@ export class AlpacaTradingAPI {
         `/orders/${trailingStopOrder.id}`,
         "PATCH",
         {
-          trail: trailPercent100.toString(),
+          trail: resolvedTrail.trail,
         },
       );
       // Log the replacement: Alpaca replaces orders on PATCH, so new ID is returned

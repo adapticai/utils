@@ -22,16 +22,12 @@ import {
   TimeInForce,
   AlpacaPosition,
 } from "../../types/alpaca-types";
+import { ALPACA_MAX_TRAIL_PERCENT } from "./trail-limits";
+import { resolveReplaceTrail } from "./trail-unit";
 
 const LOG_SOURCE = "TrailingStops";
 
-/**
- * Alpaca's hard upper limit for `trail_percent` on trailing-stop orders.
- * Submissions exceeding this value are rejected with HTTP 422 / code 42210000
- * ("trail_percent must be <= 25"). See:
- * https://docs.alpaca.markets/reference/postorder
- */
-export const ALPACA_MAX_TRAIL_PERCENT = 25;
+export { ALPACA_MAX_TRAIL_PERCENT } from "./trail-limits";
 
 /**
  * Internal logging helper with consistent source
@@ -245,23 +241,42 @@ export async function createTrailingStop(
 }
 
 /**
- * Update an existing trailing stop order
+ * Update the trail distance of an existing trailing stop order.
  *
- * You can update the trail_percent or trail_price of an existing order.
- * Note: Alpaca uses 'trail' parameter for replacements (works for both percent and price).
+ * ## Unit contract
+ *
+ * Alpaca's replace takes a single unitless `trail` field and reads it in the
+ * unit of the ORIGINAL order; a replace cannot change the unit. This function
+ * therefore reads the resting order first and resolves the request against its
+ * unit ({@link resolveReplaceTrail}):
+ *
+ * - `trailPrice` on a dollar-trail order is sent as dollars, unchanged.
+ * - `trailPrice` on a percent-trail order is converted to a percent against
+ *   `max(hwm, stop_price)`, which is at or above the live price on both sides,
+ *   so the resulting stop is at or tighter than `live ∓ trailPrice`. The
+ *   percent is rounded down to hundredths (tighter).
+ * - `trailPercent` on a percent-trail order is sent unchanged.
+ * - `trailPercent` on a dollar-trail order is refused.
+ *
+ * A refusal throws {@link TrailUnitConversionRefusedError} and sends no
+ * replace, so the resting stop keeps protecting. The unit is never guessed and
+ * the conversion reference is never defaulted.
  *
  * @param client - AlpacaClient instance
  * @param orderId - The ID of the order to update
- * @param updates - New trail parameters (specify one of trailPercent or trailPrice)
- * @returns The updated order
- * @throws {Error} If no update parameters provided or update fails
+ * @param updates - New trail parameters (specify exactly one of trailPercent or trailPrice)
+ * @returns The replacement order
+ * @throws {Error} If no/both update parameters are given, or a value is not positive
+ * @throws {TrailUnitConversionRefusedError} If the request cannot be expressed
+ *   in the resting order's unit
+ * @throws {AlpacaApiError} If the order read or the replace fails at the broker
  *
  * @example
  * ```typescript
- * // Tighten trailing stop to 1.5%
+ * // Tighten a percent trailing stop to 1.5%
  * await updateTrailingStop(client, 'order-id-123', { trailPercent: 1.5 });
  *
- * // Change to $3 trail
+ * // Pin a $3 trail distance (converted when the order trails in percent)
  * await updateTrailingStop(client, 'order-id-123', { trailPrice: 3.00 });
  * ```
  */
@@ -296,23 +311,51 @@ export async function updateTrailingStop(
   }
 
   const sdk = client.getSDK();
-  const updateDescription = updates.trailPercent
-    ? `${updates.trailPercent}%`
-    : `$${updates.trailPrice?.toFixed(2)}`;
+  const requested =
+    updates.trailPercent !== undefined
+      ? { trailPercent: updates.trailPercent }
+      : { trailPrice: updates.trailPrice as number };
+  const updateDescription =
+    "trailPercent" in requested
+      ? `${requested.trailPercent}%`
+      : `$${requested.trailPrice.toFixed(2)}`;
 
   log(`Updating trailing stop ${orderId} to trail: ${updateDescription}`, {
     type: "info",
   });
 
+  let resting: AlpacaOrder;
   try {
-    const replaceParams: Record<string, string> = {};
+    resting = (await sdk.getOrder(orderId)) as AlpacaOrder;
+  } catch (error) {
+    const err = error as Error;
+    log(`Trailing stop update aborted for ${orderId}: order read failed: ${err.message}`, {
+      type: "error",
+    });
+    throw enrichAlpacaError(
+      new Error(`Failed to read trailing stop ${orderId} before update: ${err.message}`),
+      error,
+    );
+  }
 
-    // Alpaca's replaceOrder uses 'trail' for both percent and price updates
-    if (updates.trailPercent !== undefined) {
-      replaceParams.trail = updates.trailPercent.toString();
-    } else if (updates.trailPrice !== undefined) {
-      replaceParams.trail = updates.trailPrice.toString();
-    }
+  let resolved: ReturnType<typeof resolveReplaceTrail>;
+  try {
+    resolved = resolveReplaceTrail(orderId, resting, requested);
+  } catch (refusal) {
+    log(`Trailing stop update refused for ${orderId}: ${(refusal as Error).message}`, {
+      type: "warn",
+    });
+    throw refusal;
+  }
+  if (resolved.referencePrice !== null) {
+    log(
+      `Trailing stop ${orderId}: ${updateDescription} on percent order → ${resolved.trail}% (ref ${resolved.referencePrice})`,
+      { type: "info" },
+    );
+  }
+
+  try {
+    const replaceParams: Record<string, string> = { trail: resolved.trail };
 
     const order = await sdk.replaceOrder(orderId, replaceParams);
 
