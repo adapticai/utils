@@ -70,15 +70,21 @@ jobs:
         run: |
           PACKAGE_NAME=$(jq -r .name package.json)
           STABLE_VERSION=$(npm view "$PACKAGE_NAME" dist-tags.stable 2>/dev/null || echo "")
+          # The next version is one past the HIGHEST 0.0.x ever published, not
+          # past the stable tag alone: a 0.0.x published without moving the tag
+          # would otherwise make this job re-derive a version that already
+          # exists, and npm refuses it with a duplicate-version 403.
+          HIGHEST_PATCH=$(npm view "$PACKAGE_NAME" versions --json 2>/dev/null \
+            | jq -r '[if type == "array" then .[] else . end | select(startswith("0.0.")) | split(".")[2] | tonumber] | max // empty')
 
-          if [ -z "$STABLE_VERSION" ]; then
+          if [ -z "$STABLE_VERSION" ] && [ -z "$HIGHEST_PATCH" ]; then
             NEW_VERSION="0.0.900"
-            echo "No existing stable release found, starting at $NEW_VERSION"
+            echo "No existing 0.0.x release found, starting at $NEW_VERSION"
           else
-            PATCH=$(echo "$STABLE_VERSION" | cut -d'.' -f3)
-            NEW_PATCH=$((PATCH + 1))
-            NEW_VERSION="0.0.$NEW_PATCH"
-            echo "Latest stable version is $STABLE_VERSION, bumping to $NEW_VERSION"
+            STABLE_PATCH=$(echo "${STABLE_VERSION:-0.0.0}" | cut -d'.' -f3)
+            BASE_PATCH=$(( ${HIGHEST_PATCH:-0} > STABLE_PATCH ? ${HIGHEST_PATCH:-0} : STABLE_PATCH ))
+            NEW_VERSION="0.0.$((BASE_PATCH + 1))"
+            echo "Stable tag $STABLE_VERSION, highest published 0.0.$BASE_PATCH, bumping to $NEW_VERSION"
           fi
 
           echo "new_version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
