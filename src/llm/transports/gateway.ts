@@ -10,8 +10,11 @@
  * gateway by its own model name, so the gateway serves one deployment per leg
  * and needs no fallback of its own. A proxy-side fallback inside a leg would
  * spend the leg's budget on a model the chain did not choose and report the
- * answer as the leg's; the served model is read from the response body so such
- * a substitution stays visible while any remains configured.
+ * answer as the leg's; the served model is read from the gateway's own
+ * served-model header, else from the upstream body's `model`, so such a
+ * substitution stays visible while any remains configured. A body `model` that
+ * merely echoes the name the leg was addressed by is the gateway naming its
+ * model GROUP, not the model that answered, and is reported as unknown.
  *
  * The gateway key is read from the environment by NAME at call time and never
  * stored, logged, or included in an error (PD-2). Reading it per call rather
@@ -39,6 +42,16 @@ const RESPONSE_COST_HEADER = "x-litellm-response-cost";
 
 /** Response header naming the proxy deployment that served the call. */
 const DEPLOYMENT_ID_HEADER = "x-litellm-model-id";
+
+/**
+ * Response header in which the gateway reports the upstream model that
+ * actually answered. Takes precedence over the body's `model`, which a proxy
+ * may overwrite with the model-group name it was addressed by.
+ */
+export const SERVED_MODEL_HEADER = "x-adaptic-served-model";
+
+/** Response header in which the gateway reports the upstream provider that answered. */
+export const SERVED_PROVIDER_HEADER = "x-adaptic-served-provider";
 
 /** Configuration for the gateway transport. */
 export interface GatewayTransportConfig {
@@ -245,6 +258,7 @@ export function createGatewayTransport(
       }
 
       const payload = (await response.json()) as Record<string, unknown>;
+      const addressedAs = body.model;
       const choices = payload.choices as
         | { message?: { content?: unknown; tool_calls?: unknown } }[]
         | undefined;
@@ -260,13 +274,40 @@ export function createGatewayTransport(
         tool_calls: Array.isArray(message?.tool_calls)
           ? (message.tool_calls as LlmTransportResponse<T>["tool_calls"])
           : undefined,
-        // The model the provider says answered, which a proxy-side fallback can
-        // make differ from the leg's route model; unreported stays null.
-        servedModel: nonEmptyOrNull(payload.model),
+        // The model that answered, which a proxy-side fallback can make differ
+        // from the leg's route model; unreported (or only the group echo) stays null.
+        servedModel: servedModelOf(response.headers, payload.model, addressedAs),
         servedDeploymentId: nonEmptyOrNull(response.headers?.get(DEPLOYMENT_ID_HEADER)),
+        servedProvider: nonEmptyOrNull(response.headers?.get(SERVED_PROVIDER_HEADER)),
       };
     },
   };
+}
+
+/**
+ * The model that answered, as far as the gateway says.
+ *
+ * The gateway's served-model header is authoritative when present. Otherwise
+ * the body's `model` is used — unless it equals the name the leg was addressed
+ * by, which is the proxy echoing its model group rather than naming the
+ * upstream model, and would otherwise read as a confirmed same-model answer.
+ *
+ * @param headers The response headers.
+ * @param bodyModel The body's `model` field.
+ * @param addressedAs The gateway model name the leg was sent to.
+ * @returns The served model, or null when the gateway did not say.
+ */
+export function servedModelOf(
+  headers: Headers | undefined,
+  bodyModel: unknown,
+  addressedAs: string,
+): string | null {
+  const fromHeader = nonEmptyOrNull(headers?.get(SERVED_MODEL_HEADER));
+  if (fromHeader !== null) {
+    return fromHeader;
+  }
+  const fromBody = nonEmptyOrNull(bodyModel);
+  return fromBody === null || fromBody === addressedAs ? null : fromBody;
 }
 
 /**

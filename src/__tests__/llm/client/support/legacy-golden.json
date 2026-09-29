@@ -1,0 +1,194 @@
+{
+  "primary answers": {
+    "calls": [
+      "llm.extract#primary"
+    ],
+    "servedBy": "llm.extract#primary",
+    "threw": null,
+    "attempts": [
+      {
+        "routeKey": "llm.extract#primary",
+        "role": "primary",
+        "provider": "open-primary",
+        "modelId": "model-primary",
+        "outcome": "ok",
+        "durationMs": 0,
+        "budgetMs": 1000
+      }
+    ]
+  },
+  "primary times out, secondary answers": {
+    "calls": [
+      "llm.extract#primary",
+      "llm.extract#secondary"
+    ],
+    "servedBy": "llm.extract#secondary",
+    "threw": null,
+    "attempts": [
+      {
+        "routeKey": "llm.extract#primary",
+        "role": "primary",
+        "provider": "open-primary",
+        "modelId": "model-primary",
+        "outcome": "timeout",
+        "durationMs": 1000,
+        "budgetMs": 1000,
+        "reason": "route llm.extract#primary exceeded its 1000 ms budget"
+      },
+      {
+        "routeKey": "llm.extract#secondary",
+        "role": "secondary",
+        "provider": "aggregator-secondary",
+        "modelId": "model-secondary",
+        "outcome": "ok",
+        "durationMs": 0,
+        "budgetMs": 1000
+      }
+    ]
+  },
+  "primary relays an outage, secondary malformed, incumbent answers": {
+    "calls": [
+      "llm.extract#primary",
+      "llm.extract#secondary",
+      "llm.extract#closed_incumbent"
+    ],
+    "servedBy": "llm.extract#closed_incumbent",
+    "threw": null,
+    "attempts": [
+      {
+        "routeKey": "llm.extract#primary",
+        "role": "primary",
+        "provider": "open-primary",
+        "modelId": "model-primary",
+        "outcome": "error",
+        "durationMs": 0,
+        "budgetMs": 1000,
+        "reason": "LLM gateway returned 502: upstream down"
+      },
+      {
+        "routeKey": "llm.extract#secondary",
+        "role": "secondary",
+        "provider": "aggregator-secondary",
+        "modelId": "model-secondary",
+        "outcome": "error",
+        "durationMs": 0,
+        "budgetMs": 1000,
+        "reason": "LLM gateway returned 400: bad request"
+      },
+      {
+        "routeKey": "llm.extract#closed_incumbent",
+        "role": "closed_incumbent",
+        "provider": "closed-incumbent",
+        "modelId": "model-closed_incumbent",
+        "outcome": "ok",
+        "durationMs": 0,
+        "budgetMs": 1000
+      }
+    ]
+  },
+  "every leg times out": {
+    "calls": [
+      "llm.extract#primary",
+      "llm.extract#secondary",
+      "llm.extract#closed_incumbent"
+    ],
+    "servedBy": null,
+    "threw": "ChainExhaustedError",
+    "attempts": [
+      {
+        "routeKey": "llm.extract#primary",
+        "role": "primary",
+        "provider": "open-primary",
+        "modelId": "model-primary",
+        "outcome": "timeout",
+        "durationMs": 1000,
+        "budgetMs": 1000,
+        "reason": "route llm.extract#primary exceeded its 1000 ms budget"
+      },
+      {
+        "routeKey": "llm.extract#secondary",
+        "role": "secondary",
+        "provider": "aggregator-secondary",
+        "modelId": "model-secondary",
+        "outcome": "timeout",
+        "durationMs": 1000,
+        "budgetMs": 1000,
+        "reason": "route llm.extract#secondary exceeded its 1000 ms budget"
+      },
+      {
+        "routeKey": "llm.extract#closed_incumbent",
+        "role": "closed_incumbent",
+        "provider": "closed-incumbent",
+        "modelId": "model-closed_incumbent",
+        "outcome": "timeout",
+        "durationMs": 1000,
+        "budgetMs": 1000,
+        "reason": "route llm.extract#closed_incumbent exceeded its 1000 ms budget"
+      }
+    ]
+  },
+  "deadline shorter than one leg": {
+    "calls": [
+      "llm.extract#primary"
+    ],
+    "servedBy": null,
+    "threw": "ChainExhaustedError",
+    "attempts": [
+      {
+        "routeKey": "llm.extract#primary",
+        "role": "primary",
+        "provider": "open-primary",
+        "modelId": "model-primary",
+        "outcome": "timeout",
+        "durationMs": 500,
+        "budgetMs": 500,
+        "reason": "route llm.extract#primary exceeded its 500 ms budget"
+      },
+      {
+        "routeKey": "llm.extract#secondary",
+        "role": "secondary",
+        "provider": "aggregator-secondary",
+        "modelId": "model-secondary",
+        "outcome": "skipped",
+        "durationMs": 0,
+        "reason": "caller deadline exhausted before this leg"
+      },
+      {
+        "routeKey": "llm.extract#closed_incumbent",
+        "role": "closed_incumbent",
+        "provider": "closed-incumbent",
+        "modelId": "model-closed_incumbent",
+        "outcome": "skipped",
+        "durationMs": 0,
+        "reason": "caller deadline exhausted before this leg"
+      }
+    ]
+  },
+  "primary breaker already open": {
+    "calls": [
+      "llm.extract#secondary"
+    ],
+    "servedBy": "llm.extract#secondary",
+    "threw": null,
+    "attempts": [
+      {
+        "routeKey": "llm.extract#primary",
+        "role": "primary",
+        "provider": "open-primary",
+        "modelId": "model-primary",
+        "outcome": "breaker-open",
+        "durationMs": 0,
+        "reason": "circuit breaker is open"
+      },
+      {
+        "routeKey": "llm.extract#secondary",
+        "role": "secondary",
+        "provider": "aggregator-secondary",
+        "modelId": "model-secondary",
+        "outcome": "ok",
+        "durationMs": 0,
+        "budgetMs": 1000
+      }
+    ]
+  }
+}

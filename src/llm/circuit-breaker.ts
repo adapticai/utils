@@ -27,13 +27,25 @@
  * for the full `cooldown_ms`. Either way the route then admits a bounded number
  * of half-open probes, and one success closes it.
  *
+ * A route can also be opened by LATENCY (when `latency_trip` is armed): a
+ * provider whose answers arrive, but later than the latency class's objective
+ * in most recent windows, is failing a hot path without ever producing an
+ * error. A latency-opened breaker is not closed by an answer from an attempt
+ * that started before it opened, because such an answer is exactly the slow
+ * evidence that opened it.
+ *
+ * The half-open probe budget scales with how much traffic the route carried
+ * before it opened (`probe_fraction`), so a route that served forty calls at
+ * once is not re-tested by a single probe whose one slow answer decides it.
+ *
  * The clock is injected. Breaker behaviour is entirely about elapsed time, and
  * a test that must sleep to observe a cooldown is a test nobody runs.
  *
  * @module llm/circuit-breaker
  */
 
-import type { LlmBreakerDefaults } from "./types";
+import { nearestRank } from "./leg-latency-tracker";
+import type { LlmBreakerDefaults, LlmLatencyClass } from "./types";
 
 /** What the breaker will currently permit for a route. */
 export type BreakerState = "closed" | "open" | "half-open";
@@ -62,6 +74,10 @@ export interface BreakerSnapshot {
   readonly failureKind: BreakerFailureKind | null;
   /** How long the breaker stays open from `openedAtMs`, given that kind. */
   readonly cooldownMs: number;
+  /** Whether the current open was caused by latency rather than failures. */
+  readonly openedByLatency: boolean;
+  /** Half-open probes admitted at once. */
+  readonly probeBudget: number;
 }
 
 interface BreakerRecord {
@@ -70,6 +86,17 @@ interface BreakerRecord {
   probesInFlight: number;
   /** Whether any failure in the current run was hard rather than capacity. */
   runHasHardFailure: boolean;
+  /** Whether the current open was caused by the latency trip. */
+  openedByLatency: boolean;
+  /** Peak concurrent attempts observed before the breaker last opened. */
+  concurrencyAtOpen: number;
+}
+
+/** Latency-trip state, kept apart from the failure record so a success does not erase it. */
+interface LatencyRecord {
+  samples: number[];
+  /** Whether each recent completed window exceeded the objective, oldest first. */
+  verdicts: boolean[];
 }
 
 /**
@@ -81,6 +108,8 @@ function freshRecord(): BreakerRecord {
     openedAtMs: null,
     probesInFlight: 0,
     runHasHardFailure: false,
+    openedByLatency: false,
+    concurrencyAtOpen: 0,
   };
 }
 
@@ -89,6 +118,14 @@ function freshRecord(): BreakerRecord {
  */
 export class CircuitBreakerRegistry {
   private readonly records = new Map<string, BreakerRecord>();
+
+  private readonly latency = new Map<string, LatencyRecord>();
+
+  /** Attempts currently in flight per route, for scaling the probe budget. */
+  private readonly inFlight = new Map<string, number>();
+
+  /** Peak of {@link inFlight} since the route last opened. */
+  private readonly peakInFlight = new Map<string, number>();
 
   private readonly config: LlmBreakerDefaults;
 
@@ -163,7 +200,24 @@ export class CircuitBreakerRegistry {
       return false;
     }
     const record = this.recordFor(routeKey);
-    return record.probesInFlight < this.config.half_open_probes;
+    return record.probesInFlight < this.probeBudgetFor(record);
+  }
+
+  /**
+   * How many half-open probes a route admits at once.
+   *
+   * @param record The route's record.
+   * @returns The larger of the configured floor and the concurrency-scaled budget.
+   */
+  private probeBudgetFor(record: BreakerRecord): number {
+    const fraction = this.config.probe_fraction;
+    if (fraction === undefined || fraction <= 0) {
+      return this.config.half_open_probes;
+    }
+    return Math.max(
+      this.config.half_open_probes,
+      Math.ceil(fraction * record.concurrencyAtOpen),
+    );
   }
 
   /**
@@ -175,6 +229,9 @@ export class CircuitBreakerRegistry {
    *   {@link onAttemptAbandoned}, or the slot is never returned.
    */
   public onAttemptStart(routeKey: string): boolean {
+    const inFlight = (this.inFlight.get(routeKey) ?? 0) + 1;
+    this.inFlight.set(routeKey, inFlight);
+    this.peakInFlight.set(routeKey, Math.max(this.peakInFlight.get(routeKey) ?? 0, inFlight));
     if (this.stateOf(routeKey) === "half-open") {
       this.recordFor(routeKey).probesInFlight += 1;
       return true;
@@ -204,6 +261,18 @@ export class CircuitBreakerRegistry {
   }
 
   /**
+   * Mark an attempt started with {@link onAttemptStart} as finished, whatever
+   * its outcome, so the in-flight count that scales the probe budget stays true.
+   *
+   * @param routeKey The route's stable key.
+   * @returns void
+   */
+  public onAttemptEnd(routeKey: string): void {
+    const inFlight = this.inFlight.get(routeKey) ?? 0;
+    this.inFlight.set(routeKey, Math.max(0, inFlight - 1));
+  }
+
+  /**
    * Record a success, closing the breaker.
    *
    * A single success closes it fully rather than decrementing the failure
@@ -211,11 +280,75 @@ export class CircuitBreakerRegistry {
    * working call answers it; requiring several would keep a recovered provider
    * excluded while the chain paid for slower legs.
    *
+   * The one exception is a breaker opened by latency: an answer from an
+   * attempt that started before it opened is the slow evidence that opened it,
+   * not evidence of recovery, and is ignored.
+   *
    * @param routeKey The route's stable key.
+   * @param startedAtMs When the answering attempt started, on the registry's clock.
    * @returns void
    */
-  public onSuccess(routeKey: string): void {
+  public onSuccess(routeKey: string, startedAtMs?: number): void {
+    const record = this.records.get(routeKey);
+    if (
+      record !== undefined &&
+      record.openedByLatency &&
+      record.openedAtMs !== null &&
+      startedAtMs !== undefined &&
+      startedAtMs < record.openedAtMs
+    ) {
+      return;
+    }
     this.records.set(routeKey, freshRecord());
+  }
+
+  /**
+   * Record how long an attempt that reached the provider took.
+   *
+   * Durations fill fixed-size windows; each full window is judged against the
+   * latency class's objective at the configured quantile, and the breaker opens
+   * when enough of the recent windows were over it. Does nothing unless the
+   * latency trip is armed.
+   *
+   * @param routeKey The route's stable key.
+   * @param durationMs The attempt's duration.
+   * @param latencyClass The alias's latency class, which selects the objective.
+   * @returns void
+   */
+  public onLatencySample(
+    routeKey: string,
+    durationMs: number,
+    latencyClass: LlmLatencyClass | undefined,
+  ): void {
+    const trip = this.config.latency_trip;
+    if (trip === undefined || !trip.enabled || latencyClass === undefined) {
+      return;
+    }
+    if (!Number.isFinite(durationMs) || durationMs < 0) {
+      return;
+    }
+    let state = this.latency.get(routeKey);
+    if (state === undefined) {
+      state = { samples: [], verdicts: [] };
+      this.latency.set(routeKey, state);
+    }
+    state.samples.push(durationMs);
+    if (state.samples.length < trip.window_size) {
+      return;
+    }
+    const sorted = [...state.samples].sort((a, b) => a - b);
+    state.samples = [];
+    state.verdicts.push(nearestRank(sorted, trip.quantile) > trip.slo_ms[latencyClass]);
+    while (state.verdicts.length > trip.of_windows) {
+      state.verdicts.shift();
+    }
+    const over = state.verdicts.filter(Boolean).length;
+    if (over >= trip.trip_windows && this.stateOf(routeKey) === "closed") {
+      const record = this.recordFor(routeKey);
+      this.open(routeKey, record);
+      record.openedByLatency = true;
+      state.verdicts = [];
+    }
   }
 
   /**
@@ -240,8 +373,25 @@ export class CircuitBreakerRegistry {
     }
 
     if (wasHalfOpen || record.consecutiveFailures >= this.config.failure_threshold) {
-      record.openedAtMs = this.now();
+      this.open(routeKey, record);
+      record.openedByLatency = false;
     }
+  }
+
+  /**
+   * Open a route, capturing the concurrency its probe budget scales with.
+   *
+   * @param routeKey The route's stable key.
+   * @param record Its record.
+   * @returns void
+   */
+  private open(routeKey: string, record: BreakerRecord): void {
+    record.openedAtMs = this.now();
+    record.concurrencyAtOpen = Math.max(
+      record.concurrencyAtOpen,
+      this.peakInFlight.get(routeKey) ?? 0,
+    );
+    this.peakInFlight.set(routeKey, this.inFlight.get(routeKey) ?? 0);
   }
 
   /**
@@ -265,6 +415,8 @@ export class CircuitBreakerRegistry {
             ? "hard"
             : "capacity",
       cooldownMs: this.cooldownFor(record),
+      openedByLatency: record.openedByLatency,
+      probeBudget: this.probeBudgetFor(record),
     };
   }
 
@@ -286,6 +438,9 @@ export class CircuitBreakerRegistry {
    */
   public reset(): void {
     this.records.clear();
+    this.latency.clear();
+    this.inFlight.clear();
+    this.peakInFlight.clear();
   }
 
   /**

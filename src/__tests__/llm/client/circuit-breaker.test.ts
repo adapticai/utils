@@ -313,3 +313,139 @@ describe("per-route circuit breaker", () => {
     expect(breakers.allows(shared)).toBe(true);
   });
 });
+
+describe("latency trip and concurrency-scaled probes", () => {
+  /** Objective the latency trip judges hot-path windows against. */
+  const SLO_MS = 1_000;
+
+  /** Attempts per latency window. */
+  const WINDOW = 5;
+
+  /** A latency comfortably over the objective, from a leg that still answers. */
+  const SLOW_MS = SLO_MS * 3;
+
+  /** A latency comfortably inside the objective. */
+  const FAST_MS = SLO_MS / 4;
+
+  /** Cooldown for these registries. */
+  const COOLDOWN_MS = 10_000;
+
+  /**
+   * A registry with the latency trip configured.
+   *
+   * @param enabled Whether the trip is armed.
+   * @param clock The injected clock.
+   * @returns The registry.
+   */
+  function latencyRegistry(enabled: boolean, clock: () => number): CircuitBreakerRegistry {
+    return new CircuitBreakerRegistry(
+      {
+        failure_threshold: 3,
+        cooldown_ms: COOLDOWN_MS,
+        capacity_cooldown_ms: COOLDOWN_MS,
+        half_open_probes: 1,
+        latency_trip: {
+          enabled,
+          slo_ms: { "hot-path": SLO_MS, background: SLO_MS, batch: SLO_MS },
+          quantile: 0.9,
+          window_size: WINDOW,
+          trip_windows: 2,
+          of_windows: 3,
+        },
+      },
+      clock,
+    );
+  }
+
+  /**
+   * Feed whole windows of one latency.
+   *
+   * @param breakers The registry.
+   * @param windows How many windows.
+   * @param durationMs The latency.
+   */
+  function feed(breakers: CircuitBreakerRegistry, windows: number, durationMs: number): void {
+    for (let sample = 0; sample < windows * WINDOW; sample += 1) {
+      breakers.onLatencySample("llm.fast#primary", durationMs, "hot-path");
+    }
+  }
+
+  it("opens a slow-but-successful leg once enough windows exceed the objective", () => {
+    const breakers = latencyRegistry(true, () => 0);
+    feed(breakers, 1, SLOW_MS);
+    expect(breakers.stateOf("llm.fast#primary")).toBe("closed");
+    feed(breakers, 1, SLOW_MS);
+    expect(breakers.stateOf("llm.fast#primary")).toBe("open");
+    expect(breakers.snapshot("llm.fast#primary").openedByLatency).toBe(true);
+  });
+
+  it("does not open on fast windows, nor when the trip is disarmed", () => {
+    const fast = latencyRegistry(true, () => 0);
+    feed(fast, 3, FAST_MS);
+    expect(fast.stateOf("llm.fast#primary")).toBe("closed");
+
+    const disarmed = latencyRegistry(false, () => 0);
+    feed(disarmed, 3, SLOW_MS);
+    expect(disarmed.stateOf("llm.fast#primary")).toBe("closed");
+  });
+
+  it("is not closed by a slow answer that started before it opened, but is by a later one", () => {
+    let nowMs = 1_000;
+    const breakers = latencyRegistry(true, () => nowMs);
+    feed(breakers, 2, SLOW_MS);
+    expect(breakers.stateOf("llm.fast#primary")).toBe("open");
+
+    breakers.onSuccess("llm.fast#primary", nowMs - SLOW_MS);
+    expect(breakers.stateOf("llm.fast#primary")).toBe("open");
+
+    nowMs += COOLDOWN_MS;
+    breakers.onSuccess("llm.fast#primary", nowMs);
+    expect(breakers.stateOf("llm.fast#primary")).toBe("closed");
+  });
+
+  it("scales half-open probes with the concurrency the route carried before it opened", () => {
+    let nowMs = 0;
+    const scaled = new CircuitBreakerRegistry(
+      {
+        failure_threshold: 1,
+        cooldown_ms: COOLDOWN_MS,
+        half_open_probes: 1,
+        probe_fraction: 0.5,
+      },
+      () => nowMs,
+    );
+    const key = "llm.fast#primary";
+    const concurrent = 6;
+    for (let index = 0; index < concurrent; index += 1) {
+      scaled.onAttemptStart(key);
+    }
+    scaled.onFailure(key, "capacity");
+    for (let index = 0; index < concurrent; index += 1) {
+      scaled.onAttemptEnd(key);
+    }
+    nowMs += COOLDOWN_MS;
+
+    expect(scaled.stateOf(key)).toBe("half-open");
+    expect(scaled.snapshot(key).probeBudget).toBe(concurrent / 2);
+    for (let probe = 0; probe < concurrent / 2; probe += 1) {
+      expect(scaled.allows(key)).toBe(true);
+      scaled.onAttemptStart(key);
+    }
+    expect(scaled.allows(key)).toBe(false);
+  });
+
+  it("keeps the configured probe floor when no fraction is set", () => {
+    let nowMs = 0;
+    const floor = new CircuitBreakerRegistry(
+      { failure_threshold: 1, cooldown_ms: COOLDOWN_MS, half_open_probes: 1 },
+      () => nowMs,
+    );
+    const key = "llm.fast#primary";
+    for (let index = 0; index < 6; index += 1) {
+      floor.onAttemptStart(key);
+    }
+    floor.onFailure(key, "capacity");
+    nowMs += COOLDOWN_MS;
+    expect(floor.snapshot(key).probeBudget).toBe(1);
+  });
+});

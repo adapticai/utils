@@ -505,6 +505,42 @@ export async function withProviderGuards<T>(
   }
 }
 
+/**
+ * Whether a provider guard has room for a DUPLICATE attempt above a reserve.
+ *
+ * A duplicate is a hedge: a second request for an answer another attempt is
+ * already fetching. It is only worth sending with capacity no first attempt
+ * needs, so it is admitted only when nobody is queued behind either bound and
+ * both the free concurrency (after the duplicate) and the rate tokens stay at
+ * or above the reserved fraction of the guard's ceilings. A provider that is
+ * already busy therefore never sees duplicates, which is when they would do
+ * the most harm.
+ *
+ * @param provider The provider key.
+ * @param modelId The model the duplicate would address.
+ * @param reserveFraction Fraction of each ceiling kept free, in [0, 1).
+ * @returns Whether the duplicate may start.
+ */
+export function hasDuplicateHeadroom(
+  provider: string,
+  modelId: string,
+  reserveFraction: number,
+): boolean {
+  const identity = guardIdentity(provider, modelId);
+  const limits = limitsFor(provider, identity.modelId);
+  const limiter = rateLimiterFor(identity);
+  const gate = concurrencyGateFor(identity);
+  if (limiter.getQueueLength() > 0 || gate.queueLength() > 0) {
+    return false;
+  }
+  const freeAfter = limits.max_concurrent - gate.inFlightCount() - 1;
+  const tokensAfter = limiter.getAvailableTokens() - TOKENS_PER_REQUEST;
+  return (
+    freeAfter >= Math.ceil(limits.max_concurrent * reserveFraction) &&
+    tokensAfter >= Math.ceil(limits.requests_per_minute * reserveFraction)
+  );
+}
+
 /** Observable guard state, for dashboards and tests. */
 export interface GuardSnapshot {
   /** The guard's identity: the provider, or `provider/model` for a per-model guard. */

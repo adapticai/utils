@@ -13,7 +13,33 @@
       "failure_threshold": 5,
       "cooldown_ms": 60000,
       "capacity_cooldown_ms": 15000,
-      "half_open_probes": 1
+      "half_open_probes": 1,
+      "probe_fraction": 0.1,
+      "latency_trip": {
+        "enabled": false,
+        "slo_ms": {
+          "hot-path": 20000,
+          "background": 60000,
+          "batch": 240000
+        },
+        "quantile": 0.9,
+        "window_size": 20,
+        "trip_windows": 3,
+        "of_windows": 5
+      }
+    },
+    "hedging": {
+      "max_same_model_hedges": 1,
+      "hedge_quantile": 0.9,
+      "timeout_quantile": 0.99,
+      "k_timeout": 3,
+      "attempt_timeout_floor_ms": 5000,
+      "max_attempt_share": 0.5,
+      "duplicate_headroom_reserve": 0.25,
+      "min_samples": 20,
+      "window_size": 200,
+      "sample_max_age_ms": 900000,
+      "prompt_token_buckets": [2000, 8000, 32000]
     }
   },
   "providers": {

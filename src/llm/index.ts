@@ -9,16 +9,31 @@
  * @module llm
  */
 
-export { callLLMByAlias, configureLlmClient, llmAliases, llmBreakers } from "./alias-client";
+export {
+  callLLMByAlias,
+  configureLlmClient,
+  llmAliases,
+  llmBreakers,
+  llmLatencyTracker,
+} from "./alias-client";
 
 export {
   ChainExhaustedError,
+  LlmDeadlineExceededError,
+  isSameReportedModel,
   legBudgetMs,
+  modelClassOf,
+  modelClassRelationOf,
   sumUsage,
 } from "./fallback-chain";
+export type { ChainExhaustionReason } from "./fallback-chain";
+
+export { LegLatencyTracker, estimatePromptTokens } from "./leg-latency-tracker";
+export type { LatencyTrackerConfig } from "./leg-latency-tracker";
 export type { AliasAttemptRecord } from "./types";
 
 export {
+  EQUIVALENT_SEPARATOR,
   NoServableRouteError,
   UnknownAliasError,
   closedIncumbentLeg,
@@ -28,6 +43,7 @@ export {
   resolveChain,
   routeKeyFor,
   routeTable,
+  tailLatencyViolations,
 } from "./route-table";
 export type { ResolvedChain, RouteExclusion } from "./route-table";
 
@@ -42,6 +58,7 @@ export {
 export {
   RateGuardTimeoutError,
   guardSnapshots,
+  hasDuplicateHeadroom,
   limitsFor,
   limitsInventory,
   resetProviderGuards,
@@ -78,7 +95,10 @@ export type { StreamChunk } from "./streaming";
 export {
   GatewayResponseError,
   GatewayUnreachableError,
+  SERVED_MODEL_HEADER,
+  SERVED_PROVIDER_HEADER,
   createGatewayTransport,
+  servedModelOf,
 } from "./transports/gateway";
 export type { GatewayTransportConfig } from "./transports/gateway";
 
@@ -101,7 +121,11 @@ export type {
   LlmAliasDefinition,
   LlmClientConfig,
   LlmCriticality,
+  LlmCrossModelPolicy,
+  LlmHedgingDefaults,
   LlmLatencyClass,
+  LlmLatencyTripDefaults,
+  LlmModelClassRelation,
   LlmModelIdStatus,
   LlmOpenItem,
   LlmPriceAnchor,
@@ -110,6 +134,7 @@ export type {
   LlmResponseFormat,
   LlmRoute,
   LlmRouteDefaults,
+  LlmRouteEquivalent,
   LlmRouteParams,
   LlmRouteRole,
   LlmRouteTable,

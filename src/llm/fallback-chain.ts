@@ -10,30 +10,45 @@
  * why the budget is enforced here — at the only place that knows both the
  * caller's deadline and how many legs are left to spend it on.
  *
+ * Each leg is first run as a group of SAME-MODEL attempts (see `hedge.ts`):
+ * hedged at the model's healthy p90, replaced after a measured timeout, and
+ * reaching the same model at another provider before the leg is given up.
+ * Only then does the walk move to the next leg — and a leg that serves a
+ * different model than the configured one runs only when the caller's
+ * cross-model policy allows it. With no latency evidence and no equivalent
+ * configured, each group is a single attempt with the leg's budget, which is
+ * the serial walk exactly.
+ *
  * Nothing here ever substitutes a value for an outcome. When every leg is
- * exhausted the caller gets a typed error naming each leg and why it failed,
- * because a default returned in place of an answer is a wrong answer that
- * nobody is told about.
+ * exhausted the caller gets a typed error naming each leg and why it failed —
+ * `LlmDeadlineExceededError` when the caller's deadline is what ran out,
+ * `ChainExhaustedError` with reason `cross_model_denied` when policy stopped
+ * the walk — because a default returned in place of an answer is a wrong
+ * answer that nobody is told about.
  *
  * @module llm/fallback-chain
  */
 
-import type { BreakerFailureKind, CircuitBreakerRegistry } from "./circuit-breaker";
-import {
-  ToolChoiceIgnoredError,
-  UnsupportedCapabilityError,
-  assertToolChoiceHonoured,
-} from "./param-matrix";
-import { RateGuardTimeoutError, withProviderGuards } from "./rate-guard";
-import { LlmResponseFormatError } from "./structured-content";
+import type { CircuitBreakerRegistry } from "./circuit-breaker";
+import { runSameModelGroup } from "./hedge";
+import type { AttemptFields, SameModelPolicy } from "./hedge";
+import { isAborted } from "./leg-attempt";
+import type { ChainLeg } from "./leg-attempt";
+import type { LegLatencyTracker } from "./leg-latency-tracker";
+import { estimatePromptTokens } from "./leg-latency-tracker";
+import { UnsupportedCapabilityError } from "./param-matrix";
 import type {
   AliasAttemptRecord,
-  LlmTransport,
+  LlmCrossModelPolicy,
+  LlmModelClassRelation,
   LlmTransportRequest,
   LlmTransportResponse,
   LlmUsageRecord,
   ResolvedRoute,
 } from "./types";
+
+export { isCapacitySignal } from "./leg-attempt";
+export type { ChainLeg } from "./leg-attempt";
 
 /** Zero-valued usage, used as the identity when summing across attempts. */
 const EMPTY_USAGE: LlmUsageRecord = {
@@ -43,15 +58,6 @@ const EMPTY_USAGE: LlmUsageRecord = {
   model: "none",
   cost: 0,
 };
-
-/** What one leg of the chain needs in order to run. */
-export interface ChainLeg {
-  readonly route: ResolvedRoute;
-  /** The transport that will carry this leg. */
-  readonly transport: LlmTransport;
-  /** Provider-normalised parameters, or the error that made this leg unusable. */
-  readonly params: Record<string, unknown> | UnsupportedCapabilityError;
-}
 
 /** Everything the executor needs for one call. */
 export interface ChainExecution {
@@ -78,8 +84,25 @@ export interface ChainExecution {
   readonly deadlineAtMs?: number;
   /** Clock, injected so elapsed time is observable in tests without waiting. */
   readonly now?: () => number;
-  /** Invoked once per leg after it settles, for metrics and shadow comparison. */
+  /** Invoked once per attempt after it settles, for metrics and shadow comparison. */
   readonly onAttempt?: (record: AliasAttemptRecord) => void;
+  /**
+   * Same-model controls. Absent: every leg is one attempt with its full
+   * budget, as in the serial chain.
+   */
+  readonly hedging?: SameModelPolicy;
+  /** Healthy-latency evidence the hedging controls read, and the chain feeds. */
+  readonly latency?: LegLatencyTracker;
+  /** Whether a duplicate same-provider attempt may start; absent means never. */
+  readonly admitDuplicate?: (route: ResolvedRoute, reserveFraction: number) => boolean;
+  /** Whether a different-model leg may run. Absent means `allow_record`. */
+  readonly crossModelPolicy?: LlmCrossModelPolicy;
+  /**
+   * The configured model's class. Absent means the first leg's; supplied when
+   * the legs are a subset of the chain (the degraded direct path), whose first
+   * leg is not the configured model.
+   */
+  readonly configuredModelClass?: string;
 }
 
 /** Result of walking a chain to a successful leg. */
@@ -88,7 +111,14 @@ export interface ChainOutcome<T> {
   readonly servedBy: ResolvedRoute;
   readonly attempts: readonly AliasAttemptRecord[];
   readonly totalUsage: LlmUsageRecord;
+  /** Whether the answer came from the configured model. */
+  readonly modelClassRelation: LlmModelClassRelation;
+  /** Whether the answering attempt was a same-model hedge. */
+  readonly hedged: boolean;
 }
+
+/** Why a chain ended without an answer. */
+export type ChainExhaustionReason = "exhausted" | "cross_model_denied" | "deadline_exceeded";
 
 /**
  * Thrown when every leg of a chain has been tried and none produced an answer.
@@ -109,14 +139,23 @@ export class ChainExhaustedError extends Error {
   public readonly totalUsage: LlmUsageRecord;
 
   /**
+   * Why the chain ended. `cross_model_denied`: the configured model's attempts
+   * were spent and policy forbade a different model. Callers map every reason
+   * to no decision; the reason says which remedy applies.
+   */
+  public readonly reason: ChainExhaustionReason;
+
+  /**
    * @param alias The alias.
    * @param attempts The attempt record.
    * @param totalUsage Usage spent across all attempts.
+   * @param reason Why the chain ended; defaults to plain exhaustion.
    */
   public constructor(
     alias: string,
     attempts: readonly AliasAttemptRecord[],
     totalUsage: LlmUsageRecord,
+    reason: ChainExhaustionReason = "exhausted",
   ) {
     const detail = attempts
       .map(
@@ -125,13 +164,60 @@ export class ChainExhaustedError extends Error {
           (attempt.reason === undefined ? "" : ` — ${attempt.reason}`),
       )
       .join("; ");
+    const why =
+      reason === "cross_model_denied"
+        ? " Different-model legs were denied by the caller's cross-model policy."
+        : reason === "deadline_exceeded"
+          ? " The caller's deadline ran out."
+          : "";
     super(
-      `LLM alias "${alias}" exhausted its fallback chain. Attempts: ${detail || "(no leg was servable)"}`,
+      `LLM alias "${alias}" exhausted its fallback chain.${why} Attempts: ${detail || "(no leg was servable)"}`,
     );
     this.name = "ChainExhaustedError";
     this.alias = alias;
     this.attempts = attempts;
     this.totalUsage = totalUsage;
+    this.reason = reason;
+  }
+}
+
+/**
+ * Thrown when the caller's deadline ran out before any leg answered.
+ *
+ * A subclass of {@link ChainExhaustedError}, so a consumer that already treats
+ * exhaustion as "no answer" keeps doing so, while one that needs to tell "the
+ * models failed" from "we ran out of time" can match this class — the two call
+ * for different remedies (a provider problem versus a budget problem), and
+ * both map to no decision, never to a default.
+ */
+export class LlmDeadlineExceededError extends ChainExhaustedError {
+  /** Discriminant for consumers that switch on shape rather than class. */
+  public readonly kind = "deadline_exceeded" as const;
+
+  /** The whole-call budget the chain started with, in milliseconds. */
+  public readonly deadlineMs: number;
+
+  /** The model class of the last attempt dispatched, or null when none was. */
+  public readonly lastModelClass: string | null;
+
+  /**
+   * @param alias The alias.
+   * @param attempts The attempt record.
+   * @param totalUsage Usage spent across all attempts.
+   * @param deadlineMs The budget the chain started with.
+   * @param lastModelClass The last dispatched attempt's model class.
+   */
+  public constructor(
+    alias: string,
+    attempts: readonly AliasAttemptRecord[],
+    totalUsage: LlmUsageRecord,
+    deadlineMs: number,
+    lastModelClass: string | null,
+  ) {
+    super(alias, attempts, totalUsage, "deadline_exceeded");
+    this.name = "LlmDeadlineExceededError";
+    this.deadlineMs = deadlineMs;
+    this.lastModelClass = lastModelClass;
   }
 }
 
@@ -210,251 +296,77 @@ export function legBudgetMs(
   return Math.min(routeBudgetMs, deadlineAtMs - nowMs);
 }
 
-/** Raised internally when a leg exceeds its budget. */
-class LegTimeoutError extends Error {
-  /**
-   * @param routeKey The leg that timed out.
-   * @param budgetMs Its budget in milliseconds.
-   */
-  public constructor(routeKey: string, budgetMs: number) {
-    super(`route ${routeKey} exceeded its ${budgetMs} ms budget`);
-    this.name = "LegTimeoutError";
-  }
+/**
+ * The model a leg serves, independent of which provider hosts it.
+ *
+ * @param route The leg's route.
+ * @returns Its model class.
+ */
+export function modelClassOf(route: ResolvedRoute): string {
+  return route.modelClass ?? route.modelId;
 }
 
 /**
- * Run one leg under a hard timeout, honouring the caller's own cancellation.
+ * Whether a provider-reported model names the model a route addressed.
  *
- * The timer is always cleared and the abort listener always removed, including
- * on the success path. A long-lived process that leaked one timer per LLM call
- * would accumulate them at exactly the rate it does useful work.
+ * Providers report with or without an organisation prefix and in their own
+ * case, so the comparison is case-insensitive and accepts one side being a
+ * `/`-suffix of the other.
  *
- * @param leg The leg to run.
- * @param params Normalised parameters for this leg.
- * @param execution The call context.
- * @param budgetMs The leg's budget: its route budget cut to the caller's deadline.
- * @returns The provider's answer.
+ * @param reported The provider's report.
+ * @param expected The route's model id.
+ * @returns Whether they name the same model.
  */
-async function runLeg<T>(
-  leg: ChainLeg,
-  params: Record<string, unknown>,
-  execution: ChainExecution,
-  budgetMs: number,
-): Promise<LlmTransportResponse<T>> {
-  const controller = new AbortController();
-
-  const timer = setTimeout(() => {
-    controller.abort(new LegTimeoutError(leg.route.routeKey, budgetMs));
-  }, budgetMs);
-
-  const forwardAbort = (): void => {
-    controller.abort(execution.callerSignal?.reason);
-  };
-  if (execution.callerSignal !== undefined) {
-    if (execution.callerSignal.aborted) {
-      forwardAbort();
-    } else {
-      execution.callerSignal.addEventListener("abort", forwardAbort, { once: true });
-    }
-  }
-
-  try {
-    // The guards wrap the transport rather than the whole leg, so the per-leg
-    // timeout above still bounds the total wait: a caller queued behind the
-    // rate limiter is spending its budget just as surely as one waiting on the
-    // provider, and only one clock should govern both. The leg's own signal is
-    // handed to the guard as well, so a leg whose budget or caller is gone
-    // leaves the queue at once instead of holding its place in it.
-    const response = await withProviderGuards(
-      leg.route.providerName,
-      () =>
-        leg.transport.execute<T>({
-          route: leg.route,
-          content: execution.content,
-          responseFormat: execution.responseFormat,
-          params,
-          developerPrompt: execution.developerPrompt,
-          context: execution.context,
-          signal: controller.signal,
-          correlationId: execution.correlationId,
-        }),
-      budgetMs,
-      { modelId: leg.route.modelId, signal: controller.signal },
-    );
-    assertToolChoiceHonoured(leg.route, params, response);
-    return response;
-  } finally {
-    clearTimeout(timer);
-    execution.callerSignal?.removeEventListener("abort", forwardAbort);
-  }
+export function isSameReportedModel(reported: string, expected: string): boolean {
+  const a = reported.trim().toLowerCase();
+  const b = expected.trim().toLowerCase();
+  return a === b || a.endsWith(`/${b}`) || b.endsWith(`/${a}`);
 }
 
 /**
- * HTTP statuses a provider (or the gateway relaying it) uses to say it is full
- * rather than that the request or the route is wrong: request timeout, too
- * early, too many requests, service unavailable, and Anthropic's overloaded.
- */
-const CAPACITY_STATUSES: ReadonlySet<number> = new Set([408, 425, 429, 503, 529]);
-
-/**
- * Wording providers use for a capacity refusal when the status is lost on the
- * way (a relayed body, a client library's own error). DeepInfra's is
- * "Model busy, retry later"; Anthropic's is "Overloaded".
- */
-const CAPACITY_WORDING =
-  /\b(busy|overloaded|capacity|rate[ -]?limit(ed)?|too many requests)\b/i;
-
-/**
- * Whether a failure is the provider saying it is full rather than broken.
+ * How an attempt's model relates to the configured one.
  *
- * Read by shape rather than by class, because the same signal reaches the
- * chain from more than one transport and not every transport's error class is
- * importable here.
+ * A leg addressed to a different model class is `different` whatever it
+ * reported. A leg addressed to the configured class is `same` only when it
+ * answered and the provider named the expected model; `different` when the
+ * provider named another; `unknown` when it answered without saying. An
+ * attempt that never answered carries the relation of the model it was
+ * addressed to.
  *
- * @param error The thrown value.
- * @param reason Its message.
- * @returns Whether it is a capacity signal.
+ * @param route The attempt's route.
+ * @param configuredClass The configured model class.
+ * @param fields What the attempt recorded.
+ * @returns The relation.
  */
-export function isCapacitySignal(error: unknown, reason: string): boolean {
-  if (typeof error === "object" && error !== null) {
-    const status = (error as { status?: unknown }).status;
-    if (typeof status === "number" && CAPACITY_STATUSES.has(status)) {
-      return true;
-    }
+export function modelClassRelationOf(
+  route: ResolvedRoute,
+  configuredClass: string,
+  fields: Pick<AttemptFields, "outcome" | "servedModel">,
+): LlmModelClassRelation {
+  if (modelClassOf(route) !== configuredClass) {
+    return "different";
   }
-  return CAPACITY_WORDING.test(reason);
-}
-
-/** What the chain learned from one failed leg. */
-interface LegFailure {
-  readonly outcome: AliasAttemptRecord["outcome"];
-  readonly reason: string;
-  readonly countsAgainstHealth: boolean;
-  /** Which cooldown the failure earns, when it counts against health. */
-  readonly failureKind: BreakerFailureKind;
+  if (fields.outcome !== "ok") {
+    return "same";
+  }
+  if (fields.servedModel === undefined || fields.servedModel === null) {
+    return "unknown";
+  }
+  return isSameReportedModel(fields.servedModel, route.modelId) ? "same" : "different";
 }
 
 /**
- * Classify why a leg failed.
+ * The prompt size the latency evidence is bucketed by.
  *
- * The distinction matters to the breaker: a timeout and a 5xx are evidence the
- * provider is unhealthy, while the caller cancelling is not. Counting a
- * cancellation as a provider failure would let a burst of user-cancelled
- * requests open the breaker on a perfectly healthy route.
- *
- * Among failures that do count, a capacity signal (the provider said it is
- * busy, or the leg ran out its budget waiting on it) is told apart from a hard
- * failure so the breaker can re-admit a busy route sooner than a broken one. A
- * timeout is read as capacity: on a reachable provider it is what a full queue
- * looks like from outside, and a provider that is actually down still costs no
- * more than one probe per capacity cooldown.
- *
- * @param error The thrown value.
- * @param callerSignal The caller's cancellation signal, if any.
- * @returns The outcome and whether it counts against route health.
+ * @param execution The call.
+ * @returns Estimated prompt tokens, or null.
  */
-function classify(
-  error: unknown,
-  callerSignal: AbortSignal | undefined,
-): LegFailure {
-  if (callerSignal !== undefined && callerSignal.aborted) {
-    return {
-      outcome: "skipped",
-      reason: "caller cancelled",
-      countsAgainstHealth: false,
-      failureKind: "hard",
-    };
-  }
-  if (error instanceof LegTimeoutError) {
-    return {
-      outcome: "timeout",
-      reason: error.message,
-      countsAgainstHealth: true,
-      failureKind: "capacity",
-    };
-  }
-  if (error instanceof UnsupportedCapabilityError) {
-    return {
-      outcome: "skipped",
-      reason: error.message,
-      countsAgainstHealth: false,
-      failureKind: "hard",
-    };
-  }
-  if (error instanceof ToolChoiceIgnoredError) {
-    // The route answered; it broke a declared guarantee rather than failing to
-    // be available, so its breaker is not charged for it.
-    return {
-      outcome: "error",
-      reason: error.message,
-      countsAgainstHealth: false,
-      failureKind: "hard",
-    };
-  }
-  // Self-inflicted pacing, not provider ill-health. Counting it would let the
-  // client's own throttling open a breaker on a perfectly healthy provider and
-  // permanently reroute traffic nobody chose to reroute.
-  if (error instanceof RateGuardTimeoutError) {
-    return {
-      outcome: "skipped",
-      reason: error.message,
-      countsAgainstHealth: false,
-      failureKind: "hard",
-    };
-  }
-  const reason = error instanceof Error ? error.message : String(error);
-  if (/abort/i.test(reason)) {
-    return {
-      outcome: "timeout",
-      reason: `aborted: ${reason}`,
-      countsAgainstHealth: true,
-      failureKind: "capacity",
-    };
-  }
-  if (error instanceof LlmResponseFormatError) {
-    // The provider answered, badly. That is a route defect, not a full queue,
-    // whatever words the unparseable content happens to contain.
-    return { outcome: "error", reason, countsAgainstHealth: true, failureKind: "hard" };
-  }
-  return {
-    outcome: "error",
-    reason,
-    countsAgainstHealth: true,
-    failureKind: isCapacitySignal(error, reason) ? "capacity" : "hard",
-  };
-}
-
-/**
- * Whether the caller has stopped waiting.
- *
- * Read through a function rather than inline, because `AbortSignal.aborted` is
- * a live getter: it can flip to true while a leg is in flight, but a compiler
- * that narrowed it at the top of the loop would prove the later check
- * unreachable and invite its removal. The check is not redundant — it is the
- * only thing that stops the chain spending money on an answer nobody will read.
- *
- * @param signal The caller's signal, if any.
- * @returns Whether the call has been cancelled.
- */
-function isAborted(signal: AbortSignal | undefined): boolean {
-  return signal !== undefined && signal.aborted;
-}
-
-/**
- * The usage a failed leg was billed for, when the leg reached an answer.
- *
- * A leg that failed after the provider answered — content that does not parse,
- * or prose where a tool call was mandatory — was still charged. A leg that
- * never answered (timeout, outage, skip) carries no usage, and none is invented.
- *
- * @param error The thrown value.
- * @returns The billed usage, or undefined when the leg never produced an answer.
- */
-function billedUsageOf(error: unknown): LlmUsageRecord | undefined {
-  if (error instanceof LlmResponseFormatError || error instanceof ToolChoiceIgnoredError) {
-    return error.usage;
-  }
-  return undefined;
+function promptTokensOf(execution: ChainExecution): number | null {
+  return estimatePromptTokens([
+    execution.content,
+    execution.developerPrompt,
+    execution.context,
+  ]);
 }
 
 /**
@@ -463,6 +375,7 @@ function billedUsageOf(error: unknown): LlmUsageRecord | undefined {
  * @param alias The alias being served, for error attribution.
  * @param execution The call context.
  * @returns The first successful leg's answer, with the full attempt record.
+ * @throws {LlmDeadlineExceededError} When the caller's deadline ran out first.
  * @throws {ChainExhaustedError} When no leg produced an answer.
  */
 export async function executeChain<T>(
@@ -470,8 +383,63 @@ export async function executeChain<T>(
   execution: ChainExecution,
 ): Promise<ChainOutcome<T>> {
   const now = execution.now ?? Date.now;
+  const startedAt = now();
   const attempts: AliasAttemptRecord[] = [];
+  const firstRoute = execution.legs[0]?.route;
+  const configuredClass =
+    execution.configuredModelClass ?? (firstRoute === undefined ? "" : modelClassOf(firstRoute));
+  const policy = execution.crossModelPolicy ?? "allow_record";
+  const promptTokens = execution.latency === undefined ? null : promptTokensOf(execution);
   let totalUsage = EMPTY_USAGE;
+  let dispatchIndex = 0;
+  let deadlineHit = false;
+  let crossModelDenied = false;
+  let lastModelClass: string | null = null;
+
+  /**
+   * Record one attempt with its provenance.
+   *
+   * @param route The attempt's route.
+   * @param fields What happened.
+   * @param dispatch Whether it was a hedge, and its dispatch index.
+   * @param servedProvider The provider's own report of who served, if any.
+   * @returns The record.
+   */
+  const record = (
+    route: ResolvedRoute,
+    fields: AttemptFields,
+    dispatch?: { readonly hedged: boolean; readonly attemptIndex: number },
+    servedProvider?: string | null,
+  ): AliasAttemptRecord => {
+    const full: AliasAttemptRecord = {
+      ...fields,
+      servedProvider: servedProvider ?? route.providerName,
+      modelClass: modelClassOf(route),
+      modelClassRelation: modelClassRelationOf(route, configuredClass, fields),
+      ...(dispatch === undefined
+        ? {}
+        : { hedged: dispatch.hedged, attemptIndex: dispatch.attemptIndex }),
+    };
+    attempts.push(full);
+    execution.onAttempt?.(full);
+    return full;
+  };
+
+  /**
+   * The identity fields of a leg that was never dispatched.
+   *
+   * @param route The leg's route.
+   * @returns The fields.
+   */
+  const undispatched = (
+    route: ResolvedRoute,
+  ): Pick<AttemptFields, "routeKey" | "role" | "provider" | "modelId" | "durationMs"> => ({
+    routeKey: route.routeKey,
+    role: route.role,
+    provider: route.providerName,
+    modelId: route.modelId,
+    durationMs: 0,
+  });
 
   for (const leg of execution.legs) {
     const { route } = leg;
@@ -482,33 +450,27 @@ export async function executeChain<T>(
       break;
     }
 
-    if (leg.params instanceof UnsupportedCapabilityError) {
-      const record: AliasAttemptRecord = {
-        routeKey: route.routeKey,
-        role: route.role,
-        provider: route.providerName,
-        modelId: route.modelId,
+    if (policy === "deny" && modelClassOf(route) !== configuredClass) {
+      crossModelDenied = true;
+      record(route, {
+        ...undispatched(route),
         outcome: "skipped",
-        durationMs: 0,
-        reason: leg.params.message,
-      };
-      attempts.push(record);
-      execution.onAttempt?.(record);
+        reason: `cross-model leg denied by policy: configured model is ${configuredClass}, this leg serves ${modelClassOf(route)}`,
+      });
+      continue;
+    }
+
+    if (leg.params instanceof UnsupportedCapabilityError) {
+      record(route, { ...undispatched(route), outcome: "skipped", reason: leg.params.message });
       continue;
     }
 
     if (!execution.breakers.allows(route.routeKey)) {
-      const record: AliasAttemptRecord = {
-        routeKey: route.routeKey,
-        role: route.role,
-        provider: route.providerName,
-        modelId: route.modelId,
+      record(route, {
+        ...undispatched(route),
         outcome: "breaker-open",
-        durationMs: 0,
         reason: `circuit breaker is ${execution.breakers.stateOf(route.routeKey)}`,
-      };
-      attempts.push(record);
-      execution.onAttempt?.(record);
+      });
       continue;
     }
 
@@ -516,79 +478,70 @@ export async function executeChain<T>(
     if (budgetMs <= 0) {
       // The caller's deadline is spent. Dispatching now would start a call
       // that is cancelled the moment it begins, and charge nothing but noise.
-      const record: AliasAttemptRecord = {
-        routeKey: route.routeKey,
-        role: route.role,
-        provider: route.providerName,
-        modelId: route.modelId,
+      deadlineHit = true;
+      record(route, {
+        ...undispatched(route),
         outcome: "skipped",
-        durationMs: 0,
         reason: "caller deadline exhausted before this leg",
-      };
-      attempts.push(record);
-      execution.onAttempt?.(record);
+      });
       continue;
     }
 
-    const startedAt = now();
-    const holdsProbe = execution.breakers.onAttemptStart(route.routeKey);
+    lastModelClass = modelClassOf(route);
+    const group = await runSameModelGroup<T>(leg, budgetMs, budgetMs < route.timeoutMs, {
+      request: execution,
+      breakers: execution.breakers,
+      now,
+      policy: execution.hedging,
+      tracker: execution.latency,
+      promptTokens,
+      admitDuplicate: execution.admitDuplicate ?? (() => false),
+      record: (attemptRoute, fields, dispatch, servedProvider) => {
+        record(attemptRoute, fields, dispatch, servedProvider);
+      },
+      nextAttemptIndex: () => {
+        const index = dispatchIndex;
+        dispatchIndex += 1;
+        return index;
+      },
+    });
+    for (const usage of group.billed) {
+      totalUsage = sumUsage(totalUsage, usage);
+    }
+    deadlineHit = deadlineHit || group.deadlineBound;
 
-    try {
-      const response = await runLeg<T>(leg, leg.params, execution, budgetMs);
-      execution.breakers.onSuccess(route.routeKey);
-      totalUsage = sumUsage(totalUsage, response.usage);
-      const record: AliasAttemptRecord = {
-        routeKey: route.routeKey,
-        role: route.role,
-        provider: route.providerName,
-        modelId: route.modelId,
-        outcome: "ok",
-        durationMs: now() - startedAt,
-        budgetMs,
-        servedModel: response.servedModel ?? null,
-        usage: response.usage,
-      };
-      attempts.push(record);
-      execution.onAttempt?.(record);
-      return { response, servedBy: route, attempts, totalUsage };
-    } catch (error) {
-      const { outcome, reason, countsAgainstHealth, failureKind } = classify(
-        error,
-        execution.callerSignal,
+    if (group.answer !== undefined) {
+      const winner = attempts.find(
+        (attempt) => attempt.outcome === "ok" && attempt.routeKey === group.answer?.route.routeKey,
       );
-      if (countsAgainstHealth) {
-        execution.breakers.onFailure(route.routeKey, failureKind);
-      } else if (holdsProbe) {
-        // No verdict on the route's health, but the probe slot this attempt
-        // took must come back, or a half-open route admits no probe ever again.
-        execution.breakers.onAttemptAbandoned(route.routeKey);
-      }
-      // A provider that answered — with unparseable content, or in prose where a
-      // tool call was mandatory — still billed for the answer; the spend belongs
-      // in the total whether or not a later leg serves.
-      const billed = billedUsageOf(error);
-      const answeredBy = error instanceof ToolChoiceIgnoredError ? error.servedModel : undefined;
-      totalUsage = sumUsage(totalUsage, billed);
-      const record: AliasAttemptRecord = {
-        routeKey: route.routeKey,
-        role: route.role,
-        provider: route.providerName,
-        modelId: route.modelId,
-        outcome,
-        durationMs: now() - startedAt,
-        budgetMs,
-        reason,
-        ...(answeredBy === undefined ? {} : { servedModel: answeredBy }),
-        ...(billed === undefined ? {} : { usage: billed }),
+      return {
+        response: group.answer.response,
+        servedBy: group.answer.route,
+        attempts,
+        totalUsage,
+        modelClassRelation: winner?.modelClassRelation ?? "unknown",
+        hedged: group.answer.hedged,
       };
-      attempts.push(record);
-      execution.onAttempt?.(record);
+    }
 
-      if (outcome === "skipped" && isAborted(execution.callerSignal)) {
-        break;
-      }
+    if (isAborted(execution.callerSignal)) {
+      break;
     }
   }
 
-  throw new ChainExhaustedError(alias, attempts, totalUsage);
+  if (deadlineHit && !isAborted(execution.callerSignal) && execution.deadlineAtMs !== undefined) {
+    throw new LlmDeadlineExceededError(
+      alias,
+      attempts,
+      totalUsage,
+      execution.deadlineAtMs - startedAt,
+      lastModelClass,
+    );
+  }
+  throw new ChainExhaustedError(
+    alias,
+    attempts,
+    totalUsage,
+    crossModelDenied ? "cross_model_denied" : "exhausted",
+  );
 }
