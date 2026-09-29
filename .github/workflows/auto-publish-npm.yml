@@ -11,6 +11,9 @@ on:
       - "*.mjs"
       - "types/**"
       - "*.ts"
+      # A change to how the package is versioned or published must itself be
+      # exercised, so it triggers a publish like a source change does.
+      - ".github/workflows/auto-publish-npm.yml"
 
 jobs:
   # Master branch: use reusable workflow (existing behavior)
