@@ -362,10 +362,10 @@
             "context_window": 1000000
           },
           "price_per_mtok": {
-            "input": 10,
-            "output": 50,
-            "as_of": "2026-09-10",
-            "source": "docs/llm-provider-migration.md#3 Fable-class anchor"
+            "input": 5,
+            "output": 25,
+            "as_of": "2026-09-30",
+            "source": "lumic-utils/src/functions/llm-config.ts anthropicModelCosts['claude-opus-4-7'] = 5/25, the Opus-tier rate. CORRECTED from 10/50, which is the claude-fable-5 rate: this leg carried a Fable-class anchor for an Opus-class model, so the same model id was priced 2x apart on llm.reason and llm.agentic and the declared cost of every alias's revert target depended on which alias a reader happened to look at."
           }
         }
       ]
