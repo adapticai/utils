@@ -364,6 +364,43 @@ export interface LlmToolCall {
   readonly function: { readonly name: string; readonly arguments: string };
 }
 
+/**
+ * Why the provider stopped generating, as it reported it.
+ *
+ * The named members are the values the OpenAI-compatible chat-completions
+ * contract defines. `length` is the load-bearing one for a consumer: it means
+ * the completion hit the request's output cap and was CUT, so a reply that
+ * parses as absent or malformed is the caller's own cap rather than the model
+ * declining — two states with opposite remedies.
+ *
+ * The union stays open to any other non-empty string because a gateway may
+ * forward a provider-specific reason, and narrowing an unrecognized value to a
+ * known member (or to `"other"`) would discard the only evidence of what
+ * happened. Unreported is `null`, never a substituted default: a fabricated
+ * `"stop"` would make a truncated call read as a clean one.
+ */
+export type LlmFinishReason =
+  | "stop"
+  | "length"
+  | "tool_calls"
+  | "content_filter"
+  | "function_call"
+  | (string & Record<never, never>);
+
+/**
+ * The finish reasons the OpenAI-compatible contract defines.
+ *
+ * Exported so a consumer can tell a defined reason from a provider-specific one
+ * without re-stating the list and drifting from it.
+ */
+export const KNOWN_LLM_FINISH_REASONS: readonly string[] = [
+  "stop",
+  "length",
+  "tool_calls",
+  "content_filter",
+  "function_call",
+];
+
 /** The envelope a transport returns. */
 export interface LlmTransportResponse<T> {
   readonly response: T;
@@ -382,6 +419,18 @@ export interface LlmTransportResponse<T> {
   readonly servedDeploymentId?: string | null;
   /** The provider the gateway reports as having served the answer, or `null`. */
   readonly servedProvider?: string | null;
+  /**
+   * Why the provider stopped generating, from the answering choice's
+   * `finish_reason`, or `null` when it reported none.
+   *
+   * Carried because a consumer cannot otherwise distinguish a reply the model
+   * chose to end from one the request's own output cap CUT. Those look identical
+   * downstream — both arrive as an absent or unparseable answer — and they have
+   * opposite remedies: raise the cap, or treat the model's answer as given.
+   * {@link LlmFinishReason} documents why an unrecognized value passes through
+   * verbatim and why absence stays `null`.
+   */
+  readonly finishReason?: LlmFinishReason | null;
 }
 
 /** What the caller receives, with the routing decision attached for attribution. */

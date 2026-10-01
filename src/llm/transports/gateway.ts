@@ -260,9 +260,16 @@ export function createGatewayTransport(
       const payload = (await response.json()) as Record<string, unknown>;
       const addressedAs = body.model;
       const choices = payload.choices as
-        | { message?: { content?: unknown; tool_calls?: unknown } }[]
+        | {
+            message?: { content?: unknown; tool_calls?: unknown };
+            finish_reason?: unknown;
+          }[]
         | undefined;
-      const message = choices?.[0]?.message;
+      // The ANSWERING choice, held as one value: `finish_reason` is a sibling of
+      // `message` on it, so reading them off separate lookups could in principle
+      // describe different choices.
+      const choice = choices?.[0];
+      const message = choice?.message;
       // Usage is read before the content is interpreted. The provider billed for
       // this answer whether or not it parses, and a parse failure that dropped
       // the count would report the attempt as free.
@@ -279,6 +286,9 @@ export function createGatewayTransport(
         servedModel: servedModelOf(response.headers, payload.model, addressedAs),
         servedDeploymentId: nonEmptyOrNull(response.headers?.get(DEPLOYMENT_ID_HEADER)),
         servedProvider: nonEmptyOrNull(response.headers?.get(SERVED_PROVIDER_HEADER)),
+        // Why generation stopped. `length` is the one a consumer cannot infer:
+        // it means this request's own output cap cut the answer.
+        finishReason: nonEmptyOrNull(choice?.finish_reason),
       };
     },
   };

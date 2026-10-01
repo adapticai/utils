@@ -412,6 +412,7 @@ export async function callLLMByAlias<T = unknown>(
       tool_calls: outcome.response.tool_calls,
       servedBy: outcome.servedBy,
       servedModel: outcome.response.servedModel ?? null,
+      finishReason: outcome.response.finishReason ?? null,
       attempts: attemptLog,
       degraded: outcome.degraded,
       totalUsage: outcome.totalUsage,
@@ -469,6 +470,10 @@ export async function callLLMByAlias<T = unknown>(
     tool_calls: validated.response.tool_calls,
     servedBy: routing.servedBy,
     servedModel: validated.response.servedModel ?? null,
+    // The finish reason of the attempt that VALIDATED, not of an earlier one a
+    // validator rejected: a truncated attempt that was retried and then answered
+    // cleanly must not report `length` for the answer the caller received.
+    finishReason: validated.response.finishReason ?? null,
     attempts: attemptLog,
     degraded: routing.degraded,
     totalUsage: validated.totalUsage,
