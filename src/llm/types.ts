@@ -433,6 +433,21 @@ export interface LlmTransportResponse<T> {
   readonly finishReason?: LlmFinishReason | null;
 }
 
+/**
+ * Same-model attempts the chain declined to start, by the role of the leg they
+ * belonged to, because less than the attempt floor
+ * (`hedging.attempt_timeout_floor_ms`) of that leg's budget remained when they
+ * were due.
+ *
+ * Such an attempt ends at the leg's end, with less time than the shortest
+ * attempt the chain ever allows, so it cannot be expected to answer: it would
+ * only send the provider a full prompt whose answer nobody can use. Once a
+ * leg's remaining budget is below the floor no extra attempt of that leg can
+ * start, so each leg contributes at most one; under the table's
+ * `max_same_model_hedges` of 1 that is exactly the number of requests not sent.
+ */
+export type LlmHedgeRefusals = Readonly<Record<LlmRouteRole, number>>;
+
 /** What the caller receives, with the routing decision attached for attribution. */
 export interface AliasCallResult<T> extends LlmTransportResponse<T> {
   /** The leg that produced the answer. */
@@ -453,6 +468,13 @@ export interface AliasCallResult<T> extends LlmTransportResponse<T> {
   readonly modelClassRelation?: LlmModelClassRelation;
   /** Whether the answering attempt was a hedge rather than a leg's first attempt. */
   readonly hedged?: boolean;
+  /**
+   * Same-model attempts refused below the attempt floor across every run of
+   * this call (a validation retry and the degraded direct path included), by
+   * leg role. See {@link LlmHedgeRefusals}. Absent on a result built by a
+   * consumer's own double.
+   */
+  readonly hedgesRefusedBelowFloor?: LlmHedgeRefusals;
 }
 
 /** One attempt against one leg. */

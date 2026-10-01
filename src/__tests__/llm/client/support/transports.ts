@@ -54,6 +54,8 @@ export type LegBehaviour =
       readonly usage: LlmUsageRecord;
       readonly servedModel?: string | null;
     }
+  /** Fails after a delay on the (fake) clock, unless its signal aborts first. */
+  | { readonly kind: "delayed-fail"; readonly afterMs: number; readonly error: Error }
   /** Never settles on its own: the leg ends only when its signal aborts. */
   | { readonly kind: "hang" };
 
@@ -128,6 +130,17 @@ export function answersAfter(
   servedModel?: string | null,
 ): LegBehaviour {
   return { kind: "delayed", afterMs, response, usage, servedModel };
+}
+
+/**
+ * A leg that fails after a delay, unless it is cancelled first.
+ *
+ * @param afterMs Delay on the test clock.
+ * @param error The error to fail with.
+ * @returns The behaviour.
+ */
+export function failsAfter(afterMs: number, error: Error): LegBehaviour {
+  return { kind: "delayed-fail", afterMs, error };
 }
 
 /**
@@ -221,10 +234,14 @@ export class ScriptedTransport implements LlmTransport {
       };
     }
 
-    if (behaviour.kind === "delayed") {
+    if (behaviour.kind === "delayed" || behaviour.kind === "delayed-fail") {
       return new Promise<LlmTransportResponse<T>>((resolve, reject) => {
         const timer = setTimeout(() => {
           request.signal.removeEventListener("abort", onAbort);
+          if (behaviour.kind === "delayed-fail") {
+            reject(behaviour.error);
+            return;
+          }
           resolve({
             response: asPayload<T>(behaviour.response),
             usage: behaviour.usage,

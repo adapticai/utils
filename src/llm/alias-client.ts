@@ -30,7 +30,13 @@
  */
 
 import { CircuitBreakerRegistry } from "./circuit-breaker";
-import { ChainExhaustedError, executeChain, modelClassOf } from "./fallback-chain";
+import {
+  ChainExhaustedError,
+  NO_HEDGE_REFUSALS,
+  executeChain,
+  modelClassOf,
+  sumHedgeRefusals,
+} from "./fallback-chain";
 import type { ChainExecution, ChainLeg } from "./fallback-chain";
 import { sameModelPolicyFrom } from "./hedge";
 import { LegLatencyTracker } from "./leg-latency-tracker";
@@ -318,6 +324,9 @@ export async function callLLMByAlias<T = unknown>(
 
   const gateway = gatewayFor();
   const attemptLog: AliasAttemptRecord[] = [];
+  // Like the attempt log, refusals accumulate across every run of this call: a
+  // validation retry and the degraded direct path are the same call.
+  let hedgeRefusals = NO_HEDGE_REFUSALS;
 
   // What every execution of this call shares, whichever transport carries it.
   // The configured model is the head of the full chain, so the degraded path —
@@ -366,6 +375,7 @@ export async function callLLMByAlias<T = unknown>(
           legs: prepareLegs(chain, options, responseFormat, gateway),
           content: boundContent,
         });
+        hedgeRefusals = sumHedgeRefusals(hedgeRefusals, outcome.hedgesRefusedBelowFloor);
         return { ...outcome, degraded: false };
       } catch (error) {
         if (!isGatewayOutage(error)) {
@@ -374,19 +384,29 @@ export async function callLLMByAlias<T = unknown>(
         // The proxy is gone, not a provider behind it. Walking the chain again
         // through the gateway would repeat the same failure on every leg, so
         // the degraded path takes over — restricted to the closed incumbent.
+        // What the failed walk refused is kept: the call continues.
+        if (error instanceof ChainExhaustedError) {
+          hedgeRefusals = sumHedgeRefusals(hedgeRefusals, error.hedgesRefusedBelowFloor);
+        }
       }
     }
 
     const direct = directFor();
     const closedLegs = chain.routes.filter((route) => route.provider.tier === "closed");
     if (closedLegs.length === 0) {
-      throw new ChainExhaustedError(options.alias, attemptLog, {
-        prompt_tokens: 0,
-        completion_tokens: 0,
-        provider: "none",
-        model: "none",
-        cost: 0,
-      });
+      throw new ChainExhaustedError(
+        options.alias,
+        attemptLog,
+        {
+          prompt_tokens: 0,
+          completion_tokens: 0,
+          provider: "none",
+          model: "none",
+          cost: 0,
+        },
+        "exhausted",
+        hedgeRefusals,
+      );
     }
     const outcome = await executeChain<unknown>(options.alias, {
       ...shared,
@@ -401,6 +421,7 @@ export async function callLLMByAlias<T = unknown>(
       ),
       content: boundContent,
     });
+    hedgeRefusals = sumHedgeRefusals(hedgeRefusals, outcome.hedgesRefusedBelowFloor);
     return { ...outcome, degraded: true };
   };
 
@@ -418,6 +439,7 @@ export async function callLLMByAlias<T = unknown>(
       totalUsage: outcome.totalUsage,
       modelClassRelation: outcome.modelClassRelation,
       hedged: outcome.hedged,
+      hedgesRefusedBelowFloor: hedgeRefusals,
     };
   }
 
@@ -479,6 +501,7 @@ export async function callLLMByAlias<T = unknown>(
     totalUsage: validated.totalUsage,
     modelClassRelation: routing.modelClassRelation,
     hedged: routing.hedged,
+    hedgesRefusedBelowFloor: hedgeRefusals,
   };
 }
 

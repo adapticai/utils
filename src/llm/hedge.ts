@@ -34,6 +34,14 @@
  * the group is exactly one attempt with the leg's full budget: the serial
  * chain's behaviour, which a fresh process therefore starts from.
  *
+ * Every extra attempt shares the leg's end, so one started late gets only what
+ * is left of the leg. None starts with less than the attempt floor
+ * (`attempt_timeout_floor_ms`) remaining: the floor is the shortest attempt the
+ * chain ever allows, and an attempt given less cannot be expected to answer —
+ * it only sends the provider a full prompt whose answer nobody can use. The
+ * leg's first attempt is the leg itself and keeps whatever budget the leg has.
+ * Each refusal is counted, so the work not sent is observable.
+ *
  * @module llm/hedge
  */
 
@@ -124,6 +132,12 @@ export interface SameModelGroupResult<T> {
   readonly billed: readonly LlmUsageRecord[];
   /** Whether the group ended because the caller's deadline ran out. */
   readonly deadlineBound: boolean;
+  /**
+   * Extra same-model attempts this group did not start because less than the
+   * attempt floor of its budget remained when one was due: 0 or 1, since once
+   * the remaining budget is below the floor no later extra attempt can start.
+   */
+  readonly hedgesRefusedBelowFloor: number;
 }
 
 /** An attempt the group is running. */
@@ -159,6 +173,26 @@ function paramsOf(leg: ChainLeg): Record<string, unknown> | undefined {
 }
 
 /**
+ * Every candidate kind may start.
+ *
+ * @returns Always true.
+ */
+function anyCandidate(): boolean {
+  return true;
+}
+
+/**
+ * Only a same-model equivalent may start: after a fast failure a duplicate on
+ * the provider that just failed would most likely fail the same way.
+ *
+ * @param candidate The candidate.
+ * @returns Whether it is an equivalent.
+ */
+function isEquivalent(candidate: Candidate): boolean {
+  return candidate.kind === "equivalent";
+}
+
+/**
  * Run every same-model attempt for one leg until one answers or the budget,
  * the alternatives, or the caller run out.
  *
@@ -189,6 +223,7 @@ export function runSameModelGroup<T>(
   let settled = false;
   let finished = false;
   let deadlineBound = false;
+  let refusedBelowFloor = false;
   let hedgeTimer: ReturnType<typeof setTimeout> | undefined;
   let answer: SameModelGroupResult<T>["answer"];
 
@@ -204,12 +239,13 @@ export function runSameModelGroup<T>(
       tracker === undefined ? null : tracker.quantile(route.providerName, route.modelId, promptTokens, q);
 
     /**
-     * The next same-model attempt that could start now: an equivalent first,
-     * then a duplicate, which needs latency evidence and spare provider capacity.
+     * The next same-model attempt the group has: an equivalent first, then a
+     * duplicate, which needs latency evidence and spare provider capacity.
+     * Whether there is still time for it is {@link peek}'s question.
      *
      * @returns The candidate, or undefined.
      */
-    const peek = (): Candidate | undefined => {
+    const nextCandidate = (): Candidate | undefined => {
       if (policy === undefined || extraLaunched >= policy.maxExtraAttempts) {
         return undefined;
       }
@@ -229,6 +265,35 @@ export function runSameModelGroup<T>(
       return undefined;
     };
 
+    /**
+     * The same-model attempt that may start now, if any.
+     *
+     * None may start with less than the attempt floor of the leg's budget
+     * left: it would end at the leg's end with less time than the shortest
+     * attempt the chain allows. Every path that starts an extra attempt asks
+     * here, so the hedge point, the measured timeout and the failover after a
+     * fast failure all hold to the floor. A refusal of an attempt that would
+     * otherwise have started is recorded — not one whose leg is already spent,
+     * nor one whose caller has gone, since neither could have started anyway.
+     *
+     * @param eligible Which candidate kinds the asking path would start.
+     * @returns The candidate to start, or undefined.
+     */
+    const peek = (eligible: (candidate: Candidate) => boolean = anyCandidate): Candidate | undefined => {
+      const candidate = nextCandidate();
+      if (policy === undefined || candidate === undefined || !eligible(candidate)) {
+        return undefined;
+      }
+      const remainingMs = endsAt - now();
+      if (remainingMs < policy.attemptTimeoutFloorMs) {
+        if (remainingMs > 0 && !isAborted(request.callerSignal)) {
+          refusedBelowFloor = true;
+        }
+        return undefined;
+      }
+      return candidate;
+    };
+
     /** Resolve once nothing is left in flight. */
     const finishIfIdle = (): void => {
       if (finished || live.size > 0) {
@@ -238,13 +303,18 @@ export function runSameModelGroup<T>(
       if (hedgeTimer !== undefined) {
         clearTimeout(hedgeTimer);
       }
-      resolve({ answer, billed, deadlineBound });
+      resolve({ answer, billed, deadlineBound, hedgesRefusedBelowFloor: refusedBelowFloor ? 1 : 0 });
     };
 
     /**
      * Arm the hedge for the most recent attempt: at the model's healthy p90,
      * or — when an equivalent is waiting — no later than the reserved share of
      * the remaining budget.
+     *
+     * The timer is armed even when the hedge point leaves less than the floor,
+     * and the floor is applied when it fires: only then is it known whether the
+     * group is still waiting and a same-model attempt is still available, and
+     * so whether an attempt was actually refused rather than never needed.
      *
      * @param latest The attempt just started.
      */
@@ -253,7 +323,7 @@ export function runSameModelGroup<T>(
         clearTimeout(hedgeTimer);
         hedgeTimer = undefined;
       }
-      const candidate = peek();
+      const candidate = nextCandidate();
       if (policy === undefined || candidate === undefined) {
         return;
       }
@@ -530,8 +600,8 @@ export function runSameModelGroup<T>(
         // A failed attempt with time left moves to the same model at another
         // provider at once. A duplicate on the provider that just failed is not
         // started here: it would most likely fail the same way.
-        const candidate = peek();
-        if (candidate !== undefined && candidate.kind === "equivalent") {
+        const candidate = peek(isEquivalent);
+        if (candidate !== undefined) {
           launch(candidate.leg, candidate, true);
         }
       }

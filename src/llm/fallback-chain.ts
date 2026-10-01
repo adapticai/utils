@@ -40,7 +40,9 @@ import { UnsupportedCapabilityError } from "./param-matrix";
 import type {
   AliasAttemptRecord,
   LlmCrossModelPolicy,
+  LlmHedgeRefusals,
   LlmModelClassRelation,
+  LlmRouteRole,
   LlmTransportRequest,
   LlmTransportResponse,
   LlmUsageRecord,
@@ -58,6 +60,39 @@ const EMPTY_USAGE: LlmUsageRecord = {
   model: "none",
   cost: 0,
 };
+
+/** No same-model attempt refused on any leg: the identity when tallying refusals. */
+export const NO_HEDGE_REFUSALS: LlmHedgeRefusals = Object.freeze({
+  primary: 0,
+  secondary: 0,
+  closed_incumbent: 0,
+});
+
+/**
+ * Add a run's refusals, or one leg's, to a running tally.
+ *
+ * @param total The running tally.
+ * @param more The refusals to add.
+ * @returns The combined tally.
+ */
+export function sumHedgeRefusals(total: LlmHedgeRefusals, more: LlmHedgeRefusals): LlmHedgeRefusals {
+  return {
+    primary: total.primary + more.primary,
+    secondary: total.secondary + more.secondary,
+    closed_incumbent: total.closed_incumbent + more.closed_incumbent,
+  };
+}
+
+/**
+ * One leg's refusals as a tally.
+ *
+ * @param role The leg's role.
+ * @param refused How many of its same-model attempts were refused.
+ * @returns The tally.
+ */
+function refusalsOf(role: LlmRouteRole, refused: number): LlmHedgeRefusals {
+  return { ...NO_HEDGE_REFUSALS, [role]: refused };
+}
 
 /** Everything the executor needs for one call. */
 export interface ChainExecution {
@@ -115,6 +150,8 @@ export interface ChainOutcome<T> {
   readonly modelClassRelation: LlmModelClassRelation;
   /** Whether the answering attempt was a same-model hedge. */
   readonly hedged: boolean;
+  /** Same-model attempts refused below the attempt floor, by leg role. */
+  readonly hedgesRefusedBelowFloor: LlmHedgeRefusals;
 }
 
 /** Why a chain ended without an answer. */
@@ -145,17 +182,23 @@ export class ChainExhaustedError extends Error {
    */
   public readonly reason: ChainExhaustionReason;
 
+  /** Same-model attempts refused below the attempt floor, by leg role. */
+  public readonly hedgesRefusedBelowFloor: LlmHedgeRefusals;
+
   /**
    * @param alias The alias.
    * @param attempts The attempt record.
    * @param totalUsage Usage spent across all attempts.
    * @param reason Why the chain ended; defaults to plain exhaustion.
+   * @param hedgesRefusedBelowFloor Same-model attempts refused below the
+   *   attempt floor, by leg role; defaults to none.
    */
   public constructor(
     alias: string,
     attempts: readonly AliasAttemptRecord[],
     totalUsage: LlmUsageRecord,
     reason: ChainExhaustionReason = "exhausted",
+    hedgesRefusedBelowFloor: LlmHedgeRefusals = NO_HEDGE_REFUSALS,
   ) {
     const detail = attempts
       .map(
@@ -178,6 +221,7 @@ export class ChainExhaustedError extends Error {
     this.attempts = attempts;
     this.totalUsage = totalUsage;
     this.reason = reason;
+    this.hedgesRefusedBelowFloor = hedgesRefusedBelowFloor;
   }
 }
 
@@ -206,6 +250,8 @@ export class LlmDeadlineExceededError extends ChainExhaustedError {
    * @param totalUsage Usage spent across all attempts.
    * @param deadlineMs The budget the chain started with.
    * @param lastModelClass The last dispatched attempt's model class.
+   * @param hedgesRefusedBelowFloor Same-model attempts refused below the
+   *   attempt floor, by leg role; defaults to none.
    */
   public constructor(
     alias: string,
@@ -213,8 +259,9 @@ export class LlmDeadlineExceededError extends ChainExhaustedError {
     totalUsage: LlmUsageRecord,
     deadlineMs: number,
     lastModelClass: string | null,
+    hedgesRefusedBelowFloor: LlmHedgeRefusals = NO_HEDGE_REFUSALS,
   ) {
-    super(alias, attempts, totalUsage, "deadline_exceeded");
+    super(alias, attempts, totalUsage, "deadline_exceeded", hedgesRefusedBelowFloor);
     this.name = "LlmDeadlineExceededError";
     this.deadlineMs = deadlineMs;
     this.lastModelClass = lastModelClass;
@@ -391,6 +438,7 @@ export async function executeChain<T>(
   const policy = execution.crossModelPolicy ?? "allow_record";
   const promptTokens = execution.latency === undefined ? null : promptTokensOf(execution);
   let totalUsage = EMPTY_USAGE;
+  let hedgeRefusals = NO_HEDGE_REFUSALS;
   let dispatchIndex = 0;
   let deadlineHit = false;
   let crossModelDenied = false;
@@ -508,6 +556,7 @@ export async function executeChain<T>(
     for (const usage of group.billed) {
       totalUsage = sumUsage(totalUsage, usage);
     }
+    hedgeRefusals = sumHedgeRefusals(hedgeRefusals, refusalsOf(route.role, group.hedgesRefusedBelowFloor));
     deadlineHit = deadlineHit || group.deadlineBound;
 
     if (group.answer !== undefined) {
@@ -521,6 +570,7 @@ export async function executeChain<T>(
         totalUsage,
         modelClassRelation: winner?.modelClassRelation ?? "unknown",
         hedged: group.answer.hedged,
+        hedgesRefusedBelowFloor: hedgeRefusals,
       };
     }
 
@@ -536,6 +586,7 @@ export async function executeChain<T>(
       totalUsage,
       execution.deadlineAtMs - startedAt,
       lastModelClass,
+      hedgeRefusals,
     );
   }
   throw new ChainExhaustedError(
@@ -543,5 +594,6 @@ export async function executeChain<T>(
     attempts,
     totalUsage,
     crossModelDenied ? "cross_model_denied" : "exhausted",
+    hedgeRefusals,
   );
 }

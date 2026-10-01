@@ -122,6 +122,7 @@ export type {
   LlmClientConfig,
   LlmCriticality,
   LlmCrossModelPolicy,
+  LlmHedgeRefusals,
   LlmHedgingDefaults,
   LlmLatencyClass,
   LlmLatencyTripDefaults,
