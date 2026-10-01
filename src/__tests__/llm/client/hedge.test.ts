@@ -589,6 +589,7 @@ const PRE_FLOOR_NOOP_RECORDS: readonly AliasAttemptRecord[] = [
     budgetMs: 30000,
     outcome: "skipped",
     reason: "route llm.fast#primary was cancelled: a same-model attempt answered first",
+    failureClass: "hedge_loser",
     servedProvider: "Test Open Host",
     modelClass: "model-primary",
     modelClassRelation: "same",
