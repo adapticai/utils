@@ -59,6 +59,7 @@ import type { LegLatencyTracker } from "./leg-latency-tracker";
 import { ToolChoiceIgnoredError, UnsupportedCapabilityError } from "./param-matrix";
 import type {
   AliasAttemptRecord,
+  LlmAttemptFailureClass,
   LlmHedgingDefaults,
   LlmTransportResponse,
   LlmUsageRecord,
@@ -94,11 +95,33 @@ export function sameModelPolicyFrom(defaults: LlmHedgingDefaults): SameModelPoli
   };
 }
 
-/** The legacy fields of one attempt record; the chain adds provenance. */
-export type AttemptFields = Omit<
+/** What a producer supplies for any attempt, answered or not. */
+type AttemptCommonFields = Omit<
   AliasAttemptRecord,
-  "servedProvider" | "modelClass" | "modelClassRelation" | "hedged" | "attemptIndex"
+  | "outcome"
+  | "failureClass"
+  | "servedProvider"
+  | "modelClass"
+  | "modelClassRelation"
+  | "hedged"
+  | "attemptIndex"
 >;
+
+/**
+ * The fields of one attempt record as its producer supplies them; the chain
+ * adds provenance.
+ *
+ * A union on the outcome, so an attempt that did not answer cannot be recorded
+ * without its typed cause and one that answered cannot carry one. The public
+ * record leaves the cause optional for consumers' own doubles; every record
+ * this client produces goes through this type instead.
+ */
+export type AttemptFields =
+  | (AttemptCommonFields & { readonly outcome: "ok"; readonly failureClass?: never })
+  | (AttemptCommonFields & {
+      readonly outcome: Exclude<AliasAttemptRecord["outcome"], "ok">;
+      readonly failureClass: LlmAttemptFailureClass;
+    });
 
 /** What the group needs from the chain around it. */
 export interface SameModelGroupContext {
@@ -441,7 +464,12 @@ export function runSameModelGroup<T>(
         breakers.onAttemptAbandoned(attempt.leg.route.routeKey);
       }
       const failure = classify(reason, request.callerSignal);
-      emit(attempt, { ...fields, outcome: failure.outcome, reason: failure.reason });
+      emit(attempt, {
+        ...fields,
+        outcome: failure.outcome,
+        reason: failure.reason,
+        failureClass: failure.failureClass,
+      });
     };
 
     /**
@@ -516,6 +544,7 @@ export function runSameModelGroup<T>(
             ...fields,
             outcome: "skipped",
             reason: "answered after a same-model attempt had already won",
+            failureClass: "hedge_loser",
             servedModel: response.servedModel ?? null,
             usage: response.usage,
           },
@@ -588,6 +617,7 @@ export function runSameModelGroup<T>(
         ...fields,
         outcome: failure.outcome,
         reason: failure.reason,
+        failureClass: failure.failureClass,
         ...(answeredBy === undefined ? {} : { servedModel: answeredBy }),
         ...(usage === undefined ? {} : { usage }),
       });
