@@ -21,6 +21,7 @@ import { LlmResponseFormatError } from "./structured-content";
 import type { BreakerFailureKind } from "./circuit-breaker";
 import type {
   AliasAttemptRecord,
+  LlmAttemptFailureClass,
   LlmTransport,
   LlmTransportRequest,
   LlmTransportResponse,
@@ -232,13 +233,53 @@ export function isCapacitySignal(error: unknown, reason: string): boolean {
   return CAPACITY_WORDING.test(reason);
 }
 
+/** HTTP statuses a provider uses to reject the caller's credentials. */
+const CREDENTIAL_STATUSES: ReadonlySet<number> = new Set([401, 403]);
+
+/** The `name` every copy of the gateway transport's unreachable error carries. */
+const GATEWAY_UNREACHABLE_ERROR_NAME = "GatewayUnreachableError";
+
+/**
+ * The typed cause of a failure no branch of {@link classify} recognised by class.
+ *
+ * Read by shape for the same reason as {@link isCapacitySignal}: the failure
+ * reaches the chain from more than one transport, including a consumer's own,
+ * so its class cannot be relied on here. A status is trusted only when it is a
+ * number, because some error types carry a non-HTTP status as a string. The
+ * error's own name is read before its wording, so an unreachable gateway is
+ * never filed as a full provider because of what the underlying error said.
+ *
+ * @param error The thrown value.
+ * @param reason Its message.
+ * @returns The class.
+ */
+function providerFailureClassOf(error: unknown, reason: string): LlmAttemptFailureClass {
+  if (typeof error === "object" && error !== null) {
+    const { status, name } = error as { status?: unknown; name?: unknown };
+    if (typeof status === "number" && CREDENTIAL_STATUSES.has(status)) {
+      return "credential";
+    }
+    if (name === GATEWAY_UNREACHABLE_ERROR_NAME) {
+      return "gateway_unreachable";
+    }
+  }
+  return isCapacitySignal(error, reason) ? "capacity" : "provider_error";
+}
+
 /** What the chain learned from one failed leg. */
 export interface LegFailure {
-  readonly outcome: AliasAttemptRecord["outcome"];
+  /** How the attempt is recorded. A failure is never `ok`. */
+  readonly outcome: Exclude<AliasAttemptRecord["outcome"], "ok">;
   readonly reason: string;
   readonly countsAgainstHealth: boolean;
   /** Which cooldown the failure earns, when it counts against health. */
   readonly failureKind: BreakerFailureKind;
+  /**
+   * The typed cause, carried onto the attempt record. Set from the failure's
+   * type or shape and read by nothing in the chain: the breaker and the hedge
+   * runner act on the fields above.
+   */
+  readonly failureClass: LlmAttemptFailureClass;
 }
 
 /**
@@ -275,6 +316,7 @@ export function classify(
       reason: "caller cancelled",
       countsAgainstHealth: false,
       failureKind: "hard",
+      failureClass: "caller_cancelled",
     };
   }
   if (error instanceof AttemptSupersededError) {
@@ -283,6 +325,7 @@ export function classify(
       reason: error.message,
       countsAgainstHealth: false,
       failureKind: "capacity",
+      failureClass: "superseded",
     };
   }
   if (error instanceof HedgeLoserError) {
@@ -291,6 +334,7 @@ export function classify(
       reason: error.message,
       countsAgainstHealth: false,
       failureKind: "capacity",
+      failureClass: "hedge_loser",
     };
   }
   if (error instanceof LegTimeoutError) {
@@ -299,6 +343,7 @@ export function classify(
       reason: error.message,
       countsAgainstHealth: true,
       failureKind: "capacity",
+      failureClass: "leg_timeout",
     };
   }
   if (error instanceof UnsupportedCapabilityError) {
@@ -307,6 +352,7 @@ export function classify(
       reason: error.message,
       countsAgainstHealth: false,
       failureKind: "hard",
+      failureClass: "unsupported_capability",
     };
   }
   if (error instanceof ToolChoiceIgnoredError) {
@@ -317,6 +363,7 @@ export function classify(
       reason: error.message,
       countsAgainstHealth: false,
       failureKind: "hard",
+      failureClass: "tool_choice_ignored",
     };
   }
   // Self-inflicted pacing, not provider ill-health. Counting it would let the
@@ -328,6 +375,7 @@ export function classify(
       reason: error.message,
       countsAgainstHealth: false,
       failureKind: "hard",
+      failureClass: "rate_guard",
     };
   }
   const reason = error instanceof Error ? error.message : String(error);
@@ -337,18 +385,28 @@ export function classify(
       reason: `aborted: ${reason}`,
       countsAgainstHealth: true,
       failureKind: "capacity",
+      // An unparseable answer quotes the content it failed on, so the model's
+      // own words can be what matched here. The class follows the error's type.
+      failureClass: error instanceof LlmResponseFormatError ? "response_format" : "leg_timeout",
     };
   }
   if (error instanceof LlmResponseFormatError) {
     // The provider answered, badly. That is a route defect, not a full queue,
     // whatever words the unparseable content happens to contain.
-    return { outcome: "error", reason, countsAgainstHealth: true, failureKind: "hard" };
+    return {
+      outcome: "error",
+      reason,
+      countsAgainstHealth: true,
+      failureKind: "hard",
+      failureClass: "response_format",
+    };
   }
   return {
     outcome: "error",
     reason,
     countsAgainstHealth: true,
     failureKind: isCapacitySignal(error, reason) ? "capacity" : "hard",
+    failureClass: providerFailureClassOf(error, reason),
   };
 }
 

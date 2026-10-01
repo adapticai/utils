@@ -456,12 +456,18 @@ export async function executeChain<T>(
         ...undispatched(route),
         outcome: "skipped",
         reason: `cross-model leg denied by policy: configured model is ${configuredClass}, this leg serves ${modelClassOf(route)}`,
+        failureClass: "cross_model_denied",
       });
       continue;
     }
 
     if (leg.params instanceof UnsupportedCapabilityError) {
-      record(route, { ...undispatched(route), outcome: "skipped", reason: leg.params.message });
+      record(route, {
+        ...undispatched(route),
+        outcome: "skipped",
+        reason: leg.params.message,
+        failureClass: "unsupported_capability",
+      });
       continue;
     }
 
@@ -470,6 +476,7 @@ export async function executeChain<T>(
         ...undispatched(route),
         outcome: "breaker-open",
         reason: `circuit breaker is ${execution.breakers.stateOf(route.routeKey)}`,
+        failureClass: "breaker_open",
       });
       continue;
     }
@@ -483,6 +490,7 @@ export async function executeChain<T>(
         ...undispatched(route),
         outcome: "skipped",
         reason: "caller deadline exhausted before this leg",
+        failureClass: "deadline_spent",
       });
       continue;
     }

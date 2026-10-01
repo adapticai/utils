@@ -30,7 +30,8 @@ export type { ChainExhaustionReason } from "./fallback-chain";
 
 export { LegLatencyTracker, estimatePromptTokens } from "./leg-latency-tracker";
 export type { LatencyTrackerConfig } from "./leg-latency-tracker";
-export type { AliasAttemptRecord } from "./types";
+export { LLM_ATTEMPT_FAILURE_CLASSES } from "./types";
+export type { AliasAttemptRecord, LlmAttemptFailureClass } from "./types";
 
 export {
   EQUIVALENT_SEPARATOR,

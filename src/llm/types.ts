@@ -455,6 +455,64 @@ export interface AliasCallResult<T> extends LlmTransportResponse<T> {
   readonly hedged?: boolean;
 }
 
+/**
+ * Every cause an attempt can end without an answer for, as a closed list.
+ *
+ * {@link AliasAttemptRecord.outcome} groups these into five coarse words and
+ * {@link AliasAttemptRecord.reason} explains one in prose; neither lets a
+ * consumer tell a rejected credential from a full queue from an answer that
+ * did not parse without reading the prose, and prose is not a contract. Each
+ * member is set by the code that knows the cause, never recovered from a
+ * message afterwards.
+ *
+ * The first six are the chain's own decisions and say nothing about a provider:
+ *
+ * - `leg_timeout`: the attempt ran out its budget, or its transport reported
+ *   the request aborted while neither the caller nor the chain had cancelled it.
+ * - `superseded`: replaced by a same-model attempt after its measured timeout.
+ * - `hedge_loser`: a same-model attempt answered first.
+ * - `caller_cancelled`: the caller stopped waiting.
+ * - `deadline_spent`: the caller's deadline ran out before the leg was dispatched.
+ * - `cross_model_denied`: the leg serves a different model and the caller's policy forbade it.
+ *
+ * The next four are legs that could not be asked:
+ *
+ * - `unsupported_capability`: the leg cannot honour a capability the request needs.
+ * - `breaker_open`: the leg's circuit breaker refused it.
+ * - `rate_guard`: the client's own provider guard did not admit the call.
+ * - `unresolvable_route`: the route table excluded the leg before the walk began.
+ *
+ * The last six are what a leg that was asked came back with:
+ *
+ * - `response_format`: it answered a structured request with content that does not parse.
+ * - `tool_choice_ignored`: it answered a mandatory tool call in prose.
+ * - `credential`: it rejected the caller's credentials (HTTP 401 or 403).
+ * - `capacity`: it said it is full rather than broken.
+ * - `gateway_unreachable`: the gateway in front of it could not be reached.
+ * - `provider_error`: any other failure.
+ */
+export const LLM_ATTEMPT_FAILURE_CLASSES = [
+  "leg_timeout",
+  "superseded",
+  "hedge_loser",
+  "caller_cancelled",
+  "deadline_spent",
+  "cross_model_denied",
+  "unsupported_capability",
+  "breaker_open",
+  "rate_guard",
+  "unresolvable_route",
+  "response_format",
+  "tool_choice_ignored",
+  "credential",
+  "capacity",
+  "gateway_unreachable",
+  "provider_error",
+] as const;
+
+/** One cause an attempt ended without an answer for. See {@link LLM_ATTEMPT_FAILURE_CLASSES}. */
+export type LlmAttemptFailureClass = (typeof LLM_ATTEMPT_FAILURE_CLASSES)[number];
+
 /** One attempt against one leg. */
 export interface AliasAttemptRecord {
   readonly routeKey: string;
@@ -462,6 +520,15 @@ export interface AliasAttemptRecord {
   readonly provider: string;
   readonly modelId: string;
   readonly outcome: "ok" | "error" | "timeout" | "breaker-open" | "skipped";
+  /**
+   * The typed cause of an attempt that did not answer. Absent on an `ok`
+   * attempt, and on a record built by a consumer's own double.
+   *
+   * Independent of {@link AliasAttemptRecord.outcome}: the outcome is kept as
+   * consumers already read it, while this names the cause by the failure's
+   * type, so the two can disagree where the outcome was inferred from wording.
+   */
+  readonly failureClass?: LlmAttemptFailureClass;
   readonly durationMs: number;
   /**
    * The budget this leg was given: its route budget, cut to what remained of

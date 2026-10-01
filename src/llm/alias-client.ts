@@ -304,6 +304,7 @@ export async function callLLMByAlias<T = unknown>(
           outcome: "skipped",
           durationMs: 0,
           reason: exclusion.reason,
+          failureClass: "unresolvable_route",
         }),
       ),
       {
