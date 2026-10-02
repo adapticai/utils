@@ -3,15 +3,16 @@ import type { AddressInfo } from "node:net";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { callLLMByAlias, configureLlmClient } from "../../../llm/alias-client";
+import { callLLMByAlias, configureLlmClient, llmBreakers } from "../../../llm/alias-client";
 import { CircuitBreakerRegistry } from "../../../llm/circuit-breaker";
 import { ChainExhaustedError, executeChain } from "../../../llm/fallback-chain";
-import { classify } from "../../../llm/leg-attempt";
+import { LegTimeoutError, classify } from "../../../llm/leg-attempt";
 import type { LegFailure } from "../../../llm/leg-attempt";
 import { routeTable } from "../../../llm/route-table";
 import { CREDENTIAL_REMOVED } from "../../../llm/transports/failure-description";
 import {
   GatewayResponseError,
+  GatewayResponseUnreadableError,
   GatewayUnreachableError,
   createGatewayTransport,
 } from "../../../llm/transports/gateway";
@@ -188,20 +189,29 @@ function healthyResponse(): Response {
 }
 
 /**
- * A response whose body fails while it is being read, with a failure that
- * quotes the given text.
+ * A response whose body fails while it is being read.
  *
  * @param status The response's status.
- * @param quoted Text the failure's message holds.
+ * @param failure What reading the body fails with.
  * @returns The response.
  */
-function unreadableResponse(status: number, quoted: string): Response {
+function unreadableResponse(status: number, failure: unknown): Response {
   const body = new ReadableStream<Uint8Array>({
     start(controller): void {
-      controller.error(new Error(`the connection dropped while sending ${quoted}`));
+      controller.error(failure);
     },
   });
   return new Response(body, { status });
+}
+
+/**
+ * A failure of a body read whose message quotes the given text.
+ *
+ * @param quoted Text the failure's message holds.
+ * @returns The failure.
+ */
+function droppedWhileSending(quoted: string): Error {
+  return new Error(`the connection dropped while sending ${quoted}`);
 }
 
 /**
@@ -282,8 +292,41 @@ function fetchFailed(causeName: string, code: string, message: string): Error {
   return new TypeError("fetch failed", { cause });
 }
 
+/**
+ * A platform HTTP failure whose cause has a cause of its own, as when a proxy
+ * refuses the tunnel to the gateway.
+ *
+ * @param innerName The innermost failure's class name.
+ * @param innerCode The innermost failure's system code.
+ * @returns The failure.
+ */
+function fetchFailedThrough(innerName: string, innerCode: string): Error {
+  const inner = Object.assign(new Error("the request was cut"), { code: innerCode });
+  inner.name = innerName;
+  return new TypeError("fetch failed", { cause: new Error("the tunnel was not opened", { cause: inner }) });
+}
+
+/**
+ * Failures of the HTTP layer whose class name or system code holds a word that
+ * a classifier reading descriptions would take for something else: an abort,
+ * or a provider saying it is full. None of them is either. Each says only
+ * "fetch failed" in its own message, so nothing was ever read out of it.
+ */
+const MISLEADINGLY_NAMED_FAILURES: readonly OrdinaryFailure[] = [
+  { label: "a connection aborted at the socket (ECONNABORTED)", build: () => fetchFailed("Error", "ECONNABORTED", "write ECONNABORTED") },
+  { label: "a tunnel a proxy refused (AbortError UND_ERR_ABORTED)", build: () => fetchFailedThrough("AbortError", "UND_ERR_ABORTED") },
+  { label: "a cause whose class is named for an abort", build: () => fetchFailed("AbortError", "ERR_SOCKET", "the request was cut") },
+  { label: "a cause whose class is Busy", build: () => fetchFailed("Busy", "ERR_SOCKET", "the request was cut") },
+  { label: "a cause whose code is BUSY", build: () => fetchFailed("Error", "BUSY", "the request was cut") },
+  { label: "a cause whose class is Overloaded", build: () => fetchFailed("Overloaded", "ERR_SOCKET", "the request was cut") },
+  { label: "a cause whose class is Capacity", build: () => fetchFailed("Capacity", "ERR_SOCKET", "the request was cut") },
+  { label: "a cause whose class is RateLimit", build: () => fetchFailed("RateLimit", "ERR_SOCKET", "the request was cut") },
+  { label: "a cause whose code is RATELIMITED", build: () => fetchFailed("Error", "RATELIMITED", "the request was cut") },
+];
+
 /** The failures an unreachable gateway ordinarily produces. */
 const ORDINARY_FAILURES: readonly OrdinaryFailure[] = [
+  ...MISLEADINGLY_NAMED_FAILURES,
   { label: "a refused connection", build: () => fetchFailed("Error", "ECONNREFUSED", "connect ECONNREFUSED 10.0.0.1:443") },
   { label: "a name that does not resolve", build: () => fetchFailed("Error", "ENOTFOUND", "getaddrinfo ENOTFOUND llm-gateway.invalid") },
   { label: "a reset connection", build: () => fetchFailed("Error", "ECONNRESET", "read ECONNRESET") },
@@ -522,7 +565,7 @@ describe("the gateway key never reaches an error", () => {
           fetchDouble(newLog(), () => {
             // The answer has started; the abort arrives before its body does.
             controller.abort(reason);
-            return unreadableResponse(status, SENTINEL);
+            return unreadableResponse(status, droppedWhileSending(SENTINEL));
           }),
         );
 
@@ -763,7 +806,7 @@ describe("the gateway key never reaches an error", () => {
     it.each([200, BAD_GATEWAY, UNAUTHORIZED])(
       "names a %i body that failed while it was being read by the failure's class, on a live signal",
       async (status) => {
-        const transport = transportOver(fetchDouble(newLog(), () => unreadableResponse(status, SENTINEL)));
+        const transport = transportOver(fetchDouble(newLog(), () => unreadableResponse(status, droppedWhileSending(SENTINEL))));
 
         const outcome = await raisedBy(transport.execute(requestFor()));
 
@@ -804,7 +847,7 @@ describe("the gateway key never reaches an error", () => {
       expect(
         isExactly(
           error.message,
-          "LLM gateway at https://llm-gateway.invalid/v1 is unreachable: TypeError, caused by Error",
+          "LLM gateway at https://llm-gateway.invalid/v1 (its user and password are not shown) is unreachable: TypeError, caused by Error",
         ),
       ).toBe(true);
     });
@@ -830,8 +873,53 @@ describe("the gateway key never reaches an error", () => {
       expect(aborted.raised && aborted.value === reason).toBe(true);
     });
 
+    it.each([
+      { label: "written the standard way", spell: (userinfo: string) => `https://${userinfo}@llm-gateway.invalid/v1` },
+      { label: "with a space before it", spell: (userinfo: string) => ` https://${userinfo}@llm-gateway.invalid/v1` },
+      { label: "with backslashes for slashes", spell: (userinfo: string) => `https:\\\\${userinfo}@llm-gateway.invalid\\v1` },
+      { label: "with a single slash after the scheme", spell: (userinfo: string) => `https:/${userinfo}@llm-gateway.invalid/v1` },
+      { label: "with a tab inside the scheme", spell: (userinfo: string) => `ht\ttps://${userinfo}@llm-gateway.invalid/v1` },
+      { label: "with a user and no password", spell: (userinfo: string) => `https://${userinfo.split(":")[1]}@llm-gateway.invalid/v1` },
+      { label: "with an upper-case scheme", spell: (userinfo: string) => `HTTPS://${userinfo}@llm-gateway.invalid/v1` },
+    ])("leaves out the user and password of an address $label", ({ spell }) => {
+      const baseUrl = spell(`operator:${SENTINEL}`);
+      // Anti-vacuity: the platform reads this spelling as an address that holds credentials.
+      const parsed = new URL(baseUrl);
+      expect(`${parsed.username}:${parsed.password}`.includes(SENTINEL)).toBe(true);
+
+      const error = new GatewayUnreachableError(baseUrl, new Error("fetch failed"));
+
+      expect(exposes(error, SECRETS)).toBe(false);
+      expect(
+        isExactly(
+          error.message,
+          "LLM gateway at https://llm-gateway.invalid/v1 (its user and password are not shown) is unreachable: Error",
+        ),
+      ).toBe(true);
+    });
+
+    it("falls back to the pattern for an address that cannot be parsed", () => {
+      const baseUrl = `https://operator:${SENTINEL}@[not-a-host/v1`;
+      expect(URL.canParse(baseUrl)).toBe(false);
+
+      const error = new GatewayUnreachableError(baseUrl, new Error("fetch failed"));
+
+      expect(exposes(error, SECRETS)).toBe(false);
+      expect(
+        isExactly(error.message, "LLM gateway at https://[not-a-host/v1 (its user and password are not shown) is unreachable: Error"),
+      ).toBe(true);
+    });
+
     it("prints an address with no credentials in it unchanged", () => {
-      for (const baseUrl of [GATEWAY_URL, "http://10.0.0.7:4000/", "https://llm-gateway.internal/v1?team=a@b"]) {
+      const plain = [
+        GATEWAY_URL,
+        "http://10.0.0.7:4000/",
+        "https://llm-gateway.internal/v1?team=a@b",
+        "HTTPS://LLM-Gateway.internal:443/v1/",
+        " https://llm-gateway.internal",
+        "not a url at all",
+      ];
+      for (const baseUrl of plain) {
         expect(
           isExactly(
             new GatewayUnreachableError(baseUrl, new Error("x")).message,
@@ -869,6 +957,106 @@ describe("the gateway key never reaches an error", () => {
       expect(failed.length).toBeGreaterThan(0);
       expect(failed.every((attempt) => attempt.failureClass === "gateway_unreachable")).toBe(true);
       expect(failed.every((attempt) => attempt.outcome === "error")).toBe(true);
+      // What the breaker was charged: a hard failure, which earns the long
+      // cooldown. The leg that then answered on the direct path has had its
+      // run of failures cleared, so it is read on the others.
+      const stillCharged = failed.filter((attempt) => attempt.routeKey !== result.servedBy.routeKey);
+      expect(stillCharged.length).toBeGreaterThan(0);
+      expect(stillCharged.map((attempt) => llmBreakers().snapshot(attempt.routeKey).failureKind)).toEqual(
+        stillCharged.map(() => "hard"),
+      );
+    });
+
+    it.each(MISLEADINGLY_NAMED_FAILURES)(
+      "a body that failed with $label while it was read is a failure with no status, as it was",
+      async ({ build }) => {
+        for (const status of [200, BAD_GATEWAY]) {
+          const transport = transportOver(fetchDouble(newLog(), () => unreadableResponse(status, build())));
+
+          const outcome = await raisedBy(transport.execute(requestFor()));
+
+          // What this path raised before was the read failure itself, whose own
+          // message says nothing a classifier reads.
+          expect(verdictOf(build())).toEqual(PROVIDER_ERROR_VERDICT);
+          expect(outcome.raised && outcome.value instanceof GatewayResponseUnreadableError).toBe(true);
+          expect(verdictOf(outcome.raised ? outcome.value : undefined)).toEqual(PROVIDER_ERROR_VERDICT);
+        }
+      },
+    );
+
+    it("classifies the transport's own errors by their class, whatever their description says", () => {
+      // The address, the variable's name and a wrapped failure's words are all
+      // description. None of them says the leg timed out or the provider is full.
+      const described: readonly Error[] = [
+        new GatewayUnreachableError("https://capacity-pool.busy.invalid/abort", new Error("fetch failed")),
+        new MessageQuotingUnreachableError(GATEWAY_URL, new Error("This operation was aborted")),
+        new MessageQuotingUnreachableError(GATEWAY_URL, new Error("connection pool is at capacity")),
+        new MessageQuotingUnreachableError(GATEWAY_URL, new Error("Model busy, retry later; too many requests")),
+      ];
+      for (const error of described) {
+        expect(verdictOf(error)).toEqual(UNREACHABLE_VERDICT);
+      }
+      expect(verdictOf(new GatewayResponseUnreadableError(200, "AbortError, caused by Busy RATELIMITED"))).toEqual(
+        PROVIDER_ERROR_VERDICT,
+      );
+    });
+
+    it("still classifies a caller's cancellation and a leg's own timeout as it did", async () => {
+      const cancelled = new AbortController();
+      cancelled.abort();
+      const unreachable = new GatewayUnreachableError(GATEWAY_URL, new Error("fetch failed"));
+      expect(classify(unreachable, cancelled.signal)).toEqual({
+        outcome: "skipped",
+        reason: "caller cancelled",
+        countsAgainstHealth: false,
+        failureKind: "hard",
+        failureClass: "caller_cancelled",
+      });
+
+      const route = makeRoute({ alias: ALIAS, role: "primary" });
+      const timedOut = new LegTimeoutError(route.routeKey, TEST_LEG_TIMEOUT_MS);
+      expect(classify(timedOut, undefined)).toEqual({
+        outcome: "timeout",
+        reason: timedOut.message,
+        countsAgainstHealth: true,
+        failureKind: "capacity",
+        failureClass: "leg_timeout",
+      });
+      // An abort that reaches the chain from a transport that is not this one
+      // is still read from what it says, as before.
+      expect(verdictOf(new DOMException("This operation was aborted", "AbortError"))).toEqual({
+        outcome: "timeout",
+        countsAgainstHealth: true,
+        failureKind: "capacity",
+        failureClass: "leg_timeout",
+      });
+
+      // A caller that stops waiting while the gateway is being called.
+      const caller = new AbortController();
+      const transport = transportOver(
+        fetchDouble(
+          newLog(),
+          (_authorization, signal) =>
+            new Promise<Response>((_resolve, reject) => {
+              signal?.addEventListener("abort", () => {
+                reject(new TypeError("fetch failed", { cause: new DOMException("aborted", "AbortError") }));
+              });
+              caller.abort();
+            }),
+        ),
+      );
+      const error = await rejection(
+        executeChain<string>(ALIAS, {
+          legs: [{ route, transport, params: {} }],
+          content: "prompt",
+          responseFormat: "text",
+          breakers: new CircuitBreakerRegistry(routeTable.defaults.circuit_breaker, () => Date.now()),
+          callerSignal: caller.signal,
+        }),
+        ChainExhaustedError,
+      );
+      expect(error.attempts.map((attempt) => attempt.failureClass)).toEqual(["caller_cancelled"]);
+      expect(error.attempts.map((attempt) => attempt.outcome)).toEqual(["skipped"]);
     });
 
     it("classifies a connection the platform itself refuses as an unreachable gateway", async () => {

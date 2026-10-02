@@ -150,6 +150,21 @@ describe("withoutCredential", () => {
     expect(isExactly(cleaned, JSON.stringify({ error: { message: `no such key: ${CREDENTIAL_REMOVED}` } }))).toBe(true);
   });
 
+  it("recognises the JSON form of the credential a header carried, when the one read had whitespace around it", () => {
+    // Both at once: the provider received the credential without the line
+    // break, and quotes it back inside JSON, where its quote and backslash
+    // are escaped. Neither the form as read nor its own JSON form is in the body.
+    const read = `${ESCAPED_SENTINEL}\r\n`;
+    const body = JSON.stringify({ error: { message: `no such key: ${ESCAPED_SENTINEL}` } });
+    expect(body.includes(read)).toBe(false);
+    expect(body.includes(JSON.stringify(read).slice(1, -1))).toBe(false);
+    expect(body.includes(ESCAPED_SENTINEL)).toBe(false);
+
+    const cleaned = withoutCredential(body, read);
+
+    expect(isExactly(cleaned, JSON.stringify({ error: { message: `no such key: ${CREDENTIAL_REMOVED}` } }))).toBe(true);
+  });
+
   it("leaves text alone when no credential was read, or the one read is blank", () => {
     const text = "connection   refused";
 

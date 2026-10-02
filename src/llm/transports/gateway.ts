@@ -88,10 +88,14 @@ export interface GatewayTransportConfig {
 /**
  * The user and password part of a URL's authority, with the scheme before it.
  *
- * Matched on the text and not by parsing the URL, so an address that holds no
- * credentials is printed exactly as it was configured.
+ * Used only on an address the platform cannot parse, which it would never
+ * call either: there is then no parsed form to print, and the text is the
+ * only thing to remove them from.
  */
 const URL_USERINFO = /^([A-Za-z][A-Za-z0-9+.-]*:\/\/)[^/?#]*@/;
+
+/** What follows an address printed without the user and password it was configured with. */
+const USERINFO_NOT_SHOWN = " (its user and password are not shown)";
 
 /**
  * A character a request header's value cannot hold: anything but a tab, a
@@ -99,9 +103,6 @@ const URL_USERINFO = /^([A-Za-z][A-Za-z0-9+.-]*:\/\/)[^/?#]*@/;
  * The HTTP layer refuses a request whose header holds one.
  */
 const NOT_A_HEADER_CHARACTER = /[^\t\x20-\x7e\x80-\xff]/;
-
-/** Blanks before a key. They follow the scheme in the header, which carries them. */
-const LEADING_BLANKS = /^[\t ]+/;
 
 /** Whitespace after a key. It ends the header's value, which drops it. */
 const TRAILING_WHITESPACE = /[\t\n\r ]+$/;
@@ -126,11 +127,31 @@ class GatewayOwnReason extends Error {
 /**
  * The gateway's address as it may be printed.
  *
+ * Whether an address holds a user and password is the platform's reading of
+ * it, not this module's: the same parser that will be asked to call it decides.
+ * A pattern over the text would miss every spelling the parser forgives (a
+ * blank before the scheme, backslashes for slashes). An address that holds
+ * neither is printed exactly as it was configured. One that holds either is
+ * printed from its parsed form with both cleared, and says so, because the
+ * HTTP layer refuses to call such an address and the reader should see why.
+ *
  * @param baseUrl The configured base URL.
- * @returns The same text without a user and password, when it held one.
+ * @returns The address, holding no user and no password.
  */
 function printableBaseUrl(baseUrl: string): string {
-  return baseUrl.replace(URL_USERINFO, "$1");
+  let parsed: URL;
+  try {
+    parsed = new URL(baseUrl);
+  } catch {
+    const stripped = baseUrl.replace(URL_USERINFO, "$1");
+    return stripped === baseUrl ? baseUrl : `${stripped}${USERINFO_NOT_SHOWN}`;
+  }
+  if (parsed.username === "" && parsed.password === "") {
+    return baseUrl;
+  }
+  parsed.username = "";
+  parsed.password = "";
+  return `${parsed.href}${USERINFO_NOT_SHOWN}`;
 }
 
 /**
@@ -203,10 +224,9 @@ export class GatewayResponseUnreadableError extends Error {
  * Read the gateway key from the environment by name.
  *
  * The key is returned as it was read and sent as it was read. Whether a header
- * can carry it is judged on the key without the blanks before it and the
- * whitespace after it, because the header carries the first and drops the
- * second: a key that differs from a usable one only there reaches the gateway
- * as the usable one.
+ * can carry it is judged on the key without the whitespace after it, because
+ * the header drops that: a key that differs from a usable one only there
+ * reaches the gateway as the usable one.
  *
  * @param envVar The variable's NAME.
  * @returns The key.
@@ -224,7 +244,7 @@ function readGatewayKey(envVar: string): string {
         "Provision it from the secrets manager; it is never read from a file or a default.",
     );
   }
-  const carried = value.replace(LEADING_BLANKS, "").replace(TRAILING_WHITESPACE, "");
+  const carried = value.replace(TRAILING_WHITESPACE, "");
   if (NOT_A_HEADER_CHARACTER.test(carried)) {
     throw new GatewayOwnReason(
       `${envVar} holds a value that cannot be carried in a request header, ` +
