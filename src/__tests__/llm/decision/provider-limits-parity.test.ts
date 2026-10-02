@@ -210,6 +210,38 @@ describe("the limits verifier", () => {
     );
   });
 
+  it("reads a per-model override for the pinned model as the route's limits", () => {
+    const pin = utilsServedRoutes()[0].route.version_pin;
+    const overrideFor = (acquireTimeoutMs: number): Record<string, unknown> => ({
+      basis: "conservative-default",
+      requests_per_minute: 600,
+      max_concurrent: 8,
+      acquire_timeout_ms: acquireTimeoutMs,
+      source: null,
+      note: "The pinned model runs at numbers of its own.",
+    });
+    const scopePerModel = (limits: EditableJson, acquireTimeoutMs: number): void => {
+      Object.assign(limits.providers.typesafe, {
+        scope: "model",
+        scope_source: "https://docs.example.com/rate-limits",
+        models: { [pin]: overrideFor(acquireTimeoutMs) },
+      });
+    };
+
+    // The pin is a model a route sends to the provider, so an override for it binds something.
+    const accepted = runVerifierOnEditedCopy(({ limits }) => scopePerModel(limits, 250));
+    expect(accepted.stderr).toBe("");
+    expect(accepted.status).toBe(0);
+
+    // The override, not the provider entry, is what the pinned model's calls wait on.
+    const slow = runVerifierOnEditedCopy(({ limits }) => scopePerModel(limits, PACKAGE_DEFAULT_ACQUIRE_TIMEOUT_MS));
+    expect(slow.status).toBe(1);
+    expect(slow.stderr).toContain(
+      "FAIL typesafe: acquire_timeout_ms 15000 exceeds the 1500 ms budget of decision route dm.hosted",
+    );
+    expect(slow.stderr).toContain("1 failure(s)");
+  });
+
   it("refuses limits for a provider this package never guards, and for one no table declares", () => {
     const unguarded = runVerifierOnEditedCopy(({ limits }) => {
       limits.providers["engine-judge"] = structuredClone(limits.providers.typesafe);
