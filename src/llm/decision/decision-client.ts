@@ -31,6 +31,15 @@
  * right shape from the wrong source, and a body that has been validated reads
  * as trustworthy, so the comparison comes first and is made on the whole id.
  *
+ * Every rejection is one of this package's decision errors, with the record
+ * of the attempt attached. A failure that arrives as anything else (a throw
+ * from a caller's own getter, from an injected clock or transport, from this
+ * file's own code) is given the fault of the stage the call had reached, and
+ * is described by its class and system code and never by its message, which
+ * can quote the request it failed on. A failure of the client's own machinery
+ * has a fault of its own, so it is never counted as the vendor's. So a
+ * consumer that keys on the fault never meets a rejection that has none.
+ *
  * The breaker measures one thing: whether the vendor can be reached in time.
  * A rejected key, a rejected request, a malformed answer and a substituted
  * model each arrived in time from a vendor that was reachable, and each has a
@@ -45,12 +54,14 @@
 import { CircuitBreakerRegistry } from "../circuit-breaker";
 import type { BreakerFailureKind } from "../circuit-breaker";
 import { RateGuardTimeoutError, withProviderGuards } from "../rate-guard";
+import { describeFailure, withoutCredential } from "../transports/failure-description";
 import { decodeDecisionResponse, encodeDecisionRequest, resolveProbabilitySumTolerance } from "./codec";
 import type { DecodedDecisionResponse } from "./codec";
 import { decisionRouteTable, decisionRouteViolations, resolveDecisionRoute } from "./decision-route-table";
 import {
   DecisionAdmissionError,
   DecisionCallError,
+  DecisionClientFaultError,
   DecisionRequestInvalidError,
   DecisionResponseFormatError,
   DecisionRouteMismatchError,
@@ -78,8 +89,17 @@ const BREAKER_KEY_PREFIX = "decision:";
 /** The path that names a request body itself, not a field of it. */
 const ROOT_PATH = "$";
 
-/** What stands where the key was, in text this layer did not write. */
-const KEY_REMOVED = "[credential removed]";
+/** The path that names a call's options. */
+const OPTIONS_PATH = "options";
+
+/**
+ * What a call is recorded under when the value given as its route is not text.
+ *
+ * A route is named in every error and every attempt record, so a value that
+ * cannot be written there is replaced before anything reads it. No table
+ * declares this name, so the call is refused like any other unknown route.
+ */
+const UNNAMED_ROUTE: string = "(not a route name)";
 
 /** How the client is wired. Every field is optional; an absent one is the package's own. */
 export interface DecisionClientConfig {
@@ -116,8 +136,23 @@ type Settlement =
   | { readonly kind: "failed"; readonly error: unknown }
   | { readonly kind: "ended"; readonly ending: DecisionTimeoutError };
 
-/** What is known about a dispatch once it has been made. */
-interface DispatchState {
+/**
+ * How far a call has got, in the order a call moves through them.
+ *
+ * - `resolving`: the route is being looked up; nothing of the caller's has been read.
+ * - `options`: the caller's options are being read.
+ * - `request`: the caller's request is being copied, checked and written.
+ * - `admitting`: the breaker and the guards are being passed; no request exists.
+ * - `dispatched`: the transport has been invoked and has not answered.
+ * - `answered`: an answer arrived and is being read.
+ * - `recording`: the call has its outcome, and the breaker is being told.
+ */
+type CallStage = "resolving" | "options" | "request" | "admitting" | "dispatched" | "answered" | "recording";
+
+/** What is known about a call while it runs. */
+interface CallProgress {
+  /** How far the call has got. It names what a failure of no known class is a failure of. */
+  stage: CallStage;
   /** When the transport was invoked, or `null` while it has not been. */
   dispatchedAtMs: number | null;
   /**
@@ -331,27 +366,6 @@ function unchanged(text: string): string {
 }
 
 /**
- * Take the key out of text this layer did not write.
- *
- * Every occurrence is replaced, in the key's own form and in the form a JSON
- * string writes it. The replacement is made on the whole text before any of it
- * is excerpted, so a key lying across an excerpt's bound is removed whole and
- * not cut to a prefix.
- *
- * @param text Text a vendor sent.
- * @param key The key the request was sent with, or empty when none was read.
- * @returns The text with the key replaced wherever it stood.
- */
-function withoutKey(text: string, key: string): string {
-  if (key === "") {
-    return text;
-  }
-  const asJson = JSON.stringify(key).slice(1, -1);
-  const verbatimRemoved = text.split(key).join(KEY_REMOVED);
-  return asJson === key ? verbatimRemoved : verbatimRemoved.split(asJson).join(KEY_REMOVED);
-}
-
-/**
  * Build the error for a call that must not be made as it was asked.
  *
  * @param fieldPath The offending field.
@@ -363,10 +377,72 @@ function invalidCall(fieldPath: string, reason: string): DecisionRequestInvalidE
 }
 
 /**
+ * Give a failure its decision error.
+ *
+ * A decision error is returned as it is. Anything else is a failure nobody
+ * classified, and it is given the fault of the stage the call had reached,
+ * which is the one thing the client knows for certain about it:
+ *
+ * - while the caller's options or request were being read, the call was asked
+ *   for in a way that cannot be honoured, which is the caller's defect;
+ * - after the transport was invoked and before it answered, the vendor gave
+ *   no answer;
+ * - after an answer arrived, the answer could not be read;
+ * - at every other stage the failure is this package's own machinery or
+ *   something it was wired with (the route table, the breaker, the guards,
+ *   the clock), and it is raised as the fault that means exactly that. It is
+ *   not a statement about the vendor, so it is never filed with the vendor's
+ *   failures.
+ *
+ * The failure is described by the class name and system code of it and of
+ * its causes and never by its message, which is free text and can quote the
+ * request, the vendor's answer or the header the key travels in.
+ *
+ * @param error Whatever was thrown.
+ * @param progress How far the call had got, and the key it was sent with.
+ * @param route The route the call is recorded under.
+ * @returns The decision error to raise; the attempt is attached by the caller.
+ */
+function typedFailure(error: unknown, progress: CallProgress, route: DecisionRoute): DecisionCallError {
+  if (error instanceof DecisionCallError) {
+    return error;
+  }
+  const failure = withoutCredential(describeFailure(error), progress.key);
+  switch (progress.stage) {
+    case "options":
+      return invalidCall(OPTIONS_PATH, `the options could not be read: reading them raised ${failure}`);
+    case "request":
+      return invalidCall(ROOT_PATH, `the request could not be read: reading it raised ${failure}`);
+    case "dispatched":
+      return new DecisionTransportError({
+        source: "network",
+        route,
+        retryable: false,
+        detail: `the transport raised a failure that is not a decision fault: ${failure}`,
+      });
+    case "answered":
+      return new DecisionResponseFormatError({
+        fieldPath: ROOT_PATH,
+        reason: `the answer could not be read: reading it raised ${failure}`,
+        status: null,
+        usage: null,
+        vendorRequestId: null,
+      });
+    case "resolving":
+    case "admitting":
+    case "recording":
+      return new DecisionClientFaultError({ route, stage: progress.stage, description: failure });
+  }
+}
+
+/**
  * The caller's own id for a call, read without assuming the options are usable.
  *
  * It is read before anything is checked so that even a call refused at its
- * first step is recorded under the id its caller gave it.
+ * first step is recorded under the id its caller gave it. Options whose id
+ * cannot be read yield no id here and are refused where the options are
+ * checked, which is after the route has been resolved: a closed route is
+ * refused as closed whatever was passed with it.
  *
  * @param options The options as passed.
  * @returns The id, or `null` when none was given or the options cannot be read.
@@ -375,7 +451,12 @@ function correlationIdOf(options: unknown): string | null {
   if (typeof options !== "object" || options === null) {
     return null;
   }
-  const { correlationId } = options as DecisionCallOptions;
+  let correlationId: unknown;
+  try {
+    correlationId = (options as DecisionCallOptions).correlationId;
+  } catch {
+    correlationId = undefined;
+  }
   return typeof correlationId === "string" ? correlationId : null;
 }
 
@@ -386,16 +467,20 @@ function correlationIdOf(options: unknown): string | null {
  * A deadline that is not a number would otherwise run under the route's whole
  * budget, which is a longer wait than the one the caller asked for.
  *
+ * Each option is read once and the values read are what the call runs on, so
+ * an option that answers differently when asked again cannot be checked as one
+ * value and used as another.
+ *
  * @param options The options as passed.
- * @returns The same options, known to be usable.
+ * @returns The options as they were read, known to be usable.
  * @throws {DecisionRequestInvalidError} Naming the option that cannot be honoured.
  */
 function usableOptions(options: DecisionCallOptions): DecisionCallOptions {
   const given: unknown = options;
   if (typeof given !== "object" || given === null) {
-    throw invalidCall("options", "a call's options must be an object; leave them out to run on the route's own terms");
+    throw invalidCall(OPTIONS_PATH, "a call's options must be an object; leave them out to run on the route's own terms");
   }
-  const { timeoutMs, signal, correlationId } = options;
+  const { timeoutMs, signal, correlationId, probabilitySumTolerance } = options;
   if (timeoutMs !== undefined && (typeof timeoutMs !== "number" || Number.isNaN(timeoutMs))) {
     throw invalidCall(
       "options.timeoutMs",
@@ -408,8 +493,8 @@ function usableOptions(options: DecisionCallOptions): DecisionCallOptions {
   if (correlationId !== undefined && typeof correlationId !== "string") {
     throw invalidCall("options.correlationId", "a correlation id must be a string");
   }
-  resolveProbabilitySumTolerance(options.probabilitySumTolerance);
-  return options;
+  resolveProbabilitySumTolerance(probabilitySumTolerance);
+  return { timeoutMs, signal, correlationId, probabilitySumTolerance };
 }
 
 /**
@@ -449,6 +534,7 @@ function assertWritable(body: DecisionWireRequest): void {
  * @param request The caller's request.
  * @param options The caller's options.
  * @param measured The attempt's measurement, filled as facts become known.
+ * @param progress How far the call has got, advanced here stage by stage.
  * @returns The prepared call.
  * @throws {DecisionRouteUnavailableError} When the route may not be called.
  * @throws {DecisionRequestInvalidError} When the options or the request cannot be honoured.
@@ -458,12 +544,16 @@ function prepareCall(
   request: DecisionRequest,
   options: DecisionCallOptions,
   measured: AttemptInProgress,
+  progress: CallProgress,
 ): PreparedCall {
   const resolved = resolveDecisionRoute(route, config.routeTable ?? decisionRouteTable);
   measured.provider = resolved.providerName;
   measured.modelPin = resolved.modelPin;
 
+  progress.stage = "options";
   const { timeoutMs, signal, probabilitySumTolerance } = usableOptions(options);
+
+  progress.stage = "request";
   const body = encodeDecisionRequest(rebuildTree(request, unchanged) as DecisionRequest, {
     model: resolved.modelPin,
     caps: resolved.caps,
@@ -474,6 +564,7 @@ function prepareCall(
   // that has already passed leaves no budget at all.
   const budgetMs = timeoutMs === undefined ? resolved.budgetMs : Math.max(0, Math.min(resolved.budgetMs, timeoutMs));
   measured.budgetMs = budgetMs;
+  progress.stage = "admitting";
   return { resolved, body, budgetMs, callerSignal: signal, probabilitySumTolerance };
 }
 
@@ -543,7 +634,7 @@ function decodeAnswered(
     }
   }
   decodeDecisionResponse(
-    rebuildTree(result.payload, (text) => withoutKey(text, key)),
+    rebuildTree(result.payload, (text) => withoutCredential(text, key)),
     prepared.body,
     decodeOptions,
   );
@@ -580,11 +671,11 @@ function resultOf(
 ): DecisionCallResult {
   const { resolved } = prepared;
   const vendorRequestId =
-    result.vendorRequestId === null ? null : decisionErrorExcerpt(withoutKey(result.vendorRequestId, key));
+    result.vendorRequestId === null ? null : decisionErrorExcerpt(withoutCredential(result.vendorRequestId, key));
   measured.status = result.status;
   measured.vendorRequestId = vendorRequestId;
   measured.usage = result.usage;
-  measured.servedModel = withoutKey(result.servedModel, key);
+  measured.servedModel = withoutCredential(result.servedModel, key);
 
   if (result.servedModel !== resolved.expectedServedModel) {
     throw new DecisionRouteMismatchError({
@@ -625,13 +716,17 @@ function resultOf(
  *
  * @param prepared The call.
  * @param measured The attempt's measurement, filled as facts become known.
+ * @param progress How far the call has got, advanced here stage by stage.
  * @param now The clock.
  * @returns The caller's result.
- * @throws {DecisionCallError} For every way the attempt can fail.
+ * @throws {DecisionCallError} For every way the attempt is known to fail. A
+ *   failure of no known class is rethrown as it is, with the breaker already
+ *   told what it means, for the caller of this function to give a fault.
  */
 async function runAttempt(
   prepared: PreparedCall,
   measured: AttemptInProgress,
+  progress: CallProgress,
   now: () => number,
 ): Promise<DecisionCallResult> {
   const { resolved, body, budgetMs, callerSignal } = prepared;
@@ -653,11 +748,7 @@ async function runAttempt(
   const holdsProbe = registry.onAttemptStart(key);
   let verdict: BreakerVerdict = { kind: "none" };
 
-  const transport = transportFor();
   const controller = new AbortController();
-  const dispatch: DispatchState = { dispatchedAtMs: null, key: "" };
-  const queuedAtMs = now();
-
   const settled = deferred<Settlement>();
 
   /**
@@ -665,7 +756,9 @@ async function runAttempt(
    * is aborted, so the end decides the outcome and nothing the abort sets off
    * can. The reason given to the signal is the timeout a dispatched call is
    * raised as, so the transport rejects with the very error the caller
-   * receives.
+   * receives. The reason the caller aborted its own signal with is not passed
+   * on: it is the caller's value, of any type and with any content, and the
+   * caller already holds it.
    *
    * @param source Whether the budget ran out or the caller stopped waiting.
    * @returns void
@@ -680,36 +773,49 @@ async function runAttempt(
   const onCallerAbort = (): void => {
     end("caller_signal");
   };
-  const timer = setTimeout(() => {
-    end("route_budget");
-  }, budgetMs);
-  callerSignal?.addEventListener("abort", onCallerAbort, { once: true });
+  let timer: ReturnType<typeof setTimeout> | undefined;
 
-  /**
-   * Invoke the transport, once.
-   *
-   * A place in the guards can be granted to a call that has just ended: the
-   * rate queue does not hear the signal, and the concurrency gate checks it
-   * only on entry. Such a call is not dispatched.
-   *
-   * @returns The transport's result.
-   */
-  const send = async (): Promise<SystemOneTransportResult> => {
-    if (controller.signal.aborted) {
-      const reason: unknown = controller.signal.reason;
-      throw reason;
-    }
-    dispatch.dispatchedAtMs = now();
-    dispatch.key = (process.env[resolved.apiKeyEnv] ?? "").trim();
-    return transport.execute({ route: resolved, body, signal: controller.signal });
-  };
-
+  // Everything from here runs under the `finally` below. The attempt is
+  // already counted by the breaker, and may hold its one probe slot, so
+  // nothing that can throw may come between taking that and the code that
+  // gives it back.
   try {
-    // The guarded dispatch is raced against the call's end, because the rate
-    // queue waits for its own timeout whatever budget it is handed.
+    const transport = transportFor();
+    const queuedAtMs = now();
+    timer = setTimeout(() => {
+      end("route_budget");
+    }, budgetMs);
+    callerSignal?.addEventListener("abort", onCallerAbort, { once: true });
+
+    /**
+     * Invoke the transport, once.
+     *
+     * A place in the guards can be granted to a call that has just ended: a
+     * waiter leaves either queue the moment the signal aborts, but one that
+     * was admitted in that same moment is already on its way here. Such a call
+     * is not dispatched.
+     *
+     * @returns The transport's result.
+     */
+    const send = async (): Promise<SystemOneTransportResult> => {
+      if (controller.signal.aborted) {
+        const reason: unknown = controller.signal.reason;
+        throw reason;
+      }
+      progress.dispatchedAtMs = now();
+      progress.stage = "dispatched";
+      progress.key = (process.env[resolved.apiKeyEnv] ?? "").trim();
+      return transport.execute({ route: resolved, body, signal: controller.signal });
+    };
+
+    // The guarded dispatch is raced against the call's end. The guards hear
+    // the same signal in both of their queues, so a call that has ended takes
+    // neither a rate token nor a permit, and the race is what makes the end,
+    // not their refusal, the call's outcome.
     withProviderGuards(resolved.providerName, send, budgetMs, {
       modelId: resolved.modelPin,
       signal: controller.signal,
+      signalEndsRateWait: true,
     }).then(
       (result) => {
         settled.resolve({ kind: "answered", result });
@@ -721,14 +827,15 @@ async function runAttempt(
     const settlement = await settled.promise;
 
     const settledAtMs = now();
-    const dispatchedAtMs = dispatch.dispatchedAtMs;
+    const dispatchedAtMs = progress.dispatchedAtMs;
     measured.queueMs = (dispatchedAtMs ?? settledAtMs) - queuedAtMs;
     measured.durationMs = dispatchedAtMs === null ? null : settledAtMs - dispatchedAtMs;
 
     if (settlement.kind === "answered") {
       // An answer arrived in time, whatever is then made of it.
       verdict = { kind: "reachable" };
-      return resultOf(settlement.result, prepared, measured, dispatch.key);
+      progress.stage = "answered";
+      return resultOf(settlement.result, prepared, measured, progress.key);
     }
 
     if (settlement.kind === "ended") {
@@ -752,28 +859,34 @@ async function runAttempt(
       verdict = verdictOf(error);
       throw error;
     }
-    // A failure of no known class is not described from its own text, which
-    // can quote the request it failed on.
-    verdict = { kind: "failed", failureKind: "hard" };
-    throw new DecisionTransportError({
-      source: "network",
-      route,
-      retryable: false,
-      detail: "the transport raised a failure that is not a decision fault",
-    });
+    // A failure of no known class. From a transport that was invoked, it is a
+    // vendor that gave no answer and counts against the route. Before that,
+    // no request existed and the vendor was not tested.
+    if (dispatchedAtMs !== null) {
+      verdict = { kind: "failed", failureKind: "hard" };
+    }
+    throw error;
   } finally {
     clearTimeout(timer);
     callerSignal?.removeEventListener("abort", onCallerAbort);
-    if (verdict.kind === "reachable") {
-      registry.onSuccess(key, dispatch.dispatchedAtMs ?? undefined);
-    } else if (verdict.kind === "failed") {
-      registry.onFailure(key, verdict.failureKind);
-    } else if (holdsProbe) {
-      // No verdict, but the probe slot this attempt took must come back, or a
-      // half-open route admits no probe again.
-      registry.onAttemptAbandoned(key);
+    // The outcome is decided. What follows only tells the breaker, and a
+    // failure while telling it is a failure of that stage and of no earlier one.
+    const outcomeStage = progress.stage;
+    progress.stage = "recording";
+    try {
+      if (verdict.kind === "reachable") {
+        registry.onSuccess(key, progress.dispatchedAtMs ?? undefined);
+      } else if (verdict.kind === "failed") {
+        registry.onFailure(key, verdict.failureKind);
+      } else if (holdsProbe) {
+        // No verdict, but the probe slot this attempt took must come back, or
+        // a half-open route admits no probe again.
+        registry.onAttemptAbandoned(key);
+      }
+    } finally {
+      registry.onAttemptEnd(key);
     }
-    registry.onAttemptEnd(key);
+    progress.stage = outcomeStage;
   }
 }
 
@@ -787,14 +900,24 @@ async function runAttempt(
  *   model, what the call cost and the record of the attempt.
  * @throws {DecisionCallError} For every failure, with the attempt attached. A
  *   failure never resolves: there is no default answer and no partial result.
+ *   Nothing else is ever thrown: a failure that is not a decision error when
+ *   it reaches the client leaves it as one, with the fault of the stage the
+ *   call had reached. A caller that aborts its own signal receives a timeout
+ *   or an admission fault whose source is `caller_signal`, never the reason
+ *   it aborted with.
  */
 export async function callDecisionModel(
   route: DecisionRoute,
   request: DecisionRequest,
   options: DecisionCallOptions = {},
 ): Promise<DecisionCallResult> {
+  // The value given as the route is written into every error and record of
+  // the call, so one that is not text is replaced before anything reads it.
+  const given: unknown = route;
+  const named = (typeof given === "string" ? given : UNNAMED_ROUTE) as DecisionRoute;
+  const progress: CallProgress = { stage: "resolving", dispatchedAtMs: null, key: "" };
   const measured: AttemptInProgress = {
-    route,
+    route: named,
     provider: null,
     modelPin: null,
     status: null,
@@ -808,9 +931,9 @@ export async function callDecisionModel(
     correlationId: correlationIdOf(options),
   };
   try {
-    const prepared = prepareCall(route, request, options, measured);
-    return await runAttempt(prepared, measured, config.now ?? Date.now);
+    const prepared = prepareCall(named, request, options, measured, progress);
+    return await runAttempt(prepared, measured, progress, config.now ?? Date.now);
   } catch (error) {
-    throw error instanceof DecisionCallError ? error.withAttempt({ ...measured }) : error;
+    throw typedFailure(error, progress, named).withAttempt({ ...measured });
   }
 }
