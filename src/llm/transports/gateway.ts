@@ -20,10 +20,24 @@
  * stored, logged, or included in an error (PD-2). Reading it per call rather
  * than caching it at import means a rotation takes effect without a restart.
  *
+ * Keeping the key out of an error takes more than not writing it there,
+ * because an error raised here is read far from here: its message becomes an
+ * attempt's recorded reason and part of the exhausted-chain error. Four rules
+ * hold on every path. A key that a request header cannot carry is refused
+ * before any request is built, by a message that names the variable. A failure
+ * of the HTTP layer is named by its class and system code and never quoted,
+ * because a layer that refuses a request quotes the header it refused. Once
+ * the leg's signal has aborted, what is raised is the signal's own reason and
+ * never what the HTTP layer threw at that moment. And text the gateway answers
+ * a failure with has the key taken out before it is quoted, because a gateway
+ * may quote back the credential it was sent. A successful answer is returned
+ * as the gateway sent it.
+ *
  * @module llm/transports/gateway
  */
 
 import { parseStructuredContent } from "../structured-content";
+import { describeFailure, withoutCredential } from "./failure-description";
 import type {
   LlmTransport,
   LlmTransportRequest,
@@ -72,6 +86,75 @@ export interface GatewayTransportConfig {
 }
 
 /**
+ * The user and password part of a URL's authority, with the scheme before it.
+ *
+ * Used only on an address the platform cannot parse, which it would never
+ * call either: there is then no parsed form to print, and the text is the
+ * only thing to remove them from.
+ */
+const URL_USERINFO = /^([A-Za-z][A-Za-z0-9+.-]*:\/\/)[^/?#]*@/;
+
+/** What follows an address printed without the user and password it was configured with. */
+const USERINFO_NOT_SHOWN = " (its user and password are not shown)";
+
+/**
+ * A character a request header's value cannot hold: anything but a tab, a
+ * space, visible ASCII and the upper half of Latin-1 (RFC 9110, section 5.5).
+ * The HTTP layer refuses a request whose header holds one.
+ */
+const NOT_A_HEADER_CHARACTER = /[^\t\x20-\x7e\x80-\xff]/;
+
+/** Whitespace after a key. It ends the header's value, which drops it. */
+const TRAILING_WHITESPACE = /[\t\n\r ]+$/;
+
+/**
+ * A reason for a failure, in words this module wrote.
+ *
+ * The one kind of cause whose message an error raised here repeats. Every
+ * other failure reaches this module from the HTTP layer, whose words can quote
+ * the request it refused.
+ */
+class GatewayOwnReason extends Error {
+  /**
+   * @param reason The reason, holding nothing another layer said.
+   */
+  public constructor(reason: string) {
+    super(reason);
+    this.name = "GatewayOwnReason";
+  }
+}
+
+/**
+ * The gateway's address as it may be printed.
+ *
+ * Whether an address holds a user and password is the platform's reading of
+ * it, not this module's: the same parser that will be asked to call it decides.
+ * A pattern over the text would miss every spelling the parser forgives (a
+ * blank before the scheme, backslashes for slashes). An address that holds
+ * neither is printed exactly as it was configured. One that holds either is
+ * printed from its parsed form with both cleared, and says so, because the
+ * HTTP layer refuses to call such an address and the reader should see why.
+ *
+ * @param baseUrl The configured base URL.
+ * @returns The address, holding no user and no password.
+ */
+function printableBaseUrl(baseUrl: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(baseUrl);
+  } catch {
+    const stripped = baseUrl.replace(URL_USERINFO, "$1");
+    return stripped === baseUrl ? baseUrl : `${stripped}${USERINFO_NOT_SHOWN}`;
+  }
+  if (parsed.username === "" && parsed.password === "") {
+    return baseUrl;
+  }
+  parsed.username = "";
+  parsed.password = "";
+  return `${parsed.href}${USERINFO_NOT_SHOWN}`;
+}
+
+/**
  * Thrown when the gateway itself is unreachable, as opposed to a provider
  * behind it failing.
  *
@@ -82,12 +165,15 @@ export interface GatewayTransportConfig {
  */
 export class GatewayUnreachableError extends Error {
   /**
-   * @param baseUrl The gateway that could not be reached.
-   * @param cause The underlying transport error.
+   * @param baseUrl The gateway that could not be reached. Printed without any
+   *   user and password it holds.
+   * @param cause The underlying failure. Named by its class and system code;
+   *   its message is never repeated, because it is another layer's free text.
    */
   public constructor(baseUrl: string, cause: unknown) {
     super(
-      `LLM gateway at ${baseUrl} is unreachable: ${cause instanceof Error ? cause.message : String(cause)}`,
+      `LLM gateway at ${printableBaseUrl(baseUrl)} is unreachable: ` +
+        (cause instanceof GatewayOwnReason ? cause.message : describeFailure(cause)),
     );
     this.name = "GatewayUnreachableError";
   }
@@ -114,23 +200,131 @@ export class GatewayResponseError extends Error {
 }
 
 /**
+ * Thrown when the gateway answered and the answer's body could not be read:
+ * the connection failed while the body was arriving, or the body of a
+ * successful answer is not JSON.
+ *
+ * It carries no status to classify by, on purpose. The status came with a body
+ * that was never read, and the failure is that of the exchange, so it is
+ * accounted like any other failure that has no status.
+ */
+export class GatewayResponseUnreadableError extends Error {
+  /**
+   * @param status The HTTP status the unread answer began with.
+   * @param detail Why the body could not be read, in words that quote neither
+   *   the body nor a lower layer's message.
+   */
+  public constructor(status: number, detail: string) {
+    super(`LLM gateway answered ${status} with a body that could not be read: ${detail}`);
+    this.name = "GatewayResponseUnreadableError";
+  }
+}
+
+/**
  * Read the gateway key from the environment by name.
+ *
+ * The key is returned as it was read and sent as it was read. Whether a header
+ * can carry it is judged on the key without the whitespace after it, because
+ * the header drops that: a key that differs from a usable one only there
+ * reaches the gateway as the usable one.
  *
  * @param envVar The variable's NAME.
  * @returns The key.
  * @throws When the variable is unset, because an unauthenticated call would
  *   reach the gateway as an anonymous caller and be rejected there anyway —
- *   later, and with a less useful message.
+ *   later, and with a less useful message. And when it holds a value a request
+ *   header cannot carry, because the HTTP layer would refuse the request and
+ *   say so by quoting the value. Both name the variable and never its value.
  */
 function readGatewayKey(envVar: string): string {
   const value = process.env[envVar];
   if (value === undefined || value.length === 0) {
-    throw new Error(
+    throw new GatewayOwnReason(
       `${envVar} is unset, so the LLM gateway cannot be authenticated against. ` +
         "Provision it from the secrets manager; it is never read from a file or a default.",
     );
   }
+  const carried = value.replace(TRAILING_WHITESPACE, "");
+  if (NOT_A_HEADER_CHARACTER.test(carried)) {
+    throw new GatewayOwnReason(
+      `${envVar} holds a value that cannot be carried in a request header, ` +
+        "so the LLM gateway cannot be authenticated against; no request was made. " +
+        "Provision it again from the secrets manager, without a line break or a control character inside it.",
+    );
+  }
   return value;
+}
+
+/**
+ * Turn a throw from below this transport, made before any answer arrived, into
+ * the leg's outcome.
+ *
+ * Once the signal has aborted, the outcome is the signal's own reason, so the
+ * chain reads its own timeout or cancellation and not a gateway outage. What
+ * was thrown is dropped. For an abort that loses nothing: the platform's HTTP
+ * call rejects with the signal's reason, so the two are one object. For
+ * anything else it is the point: a failure that merely coincides with the
+ * abort is another layer's free text.
+ *
+ * While the signal is live, the gateway was not reached.
+ *
+ * @param error What was thrown.
+ * @param signal The leg's abort signal.
+ * @param baseUrl The gateway's base URL.
+ * @param key The key the request carried, or `null` when none was read.
+ * @returns Never.
+ * @throws The signal's reason, or a {@link GatewayUnreachableError}.
+ */
+function raiseUnanswered(error: unknown, signal: AbortSignal, baseUrl: string, key: string | null): never {
+  if (signal.aborted) {
+    const reason: unknown = signal.reason;
+    throw reason;
+  }
+  throw new GatewayUnreachableError(
+    baseUrl,
+    error instanceof GatewayOwnReason
+      ? error
+      : new GatewayOwnReason(withoutCredential(describeFailure(error), key)),
+  );
+}
+
+/**
+ * Read a response's body as text.
+ *
+ * @param response The response.
+ * @param signal The leg's abort signal.
+ * @param key The key the request carried.
+ * @returns The body.
+ * @throws The signal's reason once it has aborted; otherwise a
+ *   {@link GatewayResponseUnreadableError} naming the failure by its class.
+ */
+async function readBody(response: Response, signal: AbortSignal, key: string): Promise<string> {
+  try {
+    return await response.text();
+  } catch (error) {
+    if (signal.aborted) {
+      const reason: unknown = signal.reason;
+      throw reason;
+    }
+    throw new GatewayResponseUnreadableError(response.status, withoutCredential(describeFailure(error), key));
+  }
+}
+
+/**
+ * Parse the body of a successful answer.
+ *
+ * @param text The body.
+ * @param status The answer's status.
+ * @returns The parsed body.
+ * @throws {GatewayResponseUnreadableError} When the body is not JSON. The
+ *   parser's own error is not rethrown: it quotes the text it stopped on.
+ */
+function parseBody(text: string, status: number): Record<string, unknown> {
+  try {
+    return JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    throw new GatewayResponseUnreadableError(status, "it is not JSON");
+  }
 }
 
 /**
@@ -229,13 +423,15 @@ export function createGatewayTransport(
         ...request.params,
       };
 
+      let key: string | null = null;
       let response: Response;
       try {
+        key = readGatewayKey(config.apiKeyEnv);
         response = await doFetch(`${config.baseUrl.replace(/\/$/, "")}/chat/completions`, {
           method: "POST",
           headers: {
             "content-type": "application/json",
-            authorization: `Bearer ${readGatewayKey(config.apiKeyEnv)}`,
+            authorization: `Bearer ${key}`,
             ...(request.correlationId === undefined
               ? {}
               : { "x-correlation-id": request.correlationId }),
@@ -244,20 +440,18 @@ export function createGatewayTransport(
           signal: request.signal,
         });
       } catch (error) {
-        // A transport-level throw means the proxy was never reached. Abort is
-        // re-thrown untouched so the chain's timeout classification stays
+        // A throw here means the proxy was never reached. An abort surfaces as
+        // the signal's reason, so the chain's timeout classification stays
         // accurate rather than being masked as a gateway outage.
-        if (request.signal.aborted) {
-          throw error;
-        }
-        throw new GatewayUnreachableError(config.baseUrl, error);
+        return raiseUnanswered(error, request.signal, config.baseUrl, key);
       }
 
+      const text = await readBody(response, request.signal, key);
       if (!response.ok) {
-        throw new GatewayResponseError(response.status, await response.text());
+        throw new GatewayResponseError(response.status, withoutCredential(text, key));
       }
 
-      const payload = (await response.json()) as Record<string, unknown>;
+      const payload = parseBody(text, response.status);
       const addressedAs = body.model;
       const choices = payload.choices as
         | {

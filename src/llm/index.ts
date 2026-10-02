@@ -100,6 +100,7 @@ export type { StreamChunk } from "./streaming";
 
 export {
   GatewayResponseError,
+  GatewayResponseUnreadableError,
   GatewayUnreachableError,
   SERVED_MODEL_HEADER,
   SERVED_PROVIDER_HEADER,

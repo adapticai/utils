@@ -236,8 +236,40 @@ export function isCapacitySignal(error: unknown, reason: string): boolean {
 /** HTTP statuses a provider uses to reject the caller's credentials. */
 const CREDENTIAL_STATUSES: ReadonlySet<number> = new Set([401, 403]);
 
-/** The `name` every copy of the gateway transport's unreachable error carries. */
-const GATEWAY_UNREACHABLE_ERROR_NAME = "GatewayUnreachableError";
+/**
+ * What the gateway transport's own errors about the exchange itself are, by
+ * the `name` every copy of each carries.
+ *
+ * These two are raised when no provider said anything: the gateway was not
+ * reached, or its answer could not be read. Their messages describe a failure
+ * of the HTTP layer by its class names and system codes, the address that was
+ * called and the variable the key is read from. All of that is description,
+ * and a description can hold any word: a platform failure is called
+ * `AbortError` or coded `ECONNABORTED` without the leg having timed out, and a
+ * host can be named for anything. So neither error is ever read by its
+ * wording. Read by name and not by class identity, because a consumer may
+ * load a second copy of the transport.
+ */
+const GATEWAY_EXCHANGE_FAILURE_CLASSES: Readonly<Record<string, LlmAttemptFailureClass>> = {
+  GatewayUnreachableError: "gateway_unreachable",
+  GatewayResponseUnreadableError: "provider_error",
+};
+
+/**
+ * The class of one of the gateway transport's own errors about the exchange.
+ *
+ * @param error The thrown value.
+ * @returns The class, or null when the value is not one of those errors.
+ */
+function gatewayExchangeFailureClassOf(error: unknown): LlmAttemptFailureClass | null {
+  if (typeof error !== "object" || error === null) {
+    return null;
+  }
+  const { name } = error as { name?: unknown };
+  return typeof name === "string" && Object.hasOwn(GATEWAY_EXCHANGE_FAILURE_CLASSES, name)
+    ? GATEWAY_EXCHANGE_FAILURE_CLASSES[name]
+    : null;
+}
 
 /**
  * The typed cause of a failure no branch of {@link classify} recognised by class.
@@ -245,9 +277,7 @@ const GATEWAY_UNREACHABLE_ERROR_NAME = "GatewayUnreachableError";
  * Read by shape for the same reason as {@link isCapacitySignal}: the failure
  * reaches the chain from more than one transport, including a consumer's own,
  * so its class cannot be relied on here. A status is trusted only when it is a
- * number, because some error types carry a non-HTTP status as a string. The
- * error's own name is read before its wording, so an unreachable gateway is
- * never filed as a full provider because of what the underlying error said.
+ * number, because some error types carry a non-HTTP status as a string.
  *
  * @param error The thrown value.
  * @param reason Its message.
@@ -255,12 +285,9 @@ const GATEWAY_UNREACHABLE_ERROR_NAME = "GatewayUnreachableError";
  */
 function providerFailureClassOf(error: unknown, reason: string): LlmAttemptFailureClass {
   if (typeof error === "object" && error !== null) {
-    const { status, name } = error as { status?: unknown; name?: unknown };
+    const { status } = error as { status?: unknown };
     if (typeof status === "number" && CREDENTIAL_STATUSES.has(status)) {
       return "credential";
-    }
-    if (name === GATEWAY_UNREACHABLE_ERROR_NAME) {
-      return "gateway_unreachable";
     }
   }
   return isCapacitySignal(error, reason) ? "capacity" : "provider_error";
@@ -301,6 +328,11 @@ export interface LegFailure {
  * timeout, or beaten by a same-model attempt — is not a verdict on the
  * provider either, and is classified by the chain's reason rather than by
  * whatever the transport happened to throw on the way out.
+ *
+ * A failure is read by what it is before it is read by what it says. Every
+ * error with a class of its own is decided by that class, and only a failure
+ * that has none (a provider client's own error, a consumer transport's) is
+ * read from its wording.
  *
  * @param error The thrown value.
  * @param callerSignal The caller's cancellation signal, if any.
@@ -379,6 +411,19 @@ export function classify(
     };
   }
   const reason = error instanceof Error ? error.message : String(error);
+  const exchangeFailureClass = gatewayExchangeFailureClassOf(error);
+  if (exchangeFailureClass !== null) {
+    // Decided before anything reads the wording: this error says what it is,
+    // and its message only describes a failure of the HTTP layer. Nothing
+    // behind the gateway said it was full, so the failure is a hard one.
+    return {
+      outcome: "error",
+      reason,
+      countsAgainstHealth: true,
+      failureKind: "hard",
+      failureClass: exchangeFailureClass,
+    };
+  }
   if (/abort/i.test(reason)) {
     return {
       outcome: "timeout",
