@@ -1,0 +1,233 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://adaptic.ai/schemas/llm-decision-routes.v1.json",
+  "title": "Typed decision-route table",
+  "description": "The single authoring surface for the typed decision routes: who serves each, which model each is pinned to, how far the contract behind it has been verified, and its budget, caps and price. It is separate from the generative alias table: a decision route has one model, no fallback chain and a sub-second budget, and none of the alias table's chat-shaped fields describe it. Written in the draft-07 subset the alias table's schema uses, so one validator reads both. Rules that span two fields (which fields a route carries for its server, whether contract evidence and its date agree, whether an artifact map matches its pin status) are enforced in code when the table loads.",
+  "type": "object",
+  "required": ["schema_version", "policy_source", "defaults", "providers", "routes"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "policy_source": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Document and section this table implements, so a routing change is traceable to the decision that authorised it."
+    },
+    "revised": { "type": "string", "format": "date" },
+    "defaults": {
+      "type": "object",
+      "required": ["circuit_breaker"],
+      "additionalProperties": false,
+      "properties": {
+        "circuit_breaker": {
+          "type": "object",
+          "description": "Tuning for the decision client's own breakers. They share nothing with the generative client's breakers. No latency trip is declared: its objectives are keyed by the generative latency classes, which a decision route does not have.",
+          "required": ["failure_threshold", "cooldown_ms", "half_open_probes"],
+          "additionalProperties": false,
+          "properties": {
+            "failure_threshold": { "type": "integer", "minimum": 1 },
+            "cooldown_ms": { "type": "integer", "minimum": 1000 },
+            "capacity_cooldown_ms": {
+              "type": "integer",
+              "minimum": 1000,
+              "description": "Open window for a breaker tripped only by capacity signals (429, 529, a timed-out call). Absent means cooldown_ms."
+            },
+            "half_open_probes": { "type": "integer", "minimum": 1 }
+          }
+        }
+      }
+    },
+    "providers": {
+      "type": "object",
+      "description": "Every provider a decision route names. A provider with api_style systemone is reached over HTTP and declares its URL, key name and secret path; one with api_style engine-judge is served by the consumer and declares none of them.",
+      "minProperties": 1,
+      "propertyNames": { "pattern": "^[a-z][a-z0-9-]*$" },
+      "additionalProperties": {
+        "type": "object",
+        "required": ["api_style", "account_status"],
+        "additionalProperties": false,
+        "properties": {
+          "api_style": { "enum": ["systemone", "engine-judge"] },
+          "display_name": { "type": "string", "minLength": 1 },
+          "base_url": {
+            "type": ["string", "null"],
+            "pattern": "^https://[^/]+",
+            "description": "The provider's base URL, or null when only the environment supplies one. A declared URL is HTTPS: the key travels in a request header."
+          },
+          "base_url_env": {
+            "type": ["string", "null"],
+            "pattern": "^[A-Z][A-Z0-9_]*$",
+            "description": "Env-var NAME that overrides base_url, or null when none does."
+          },
+          "api_key_env": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]*$",
+            "description": "Env-var NAME only. A key value must never appear in this file."
+          },
+          "secret_path": { "type": "string", "minLength": 1 },
+          "account_status": {
+            "enum": ["live", "pending-onboarding", "not-in-scope"],
+            "description": "Only live admits a route naming this provider."
+          },
+          "docs_url": { "type": "string", "minLength": 1 },
+          "notes": { "type": "string" }
+        }
+      }
+    },
+    "routes": {
+      "type": "object",
+      "description": "The decision routes. Exactly these two: a rule that has no provider and no transport is not a route and is not declared here.",
+      "required": ["dm.hosted", "dm.local"],
+      "propertyNames": { "pattern": "^dm\\.(hosted|local)$" },
+      "additionalProperties": false,
+      "properties": {
+        "dm.hosted": {
+          "type": "object",
+          "description": "Answered by a vendor over HTTP through this package.",
+          "required": [
+            "provider",
+            "served_by",
+            "response_kind",
+            "version_pin",
+            "expected_served_model",
+            "model_id_status",
+            "contract_evidence",
+            "contract_verified",
+            "budget_ms",
+            "caps",
+            "max_state_tokens",
+            "max_state_tokens_basis",
+            "price_per_mtok"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "provider": { "type": "string", "minLength": 1 },
+            "served_by": { "const": "utils" },
+            "response_kind": { "const": "typed-distribution" },
+            "version_pin": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^(?!.*(latest|preview)$)",
+              "description": "The model id written into every request. A versioned id: a name ending latest or preview follows the vendor's releases, so the answering model would change with no change on this side."
+            },
+            "expected_served_model": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^(?!.*(latest|preview)$)",
+              "description": "The model id a response must report. Any other answering model is a fault."
+            },
+            "model_id_status": { "enum": ["confirmed", "pending-provider-confirmation"] },
+            "model_id_source": { "type": ["string", "null"] },
+            "contract_evidence": {
+              "enum": ["documentation", "authenticated-call"],
+              "description": "How the contract was established. documentation means the shapes were read and never exercised with a key; only authenticated-call admits the route."
+            },
+            "contract_verified": {
+              "type": ["string", "null"],
+              "format": "date",
+              "description": "The date an authenticated call confirmed the contract, or null when none has."
+            },
+            "budget_ms": {
+              "type": "integer",
+              "minimum": 50,
+              "maximum": 10000,
+              "description": "The longest one call may take. A ceiling the consumer's own deadline narrows."
+            },
+            "caps": {
+              "type": "object",
+              "required": ["max_options", "max_score_levels", "max_questions"],
+              "additionalProperties": false,
+              "properties": {
+                "max_options": { "type": "integer", "minimum": 1 },
+                "max_score_levels": { "type": "integer", "minimum": 2 },
+                "max_questions": {
+                  "type": ["integer", "null"],
+                  "minimum": 1,
+                  "description": "Null where the provider publishes no per-request question limit."
+                }
+              }
+            },
+            "max_state_tokens": { "type": "integer", "minimum": 1 },
+            "max_state_tokens_basis": { "const": "vendor-documented-ceiling" },
+            "price_per_mtok": {
+              "type": ["object", "null"],
+              "required": ["input", "output", "as_of"],
+              "additionalProperties": false,
+              "properties": {
+                "input": { "type": "number", "minimum": 0 },
+                "output": { "type": "number", "minimum": 0 },
+                "as_of": { "type": "string", "format": "date" },
+                "source": { "type": "string" }
+              }
+            },
+            "notes": { "type": "string" }
+          }
+        },
+        "dm.local": {
+          "type": "object",
+          "description": "Declared here and answered by the consumer's own process. This package never serves it.",
+          "required": [
+            "provider",
+            "served_by",
+            "response_kind",
+            "checkpoint",
+            "package_version",
+            "revision",
+            "artifact_sha256",
+            "pin_status",
+            "budget_ms",
+            "caps",
+            "max_state_tokens",
+            "max_state_tokens_basis",
+            "price_per_mtok"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "provider": { "type": "string", "minLength": 1 },
+            "served_by": { "const": "engine" },
+            "response_kind": { "const": "typed-distribution" },
+            "checkpoint": { "type": "string", "minLength": 1 },
+            "package_version": { "type": "string", "minLength": 1 },
+            "revision": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$",
+              "description": "The checkpoint's source revision, as a full commit hash."
+            },
+            "artifact_sha256": {
+              "type": ["object", "null"],
+              "minProperties": 1,
+              "additionalProperties": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "description": "File name to SHA-256 for each artifact, or null while none has been recorded. A digest is transcribed from the artifact, never invented."
+            },
+            "pin_status": { "enum": ["pending-artifact-digests", "pinned"] },
+            "budget_ms": { "type": "integer", "minimum": 50, "maximum": 10000 },
+            "caps": {
+              "type": "object",
+              "required": ["max_options", "max_score_levels", "max_questions"],
+              "additionalProperties": false,
+              "properties": {
+                "max_options": { "type": "integer", "minimum": 1 },
+                "max_score_levels": { "type": "integer", "minimum": 2 },
+                "max_questions": { "type": ["integer", "null"], "minimum": 1 }
+              }
+            },
+            "max_state_tokens": { "type": "integer", "minimum": 1 },
+            "max_state_tokens_basis": { "const": "checkpoint-window" },
+            "price_per_mtok": {
+              "type": ["object", "null"],
+              "required": ["input", "output", "as_of"],
+              "additionalProperties": false,
+              "properties": {
+                "input": { "type": "number", "minimum": 0 },
+                "output": { "type": "number", "minimum": 0 },
+                "as_of": { "type": "string", "format": "date" },
+                "source": { "type": "string" }
+              }
+            },
+            "notes": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}
