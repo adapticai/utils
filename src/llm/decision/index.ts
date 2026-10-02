@@ -38,10 +38,12 @@ export { decisionUsageOf } from "./metering";
 export type { DecisionUsageIdentity } from "./metering";
 
 export {
+  DECISION_CLIENT_FAULT_STAGES,
   DECISION_FAULTS,
   DECISION_UNAVAILABLE_CODES,
   DecisionAdmissionError,
   DecisionCallError,
+  DecisionClientFaultError,
   DecisionCredentialError,
   DecisionRequestInvalidError,
   DecisionResponseFormatError,
@@ -53,6 +55,8 @@ export {
 export type {
   DecisionAdmissionDetails,
   DecisionAdmissionSource,
+  DecisionClientFaultDetails,
+  DecisionClientFaultStage,
   DecisionCredentialDetails,
   DecisionFault,
   DecisionRequestInvalidDetails,

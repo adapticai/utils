@@ -64,6 +64,12 @@ import type { DecisionAttemptMeasurement, DecisionFaultedAttemptRecord, Decision
  *   slow vendor.
  * - `route_mismatch`: a model other than the route's pin answered.
  * - `unavailable`: the route may not be called from here at all.
+ * - `internal`: this package's own machinery, or something it was wired with,
+ *   failed: the route table, the breaker, the guards or the clock. It says
+ *   nothing about the vendor, the request or the key. Kept apart from
+ *   `transport` so a defect on this side cannot pass for a vendor that is slow
+ *   or cannot be reached, and be absorbed into a fallback rate nobody reads as
+ *   a bug.
  */
 export const DECISION_FAULTS = [
   "timeout",
@@ -73,6 +79,7 @@ export const DECISION_FAULTS = [
   "credential",
   "route_mismatch",
   "unavailable",
+  "internal",
 ] as const;
 
 /** One way a decision call can fail. See {@link DECISION_FAULTS}. */
@@ -814,5 +821,90 @@ export class DecisionRouteMismatchError extends DecisionCallError {
    */
   protected override statedAttemptFacts(): DecisionStatedAttemptFacts {
     return { servedModel: this.servedModel };
+  }
+}
+
+/**
+ * Where in a call the client's own machinery failed.
+ *
+ * - `resolving`: the route was being looked up in the route table.
+ * - `admitting`: the breaker and the guards were being passed. No request
+ *   existed yet, so the vendor was not contacted.
+ * - `recording`: the call already had its outcome, and the breaker was being
+ *   told of it. A vendor may have answered and billed; the attempt record
+ *   keeps the status and the usage.
+ */
+export const DECISION_CLIENT_FAULT_STAGES = ["resolving", "admitting", "recording"] as const;
+
+/** One stage at which the client's own machinery can fail. See {@link DECISION_CLIENT_FAULT_STAGES}. */
+export type DecisionClientFaultStage = (typeof DECISION_CLIENT_FAULT_STAGES)[number];
+
+/** What each stage is called in a message, as the words that follow "failed". */
+const CLIENT_FAULT_STAGE_WORDS: Readonly<Record<DecisionClientFaultStage, string>> = {
+  resolving: "while resolving the route",
+  admitting: "before any request was made",
+  recording: "while recording how the call ended",
+};
+
+/** How a {@link DecisionClientFaultError} is built. */
+export interface DecisionClientFaultDetails {
+  readonly route: DecisionRoute;
+  readonly stage: DecisionClientFaultStage;
+  /**
+   * What failed, as the class name and system code of the failure and of its
+   * causes. It must not be a failure's message, which is free text and can
+   * quote the request it failed on.
+   */
+  readonly description: string;
+}
+
+/**
+ * Thrown when the client itself failed, or something it was wired with did.
+ *
+ * A call can fail for a reason that is none of the vendor's, the request's or
+ * the key's: a route table that cannot be read, a breaker registry or a guard
+ * that throws, an injected clock that throws. Such a failure is a defect on
+ * this side, and it has a fault of its own for the reason a rejected key has:
+ * filed under `transport` it would be counted with the vendor's failures, read
+ * as a vendor that is slow or cannot be reached, and answered by falling back
+ * instead of by fixing the defect.
+ *
+ * It is never charged to the route's breaker, which measures the vendor. It is
+ * not worth retrying: the same call meets the same defect. And it carries no
+ * text of the failure's own, only the class and code it was described by.
+ */
+export class DecisionClientFaultError extends DecisionCallError {
+  public declare readonly fault: "internal";
+
+  /** Where in the call the client failed. */
+  public readonly stage: DecisionClientFaultStage;
+
+  /** An excerpt of what failed, by class name and system code. Never a message. */
+  public readonly description: string;
+
+  /** Never worth retrying: the same call meets the same defect. */
+  public readonly retryable: false;
+
+  /**
+   * @param details The route, the stage, and the failure by class and code.
+   */
+  public constructor(details: DecisionClientFaultDetails) {
+    const description = decisionErrorExcerpt(details.description);
+    super({
+      fault: "internal",
+      message:
+        `The decision client failed ${CLIENT_FAULT_STAGE_WORDS[details.stage]} on ` +
+        `${describeRoute(details.route)}: it raised ${description}. ` +
+        "This is a defect of the client or of what it was wired with, and says nothing about the vendor",
+      route: details.route,
+      status: null,
+      retryAfterMs: null,
+      vendorRequestId: null,
+      usage: null,
+    });
+    this.name = "DecisionClientFaultError";
+    this.stage = details.stage;
+    this.description = description;
+    this.retryable = false;
   }
 }

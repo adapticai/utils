@@ -70,11 +70,13 @@ const HOSTED_TRANSPORT = "src/llm/decision/transports/systemone.ts";
 
 /** Every name the decision barrel exports at runtime. Adding one is a deliberate edit of this list. */
 const DECISION_RUNTIME_EXPORTS: readonly string[] = [
+  "DECISION_CLIENT_FAULT_STAGES",
   "DECISION_FAULTS",
   "DECISION_ROUTES",
   "DECISION_UNAVAILABLE_CODES",
   "DecisionAdmissionError",
   "DecisionCallError",
+  "DecisionClientFaultError",
   "DecisionCredentialError",
   "DecisionRequestInvalidError",
   "DecisionResponseFormatError",
@@ -103,6 +105,7 @@ const GENERATIVE_RUNTIME_EXPORTS: readonly string[] = [
   "DirectTransportRefusedError",
   "EQUIVALENT_SEPARATOR",
   "GatewayResponseError",
+  "GatewayResponseUnreadableError",
   "GatewayUnreachableError",
   "LIVE_BREAKER_PATH",
   "LLM_ATTEMPT_FAILURE_CLASSES",
