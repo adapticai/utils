@@ -1,0 +1,20 @@
+{
+  "body": {
+    "model": "jev-1.13.0",
+    "answers": {
+      "urgency": {
+        "type": "score",
+        "score": 2.5,
+        "legend": {
+          "0": "No action is needed",
+          "1": "Can wait for the normal queue",
+          "2": "Needs attention today",
+          "3": "Blocks the customer right now"
+        },
+        "probabilities": { "0": 0.0, "1": 0.125, "2": 0.25, "3": 0.625 },
+        "confidence": 0.5
+      }
+    },
+    "usage": { "input_tokens": 329, "output_tokens": 41 }
+  }
+}

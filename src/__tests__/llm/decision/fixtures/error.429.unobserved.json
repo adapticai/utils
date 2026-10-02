@@ -1,0 +1,10 @@
+{
+  "status": 429,
+  "headers": {
+    "content-type": "application/json",
+    "retry-after": "30"
+  },
+  "body": {
+    "error": { "message": "You have exceeded your rate limit. Back off and retry after a short delay." }
+  }
+}
