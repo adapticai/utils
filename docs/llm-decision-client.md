@@ -37,8 +37,8 @@ const result = await callDecisionModel(
 | `decisionRouteTable`, `listDecisionRoutes()`, `decisionRouteDeclaration(route)`, `decisionRouteAdmission(route, provider)`, `decisionRouteViolations(table)` | The route table and its pure readers. A consumer that serves `dm.local` reads its checkpoint, caps and budget from here. |
 | `encodeDecisionRequest`, `decodeDecisionResponse` | The pure codec, for a consumer that serves a route itself. |
 | `decisionUsageOf` | Usage and cost at a route's declared price. |
-| `DECISION_ROUTES`, `DECISION_FAULTS`, `DECISION_UNAVAILABLE_CODES` | The closed vocabularies. |
-| `DecisionCallError` and its eight subclasses | The typed rejections. |
+| `DECISION_ROUTES`, `DECISION_FAULTS`, `DECISION_UNAVAILABLE_CODES`, `DECISION_CLIENT_FAULT_STAGES` | The closed vocabularies. |
+| `DecisionCallError` and its nine subclasses | The typed rejections. |
 
 The function that builds the hosted transport is deliberately not exported. It checks no admission and holds no breaker, guard or budget, so the client is the only exported way to reach the vendor. Its types are exported, because typing a transport for `configureDecisionClient` needs them.
 
@@ -63,7 +63,7 @@ A yes/no answer has no `confidence`, because the contract defines none. A choice
 2. **Check the options, then copy, encode and write the request**, in one synchronous step before the call returns its promise. The request is copied with each member read once, the copy is validated against the route's caps, and it is written as JSON once to prove it can be. What is later sent is that copy, so a caller that changes its request while the call waits changes nothing that reaches the vendor, and the answer is decoded against the questions that were sent.
 3. **Fix the budget**: the smaller of the route's `budget_ms` and the caller's `timeoutMs`. One timer covers the queue and the vendor together.
 4. **Consult the breaker.** An open breaker rejects `unavailable` (`breaker_open`).
-5. **Enter the provider guards and dispatch once.** The guarded dispatch is raced against the budget, because the rate queue waits for the limits entry's own `acquire_timeout_ms` whatever budget it is handed.
+5. **Enter the provider guards and dispatch once.** The guards are handed the call's own signal, and the client asks for that signal to end the wait for a rate token as well as the wait for a concurrency permit (`signalEndsRateWait`, which the guard leaves off unless a caller sets it). So a call that ends while it is queued leaves that queue at once and takes neither a token nor a permit. The guarded dispatch is also raced against the budget, so the end of the call decides its outcome and the guard's refusal does not.
 6. **Compare the answering model with the pin**, on the whole id as reported, before the body is decoded.
 7. **Decode** against the request as sent.
 
@@ -83,8 +83,31 @@ Every rejection is a `DecisionCallError` whose own enumerable `fault` is one of 
 | `DecisionTimeoutError` | `timeout` | The call ended after dispatch: the budget ran out (`route_budget`) or the caller aborted (`caller_signal`). | capacity failure for the budget, none for the caller |
 | `DecisionResponseFormatError` | `schema` | A 2xx whose body fails validation. Carries `fieldPath` and the billed usage. | reachable |
 | `DecisionRouteMismatchError` | `route_mismatch` | A model other than the route's pin answered. Carries both ids and the billed usage. | reachable |
+| `DecisionClientFaultError` | `internal` | The client's own machinery failed, or something it was wired with did: the route table, the breaker, the guards, the clock. Carries the `stage` (`resolving`, `admitting`, `recording`) and a `description` by class and code. Never retryable. | none |
 
 The breaker measures whether the vendor can be reached in time. A rejected key, a rejected request, a malformed answer and a substituted model each arrived in time from a reachable vendor and each has its own fault, so none is charged to the route. A fault raised before a request existed gives no verdict. A guard refusal on a half-open route returns its probe slot.
+
+### A failure nobody classified
+
+A failure that reaches the client as anything other than a decision error (a throw from a getter on the caller's request, from an injected clock or transport, from this package's own code, a thrown value that is not an error at all) still leaves it as one, with the attempt attached. It is given the fault of the stage the call had reached, and it is described by its class name and system code and those of its causes, never by its message, which can quote the request it failed on.
+
+| Stage the call had reached | Raised as | `fault` | Breaker |
+| --- | --- | --- | --- |
+| Resolving the route | `DecisionClientFaultError`, stage `resolving` | `internal` | untouched |
+| Reading the options | `DecisionRequestInvalidError` at `options` | `schema` | untouched |
+| Copying, checking and writing the request | `DecisionRequestInvalidError` at `$` | `schema` | untouched |
+| Passing the breaker and the guards (no request exists) | `DecisionClientFaultError`, stage `admitting` | `internal` | none |
+| Dispatched, no answer yet | `DecisionTransportError`, not retryable: "the transport raised a failure that is not a decision fault" | `transport` | hard failure |
+| An answer arrived and is being read | `DecisionResponseFormatError` at `$`, with the status and the billed usage | `schema` | reachable |
+| Telling the breaker how the call ended | `DecisionClientFaultError`, stage `recording`; the attempt keeps the status and the billed usage | `internal` | as far as it got |
+
+`internal` is a defect on this side. It is kept apart from `transport` for the reason `credential` is: counted with the vendor's failures it would read as a vendor that is slow or cannot be reached, and be answered by falling back and not by fixing the defect. A consumer that mirrors the faults must not count it against a vendor's health, and should alert on it by itself.
+
+A value given as the route that is not text is recorded as `(not a route name)` and refused as an unknown route. A closed route is refused as closed whatever was passed with it, unreadable options included.
+
+### The caller's own cancellation
+
+A caller that aborts its signal receives `DecisionAdmissionError` while the call is queued and `DecisionTimeoutError` once it is dispatched, each with source `caller_signal`. It never receives the reason it aborted with, and that reason is not attached as a cause or quoted: it is the caller's value, of any type and with any content, and the caller already holds it on its own signal. The transport's signal is the client's own, and the reason it is aborted with is the error the caller receives, so the hosted transport, which rejects with its signal's reason, hands back that very error.
 
 The decision registry is not the generative client's. Its keys are `decision:<route>`, the generative registry never holds one, and opening either leaves the other untouched.
 
@@ -123,7 +146,7 @@ Each row is unknown until an authenticated call is made, and the code carries it
 
 Several numbers are free parameters of routes nothing can reach yet. They are recorded as such in the notes beside them and are to be re-derived from the first authenticated measurements: both `budget_ms` values, the breaker defaults, the hosted `max_state_tokens` ceiling and the `typesafe` limits entry.
 
-Two limits of the provider guard bind before the hosted route is admitted. A cold guard admits the whole per-minute allowance in one burst, fifteen times the vendor's published per-second ceiling; the limits entry says what the guard needs to hold it. And the rate queue does not hear a caller's cancellation, so a call that ends while queued there is never dispatched but can still spend the token it was waiting for.
+One limit of the provider guard binds before the hosted route is admitted. A cold guard admits the whole per-minute allowance in one burst, fifteen times the vendor's published per-second ceiling; the limits entry says what the guard needs to hold it.
 
 ## Onboarding order
 
@@ -142,7 +165,9 @@ A consumer that confines the decision model to one module (design D12: a backtes
 
 | Gate | What it holds |
 | --- | --- |
-| `src/__tests__/llm/decision/decision-client.test.ts` | Admission before anything else, one attempt, the mismatch before the decode, the breaker's namespace and verdicts, the budget over the queue and the vendor, what is sent, the key, and that no failure resolves. |
+| `src/__tests__/llm/decision/decision-client.test.ts` | Admission before anything else, one attempt, the mismatch before the decode, the breaker's namespace and verdicts, the budget over the queue and the vendor, what is sent, the key, that no failure resolves, and that every rejection, from every source in its table, is a decision error with its attempt. |
+| `src/__tests__/rate-limiter-signal.test.ts`, `src/__tests__/llm/rate-guard-signal.test.ts` | The rate queue shared with the generative client. A recorded sequence of arrivals is admitted in the same order at the same instants with no signal, with a signal that never fires, and with a caller that asks for its signal to end the rate wait. A caller that leaves without having asked stays queued and is granted its token, at the recorded instants. One that asked takes no token and leaves no timer or listener, and the callers behind it are admitted as if it had never queued. |
+| `src/__tests__/llm/client/rate-queue-budget.test.ts` | A characterisation of the generative chain, which does not ask: an attempt whose budget ends, whose caller cancels or which loses to a same-model attempt while queued for a rate token settles when the token arrives, is refused at the concurrency gate and spends the token. |
 | `src/__tests__/llm/decision/public-surface.test.ts` | The exported names, that the transport's factory is not one of them, that no decision source holds a vendor host or model id as a literal or imports a package, and that the generative client's aliases, tables and exports are unchanged. |
 | `node scripts/verify-llm-client-build.mjs` | Run after the build, in CI. The barrel reaches every decision module, what it reaches imports no package and typechecks, the decision barrel is in the published types, and no declaration of a test-only source is. `reachability` as an argument runs the source checks alone. |
 | `node scripts/verify-provider-limits.mjs` | Run in CI. Every provider of a route this package serves has a limits entry whose queue timeout does not exceed the route's budget. |

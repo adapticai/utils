@@ -22,6 +22,7 @@ import { inspect } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { llmBreakers } from "../../../llm/alias-client";
+import * as codec from "../../../llm/decision/codec";
 import { decodeDecisionResponse } from "../../../llm/decision/codec";
 import {
   callDecisionModel,
@@ -35,6 +36,7 @@ import {
   DECISION_FAULTS,
   DecisionAdmissionError,
   DecisionCallError,
+  DecisionClientFaultError,
   DecisionCredentialError,
   DecisionRequestInvalidError,
   DecisionResponseFormatError,
@@ -54,6 +56,7 @@ import type {
   DecisionRequest,
   DecisionState,
 } from "../../../llm/decision/types";
+import * as rateGuard from "../../../llm/rate-guard";
 import { RateGuardTimeoutError, guardSnapshots, resetProviderGuards, withProviderGuards } from "../../../llm/rate-guard";
 import { routeTable } from "../../../llm/route-table";
 import { createDecisionFetchDouble, decisionResponse, decisionResponseFromFixture } from "./support/fetch-double";
@@ -111,6 +114,9 @@ const NOW_MS = Date.UTC(2026, 9, 1, 12, 0, 0);
 /** Models a vendor could report answering with that are not the route's pin. */
 const SUBSTITUTED_MODELS: readonly string[] = ["english", "typesafe/jev-1.13-20260917", "jev-1.14.0"];
 
+/** An id a vendor could report for a pinned model that is not the pin itself: the pin with its build date. */
+const DATED_SERVED_MODEL = "jev-1.13.0-20260917";
+
 /** How many consecutive faults that say nothing about the vendor's health are replayed. */
 const HEALTH_NEUTRAL_FAULTS = 10;
 
@@ -147,6 +153,21 @@ const PROBE_FRACTION = 0.5;
 
 /** A marker for a promise that has not settled. */
 const PENDING = Symbol("pending");
+
+/** How long the hosted provider's bucket takes to accrue one token, at its configured rate. */
+const RATE_REFILL_INTERVAL_MS = 100;
+
+/** How many refills an emptied bucket is left to accrue before it is counted. */
+const REFILLS_COUNTED = 2;
+
+/**
+ * Text standing for what a failure's own message could quote: the request it
+ * failed on. Searched for in everything raised, like the key.
+ */
+const QUOTED_REQUEST_TEXT = "REQUEST-TEXT-IN-A-FAILURE-MESSAGE";
+
+/** What a call is recorded under when the value given as its route is not text. */
+const UNNAMED_ROUTE = "(not a route name)";
 
 /**
  * A fixture's body, loaded under the evidence classes the caller relies on.
@@ -690,6 +711,29 @@ describe("the decision client", () => {
       }
     });
 
+    it("asks for the pin and accepts only the id the route expects served, where the two differ", async () => {
+      const table = admittedDecisionRouteTable();
+      const pin = hostedRouteOf(table).version_pin;
+      hostedRouteOf(table).expected_served_model = DATED_SERVED_MODEL;
+      expect(DATED_SERVED_MODEL).not.toBe(pin);
+      const served: string[] = [];
+      const double = createDecisionFetchDouble(() => answering(answerFrom(served[served.length - 1])));
+      configureDecisionClient({ routeTable: table, transport: createSystemOneTransport({ fetchImpl: double.fetchImpl }) });
+
+      served.push(DATED_SERVED_MODEL);
+      const result = await ask();
+      expect((JSON.parse(double.calls[0].body) as { model: unknown }).model).toBe(pin);
+      expect(result.servedModel).toBe(DATED_SERVED_MODEL);
+      expect(result.attempt).toMatchObject({ modelPin: pin, servedModel: DATED_SERVED_MODEL });
+
+      served.push(pin);
+      const mismatch = asInstance(await rejectionOf(ask()), DecisionRouteMismatchError);
+      expect(mismatch.expectedServedModel).toBe(DATED_SERVED_MODEL);
+      expect(mismatch.servedModel).toBe(pin);
+      expect(mismatch.attempt?.modelPin).toBe(pin);
+      expect(double.calls).toHaveLength(2);
+    });
+
     it("leaves an answer from the pin exactly as the decode alone gives it", async () => {
       clientOverFetch(() => answering(CHOICE_ANSWER()));
 
@@ -944,22 +988,62 @@ describe("the decision client", () => {
       expect(vi.getTimerCount()).toBe(0);
     });
 
-    it("never dispatches an abandoned waiter when a token later refills", async () => {
+    it("a call that ends while queued for a rate token leaves the queue and takes no token", async () => {
+      vi.useFakeTimers();
+      const harness = clientOverTransport((call) => scriptedAnswer(call.route, CHOICE_ANSWER()));
+      expect(RATE_REFILL_INTERVAL_MS).toBeGreaterThan(SHORTER_THAN_A_REFILL_MS);
+
+      /**
+       * Empty the bucket and let it refill, with or without a call that
+       * queues for a token and runs out of budget first.
+       *
+       * @param withAbandonedCall Whether such a call is made.
+       * @returns The tokens the bucket holds after the refills.
+       */
+      const tokensAfterRefills = async (withAbandonedCall: boolean): Promise<number | undefined> => {
+        resetProviderGuards();
+        await drainRateBucket(provider);
+        if (withAbandonedCall) {
+          const outcome = watch(ask({ timeoutMs: SHORTER_THAN_A_REFILL_MS }));
+          await settleReadyWork();
+          expect(guardOf(provider)?.rateQueueLength).toBe(1);
+          await vi.advanceTimersByTimeAsync(SHORTER_THAN_A_REFILL_MS);
+          const error = asInstance(outcome(), DecisionAdmissionError);
+          expect(error.source).toBe("route_budget");
+          expect(guardOf(provider)?.rateQueueLength).toBe(0);
+        } else {
+          await vi.advanceTimersByTimeAsync(SHORTER_THAN_A_REFILL_MS);
+        }
+        await vi.advanceTimersByTimeAsync(RATE_REFILL_INTERVAL_MS * REFILLS_COUNTED);
+        return guardOf(provider)?.availableTokens;
+      };
+
+      const afterAbandonedCall = await tokensAfterRefills(true);
+      const untouched = await tokensAfterRefills(false);
+
+      expect(untouched).toBe(REFILLS_COUNTED);
+      expect(afterAbandonedCall).toBe(untouched);
+      expect(guardOf(provider)?.inFlight ?? 0).toBe(0);
+      expect(harness.double.calls).toHaveLength(0);
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("takes a caller that leaves out of the rate queue at once", async () => {
       vi.useFakeTimers();
       const harness = clientOverTransport((call) => scriptedAnswer(call.route, CHOICE_ANSWER()));
       await drainRateBucket(provider);
-
-      const outcome = watch(ask({ timeoutMs: SHORTER_THAN_A_REFILL_MS }));
-      await vi.advanceTimersByTimeAsync(SHORTER_THAN_A_REFILL_MS);
-      const error = asInstance(outcome(), DecisionAdmissionError);
-      expect(error.source).toBe("route_budget");
+      const caller = new AbortController();
+      const outcome = watch(ask({ signal: caller.signal }));
+      await settleReadyWork();
       expect(guardOf(provider)?.rateQueueLength).toBe(1);
 
-      // The waiter the call left behind is handed the next token, and still must not reach the vendor.
-      await vi.advanceTimersByTimeAsync(harness.route.budgetMs);
+      caller.abort();
+
       expect(guardOf(provider)?.rateQueueLength).toBe(0);
-      expect(guardOf(provider)?.inFlight).toBe(0);
+      await settleReadyWork();
+      expect(asInstance(outcome(), DecisionAdmissionError).source).toBe("caller_signal");
       expect(harness.double.calls).toHaveLength(0);
+      expect(vi.getTimerCount()).toBe(0);
     });
 
     it("takes an abandoned caller out of the concurrency queue at once", async () => {
@@ -1524,8 +1608,710 @@ describe("the decision client", () => {
       expect(error.source).toBe("network");
       expect(error.retryable).toBe(false);
       expect(error.status).toBeNull();
+      expect(error.message).toContain("the transport raised a failure that is not a decision fault: Error");
       expect(showsText(error, SENTINEL_KEY)).toBe(false);
       expect(decisionBreakers().snapshot(breakerKey)).toMatchObject({ consecutiveFailures: 1, failureKind: "hard" });
+    });
+  });
+
+  describe("every rejection is a decision error", () => {
+    /** What a row of the table expects of the rejection it produced. */
+    interface RejectionRow {
+      /** Where the failure came from. */
+      readonly source: string;
+      /** Wire the client, make the call, and return what it rejected with. */
+      readonly reject: () => Promise<unknown>;
+      readonly fault: (typeof DECISION_FAULTS)[number];
+      readonly type: abstract new (...args: never[]) => DecisionCallError;
+      /** How many times the transport was invoked. */
+      readonly dispatches: number;
+      /** What the breaker holds against the route afterwards. */
+      readonly consecutiveFailures: number;
+      /** Text the message must hold: the stage, and the failure's class and code. */
+      readonly says: readonly string[];
+      /** Whether the call failed before the route's provider was known. */
+      readonly providerUnknown?: boolean;
+      /** Anything else the row pins. */
+      readonly also?: (error: DecisionCallError) => void;
+    }
+
+    /** The scripted transport of the row being run. */
+    let dispatched: DecisionTransportDouble;
+
+    /**
+     * Wire the client over a scripted transport on the admitted table.
+     *
+     * @param script What the transport does when invoked.
+     * @param wiring The clock, when the row injects one.
+     * @returns void
+     */
+    const wire = (script: DecisionDispatchScript, wiring: { now?: () => number } = {}): void => {
+      dispatched = createDecisionTransportDouble(script);
+      configureDecisionClient({ routeTable: admittedDecisionRouteTable(), transport: dispatched.transport, ...wiring });
+    };
+
+    /** A transport that answers the documented question. */
+    const answers: DecisionDispatchScript = (call) => scriptedAnswer(call.route, CHOICE_ANSWER());
+
+    /**
+     * A failure of a class this package does not own, whose message quotes a request.
+     *
+     * @param type The class to raise.
+     * @param code A system code to carry, when the row wants one.
+     * @returns The failure.
+     */
+    const foreignFailure = (type: new (message: string) => Error, code?: string): Error => {
+      const failure = new type(`refused ${QUOTED_REQUEST_TEXT}`);
+      return code === undefined ? failure : Object.assign(failure, { code });
+    };
+
+    /**
+     * Make a call with the given arguments and return what it rejected with.
+     *
+     * @param route The value passed as the route.
+     * @param request The value passed as the request.
+     * @param options The value passed as the options.
+     * @returns The rejection.
+     */
+    const rejected = (route: unknown, request: unknown, options?: unknown): Promise<unknown> =>
+      rejectionOf(
+        callDecisionModel(route as typeof HOSTED_ROUTE, request as DecisionRequest, options as DecisionCallOptions),
+      );
+
+    const rows: readonly RejectionRow[] = [
+      {
+        source: "a member of the caller's request that throws when read",
+        reject: () => {
+          wire(answers);
+          const request = {
+            get state(): DecisionState {
+              throw foreignFailure(Error);
+            },
+            questions: CHOICE_REQUEST().questions,
+          };
+          return rejected(HOSTED_ROUTE, request);
+        },
+        fault: "schema",
+        type: DecisionRequestInvalidError,
+        dispatches: 0,
+        consecutiveFailures: 0,
+        says: ["invalid at $", "the request could not be read: reading it raised Error"],
+        also: (error) => {
+          expect(asInstance(error, DecisionRequestInvalidError).source).toBe("request_validation");
+          expect(guardSnapshots()).toEqual([]);
+        },
+      },
+      {
+        source: "a request that refuses to list its members",
+        reject: () => {
+          wire(answers);
+          const request = new Proxy(CHOICE_REQUEST(), {
+            ownKeys: () => {
+              throw foreignFailure(TypeError);
+            },
+          });
+          return rejected(HOSTED_ROUTE, request);
+        },
+        fault: "schema",
+        type: DecisionRequestInvalidError,
+        dispatches: 0,
+        consecutiveFailures: 0,
+        says: ["invalid at $", "reading it raised TypeError"],
+      },
+      {
+        source: "the codec, raising a failure of no decision class while encoding",
+        reject: () => {
+          wire(answers);
+          vi.spyOn(codec, "encodeDecisionRequest").mockImplementation(() => {
+            throw foreignFailure(RangeError);
+          });
+          return rejected(HOSTED_ROUTE, CHOICE_REQUEST());
+        },
+        fault: "schema",
+        type: DecisionRequestInvalidError,
+        dispatches: 0,
+        consecutiveFailures: 0,
+        says: ["invalid at $", "reading it raised RangeError"],
+      },
+      {
+        source: "an option that throws when read",
+        reject: () => {
+          wire(answers);
+          const options = {
+            get correlationId(): string {
+              throw foreignFailure(Error);
+            },
+          };
+          return rejected(HOSTED_ROUTE, CHOICE_REQUEST(), options);
+        },
+        fault: "schema",
+        type: DecisionRequestInvalidError,
+        dispatches: 0,
+        consecutiveFailures: 0,
+        says: ["invalid at options", "the options could not be read: reading them raised Error"],
+        also: (error) => {
+          expect(error.attempt?.correlationId).toBeNull();
+          expect(guardSnapshots()).toEqual([]);
+        },
+      },
+      {
+        source: "a deadline that throws when read",
+        reject: () => {
+          wire(answers);
+          const options = {
+            get timeoutMs(): number {
+              throw foreignFailure(RangeError);
+            },
+          };
+          return rejected(HOSTED_ROUTE, CHOICE_REQUEST(), options);
+        },
+        fault: "schema",
+        type: DecisionRequestInvalidError,
+        dispatches: 0,
+        consecutiveFailures: 0,
+        says: ["invalid at options", "reading them raised RangeError"],
+      },
+      {
+        source: "an option that throws when read, on a route that is closed",
+        reject: () => {
+          dispatched = createDecisionTransportDouble(answers);
+          configureDecisionClient({ transport: dispatched.transport });
+          const options = {
+            get correlationId(): string {
+              throw foreignFailure(Error);
+            },
+          };
+          return rejected(HOSTED_ROUTE, CHOICE_REQUEST(), options);
+        },
+        fault: "unavailable",
+        type: DecisionRouteUnavailableError,
+        dispatches: 0,
+        consecutiveFailures: 0,
+        says: ["route_not_admitted", "pending-onboarding"],
+      },
+      {
+        source: "a route that is a symbol",
+        reject: () => {
+          wire(answers);
+          return rejected(Symbol(QUOTED_REQUEST_TEXT), CHOICE_REQUEST());
+        },
+        fault: "unavailable",
+        type: DecisionRouteUnavailableError,
+        dispatches: 0,
+        consecutiveFailures: 0,
+        says: ["route_not_admitted", UNNAMED_ROUTE],
+        also: (error) => {
+          expect(error.attempt?.route).toBe(UNNAMED_ROUTE);
+        },
+      },
+      {
+        source: "a route that is an object which cannot be written as text",
+        reject: () => {
+          wire(answers);
+          const route = {
+            toString: (): string => {
+              throw foreignFailure(Error);
+            },
+          };
+          return rejected(route, CHOICE_REQUEST());
+        },
+        fault: "unavailable",
+        type: DecisionRouteUnavailableError,
+        dispatches: 0,
+        consecutiveFailures: 0,
+        says: ["route_not_admitted", UNNAMED_ROUTE],
+      },
+      {
+        source: "an injected route table that throws when it is read",
+        reject: () => {
+          dispatched = createDecisionTransportDouble(answers);
+          let unreadable = false;
+          const table = new Proxy(admittedDecisionRouteTable(), {
+            get: (target, key, receiver): unknown => {
+              if (unreadable) {
+                throw foreignFailure(TypeError);
+              }
+              return Reflect.get(target, key, receiver);
+            },
+          });
+          configureDecisionClient({ routeTable: table, transport: dispatched.transport });
+          unreadable = true;
+          return rejected(HOSTED_ROUTE, CHOICE_REQUEST());
+        },
+        fault: "internal",
+        type: DecisionClientFaultError,
+        dispatches: 0,
+        consecutiveFailures: 0,
+        providerUnknown: true,
+        says: [`The decision client failed while resolving the route on decision route ${HOSTED_ROUTE}: it raised TypeError.`],
+        also: (error) => {
+          expect(asInstance(error, DecisionClientFaultError).stage).toBe("resolving");
+          expect(guardSnapshots()).toEqual([]);
+        },
+      },
+      {
+        source: "an injected clock that throws",
+        reject: () => {
+          wire(answers, {
+            now: () => {
+              throw foreignFailure(TypeError);
+            },
+          });
+          return rejected(HOSTED_ROUTE, CHOICE_REQUEST());
+        },
+        fault: "internal",
+        type: DecisionClientFaultError,
+        dispatches: 0,
+        consecutiveFailures: 0,
+        says: [`The decision client failed before any request was made on decision route ${HOSTED_ROUTE}: it raised TypeError.`],
+        also: (error) => {
+          const defect = asInstance(error, DecisionClientFaultError);
+          expect(defect.stage).toBe("admitting");
+          expect(defect.description).toBe("TypeError");
+          expect(defect.retryable).toBe(false);
+          expect(error.attempt).toMatchObject({ status: null, durationMs: null, fault: "internal" });
+        },
+      },
+      {
+        source: "the breaker registry, raising while it is asked whether the route may be called",
+        reject: () => {
+          wire(answers);
+          vi.spyOn(decisionBreakers(), "allows").mockImplementation(() => {
+            throw foreignFailure(RangeError, "ERR_OUT_OF_RANGE");
+          });
+          return rejected(HOSTED_ROUTE, CHOICE_REQUEST());
+        },
+        fault: "internal",
+        type: DecisionClientFaultError,
+        dispatches: 0,
+        consecutiveFailures: 0,
+        says: ["failed before any request was made", "it raised RangeError ERR_OUT_OF_RANGE."],
+        also: (error) => {
+          expect(asInstance(error, DecisionClientFaultError).stage).toBe("admitting");
+        },
+      },
+      {
+        source: "the guards, raising a failure that is not a refusal",
+        reject: () => {
+          wire(answers);
+          vi.spyOn(rateGuard, "withProviderGuards").mockRejectedValue(foreignFailure(RangeError));
+          return rejected(HOSTED_ROUTE, CHOICE_REQUEST());
+        },
+        fault: "internal",
+        type: DecisionClientFaultError,
+        dispatches: 0,
+        consecutiveFailures: 0,
+        says: ["failed before any request was made", "it raised RangeError."],
+        also: (error) => {
+          expect(asInstance(error, DecisionClientFaultError).stage).toBe("admitting");
+          expect(error.attempt).toMatchObject({ queueMs: 0, durationMs: null });
+        },
+      },
+      {
+        source: "the guards, refusing the call",
+        reject: () => {
+          wire(answers);
+          vi.spyOn(rateGuard, "withProviderGuards").mockRejectedValue(new RateGuardTimeoutError(provider, "rate", 1));
+          return rejected(HOSTED_ROUTE, CHOICE_REQUEST());
+        },
+        fault: "admission",
+        type: DecisionAdmissionError,
+        dispatches: 0,
+        consecutiveFailures: 0,
+        says: ["provider_guard", "the vendor was never contacted"],
+      },
+      {
+        source: "the transport, throwing an error of no decision class",
+        reject: () => {
+          wire(() => {
+            throw foreignFailure(Error);
+          });
+          return rejected(HOSTED_ROUTE, CHOICE_REQUEST());
+        },
+        fault: "transport",
+        type: DecisionTransportError,
+        dispatches: 1,
+        consecutiveFailures: 1,
+        says: ["the transport raised a failure that is not a decision fault: Error"],
+      },
+      {
+        source: "the transport, rejecting with a coded error that has a cause",
+        reject: () => {
+          wire(() =>
+            Promise.reject(
+              Object.assign(foreignFailure(TypeError, "UND_ERR_SOCKET"), { cause: foreignFailure(Error, "ECONNRESET") }),
+            ),
+          );
+          return rejected(HOSTED_ROUTE, CHOICE_REQUEST());
+        },
+        fault: "transport",
+        type: DecisionTransportError,
+        dispatches: 1,
+        consecutiveFailures: 1,
+        says: ["not a decision fault: TypeError UND_ERR_SOCKET, caused by Error ECONNRESET"],
+      },
+      {
+        source: "the transport, rejecting with text",
+        reject: () => {
+          wire(() => Promise.reject(QUOTED_REQUEST_TEXT as unknown as Error));
+          return rejected(HOSTED_ROUTE, CHOICE_REQUEST());
+        },
+        fault: "transport",
+        type: DecisionTransportError,
+        dispatches: 1,
+        consecutiveFailures: 1,
+        says: ["not a decision fault: a thrown value that is not an error"],
+      },
+      {
+        source: "the transport, rejecting with null",
+        reject: () => {
+          wire(() => Promise.reject(null as unknown as Error));
+          return rejected(HOSTED_ROUTE, CHOICE_REQUEST());
+        },
+        fault: "transport",
+        type: DecisionTransportError,
+        dispatches: 1,
+        consecutiveFailures: 1,
+        says: ["not a decision fault: a thrown value that is not an error"],
+      },
+      {
+        source: "the transport, rejecting with nothing",
+        reject: () => {
+          wire(() => Promise.reject(undefined as unknown as Error));
+          return rejected(HOSTED_ROUTE, CHOICE_REQUEST());
+        },
+        fault: "transport",
+        type: DecisionTransportError,
+        dispatches: 1,
+        consecutiveFailures: 1,
+        says: ["not a decision fault: a thrown value that is not an error"],
+      },
+      {
+        source: "the transport, rejecting with a value whose name and code cannot be read or printed",
+        reject: () => {
+          wire(() =>
+            Promise.reject({
+              get name(): string {
+                throw foreignFailure(Error);
+              },
+              code: `E ${QUOTED_REQUEST_TEXT}`,
+            } as unknown as Error),
+          );
+          return rejected(HOSTED_ROUTE, CHOICE_REQUEST());
+        },
+        fault: "transport",
+        type: DecisionTransportError,
+        dispatches: 1,
+        consecutiveFailures: 1,
+        says: ["not a decision fault: an unnamed failure"],
+      },
+      {
+        source: "the transport, rejecting with a failure named after the key",
+        reject: () => {
+          const key = "Kd7a1c9e4f0b3d2685Test";
+          vi.stubEnv(keyEnv, key);
+          wire(() => Promise.reject(Object.assign(new Error("refused"), { name: key })));
+          return rejected(HOSTED_ROUTE, CHOICE_REQUEST()).then((error) => {
+            expect(showsText(error, key)).toBe(false);
+            return error;
+          });
+        },
+        fault: "transport",
+        type: DecisionTransportError,
+        dispatches: 1,
+        consecutiveFailures: 1,
+        says: [`not a decision fault: ${KEY_REMOVED}`],
+      },
+      {
+        source: "the transport, rejecting with another guard's refusal",
+        reject: () => {
+          wire(() => Promise.reject(new RateGuardTimeoutError("another-provider", "rate", 1)));
+          return rejected(HOSTED_ROUTE, CHOICE_REQUEST());
+        },
+        fault: "transport",
+        type: DecisionTransportError,
+        dispatches: 1,
+        consecutiveFailures: 1,
+        says: ["not a decision fault: RateGuardTimeoutError"],
+      },
+      {
+        source: "the transport, resolving with no result",
+        reject: () => {
+          wire(() => undefined as unknown as ReturnType<typeof scriptedAnswer>);
+          return rejected(HOSTED_ROUTE, CHOICE_REQUEST());
+        },
+        fault: "schema",
+        type: DecisionResponseFormatError,
+        dispatches: 1,
+        consecutiveFailures: 0,
+        says: ["fails validation at $", "the answer could not be read: reading it raised TypeError"],
+        also: (error) => {
+          expect(error.attempt).toMatchObject({ status: null, usage: null, queueMs: 0 });
+        },
+      },
+      {
+        source: "the transport, resolving with a result whose body throws when read",
+        reject: () => {
+          wire((call) => ({
+            ...scriptedAnswer(call.route, CHOICE_ANSWER()),
+            get payload(): Readonly<Record<string, unknown>> {
+              throw foreignFailure(Error);
+            },
+          }));
+          return rejected(HOSTED_ROUTE, CHOICE_REQUEST());
+        },
+        fault: "schema",
+        type: DecisionResponseFormatError,
+        dispatches: 1,
+        consecutiveFailures: 0,
+        says: ["fails validation at $", "reading it raised Error"],
+        also: (error) => {
+          // The answer arrived and was billed, and the rejection says so.
+          expect(error.status).toBe(OK);
+          expect(error.usage?.prompt_tokens).toBe(DOCUMENTED_INPUT_TOKENS);
+          expect(error.attempt?.usage?.prompt_tokens).toBe(DOCUMENTED_INPUT_TOKENS);
+        },
+      },
+      {
+        source: "the codec, raising a failure of no decision class while decoding",
+        reject: () => {
+          wire(answers);
+          vi.spyOn(codec, "decodeDecisionResponse").mockImplementation(() => {
+            throw foreignFailure(RangeError);
+          });
+          return rejected(HOSTED_ROUTE, CHOICE_REQUEST());
+        },
+        fault: "schema",
+        type: DecisionResponseFormatError,
+        dispatches: 1,
+        consecutiveFailures: 0,
+        says: ["fails validation at $", "reading it raised RangeError"],
+        also: (error) => {
+          expect(error.status).toBe(OK);
+          expect(error.usage?.prompt_tokens).toBe(DOCUMENTED_INPUT_TOKENS);
+        },
+      },
+      {
+        source: "the breaker registry, raising while it is told of an answer",
+        reject: () => {
+          wire(answers);
+          vi.spyOn(decisionBreakers(), "onSuccess").mockImplementation(() => {
+            throw foreignFailure(TypeError);
+          });
+          const ended = vi.spyOn(decisionBreakers(), "onAttemptEnd");
+          return rejected(HOSTED_ROUTE, CHOICE_REQUEST()).then((error) => {
+            expect(ended).toHaveBeenCalledTimes(1);
+            return error;
+          });
+        },
+        fault: "internal",
+        type: DecisionClientFaultError,
+        dispatches: 1,
+        consecutiveFailures: 0,
+        says: ["The decision client failed while recording how the call ended", "it raised TypeError."],
+        also: (error) => {
+          expect(asInstance(error, DecisionClientFaultError).stage).toBe("recording");
+          // The vendor answered and billed; the record of the attempt keeps both.
+          expect(error.status).toBe(OK);
+          expect(error.attempt?.usage?.prompt_tokens).toBe(DOCUMENTED_INPUT_TOKENS);
+        },
+      },
+      {
+        source: "the breaker registry, raising while it is told of a failure",
+        reject: () => {
+          wire(() => {
+            throw serverFailure();
+          });
+          vi.spyOn(decisionBreakers(), "onFailure").mockImplementation(() => {
+            throw foreignFailure(TypeError);
+          });
+          return rejected(HOSTED_ROUTE, CHOICE_REQUEST());
+        },
+        fault: "internal",
+        type: DecisionClientFaultError,
+        dispatches: 1,
+        consecutiveFailures: 0,
+        says: ["failed while recording how the call ended", "it raised TypeError."],
+        also: (error) => {
+          expect(asInstance(error, DecisionClientFaultError).stage).toBe("recording");
+        },
+      },
+      {
+        source: "the caller, aborting a dispatched call with a reason of its own",
+        reject: async () => {
+          wire(heldUntilAborted);
+          const caller = new AbortController();
+          const reason = { said: QUOTED_REQUEST_TEXT };
+          const pending = rejected(HOSTED_ROUTE, CHOICE_REQUEST(), { signal: caller.signal });
+          await new Promise<void>((resolve) => {
+            setImmediate(resolve);
+          });
+          caller.abort(reason);
+          const error = await pending;
+          expect(error).not.toBe(reason);
+          expect(dispatched.calls[0].signal.reason).toBe(error);
+          return error;
+        },
+        fault: "timeout",
+        type: DecisionTimeoutError,
+        dispatches: 1,
+        consecutiveFailures: 0,
+        says: ["was aborted by the caller's signal after dispatch"],
+        also: (error) => {
+          expect(asInstance(error, DecisionTimeoutError).source).toBe("caller_signal");
+          expect(error.cause).toBeUndefined();
+        },
+      },
+      {
+        source: "the caller, already gone, with no reason at all",
+        reject: () => {
+          wire(answers);
+          const caller = new AbortController();
+          caller.abort(null);
+          return rejected(HOSTED_ROUTE, CHOICE_REQUEST(), { signal: caller.signal });
+        },
+        fault: "admission",
+        type: DecisionAdmissionError,
+        dispatches: 0,
+        consecutiveFailures: 0,
+        says: ["caller_signal", "the vendor was never contacted"],
+        also: (error) => {
+          expect(error.cause).toBeUndefined();
+        },
+      },
+    ];
+
+    it.each(rows)("gives $source a fault and the record of the attempt", async (row) => {
+      const raised = await row.reject();
+
+      const error = asInstance(asCallError(raised), row.type);
+      expect(error.fault).toBe(row.fault);
+      expect(DECISION_FAULTS).toContain(error.fault);
+      expect(Object.keys(error)).toContain("fault");
+      expect(error.attempt?.outcome).toBe("fault");
+      expect(error.attempt?.fault).toBe(error.fault);
+      expect(error.attempt?.route).toBe(error.route);
+      const providerUnknown = error.fault === "unavailable" || row.providerUnknown === true;
+      expect(error.attempt?.provider ?? null).toBe(providerUnknown ? null : provider);
+      // A defect on this side is never the vendor's fault, by class or by name.
+      if (error.fault === "internal") {
+        expect(error).not.toBeInstanceOf(DecisionTransportError);
+      }
+      for (const text of row.says) {
+        expect(error.message).toContain(text);
+      }
+      // A failure is described by its class and code. Its own words, which
+      // can quote the request, appear nowhere on what is raised.
+      expect(showsText(error, QUOTED_REQUEST_TEXT)).toBe(false);
+      expect(showsText(error, SENTINEL_KEY)).toBe(false);
+      expect(dispatched.calls).toHaveLength(row.dispatches);
+      vi.restoreAllMocks();
+      expect(decisionBreakers().snapshot(breakerKey).consecutiveFailures).toBe(row.consecutiveFailures);
+      expect(guardOf(provider)?.inFlight ?? 0).toBe(0);
+    });
+
+    it("never rejects with the reason a caller aborted with, whatever that reason is", async () => {
+      const reasons: readonly unknown[] = [
+        new Error(QUOTED_REQUEST_TEXT),
+        new DOMException(QUOTED_REQUEST_TEXT, "AbortError"),
+        QUOTED_REQUEST_TEXT,
+        { said: QUOTED_REQUEST_TEXT },
+        null,
+        undefined,
+      ];
+      for (const reason of reasons) {
+        const harness = clientOverTransport(heldUntilAborted);
+        const caller = new AbortController();
+        const pending = rejectionOf(ask({ signal: caller.signal }));
+        await new Promise<void>((resolve) => {
+          setImmediate(resolve);
+        });
+        caller.abort(reason);
+
+        const error = asInstance(await pending, DecisionTimeoutError);
+
+        expect(error.source).toBe("caller_signal");
+        expect(error.fault).toBe("timeout");
+        expect(error.cause).toBeUndefined();
+        expect(error.attempt).toMatchObject({ outcome: "fault", fault: "timeout", route: HOSTED_ROUTE });
+        expect(showsText(error, QUOTED_REQUEST_TEXT)).toBe(false);
+        // The transport is ended with the error the caller receives, and that
+        // is the one object both hold: the caller's own reason is neither.
+        expect(harness.double.calls[0].signal.reason).toBe(error);
+        expect(error === reason).toBe(false);
+        expect(decisionBreakers().snapshot(breakerKey).consecutiveFailures).toBe(0);
+      }
+    });
+
+    it("reads each option once, so the deadline that runs is the deadline that was checked", async () => {
+      vi.useFakeTimers();
+      const harness = clientOverTransport(heldUntilAborted);
+      let reads = 0;
+      const options = {
+        get timeoutMs(): number {
+          reads += 1;
+          return reads === 1 ? NARROWING_TIMEOUT_MS : Number.NaN;
+        },
+      };
+
+      const outcome = watch(ask(options));
+      await vi.advanceTimersByTimeAsync(NARROWING_TIMEOUT_MS - 1);
+      expect(outcome()).toBe(PENDING);
+      await vi.advanceTimersByTimeAsync(1);
+
+      expect(reads).toBe(1);
+      expect(asInstance(outcome(), DecisionTimeoutError).budgetMs).toBe(NARROWING_TIMEOUT_MS);
+      expect(harness.double.calls).toHaveLength(1);
+    });
+
+    it("gives back the probe slot of an attempt that fails before it is dispatched", async () => {
+      vi.useFakeTimers();
+      const table = admittedDecisionRouteTable();
+      const breaker = table.defaults.circuit_breaker;
+      let clockBroken = false;
+      const double = createDecisionTransportDouble((call) => {
+        if (call.index < breaker.failure_threshold) {
+          throw serverFailure();
+        }
+        return scriptedAnswer(call.route, CHOICE_ANSWER());
+      });
+      configureDecisionClient({
+        routeTable: table,
+        transport: double.transport,
+        now: () => {
+          if (clockBroken) {
+            throw new TypeError("the clock failed");
+          }
+          return Date.now();
+        },
+      });
+      for (let failure = 0; failure < breaker.failure_threshold; failure += 1) {
+        await rejectionOf(ask());
+      }
+      expect(decisionBreakers().stateOf(breakerKey)).toBe("open");
+      vi.advanceTimersByTime(breaker.cooldown_ms);
+      expect(decisionBreakers().stateOf(breakerKey)).toBe("half-open");
+
+      // The clock fails once the attempt has taken the route's one probe slot.
+      const registry = decisionBreakers();
+      const startAttempt = registry.onAttemptStart.bind(registry);
+      const started = vi.spyOn(registry, "onAttemptStart").mockImplementation((key) => {
+        const holdsProbe = startAttempt(key);
+        clockBroken = true;
+        return holdsProbe;
+      });
+      const failed = asInstance(await rejectionOf(ask()), DecisionClientFaultError);
+      expect(started).toHaveReturnedWith(true);
+      expect(failed.stage).toBe("admitting");
+      expect(failed.message).toContain("failed before any request was made");
+      clockBroken = false;
+      started.mockRestore();
+
+      expect(decisionBreakers().snapshot(breakerKey).probesInFlight).toBe(0);
+      expect(double.calls).toHaveLength(breaker.failure_threshold);
+      const result = await ask();
+      expect(result.answers.department.type).toBe("choice");
+      expect(decisionBreakers().stateOf(breakerKey)).toBe("closed");
     });
   });
 });
