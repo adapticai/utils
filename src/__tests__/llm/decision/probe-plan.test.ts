@@ -51,12 +51,17 @@ import {
 import type { ProbeBodyShape, ProbeShape } from "../../../../scripts/decision-probe/probe-plan";
 import {
   PROBE_EVIDENCE_AUTHENTICATED,
+  PROBE_LATENCY_POPULATION,
   renderProbeSummary,
   summariseLatency,
 } from "../../../../scripts/decision-probe/probe-report";
 import type { ProbeReport, ProbeSample } from "../../../../scripts/decision-probe/probe-report";
 import {
+  PROBE_CAPACITY_REFUSALS_BEFORE_STOP,
+  PROBE_LONGEST_HONOURED_WAIT_MS,
+  PROBE_MIN_DISPATCH_SPACING_MS,
   probeDispatchIntervalMs,
+  probeDispatchSpacingMs,
   resolveProbeTarget,
   runDecisionProbe,
 } from "../../../../scripts/decision-probe/probe-run";
@@ -69,6 +74,7 @@ import type {
 import { encodeDecisionRequest } from "../../../llm/decision/codec";
 import { DECISION_BUDGET_CEILING_MS, decisionRouteTable } from "../../../llm/decision/decision-route-table";
 import { DecisionCallError } from "../../../llm/decision/errors";
+import type { ResolvedDecisionRoute } from "../../../llm/decision/route-types";
 import {
   SYSTEMONE_PATH,
   VENDOR_REQUEST_ID_HEADER,
@@ -145,6 +151,24 @@ const DEFAULT_PLAN_CALLS = 4;
 
 /** How long a scripted vendor takes to answer, on the injected clock. */
 const VENDOR_LATENCY_MS = 30;
+
+/** How long a scripted vendor takes to send a body once its headers have arrived, on the injected clock. */
+const BODY_READ_MS = 7;
+
+/** The most requests a second the hosted vendor publishes that an account may send. */
+const PUBLISHED_REQUESTS_PER_SECOND = 40;
+
+/** One second, the span the published ceiling is counted over. */
+const ONE_SECOND_MS = 1_000;
+
+/** The status a vendor answers with when it is being called too often. */
+const TOO_MANY_REQUESTS = 429;
+
+/** How long a scripted vendor takes to refuse a call it then asks the run to wait after. */
+const SLOW_REFUSAL_MS = 400;
+
+/** Samples of each shape in a run long enough to show that a refusing vendor ends it early. */
+const LONG_RUN_SAMPLES = 100;
 
 /** Longest the command may run as a child process before a test gives up on it. */
 const COMMAND_TIMEOUT_MS = 60_000;
@@ -467,7 +491,13 @@ const EXECUTE_ARGS: readonly string[] = [
 ];
 
 describe("the plan", () => {
-  const target = resolveProbeTarget(HOSTED_ROUTE, RUN_DATE).resolved;
+  let target: ResolvedDecisionRoute;
+
+  // Resolved inside each test, after the environment has been stubbed: a base
+  // URL override in the shell that runs the suite must not reach it.
+  beforeEach(() => {
+    target = resolveProbeTarget(HOSTED_ROUTE, RUN_DATE).resolved;
+  });
 
   it("the plan is exactly four requests and addresses the pin, never an alias", () => {
     const plan = buildProbePlan(target);
@@ -895,11 +925,183 @@ describe("a run", () => {
     expect(slow.waits).toEqual([]);
   });
 
+  it("never comes near the vendor's published ceiling, whatever the limits config says and however fast the vendor answers", async () => {
+    expect(PROBE_MIN_DISPATCH_SPACING_MS).toBe(100);
+    expect(probeDispatchSpacingMs(1)).toBe(PROBE_MIN_DISPATCH_SPACING_MS);
+    expect(probeDispatchSpacingMs(0)).toBe(PROBE_MIN_DISPATCH_SPACING_MS);
+    expect(probeDispatchSpacingMs(PROBE_MIN_DISPATCH_SPACING_MS + 150)).toBe(PROBE_MIN_DISPATCH_SPACING_MS + 150);
+    expect(probeDispatchIntervalMs(HOSTED.provider, PIN)).toBeGreaterThanOrEqual(PROBE_MIN_DISPATCH_SPACING_MS);
+
+    const time = fakeTime();
+    const dispatchedAt: number[] = [];
+    const instant = vendor((call, index) => {
+      dispatchedAt.push(time.nowMs());
+      return answering()(call, index);
+    });
+    const samples = 20;
+    await probe(instant, { samples }, time);
+
+    expect(dispatchedAt).toHaveLength(samples * 3 + 1);
+    const mostInOneSecond = Math.max(
+      ...dispatchedAt.map((from) => dispatchedAt.filter((at) => at >= from && at < from + ONE_SECOND_MS).length),
+    );
+    expect(mostInOneSecond).toBe(ONE_SECOND_MS / PROBE_MIN_DISPATCH_SPACING_MS);
+    expect(mostInOneSecond * 4).toBeLessThanOrEqual(PUBLISHED_REQUESTS_PER_SECOND);
+    expect(instant.peakInFlight()).toBe(1);
+  });
+
+  it("a vendor that asks the run to wait is waited for, counted from when it answered and not from when it was asked", async () => {
+    const interval = probeDispatchIntervalMs(HOSTED.provider, PIN);
+    // Each form a hint is sent in, and the earliest instant it allows the next
+    // call at: a delay runs from when the answer came back, 400 ms into the
+    // run, and a time of day is that time of day.
+    const hints: readonly (readonly [Readonly<Record<string, string>>, number])[] = [
+      [{ "retry-after": "2" }, SLOW_REFUSAL_MS + 2_000],
+      [{ "retry-after-ms": "1500" }, SLOW_REFUSAL_MS + 1_500],
+      [{ "retry-after": new Date(RUN_STARTED_MS + 3_000).toUTCString() }, 3_000],
+    ];
+    for (const [headers, notBeforeMs] of hints) {
+      const time = fakeTime();
+      const dispatchedAt: number[] = [];
+      const double = vendor((call, index) => {
+        dispatchedAt.push(time.nowMs());
+        if (index === 0) {
+          time.advance(SLOW_REFUSAL_MS);
+          return reply(TOO_MANY_REQUESTS, fixtureBody("error.429.unobserved.json", "synthetic-unobserved"), {
+            ...VENDOR_HEADERS,
+            ...headers,
+          });
+        }
+        return answering()(call, index);
+      });
+
+      const report = await probe(double, { samples: 2, includeRefusal: false }, time);
+
+      // The refused call took 400 ms to come back. The wait starts there, and
+      // not at the dispatch, so it is never shorter than the vendor asked for.
+      expect(dispatchedAt.slice(0, 3)).toEqual([0, notBeforeMs, notBeforeMs + interval]);
+      expect(time.waits[0]).toBe(notBeforeMs - SLOW_REFUSAL_MS);
+      expect(report.retryHints).toBe(1);
+      expect(report.stopped).toBeNull();
+      expect(report.dispatched).toBe(6);
+      expect(report.verdictReasons).toEqual(["transport"]);
+      // How long was asked for is the value of a header, and is not written.
+      expect(Object.keys(report.samples[0])).not.toContain("retryAfterMs");
+      expect(renderProbeSummary(report)).toContain("responses that asked the run to wait before calling again: 1");
+    }
+  });
+
+  it("a vendor that keeps saying it is called too often ends the run after two such answers, and the verdict says so", async () => {
+    expect(PROBE_CAPACITY_REFUSALS_BEFORE_STOP).toBe(2);
+    const time = fakeTime();
+    const dispatchedAt: number[] = [];
+    const limiting = vendor(() => {
+      dispatchedAt.push(time.nowMs());
+      return reply(TOO_MANY_REQUESTS, fixtureBody("error.429.unobserved.json", "synthetic-unobserved"), {
+        ...VENDOR_HEADERS,
+        "retry-after": "30",
+      });
+    });
+
+    const report = await probe(limiting, { samples: LONG_RUN_SAMPLES }, time);
+
+    expect(report.planned).toBe(LONG_RUN_SAMPLES * 3 + 1);
+    expect(limiting.calls).toHaveLength(PROBE_CAPACITY_REFUSALS_BEFORE_STOP);
+    expect(dispatchedAt).toEqual([0, 30_000]);
+    expect(time.waits).toEqual([30_000]);
+    expect(report.dispatched).toBe(PROBE_CAPACITY_REFUSALS_BEFORE_STOP);
+    expect(report.stopped).toBe("rate_limited");
+    expect(report.retryHints).toBe(1);
+    expect(report.verdict).toBe("not_confirmed");
+    expect(report.verdictReasons).toEqual(["rate_limited", "stopped_early", "transport"]);
+    expect(report.samples.map((sample) => sample.status)).toEqual([TOO_MANY_REQUESTS, TOO_MANY_REQUESTS]);
+    const lines = renderProbeSummary(report);
+    expect(lines).toContain(`calls: 2 of ${report.planned} planned; stopped early (rate_limited)`);
+    expect(lines.at(-1)).toBe(
+      "verdict: not confirmed (rate_limited, stopped_early, transport); the vendor rate-limited the run, " +
+        `which stopped after 2 of ${report.planned} calls were sent`,
+    );
+    expect(JSON.stringify(report)).not.toContain("30000");
+  });
+
+  it("one answer that the vendor is called too often is observed and the run goes on, at its own spacing when no wait was asked for", async () => {
+    const interval = probeDispatchIntervalMs(HOSTED.provider, PIN);
+    const time = fakeTime();
+    const dispatchedAt: number[] = [];
+    const double = vendor((call, index) => {
+      dispatchedAt.push(time.nowMs());
+      return index === 1 ? reply(TOO_MANY_REQUESTS, "", VENDOR_HEADERS) : answering()(call, index);
+    });
+
+    const report = await probe(double, {}, time);
+
+    expect(dispatchedAt).toEqual([0, interval, 2 * interval, 3 * interval]);
+    expect(report.dispatched).toBe(DEFAULT_PLAN_CALLS);
+    expect(report.stopped).toBeNull();
+    expect(report.retryHints).toBe(0);
+    expect(sampleOf(report, "noul").status).toBe(TOO_MANY_REQUESTS);
+    expect(sampleOf(report, "noul").observation?.bodyShape).toBe("empty");
+    expect(report.verdictReasons).toEqual(["transport"]);
+  });
+
+  it("a vendor that asks for a longer wait than a run will make ends the run at once, and is not called early", async () => {
+    const time = fakeTime();
+    const patient = vendor(() =>
+      reply(TOO_MANY_REQUESTS, "", { ...VENDOR_HEADERS, "retry-after-ms": String(PROBE_LONGEST_HONOURED_WAIT_MS + 1) }),
+    );
+
+    const report = await probe(patient, { samples: LONG_RUN_SAMPLES }, time);
+
+    expect(patient.calls).toHaveLength(1);
+    expect(time.waits).toEqual([]);
+    expect(report.stopped).toBe("rate_limited");
+    expect(report.retryHints).toBe(1);
+    expect(report.verdictReasons).toEqual(["rate_limited", "stopped_early", "transport"]);
+
+    const atTheLimit = fakeTime();
+    const justInside = vendor((call, index) =>
+      index === 0
+        ? reply(TOO_MANY_REQUESTS, "", { ...VENDOR_HEADERS, "retry-after-ms": String(PROBE_LONGEST_HONOURED_WAIT_MS) })
+        : answering()(call, index),
+    );
+    const waited = await probe(justInside, {}, atTheLimit);
+    expect(atTheLimit.waits[0]).toBe(PROBE_LONGEST_HONOURED_WAIT_MS);
+    expect(waited.stopped).toBeNull();
+    expect(waited.dispatched).toBe(DEFAULT_PLAN_CALLS);
+  });
+
+  it("a vendor that says twice it is full or not serving ends the run too, and one such answer does not", async () => {
+    for (const status of [503, 529, 408]) {
+      const full = vendor(() => reply(status, "", VENDOR_HEADERS));
+      const report = await probe(full, { samples: LONG_RUN_SAMPLES });
+
+      expect(full.calls).toHaveLength(PROBE_CAPACITY_REFUSALS_BEFORE_STOP);
+      expect(report.stopped).toBe("vendor_unavailable");
+      expect(report.verdictReasons).toEqual(["stopped_early", "transport", "vendor_unavailable"]);
+      expect(renderProbeSummary(report).at(-1)).toContain(
+        `the run stopped after 2 of ${report.planned} calls were sent`,
+      );
+    }
+
+    const once = await probe(vendor(answering({ choice: () => reply(529, "", VENDOR_HEADERS) })));
+    expect(once.stopped).toBeNull();
+    expect(once.dispatched).toBe(DEFAULT_PLAN_CALLS);
+
+    // A vendor that failed, as opposed to one that is full, is not a reason to stop.
+    const failing = vendor(() => reply(500, "", VENDOR_HEADERS));
+    const failed = await probe(failing);
+    expect(failing.calls).toHaveLength(DEFAULT_PLAN_CALLS);
+    expect(failed.stopped).toBeNull();
+  });
+
   it("latency is reported per shape with its count and every duration, and identical requests are counted for identical answers", async () => {
     const samples = 3;
+    // Time to the response's headers. Each body then takes a little longer to
+    // arrive whole, and the second yes/no lands just past the route's budget.
+    const justOverBudget = HOSTED.budget_ms + 1;
     const latencies: Readonly<Record<ProbeShape, readonly number[]>> = {
       choice: [300, 100, 1600],
-      noul: [210, 220, 230],
+      noul: [210, justOverBudget - BODY_READ_MS, 230],
       score: [150, 150, 150],
       [PROBE_REFUSAL_SHAPE]: [40],
     };
@@ -913,7 +1115,15 @@ describe("a run", () => {
     };
     const timed = (shape: ProbeShape, answer: (nth: number) => ProbeFetchResponse) => (nth: number) => {
       time.advance(latencies[shape][nth]);
-      return answer(nth);
+      const answered = answer(nth);
+      return {
+        status: answered.status,
+        headers: answered.headers,
+        text: (): Promise<string> => {
+          time.advance(BODY_READ_MS);
+          return answered.text();
+        },
+      };
     };
     const double = vendor(
       answering({
@@ -928,20 +1138,126 @@ describe("a run", () => {
 
     expect(report.samplesPerShape).toBe(samples);
     expect(report.dispatched).toBe(samples * 3 + 1);
-    expect(report.shapes.choice.durationsMs).toEqual([300, 100, 1600]);
-    expect(report.shapes.choice.latencyMs).toEqual({ n: 3, min: 100, p50: 300, p90: null, p95: null, p99: null, max: 1600 });
+    // A duration is the time to the whole body, not to the headers.
+    expect(report.shapes.choice.durationsMs).toEqual([300 + BODY_READ_MS, 100 + BODY_READ_MS, 1600 + BODY_READ_MS]);
+    expect(report.shapes.choice.latencyMs).toEqual({
+      n: 3,
+      min: 100 + BODY_READ_MS,
+      p50: 300 + BODY_READ_MS,
+      p90: null,
+      p95: null,
+      p99: null,
+      max: 1600 + BODY_READ_MS,
+    });
+    expect(report.shapes.choice.latencyPopulation).toBe(PROBE_LATENCY_POPULATION);
     expect(report.shapes.choice.overRouteBudget).toBe(1);
+    expect(report.shapes.choice.withinRouteBudget).toBe(2);
+    expect(report.shapes.choice.routeBudgetUnknown).toBe(0);
     expect(report.shapes.choice.distinctAnswers).toBe(2);
-    expect(report.shapes.noul.durationsMs).toEqual([210, 220, 230]);
-    expect(report.shapes.noul.overRouteBudget).toBe(0);
+    // One millisecond past the route's budget is past it.
+    expect(report.shapes.noul.durationsMs).toEqual([210 + BODY_READ_MS, justOverBudget, 230 + BODY_READ_MS]);
+    expect(report.shapes.noul.overRouteBudget).toBe(1);
+    expect(report.shapes.score.overRouteBudget).toBe(0);
     expect(report.shapes.noul.distinctAnswers).toBe(1);
     expect(report.shapes.score.latencyMs.n).toBe(samples);
     expect(report.shapes.choice.largestSumDeviation).toBe(
       Math.max(Math.abs(0.88 + 0.12 + 0.0 - 1), Math.abs(0.9 + 0.1 + 0.0 - 1)),
     );
     expect(sampleOf(report, "choice").headersMs).toBe(300);
-    expect(sampleOf(report, "choice").bodyMs).toBe(300);
+    expect(sampleOf(report, "choice").bodyMs).toBe(300 + BODY_READ_MS);
     expect(JSON.stringify(report)).not.toContain("0.85");
+  });
+
+  it("every call that outlasted the route's budget is counted over it, whatever it ended as, and a call that was not measured is counted as not measured", async () => {
+    const budget = HOSTED.budget_ms;
+    const requestTimeoutMs = 25;
+    const time = fakeTime();
+    /**
+     * A call that never answers, on a clock moved to where the probe's own
+     * deadline would be when it gives up.
+     *
+     * @param call The request.
+     * @param headersAfterMs When its headers arrive, or `null` when none do.
+     * @returns The response, or a promise that only the probe's deadline ends.
+     */
+    const neverWhole = (call: RecordedCall, headersAfterMs: number | null): Promise<ProbeFetchResponse> => {
+      const ended = new Promise<never>((_resolve, reject) => {
+        call.signal.addEventListener("abort", () => reject(call.signal.reason));
+      });
+      if (headersAfterMs === null) {
+        time.advance(DECISION_BUDGET_CEILING_MS);
+        return ended;
+      }
+      time.advance(headersAfterMs);
+      return Promise.resolve({
+        status: OK,
+        headers: new Headers(VENDOR_HEADERS),
+        text: (): Promise<string> => {
+          time.advance(DECISION_BUDGET_CEILING_MS - headersAfterMs);
+          return ended;
+        },
+      });
+    };
+    const slowFailure = (): ProbeFetchResponse => {
+      time.advance(budget * 6);
+      return reply(503, "", VENDOR_HEADERS);
+    };
+    const double = vendor(
+      answering({
+        // No response at all; headers and then no body; a failing status that
+        // arrived whole, long after the budget; and an answer inside it.
+        choice: (nth, call) =>
+          [
+            () => neverWhole(call, null),
+            () => neverWhole(call, 5_000),
+            () => slowFailure(),
+            () => CONTRACT_ANSWERS.choice(),
+          ][nth](),
+        // A call that failed at once, before any response: nothing was measured.
+        noul: (nth) => {
+          if (nth === 0) {
+            throw new TypeError("fetch failed");
+          }
+          return CONTRACT_ANSWERS.noul();
+        },
+      }),
+    );
+
+    const report = await probe(double, { samples: 4, includeRefusal: false, requestTimeoutMs }, time);
+
+    const choice = report.shapes.choice;
+    expect(choice.dispatched).toBe(4);
+    expect(choice.answered).toBe(1);
+    expect(choice.faults).toEqual({ timeout: 2, transport: 1 });
+    expect(choice.overRouteBudget).toBe(3);
+    expect(choice.withinRouteBudget).toBe(1);
+    expect(choice.routeBudgetUnknown).toBe(0);
+    // The latency summary is of whole answers only, and says how many that is.
+    expect(choice.latencyMs.n).toBe(1);
+    expect(choice.latencyPopulation).toBe("success_status_whole_body");
+    expect(choice.durationsMs).toEqual([0]);
+    const [silent, cutShort, lateFailure] = report.samples.filter((sample) => sample.shape === "choice");
+    expect(silent).toMatchObject({ status: null, bodyMs: null, settledMs: DECISION_BUDGET_CEILING_MS, fault: "timeout" });
+    expect(cutShort).toMatchObject({ status: OK, headersMs: 5_000, bodyMs: null, settledMs: DECISION_BUDGET_CEILING_MS });
+    expect(lateFailure).toMatchObject({ status: 503, bodyMs: budget * 6, fault: "transport" });
+
+    const noul = report.shapes.noul;
+    expect(noul.dispatched).toBe(4);
+    expect(noul.overRouteBudget).toBe(0);
+    expect(noul.routeBudgetUnknown).toBe(1);
+    expect(noul.withinRouteBudget).toBe(3);
+    expect(noul.overRouteBudget + noul.withinRouteBudget + noul.routeBudgetUnknown).toBe(noul.dispatched);
+
+    const lines = renderProbeSummary(report);
+    expect(lines.find((line) => line.startsWith("choice:"))).toContain(
+      "latency ms over the n=1 of 4 that drew a success status and a whole body: min 0, ",
+    );
+    expect(lines.find((line) => line.startsWith("choice:"))).toContain(
+      `of 4 made, whatever they ended as: 3 over the route's ${budget} ms budget, 1 within it, 0 not measured against it`,
+    );
+    expect(lines.find((line) => line.startsWith("noul:"))).toContain(
+      `of 4 made, whatever they ended as: 0 over the route's ${budget} ms budget, 3 within it, 1 not measured against it`,
+    );
   });
 
   it("an answering model other than the pin fails the run, decided on the whole id and before the body is trusted", async () => {
@@ -955,8 +1271,22 @@ describe("a run", () => {
       ),
     );
 
+    // The pin in another case is another id: the comparison is exact.
+    expect(PIN.toUpperCase()).not.toBe(PIN);
+    const scored = recordOf(fixtureBody("response.score.constructed.json", "constructed-from-documented-fields"));
+    const inAnotherCase = await probe(
+      vendor(answering({ score: () => reply(OK, { ...scored, model: PIN.toUpperCase() }, VENDOR_HEADERS) })),
+    );
+    expect(sampleOf(inAnotherCase, "score").fault).toBe("route_mismatch");
+    expect(sampleOf(inAnotherCase, "score").servedModelMatchesPin).toBe(false);
+    expect(inAnotherCase.verdictReasons).toEqual(["route_mismatch"]);
+
     expect(report.verdict).toBe("not_confirmed");
     expect(report.verdictReasons).toEqual(["route_mismatch"]);
+    expect(renderProbeSummary(report).at(-1)).toBe(
+      "verdict: not confirmed (route_mismatch); 2 call(s) were answered by a model other than the pin " +
+        `${PIN}: ${[SUBSTITUTED_MODEL, `${PIN}-20260917`].sort().join(", ")}`,
+    );
     const choice = sampleOf(report, "choice");
     expect(choice.outcome).toBe("fault");
     expect(choice.fault).toBe("route_mismatch");
@@ -1147,7 +1477,42 @@ describe("a run", () => {
     expect(JSON.stringify(report)).not.toContain(VENDOR_WORDS);
   });
 
-  it("what the request with no instructions drew is a finding, and does not decide the verdict", async () => {
+  it("a model other than the pin answering the request with no instructions fails the run like any other", async () => {
+    const documented = recordOf(fixtureBody("response.choice.documented.json", "documented-verbatim"));
+    const report = await probe(
+      vendor(
+        answering({
+          [PROBE_REFUSAL_SHAPE]: () => reply(OK, { ...documented, model: SUBSTITUTED_MODEL }, VENDOR_HEADERS),
+        }),
+      ),
+    );
+
+    // Every answerable call was answered by the pin and decoded.
+    expect(report.shapes.choice.answered + report.shapes.noul.answered + report.shapes.score.answered).toBe(3);
+    const last = sampleOf(report, PROBE_REFUSAL_SHAPE);
+    expect(last.status).toBe(OK);
+    expect(last.fault).toBe("route_mismatch");
+    expect(last.servedModel).toBe(SUBSTITUTED_MODEL);
+    expect(report.findings.servedModels).toEqual([SUBSTITUTED_MODEL, PIN].sort());
+    expect(report.verdict).toBe("not_confirmed");
+    expect(report.verdictReasons).toEqual(["route_mismatch"]);
+    expect(renderProbeSummary(report).at(-1)).toBe(
+      "verdict: not confirmed (route_mismatch); 1 call(s) were answered by a model other than the pin " +
+        `${PIN}: ${SUBSTITUTED_MODEL}`,
+    );
+
+    const unnamed = await probe(
+      vendor(
+        answering({
+          [PROBE_REFUSAL_SHAPE]: () => reply(OK, { ...documented, model: `${PIN} ` }, VENDOR_HEADERS),
+        }),
+      ),
+    );
+    expect(unnamed.verdict).toBe("not_confirmed");
+    expect(renderProbeSummary(unnamed).at(-1)).toContain(`other than the pin ${PIN}: a model whose id is not written`);
+  });
+
+  it("what the request with no instructions drew is a finding, and does not decide the verdict unless another model answered it", async () => {
     const accepted = await probe(vendor(answering({ [PROBE_REFUSAL_SHAPE]: () => CONTRACT_ANSWERS.choice() })));
     expect(accepted.verdict).toBe("confirmed");
     expect(accepted.findings.refusal).toEqual({ outcome: "answered", status: OK, bodyShape: "answers" });
@@ -1175,7 +1540,13 @@ describe("a run", () => {
     expect(text).toContain("call 0 (choice): probabilities of department sum to 1");
     expect(text).toContain("call 2 (score): probabilities of urgency sum to 1");
     expect(text).toContain("request with no instructions: refused, HTTP 422, body shape detail_list_loc_msg");
-    expect(text).toContain("latency ms over n=1: min 0, p50 not measured");
+    expect(text).toContain(
+      "latency ms over the n=1 of 1 that drew a success status and a whole body: min 0, p50 not measured",
+    );
+    expect(text).toContain(
+      `of 1 made, whatever they ended as: 0 over the route's ${HOSTED.budget_ms} ms budget, 1 within it, 0 not measured against it`,
+    );
+    expect(text).not.toContain("asked the run to wait");
     expect(text).toContain(`evidence: ${PROBE_EVIDENCE_AUTHENTICATED}, ${RUN_DATE}`);
     expect(lines.at(-1)).toBe("verdict: confirmed");
   });
@@ -1226,6 +1597,23 @@ describe("the command", () => {
       expect(harness.written).toEqual([]);
       expect(harness.prepared).toEqual([]);
       expect(harness.warned.join("\n")).toContain(`${KEY_ENV} is unset`);
+    }
+  });
+
+  it("execute with a key that cannot be sent refuses before any request, and writes no report", async () => {
+    for (const unsendable of ["dk-probe-clé", "dk probe", "dk-probe-\u0007"]) {
+      vi.stubEnv(KEY_ENV, unsendable);
+      const double = vendor(answering());
+      const harness = cliHarness(double);
+
+      const status = await runProbeCli(EXECUTE_ARGS, harness.deps);
+
+      expect(status).toBe(PROBE_EXIT_REFUSED);
+      expect(double.calls).toHaveLength(0);
+      expect(harness.written).toEqual([]);
+      expect(harness.prepared).toEqual([]);
+      expect(harness.warned.join("\n")).toContain(`${KEY_ENV} holds a value that cannot be sent as a key`);
+      expect(harness.warned.join("\n").includes(unsendable)).toBe(false);
     }
   });
 
@@ -1338,7 +1726,52 @@ describe("the command", () => {
     expect(status).toBe(PROBE_EXIT_NOT_CONFIRMED);
     expect(harness.written).toHaveLength(1);
     expect(recordOf(JSON.parse(harness.written[0].text)).verdict).toBe("not_confirmed");
-    expect(harness.printed).toContain("verdict: not confirmed (route_mismatch)");
+    expect(harness.printed).toContain(
+      "verdict: not confirmed (route_mismatch); 1 call(s) were answered by a model other than the pin " +
+        `${PIN}: ${SUBSTITUTED_MODEL}`,
+    );
+  });
+
+  it("exits non-zero when another model answers only the request with no instructions", async () => {
+    const documented = recordOf(fixtureBody("response.choice.documented.json", "documented-verbatim"));
+    const double = vendor(
+      answering({
+        [PROBE_REFUSAL_SHAPE]: () => reply(OK, { ...documented, model: SUBSTITUTED_MODEL }, VENDOR_HEADERS),
+      }),
+    );
+    const harness = cliHarness(double);
+
+    const status = await runProbeCli(EXECUTE_ARGS, harness.deps);
+
+    expect(status).toBe(PROBE_EXIT_NOT_CONFIRMED);
+    expect(double.calls).toHaveLength(DEFAULT_PLAN_CALLS);
+    expect(recordOf(JSON.parse(harness.written[0].text)).verdictReasons).toEqual(["route_mismatch"]);
+    expect(harness.printed.find((line) => line.startsWith("verdict:"))).toContain(SUBSTITUTED_MODEL);
+  });
+
+  it("a run the vendor rate limits exits non-zero, having sent two calls of the many it planned", async () => {
+    const double = vendor(() =>
+      reply(TOO_MANY_REQUESTS, fixtureBody("error.429.unobserved.json", "synthetic-unobserved"), {
+        ...VENDOR_HEADERS,
+        "retry-after": "30",
+      }),
+    );
+    const harness = cliHarness(double);
+    const planned = LONG_RUN_SAMPLES * 3 + 1;
+
+    const status = await runProbeCli(
+      ["--execute", "--route", HOSTED_ROUTE, "--samples", String(LONG_RUN_SAMPLES), "--acknowledge-real-calls", String(planned), "--out", "probe-out"],
+      harness.deps,
+    );
+
+    expect(status).toBe(PROBE_EXIT_NOT_CONFIRMED);
+    expect(double.calls).toHaveLength(PROBE_CAPACITY_REFUSALS_BEFORE_STOP);
+    const report = recordOf(JSON.parse(harness.written[0].text));
+    expect(report.stopped).toBe("rate_limited");
+    expect(report.dispatched).toBe(PROBE_CAPACITY_REFUSALS_BEFORE_STOP);
+    expect(harness.printed.find((line) => line.startsWith("verdict:"))).toContain(
+      `the vendor rate-limited the run, which stopped after 2 of ${planned} calls were sent`,
+    );
   });
 
   it("a vendor that repeats the key back is not written down or printed", async () => {

@@ -10,9 +10,13 @@
  * applies: a model id that is not confirmed, a route the consumer serves
  * itself and a base URL that cannot be used are refused here as anywhere.
  *
- * The calls are made one at a time, and never faster than the refill rate the
- * limits config declares for the route's provider, so a run cannot be a burst
- * however quickly the vendor answers. Each call is abandoned after the longest
+ * The calls are made one at a time, and never closer together than a fixed
+ * spacing that keeps a run far under the vendor's published ceiling whatever
+ * the limits config says, so a run cannot be a burst however quickly the
+ * vendor answers. A run is a guest on an account that is being opened: when
+ * the vendor says to wait, it waits at least that long, and when the vendor
+ * says twice that it is being called too often, or that it is full, the run
+ * stops and says so. Each call is abandoned after the longest
  * budget any route may declare and not after this route's own: the route's
  * budget is one of the numbers a run exists to re-derive, and a run that cut
  * calls off at it could never see how far past it the vendor's tail reaches.
@@ -45,7 +49,7 @@ import {
 } from "../../src/llm/decision/errors";
 import type { DecisionFault } from "../../src/llm/decision/errors";
 import type { DecisionRouteTable, ResolvedDecisionRoute } from "../../src/llm/decision/route-types";
-import { createSystemOneTransport } from "../../src/llm/decision/transports/systemone";
+import { createSystemOneTransport, decisionFaultForStatus } from "../../src/llm/decision/transports/systemone";
 import type {
   SystemOneFetch,
   SystemOneFetchInit,
@@ -61,10 +65,61 @@ import type {
 import { buildProbePlan, recordObservation } from "./probe-plan";
 import type { ProbeObservation, ProbeRequest, ProbeResponseHeaders } from "./probe-plan";
 import { assembleProbeReport, utcDateOf } from "./probe-report";
-import type { ProbeDispatchResult, ProbeEndpoint, ProbeReport, ProbeSample } from "./probe-report";
+import type { ProbeDispatchResult, ProbeEndpoint, ProbeReport, ProbeSample, ProbeStop } from "./probe-report";
 
 /** Milliseconds in one minute, the unit a limits entry states its rate over. */
 const MS_PER_MINUTE = 60_000;
+
+/** Milliseconds in one second, the unit the vendor publishes its request ceiling over. */
+const MS_PER_SECOND = 1_000;
+
+/**
+ * The most requests a second the hosted decision vendor publishes that an
+ * account may send. A request over it is answered 429.
+ */
+const PUBLISHED_REQUESTS_PER_SECOND = 40;
+
+/** The share of the published ceiling a run may reach at most: one part in this many. */
+const PUBLISHED_CEILING_DIVISOR = 4;
+
+/**
+ * The least time a run ever leaves between two dispatches: 100 ms.
+ *
+ * A run sends one request at a time and starts no request sooner than this
+ * after it started the last one, so it sends at most ten in any second, a
+ * quarter of the forty the vendor publishes as its ceiling. The bound holds by
+ * construction: it is a constant of the probe and the larger of it and the
+ * limits config's own interval is used, so no edit to the limits config, and
+ * no vendor however quick to answer, can bring a run closer to the ceiling
+ * than this. A quarter, and not the whole, because the ceiling belongs to the
+ * account and the account may be carrying other traffic, and because the
+ * publisher says the ceiling can move without notice.
+ */
+export const PROBE_MIN_DISPATCH_SPACING_MS = (MS_PER_SECOND * PUBLISHED_CEILING_DIVISOR) / PUBLISHED_REQUESTS_PER_SECOND;
+
+/** The status with which a vendor says it is being called too often. */
+const TOO_MANY_REQUESTS_STATUS = 429;
+
+/**
+ * How many times a vendor may say it is being called too often, or that it is
+ * full, before the run stops.
+ *
+ * The first such answer is the observation the contract needs: its status, the
+ * shape of its body and the names of its headers. The run then waits as long
+ * as it was asked to and tries the next call. A second one, after that wait,
+ * says the vendor is still refusing, and every further call would be sent into
+ * a limiter that has already answered twice.
+ */
+export const PROBE_CAPACITY_REFUSALS_BEFORE_STOP = 2;
+
+/**
+ * The longest a run waits because a vendor asked it to: one minute.
+ *
+ * A run never calls sooner than it was asked to. Asked to wait longer than
+ * this, it stops instead of waiting: an operator is at the terminal, and a run
+ * told to come back in an hour has been told to stop.
+ */
+export const PROBE_LONGEST_HONOURED_WAIT_MS = 60_000;
 
 /** How many decimal places of a millisecond a timing is written to. */
 const TIMING_DECIMALS = 3;
@@ -279,14 +334,25 @@ function requestsPerMinuteOf(entry: unknown): number | null {
 }
 
 /**
+ * The spacing a run keeps, given the interval the limits config asks for.
+ *
+ * @param configuredIntervalMs The refill interval the limits config declares.
+ * @returns That interval, or {@link PROBE_MIN_DISPATCH_SPACING_MS} when the config asks for less.
+ */
+export function probeDispatchSpacingMs(configuredIntervalMs: number): number {
+  return Math.max(PROBE_MIN_DISPATCH_SPACING_MS, configuredIntervalMs);
+}
+
+/**
  * The least time a run leaves between two dispatches.
  *
  * It is the refill interval the limits config declares for the provider: the
  * rate this package has decided to hold that provider to. A run therefore
- * never calls faster than a production caller is allowed to on average, and
- * the number is read from the config and not chosen here. The same order as
- * the rate guard reads it in: a model's own override where the provider is
- * limited per model, then the provider's entry, then the defaults.
+ * never calls faster than a production caller is allowed to on average. The
+ * same order as the rate guard reads it in: a model's own override where the
+ * provider is limited per model, then the provider's entry, then the defaults.
+ * The interval is never shorter than the probe's own floor, whatever the
+ * config says: see {@link PROBE_MIN_DISPATCH_SPACING_MS}.
  *
  * @param provider The provider the route names.
  * @param modelPin The model the route pins.
@@ -306,7 +372,7 @@ export function probeDispatchIntervalMs(provider: string, modelPin: string): num
         "so there is no rate to hold a run to",
     );
   }
-  return MS_PER_MINUTE / rate;
+  return probeDispatchSpacingMs(MS_PER_MINUTE / rate);
 }
 
 /** What one call's response was, as seen where it arrived. */
@@ -551,12 +617,14 @@ function answeredResult(context: DispatchContext, result: SystemOneTransportResu
         probabilitySums: null,
       }),
       answerKey: null,
+      retryAfterMs: null,
     };
   }
   if (planned.expect === "refusal") {
     return {
       sample: sampleOf(context, { ...reported, ...NO_FAULT, outcome: "answered", probabilitySums: null }),
       answerKey: null,
+      retryAfterMs: null,
     };
   }
   try {
@@ -569,6 +637,7 @@ function answeredResult(context: DispatchContext, result: SystemOneTransportResu
         probabilitySums: decoded.probabilitySums,
       }),
       answerKey: JSON.stringify(decoded.answers),
+      retryAfterMs: null,
     };
   } catch (error) {
     if (!(error instanceof DecisionResponseFormatError)) {
@@ -586,6 +655,7 @@ function answeredResult(context: DispatchContext, result: SystemOneTransportResu
         probabilitySums: null,
       }),
       answerKey: null,
+      retryAfterMs: null,
     };
   }
 }
@@ -623,6 +693,7 @@ function faultedResult(context: DispatchContext, error: DecisionCallError): Prob
       cost: error.usage === null ? null : error.usage.cost,
     }),
     answerKey: null,
+    retryAfterMs: error.retryAfterMs,
   };
 }
 
@@ -644,7 +715,26 @@ function abandonedResult(context: DispatchContext): ProbeDispatchResult {
       faultFieldPathWithheld: false,
     }),
     answerKey: null,
+    retryAfterMs: null,
   };
+}
+
+/**
+ * What a call says about whether the vendor is refusing the run.
+ *
+ * @param sample The call.
+ * @returns `rate_limited` when the vendor answered that it is being called too
+ *   often, `vendor_unavailable` when it answered with another status that says
+ *   it is full or not serving, and `null` for every other outcome.
+ */
+function capacityRefusalOf(sample: ProbeSample): Exclude<ProbeStop, "credential"> | null {
+  if (sample.fault !== "transport" || sample.status === null) {
+    return null;
+  }
+  if (decisionFaultForStatus(sample.status)?.breakerKind !== "capacity") {
+    return null;
+  }
+  return sample.status === TOO_MANY_REQUESTS_STATUS ? "rate_limited" : "vendor_unavailable";
 }
 
 /**
@@ -674,17 +764,22 @@ export async function runDecisionProbe(config: ProbeRunConfig): Promise<ProbeRep
   });
 
   const results: ProbeDispatchResult[] = [];
-  let stopped: "credential" | null = null;
-  let lastDispatchAt: number | null = null;
+  let stopped: ProbeStop | null = null;
+  let retryHints = 0;
+  const refusals: Record<Exclude<ProbeStop, "credential">, number> = { rate_limited: 0, vendor_unavailable: 0 };
+  // The earliest instant the next request may be started at, on the clock that
+  // only moves forward: the spacing after the last dispatch, or the end of a
+  // wait the vendor asked for, whichever is later.
+  let nextDispatchNotBefore: number | null = null;
   for (const [sequence, planned] of plan.dispatches.entries()) {
-    if (lastDispatchAt !== null) {
-      const sinceLast = clock.monotonicMs() - lastDispatchAt;
-      if (sinceLast < minDispatchIntervalMs) {
-        await clock.wait(minDispatchIntervalMs - sinceLast);
+    if (nextDispatchNotBefore !== null) {
+      const untilAllowed = nextDispatchNotBefore - clock.monotonicMs();
+      if (untilAllowed > 0) {
+        await clock.wait(untilAllowed);
       }
     }
     const dispatchedAt = clock.monotonicMs();
-    lastDispatchAt = dispatchedAt;
+    nextDispatchNotBefore = dispatchedAt + minDispatchIntervalMs;
     slot.arrival = null;
     const deadline = new AbortController();
     const timer = setTimeout(() => deadline.abort(), requestTimeoutMs);
@@ -714,6 +809,7 @@ export async function runDecisionProbe(config: ProbeRunConfig): Promise<ProbeRep
     } finally {
       clearTimeout(timer);
     }
+    const settledAt = clock.monotonicMs();
     results.push(result);
     if (result.sample.fault === "credential") {
       // A key the vendor refuses is refused on every call, and a key that is
@@ -721,6 +817,29 @@ export async function runDecisionProbe(config: ProbeRunConfig): Promise<ProbeRep
       // spend calls to learn nothing.
       stopped = "credential";
       break;
+    }
+    const refusal = capacityRefusalOf(result.sample);
+    if (refusal !== null) {
+      refusals[refusal] += 1;
+      if (refusals[refusal] >= PROBE_CAPACITY_REFUSALS_BEFORE_STOP) {
+        stopped = refusal;
+        break;
+      }
+    }
+    if (result.retryAfterMs !== null) {
+      retryHints += 1;
+      if (result.retryAfterMs > PROBE_LONGEST_HONOURED_WAIT_MS) {
+        // Asked to stay away for longer than a run will wait. The run does not
+        // call sooner than it was asked to, so it ends here.
+        stopped = refusal ?? "vendor_unavailable";
+        break;
+      }
+      // The wait is counted from the instant the call settled, which is never
+      // earlier than the instant its response arrived and never earlier than
+      // the instant the hint was read against the clock. So the next request
+      // starts no sooner than the vendor asked, whether it gave a delay or a
+      // time of day, and however long the refused call itself had taken.
+      nextDispatchNotBefore = Math.max(nextDispatchNotBefore, settledAt + result.retryAfterMs);
     }
   }
 
@@ -740,6 +859,7 @@ export async function runDecisionProbe(config: ProbeRunConfig): Promise<ProbeRep
       startedAtMs,
       finishedAtMs: clock.epochMs(),
       stopped,
+      retryHints,
     },
     results,
   );

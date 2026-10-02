@@ -24,8 +24,16 @@
  * and is never written or printed. The report holds counts, timings and model
  * ids; it holds no response body and no header's value.
  *
+ * A run behaves as a guest of the account it is opening. It sends one request
+ * at a time and never more than ten a second, a quarter of the vendor's
+ * published ceiling. When the vendor asks it to wait, it waits at least that
+ * long. It stops at once on a refused key, and after two answers that say the
+ * vendor is rate limiting it or is full, and the report says which and how
+ * many calls were sent.
+ *
  * Exit status: 0 for a dry run or a run that confirmed the contract, 1 for a
- * run that did not, 2 for a command refused before any call.
+ * run that did not (a call faulted, a model other than the pin answered any
+ * request, or the run was stopped), 2 for a command refused before any call.
  *
  * The command itself is the TypeScript beside this file. This file only
  * arranges for plain `node` to load it from source, so the probe runs the
