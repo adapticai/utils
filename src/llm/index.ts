@@ -156,3 +156,5 @@ export type {
   LlmValidationOutcome,
   ResolvedRoute,
 } from "./types";
+
+export * from "./decision";
