@@ -38,6 +38,22 @@ const BREAKER: LlmBreakerDefaults = routeTable.defaults.circuit_breaker;
 /** More consecutive failures than the live threshold, so a leak would show. */
 const OVER_THRESHOLD = BREAKER.failure_threshold + 3;
 
+/**
+ * A burst of measurement failures far larger than any consumer's measurement
+ * pool can hold in flight.
+ *
+ * The isolation must not rest on arithmetic. A consumer bounds how much
+ * measurement traffic runs at once, but those bounds are the consumer's to
+ * change — the engine's shared measurement pool is a governed row an operator
+ * can widen to 32, beside a second pool of 4 — and nothing in this package can
+ * see them. Were the live run's safety a matter of a pool staying under
+ * `failure_threshold`, a single governed write would convert measurement into a
+ * live-starvation path with no code review at all. The property asserted here is
+ * therefore unconditional in the volume: no number of measurement failures opens
+ * the live breaker.
+ */
+const UNBOUNDED_BURST = 100;
+
 /** A fixed instant, so cooldown arithmetic is exact rather than wall-clock. */
 const T0 = 1_000_000;
 
@@ -172,6 +188,73 @@ describe("breaker failure runs are isolated per traffic path", () => {
   it("returns the live registry itself for the live path, so live admission cannot drift", () => {
     const { breakers } = registryWithClock();
     expect(breakers.forPath(LIVE_BREAKER_PATH)).toBe(breakers);
+  });
+});
+
+describe("no volume of measurement failure can open a live breaker", () => {
+  it("a burst larger than any measurement pool leaves the live route serving", () => {
+    const { breakers } = registryWithClock();
+    const route = makeRoute({ alias: ALIAS, role: "primary" });
+    const shadow = breakers.forPath("shadow");
+
+    for (let index = 0; index < UNBOUNDED_BURST; index += 1) {
+      shadow.onFailure(route.routeKey, "hard");
+    }
+
+    expect(
+      breakers.stateOf(route.routeKey),
+      `${UNBOUNDED_BURST} measurement failures opened the LIVE breaker for ${route.routeKey}: ` +
+        "measurement traffic can now exclude the model that serves live calls, " +
+        "which is a live-starvation path, not a measurement artefact",
+    ).toBe("closed");
+    expect(
+      breakers.allows(route.routeKey),
+      "the live route is refused after measurement-only failures — live calls are being starved by traffic whose answers are discarded",
+    ).toBe(true);
+    expect(breakers.snapshot(route.routeKey).consecutiveFailures).toBe(0);
+  });
+
+  it("the identical burst on the live path does open it, so the test above is not vacuous", () => {
+    const { breakers } = registryWithClock();
+    const route = makeRoute({ alias: ALIAS, role: "primary" });
+
+    for (let index = 0; index < UNBOUNDED_BURST; index += 1) {
+      breakers.onFailure(route.routeKey, "hard");
+    }
+
+    // What the registry did with every failure, measurement or not, before the
+    // path dimension existed: the burst above would have landed here.
+    expect(breakers.stateOf(route.routeKey)).toBe("open");
+    expect(breakers.allows(route.routeKey)).toBe(false);
+    expect(breakers.snapshot(route.routeKey).consecutiveFailures).toBe(UNBOUNDED_BURST);
+  });
+
+  it("interleaving live and measurement failures advances only the live run", () => {
+    const { breakers } = registryWithClock();
+    const route = makeRoute({ alias: ALIAS, role: "primary" });
+    const shadow = breakers.forPath("shadow");
+
+    // One short of the threshold on the live run, then measurement failures
+    // without limit. Before the path dimension these shared one counter, so
+    // measurement supplied the failure that opened a live route — and the live
+    // caller saw an exclusion it had not earned.
+    for (let index = 0; index < BREAKER.failure_threshold - 1; index += 1) {
+      breakers.onFailure(route.routeKey, "hard");
+    }
+    for (let index = 0; index < UNBOUNDED_BURST; index += 1) {
+      shadow.onFailure(route.routeKey, "hard");
+    }
+
+    expect(
+      breakers.stateOf(route.routeKey),
+      "measurement failures completed a live failure run: the live breaker opened on evidence from calls whose answers were discarded",
+    ).toBe("closed");
+    expect(breakers.snapshot(route.routeKey).consecutiveFailures).toBe(
+      BREAKER.failure_threshold - 1,
+    );
+    expect(breakers.snapshotOnPath(route.routeKey, "shadow").consecutiveFailures).toBe(
+      UNBOUNDED_BURST,
+    );
   });
 });
 
