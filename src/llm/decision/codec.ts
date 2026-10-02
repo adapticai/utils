@@ -68,6 +68,18 @@ const PROBABILITY_MAX = 1;
 /** What the probabilities of a distribution sum to when they are exact. */
 const DISTRIBUTION_TOTAL = 1;
 
+/**
+ * The least value a score may take.
+ *
+ * A score is a probability-weighted level, so it lies between the lowest and
+ * the highest level number. Levels are numbered from zero or from one, and the
+ * lowest either numbering reaches is zero.
+ */
+const SCORE_MIN = 0;
+
+/** The name of the method a serialiser calls on a value to have it write itself. */
+const SELF_SERIALISER = "toJSON";
+
 /** How a request is encoded. */
 export interface DecisionEncodeOptions {
   /** The model id written into the request: the pin of the route being called. */
@@ -81,6 +93,10 @@ export interface DecisionDecodeOptions {
   /**
    * How far a distribution's sum may differ from one before the response is
    * rejected. Absent means the sum is reported and not enforced.
+   *
+   * Zero is not "exact": probabilities that sum to one on paper are added as
+   * floats, and the sum can land one rounding step away. A caller that means
+   * "sums to one" passes a tolerance wider than that step.
    */
   readonly probabilitySumTolerance?: number;
   /**
@@ -106,6 +122,12 @@ export interface DecodedDecisionResponse {
    * One answer per question, in the request's question order, each holding the
    * fields the contract defines for its kind with distribution keys in the
    * request's option order.
+   *
+   * A `score` and a `confidence` are the vendor's own statistics, carried as
+   * stated. A score is held to its scale and a confidence to being a finite
+   * number; neither is recomputed from `probabilities` or compared with them,
+   * so either can disagree with the distribution beside it. A consumer that
+   * needs a value it can defend computes it from `probabilities`.
    */
   readonly answers: Readonly<Record<string, DecisionAnswer>>;
   /**
@@ -260,6 +282,9 @@ function pathOf(visit: JsonVisit): string {
  * tree that contains itself is reported and not followed for ever. One object
  * held in two places is not a cycle and is admitted.
  *
+ * A container that carries its own conversion is refused as well: a serialiser
+ * writes what the conversion returns, which is not what was examined here.
+ *
  * @param root The tree to examine.
  * @returns The first defect in document order, or `null` when there is none.
  */
@@ -287,6 +312,9 @@ function findJsonDefect(root: unknown): JsonDefect | null {
     }
     if (open.has(value)) {
       return { path: pathOf(visit), reason: "contains itself, which has no JSON form" };
+    }
+    if (typeof Reflect.get(value, SELF_SERIALISER) === "function") {
+      return { path: pathOf(visit), reason: "writes itself as something else when serialised, so is not plain data" };
     }
     open.add(value);
     steps.push({ leave: true, container: value });
@@ -333,6 +361,22 @@ function assertStructured(value: unknown, fieldPath: string, raise: Raise): asse
  */
 function invalidRequest(fieldPath: string, reason: string): DecisionRequestInvalidError {
   return new DecisionRequestInvalidError({ source: "request_validation", fieldPath, reason });
+}
+
+/**
+ * Require a call's options to be an object.
+ *
+ * The type requires it of a typed caller. A caller that passes nothing, or
+ * `null`, is told so in the codec's own error and not by a failed property
+ * read, so every refusal the codec makes is one a caller can classify.
+ *
+ * @param options The options as passed.
+ * @throws DecisionRequestInvalidError when they are not an object.
+ */
+function assertOptions(options: unknown): asserts options is object {
+  if (typeof options !== "object" || options === null) {
+    throw invalidRequest("options", `a call's options must be an object, and are ${kindOf(options)}`);
+  }
 }
 
 /**
@@ -534,17 +578,22 @@ function readQuestions(raw: unknown, caps: DecisionRouteCaps | null): Readonly<R
  * @param options The model id to write and the route's limits.
  * @returns The request body.
  * @throws DecisionRequestInvalidError, naming the offending field, when the
- *   state is not text or structured data; when anything in the state, the
- *   instructions or a description has no JSON form; when no question is asked;
- *   when a question has no instructions or is of no known kind; when a yes/no
- *   question describes anything but true and false; when a choice offers no
- *   option; when a score has fewer than two levels; or when the options, levels
- *   or questions exceed the route's limits.
+ *   options or the route's limits are absent; when the state is not text or
+ *   structured data; when anything in the state, the instructions or a
+ *   description has no JSON form; when no question is asked; when a question
+ *   has no instructions or is of no known kind; when a yes/no question
+ *   describes anything but true and false; when a choice offers no option; when
+ *   a score has fewer than two levels; or when the options, levels or questions
+ *   exceed the route's limits.
  */
 export function encodeDecisionRequest(request: DecisionRequest, options: DecisionEncodeOptions): DecisionWireRequest {
+  assertOptions(options);
   const { model, caps } = options;
   if (typeof model !== "string" || model.length === 0) {
     throw invalidRequest("model", "a request must name the model its route pins");
+  }
+  if (typeof caps !== "object" || caps === null) {
+    throw invalidRequest("options.caps", `a request is encoded under its route's limits, and they are ${kindOf(caps)}`);
   }
   const fields = fieldsOfRequest(request);
   const { state } = fields;
@@ -727,8 +776,21 @@ function decodeChoice(
  * Decode the answer to a score.
  *
  * The legend and the distribution must each be keyed by exactly the level
- * indexes of the request, written as strings from zero. The score itself is
- * required only to be finite: it is a weighted level and may fall between two.
+ * indexes of the request, written as strings from zero.
+ *
+ * The score is a probability-weighted level and may fall between two, so it is
+ * held to the span every numbering of the levels shares: zero, the lowest level
+ * when they are numbered from zero, to the number of levels, the highest when
+ * they are numbered from one. Both ends are admitted. A value outside that span
+ * is one no weighting of the levels can produce under either numbering.
+ *
+ * Nothing narrower is checked. The score and the confidence are the vendor's
+ * own statistics: neither is recomputed from the distribution or compared with
+ * it, because how the vendor numbers the levels it weighs and how it derives
+ * its confidence are its own and are not stated by the contract. A check that
+ * the score agrees with the distribution would enforce a relation nobody
+ * published. A consumer that needs a value it can defend computes it from
+ * `probabilities`.
  *
  * @param raw The answer as received.
  * @param question The question it answers.
@@ -744,6 +806,12 @@ function decodeScore(
 ): DecodedAnswer {
   const levels = question.criteria.map((_, index) => String(index));
   const score = readFinite(raw.score, `${fieldPath}.score`, context.malformed);
+  if (score < SCORE_MIN || score > levels.length) {
+    throw context.malformed(
+      `${fieldPath}.score`,
+      `a score over ${levels.length} levels lies from ${SCORE_MIN} to ${levels.length}`,
+    );
+  }
   const legend = readExactMap(raw.legend, levels, `${fieldPath}.legend`, context.malformed, readLegendEntry);
   const { probabilities, sum } = readDistribution(raw.probabilities, levels, `${fieldPath}.probabilities`, context);
   const confidence = readFinite(raw.confidence, `${fieldPath}.confidence`, context.malformed);
@@ -802,16 +870,18 @@ function decodeAnswer(
  *   not a finite number from zero to one; when a distribution or a legend does
  *   not cover exactly the request's options or levels; when a choice names an
  *   option that was not offered or does not have the highest probability; when
- *   a score or a confidence is not a finite number; or when a distribution's
- *   sum is further from one than a tolerance the caller passed.
- * @throws DecisionRequestInvalidError when the tolerance is unusable, or the
- *   request is not one that could have been sent.
+ *   a score is not a finite number from zero to the number of levels; when a
+ *   confidence is not a finite number; or when a distribution's sum is further
+ *   from one than a tolerance the caller passed.
+ * @throws DecisionRequestInvalidError when the options are not an object, the
+ *   tolerance is unusable, or the request is not one that could have been sent.
  */
 export function decodeDecisionResponse(
   payload: unknown,
   request: DecisionRequest,
   options: DecisionDecodeOptions = {},
 ): DecodedDecisionResponse {
+  assertOptions(options);
   const tolerance = resolveProbabilitySumTolerance(options.probabilitySumTolerance);
   const questions = readQuestions(fieldsOfRequest(request).questions, null);
   const usage = options.billedUsage ?? null;

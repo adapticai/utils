@@ -19,6 +19,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -26,6 +27,7 @@ import {
   encodeDecisionRequest,
   resolveProbabilitySumTolerance,
 } from "../../../llm/decision/codec";
+import type { DecisionDecodeOptions, DecisionEncodeOptions } from "../../../llm/decision/codec";
 import {
   DECISION_ERROR_BODY_EXCERPT,
   DecisionCallError,
@@ -61,6 +63,9 @@ const LOOSE_TOLERANCE = 0.05;
 
 /** Decimal places to which a float sum of exact-looking decimals is compared. */
 const FLOAT_SUM_DIGITS = 12;
+
+/** A distance too small to be a level apart and large enough to leave a bound. */
+const JUST_OUTSIDE = 1e-9;
 
 /** How deep a hostile legend entry nests: far deeper than a call stack can follow. */
 const HOSTILE_NESTING_DEPTH = 200_000;
@@ -218,6 +223,16 @@ function fixtureBody(name: string, allow: readonly DecisionEvidenceClass[]): unk
  */
 function offContract(request: unknown): DecisionRequest {
   return request as DecisionRequest;
+}
+
+/**
+ * Present a value that breaks an options type as those options.
+ *
+ * @param options The off-contract value.
+ * @returns The same value, typed as the options a call expects.
+ */
+function offOptions<T extends DecisionEncodeOptions | DecisionDecodeOptions>(options: unknown): T {
+  return options as T;
 }
 
 /**
@@ -511,6 +526,12 @@ const RESPONSE_VIOLATIONS: readonly ResponseViolation[] = [
   violation("a score is finite", "answers.urgency.score", (payload) => {
     payload.answers.urgency.score = Number.NaN;
   }),
+  violation("a score is at least zero", "answers.urgency.score", (payload) => {
+    payload.answers.urgency.score = -JUST_OUTSIDE;
+  }),
+  violation("a score is at most the number of levels", "answers.urgency.score", (payload) => {
+    payload.answers.urgency.score = URGENCY_LEVELS.length + JUST_OUTSIDE;
+  }),
   violation("a score's distribution is an object", "answers.urgency.probabilities", (payload) => {
     delete payload.answers.urgency.probabilities;
   }),
@@ -609,6 +630,18 @@ const LIMIT_VIOLATIONS: readonly RequestViolation[] = [
     caps: { ...HOSTED_CAPS, maxOptions: Number.NaN },
   },
   {
+    rule: "a level limit that is not a number admits nothing",
+    fieldPath: "questions.grade.criteria",
+    request: scoreRequestWithLevels(MIN_SCORE_LEVELS),
+    caps: { ...HOSTED_CAPS, maxScoreLevels: Number.NaN },
+  },
+  {
+    rule: "a question limit that is not a number admits nothing",
+    fieldPath: "questions",
+    request: requestWithQuestions(1),
+    caps: { ...HOSTED_CAPS, maxQuestions: Number.NaN },
+  },
+  {
     rule: "the state is never null",
     fieldPath: "state",
     request: offContract({ state: null, questions: { q: PLAIN_NOUL } }),
@@ -654,6 +687,19 @@ const SHAPE_VIOLATIONS: readonly RequestViolation[] = [
     rule: "the state holds data, not an object that serialises as something else",
     fieldPath: "state.asOf",
     request: offContract({ state: { asOf: new Date(0) }, questions: { q: PLAIN_NOUL } }),
+  },
+  {
+    rule: "an integer too wide for a number has no JSON form",
+    fieldPath: "state.volume",
+    request: offContract({ state: { volume: BigInt(10) }, questions: { q: PLAIN_NOUL } }),
+  },
+  {
+    rule: "the state holds no list that writes itself as something else",
+    fieldPath: "state.bars",
+    request: offContract({
+      state: { bars: Object.assign([1, 2], { toJSON: () => "REPLACED" }) },
+      questions: { q: PLAIN_NOUL },
+    }),
   },
   {
     rule: "the state does not contain itself",
@@ -750,6 +796,214 @@ const SHAPE_VIOLATIONS: readonly RequestViolation[] = [
   },
 ];
 
+/** One place a source file names another module. */
+interface ModuleReference {
+  readonly specifier: string;
+  /** True when the reference is erased at compile time and loads nothing. */
+  readonly typeOnly: boolean;
+}
+
+/** What a source file reaches outside itself. */
+interface OutwardSurface {
+  /** Every module the file names, in source order, in whatever form it names it. */
+  readonly references: readonly ModuleReference[];
+  /** Every use of a name that reads the clock, the environment, the network or randomness. */
+  readonly ambientNames: readonly string[];
+}
+
+/**
+ * The names through which code reads something other than its arguments: the
+ * clock, the locale, the process, the network, a random source, or the global
+ * object and the module loader, through which all of those are reachable.
+ */
+const AMBIENT_NAMES: ReadonlySet<string> = new Set([
+  "Date",
+  "Intl",
+  "Temporal",
+  "performance",
+  "process",
+  "globalThis",
+  "setTimeout",
+  "setInterval",
+  "fetch",
+  "crypto",
+  "random",
+  "require",
+]);
+
+/**
+ * The text of a module specifier.
+ *
+ * @param node The specifier as written.
+ * @returns The module it names, or its source text when it is not a literal.
+ */
+function specifierOf(node: ts.Node): string {
+  return ts.isStringLiteralLike(node) ? node.text : node.getText();
+}
+
+/**
+ * Read what a source file reaches outside itself, from its syntax tree.
+ *
+ * The tree is read and not the text, so a reference is found in whatever form
+ * it is written: an import with or without bindings, a re-export, an
+ * `import =`, a call to `import()`, an `import("…")` type, in either quote
+ * style and with or without a semicolon. Comments are not part of the tree,
+ * so a name mentioned in prose is not a use of it.
+ *
+ * @param source The file's text.
+ * @returns The modules it names and the ambient names it uses.
+ */
+function outwardSurface(source: string): OutwardSurface {
+  const file = ts.createSourceFile("subject.ts", source, ts.ScriptTarget.Latest, true);
+  const references: ModuleReference[] = [];
+  const ambientNames: string[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isImportDeclaration(node)) {
+      references.push({
+        specifier: specifierOf(node.moduleSpecifier),
+        typeOnly: node.importClause?.isTypeOnly === true,
+      });
+    } else if (ts.isExportDeclaration(node) && node.moduleSpecifier !== undefined) {
+      references.push({ specifier: specifierOf(node.moduleSpecifier), typeOnly: node.isTypeOnly });
+    } else if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference)) {
+      references.push({ specifier: specifierOf(node.moduleReference.expression), typeOnly: node.isTypeOnly });
+    } else if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
+      references.push({ specifier: node.arguments.map(specifierOf).join(", "), typeOnly: false });
+    } else if (ts.isImportTypeNode(node)) {
+      references.push({
+        specifier: ts.isLiteralTypeNode(node.argument) ? specifierOf(node.argument.literal) : node.argument.getText(),
+        typeOnly: true,
+      });
+    } else if ((ts.isIdentifier(node) || ts.isStringLiteralLike(node)) && AMBIENT_NAMES.has(node.text)) {
+      ambientNames.push(node.text);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return { references, ambientNames };
+}
+
+/** One form in which a file can reach outside itself, and what must be read from it. */
+interface OutwardForm extends OutwardSurface {
+  readonly form: string;
+  readonly source: string;
+}
+
+/**
+ * Every form the import-surface test must not be blind to, each as a file of
+ * its own.
+ *
+ * The test that reads the codec's surface is only as good as the reading, so
+ * the reading is pinned here against sources that are known to reach out.
+ */
+const OUTWARD_FORMS: readonly OutwardForm[] = [
+  {
+    form: "an import with bindings",
+    source: 'import { a } from "../a";',
+    references: [{ specifier: "../a", typeOnly: false }],
+    ambientNames: [],
+  },
+  {
+    form: "a type-only import",
+    source: 'import type { A } from "../a";',
+    references: [{ specifier: "../a", typeOnly: true }],
+    ambientNames: [],
+  },
+  {
+    form: "an import that binds a type beside a value loads the module",
+    source: 'import { type A, b } from "../a";',
+    references: [{ specifier: "../a", typeOnly: false }],
+    ambientNames: [],
+  },
+  {
+    form: "an import with no bindings, run for its effects",
+    source: 'import "../a";',
+    references: [{ specifier: "../a", typeOnly: false }],
+    ambientNames: [],
+  },
+  {
+    form: "a re-export",
+    source: 'export { a } from "../a";',
+    references: [{ specifier: "../a", typeOnly: false }],
+    ambientNames: [],
+  },
+  {
+    form: "a re-export of everything",
+    source: 'export * from "../a";',
+    references: [{ specifier: "../a", typeOnly: false }],
+    ambientNames: [],
+  },
+  {
+    form: "a type-only re-export",
+    source: 'export type { A } from "../a";',
+    references: [{ specifier: "../a", typeOnly: true }],
+    ambientNames: [],
+  },
+  {
+    form: "single quotes and no semicolon",
+    source: "import { a } from '../a'\nexport { b } from '../b'",
+    references: [
+      { specifier: "../a", typeOnly: false },
+      { specifier: "../b", typeOnly: false },
+    ],
+    ambientNames: [],
+  },
+  {
+    form: "an import inside a function, loaded when it runs",
+    source: 'async function load(): Promise<unknown> {\n  return import("../a");\n}',
+    references: [{ specifier: "../a", typeOnly: false }],
+    ambientNames: [],
+  },
+  {
+    form: "an import assignment, and the loader it calls",
+    source: 'import a = require("../a");',
+    references: [{ specifier: "../a", typeOnly: false }],
+    ambientNames: [],
+  },
+  {
+    form: "a call to the loader",
+    source: 'const a: unknown = require("../a");',
+    references: [],
+    ambientNames: ["require"],
+  },
+  {
+    form: "a type named by its module",
+    source: 'type A = import("../a").A;',
+    references: [{ specifier: "../a", typeOnly: true }],
+    ambientNames: [],
+  },
+  {
+    form: "the clock, read directly",
+    source: "const now = Date.now();",
+    references: [],
+    ambientNames: ["Date"],
+  },
+  {
+    form: "the clock and the locale, read through a formatter",
+    source: "const now = new Intl.DateTimeFormat().format();",
+    references: [],
+    ambientNames: ["Intl"],
+  },
+  {
+    form: "the clock, read through the calendar API",
+    source: "const now = Temporal.Now.instant();",
+    references: [],
+    ambientNames: ["Temporal"],
+  },
+  {
+    form: "randomness, named as a member or as a key",
+    source: 'const a = Math.random();\nconst b = Math["random"]();\nconst { random } = Math;',
+    references: [],
+    ambientNames: ["random", "random", "random"],
+  },
+  {
+    form: "a name in a comment is not a use of it",
+    source: "/** Reads no Date and no process. */\n// import \"../a\";\nconst a = 1;",
+    references: [],
+    ambientNames: [],
+  },
+];
+
 describe("encodeDecisionRequest", () => {
   it("encodes the documented Choice request byte for byte", () => {
     const documented = fixtureBody("request.choice.documented.json", DOCUMENTED);
@@ -817,6 +1071,22 @@ describe("encodeDecisionRequest", () => {
 
     expect(error).toBeInstanceOf(DecisionRequestInvalidError);
     expect(error).toMatchObject({ fault: "schema", source: "request_validation", fieldPath: "model" });
+  });
+
+  it("refuses to encode without its route's limits, at the option that is missing", () => {
+    for (const [options, fieldPath] of [
+      [{ model: PINNED_MODEL }, "options.caps"],
+      [{ model: PINNED_MODEL, caps: null }, "options.caps"],
+      [null, "options"],
+      [undefined, "options"],
+    ] as const) {
+      const error = thrownBy(() =>
+        encodeDecisionRequest(DOCUMENTED_CHOICE_REQUEST, offOptions<DecisionEncodeOptions>(options)),
+      );
+
+      expect(error).toBeInstanceOf(DecisionRequestInvalidError);
+      expect(error).toMatchObject({ fault: "schema", source: "request_validation", fieldPath });
+    }
   });
 
   it("sends a yes/no question with no criteria as type and instructions alone", () => {
@@ -998,6 +1268,31 @@ describe("decodeDecisionResponse", () => {
     expect(decoded.probabilitySums.department).toBe(1);
   });
 
+  it("admits a score at either end of its scale: zero and the number of levels", () => {
+    for (const score of [0, URGENCY_LEVELS.length]) {
+      const payload = validTriagePayload();
+      payload.answers.urgency.score = score;
+
+      const decoded = decodeDecisionResponse(payload, TRIAGE_REQUEST);
+
+      expect(decoded.answers.urgency).toMatchObject({ type: "score", score });
+    }
+  });
+
+  it("holds a score to its scale and does not re-derive it from the distribution", () => {
+    const payload = validTriagePayload();
+    payload.answers.urgency.score = 0;
+    payload.answers.urgency.probabilities = { "0": 0, "1": 0, "2": 0, "3": 1 };
+
+    const decoded = decodeDecisionResponse(payload, TRIAGE_REQUEST);
+
+    expect(decoded.answers.urgency).toMatchObject({
+      type: "score",
+      score: 0,
+      probabilities: { "0": 0, "1": 0, "2": 0, "3": 1 },
+    });
+  });
+
   it("treats an id or an option that spells an inherited name as data, never as a lookup on the prototype", () => {
     const request = offContract(
       JSON.parse(
@@ -1083,6 +1378,40 @@ describe("decodeDecisionResponse", () => {
     );
     expect(refused).toBeInstanceOf(DecisionResponseFormatError);
     expect(refused).toMatchObject({ fieldPath: "answers.urgency.probabilities" });
+  });
+
+  it("reports a score distribution's sum as it is when no tolerance is passed", () => {
+    const short = validTriagePayload();
+    short.answers.urgency.probabilities = { "0": 0, "1": 0.125, "2": 0.25, "3": 0.5 };
+
+    const decoded = decodeDecisionResponse(short, TRIAGE_REQUEST);
+
+    expect(decoded.probabilitySums.urgency).toBe(0.875);
+  });
+
+  it("a tolerance of zero refuses a sum that float addition leaves one step from one", () => {
+    const thirds = (): MutablePayload => {
+      const payload = validTriagePayload();
+      payload.answers.department.probabilities = { billing: 0.6, technical: 0.3, sales: 0.1 };
+      return payload;
+    };
+
+    const reported = decodeDecisionResponse(thirds(), TRIAGE_REQUEST).probabilitySums.department;
+    expect(reported).not.toBe(1);
+    expect(reported).toBeCloseTo(1, FLOAT_SUM_DIGITS);
+
+    const refused = thrownBy(() => decodeDecisionResponse(thirds(), TRIAGE_REQUEST, { probabilitySumTolerance: 0 }));
+    expect(refused).toBeInstanceOf(DecisionResponseFormatError);
+    expect(refused).toMatchObject({ fieldPath: "answers.department.probabilities" });
+  });
+
+  it("refuses decode options that are not an object, before it reads the response", () => {
+    const error = thrownBy(() =>
+      decodeDecisionResponse(validTriagePayload(), TRIAGE_REQUEST, offOptions<DecisionDecodeOptions>(null)),
+    );
+
+    expect(error).toBeInstanceOf(DecisionRequestInvalidError);
+    expect(error).toMatchObject({ fault: "schema", source: "request_validation", fieldPath: "options" });
   });
 
   it.each([Number.NaN, -TIGHT_TOLERANCE, Number.POSITIVE_INFINITY])(
@@ -1210,21 +1539,24 @@ describe("the codec as a whole", () => {
 
   it("imports only the decision contract and reads no clock, environment or randomness", () => {
     const source = readFileSync(fileURLToPath(new URL("../../../llm/decision/codec.ts", import.meta.url)), "utf8");
-    const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-    const imports = [...code.matchAll(/^import\s+(type\s+)?[^;]*?from\s+"([^"]+)";/gm)].map((match) => ({
-      typeOnly: match[1] !== undefined,
-      specifier: match[2],
-    }));
 
-    expect(imports.map(({ specifier }) => specifier).sort()).toEqual([
+    const { references, ambientNames } = outwardSurface(source);
+
+    expect(references.map(({ specifier }) => specifier).sort()).toEqual([
       "../types",
       "./errors",
       "./route-types",
       "./types",
     ]);
-    expect(imports.filter(({ typeOnly }) => !typeOnly).map(({ specifier }) => specifier)).toEqual(["./errors"]);
-    expect(code).not.toMatch(/\bimport\s*\(|\brequire\s*\(/);
-    expect(code).not.toMatch(/\b(Date|performance|process|globalThis|setTimeout|setInterval|fetch|crypto)\b/);
-    expect(code).not.toMatch(/Math\.random/);
+    expect(references.filter(({ typeOnly }) => !typeOnly).map(({ specifier }) => specifier)).toEqual(["./errors"]);
+    expect(ambientNames).toEqual([]);
+  });
+
+  describe("the outward-surface reading sees every way a module reaches outside itself", () => {
+    for (const { form, source, references, ambientNames } of OUTWARD_FORMS) {
+      it(form, () => {
+        expect(outwardSurface(source)).toStrictEqual({ references, ambientNames });
+      });
+    }
   });
 });
