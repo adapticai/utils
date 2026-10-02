@@ -274,7 +274,13 @@ export interface DecisionAnsweredAttemptRecord extends DecisionAttemptMeasuremen
   readonly usage: LlmUsageRecord;
 }
 
-/** The record of an attempt that ended in a fault. */
+/**
+ * The record of an attempt that ended in a fault.
+ *
+ * Built only by the error it belongs to, never handed to it whole: every fact
+ * the error states is written here from the error, and the vendor's request id
+ * and reported model are carried as the same bounded excerpts an error carries.
+ */
 export interface DecisionFaultedAttemptRecord extends DecisionAttemptMeasurement {
   readonly outcome: "fault";
   readonly fault: DecisionFault;

@@ -11,9 +11,11 @@
  * property. The consumer that decides what a failure means lives in another
  * package and may load a second copy of this one, where `instanceof` against
  * these classes is false for an error raised by the first copy. A plain
- * property read works across both, and across a structured clone or a JSON
- * round trip, so the vocabulary is the contract and the classes are a
- * convenience for the code that raises them.
+ * property read works across both, and across an object spread or a JSON round
+ * trip, so the vocabulary is the contract and the classes are a convenience for
+ * the code that raises them. A structured clone of an `Error` keeps only its
+ * name, message and stack, so an error is serialised before it crosses a worker
+ * boundary.
  *
  * The classes are finer than the vocabulary where the remedy differs inside one
  * fault: a request this package refused to send and a response a vendor sent
@@ -21,9 +23,23 @@
  * is the caller's defect and the other is the vendor's.
  *
  * No error carries a credential. The key is read by NAME where the request is
- * built and only the name can appear here. Vendor text is carried as a bounded
- * excerpt, and never decides the fault: an unobserved error body is not a
- * contract, so classification is by status alone.
+ * built and only the name can appear here.
+ *
+ * Text that did not originate in this package is untrusted, and an error is
+ * written to logs and journal rows whole. So every such string an error or its
+ * attempt record carries passes through one function,
+ * {@link decisionErrorExcerpt}, which bounds its length and replaces what
+ * cannot be printed: a vendor's body, error type, request id and reported
+ * model, a network failure's description, and a field path or reason that may
+ * quote a vendor's key. What this package or its caller chose is carried as
+ * given: the route, the key variable's name, the pinned model, the provider
+ * and the correlation id. Vendor text never decides the fault either: an
+ * unobserved error body is not a contract, so classification is by status
+ * alone.
+ *
+ * An error and the attempt record attached to it state several of the same
+ * facts. Each such fact has one source, the error, so the two cannot be read
+ * as disagreeing. See {@link DecisionCallError.withAttempt}.
  *
  * @module llm/decision/errors
  */
@@ -76,7 +92,8 @@ export const DECISION_UNAVAILABLE_CODES = ["route_not_admitted", "engine_served"
 export type DecisionUnavailableCode = (typeof DECISION_UNAVAILABLE_CODES)[number];
 
 /**
- * Maximum characters of vendor or lower-layer text carried on an error.
+ * Maximum characters of vendor or lower-layer text carried in one field of an
+ * error.
  *
  * An error body is unbounded input from outside the process. It is kept short
  * enough to read in a log line and long enough to show the shape of what came
@@ -85,23 +102,46 @@ export type DecisionUnavailableCode = (typeof DECISION_UNAVAILABLE_CODES)[number
 export const DECISION_ERROR_BODY_EXCERPT = 400;
 
 /**
- * Bound a piece of text that did not originate in this module.
+ * The characters an excerpt never carries.
  *
- * @param text The text to bound.
- * @returns At most {@link DECISION_ERROR_BODY_EXCERPT} leading characters of it.
+ * Control characters, which can end a log line or drive a terminal; invisible
+ * format characters, which can reorder or hide the text around them; the line
+ * and paragraph separators; and a surrogate with no partner, which is not a
+ * character at all and is what the length bound leaves when it cuts one in two.
+ */
+const UNPRINTABLE_CHARACTERS = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Cs}]/gu;
+
+/**
+ * What stands where an excerpt dropped a character.
+ *
+ * The Unicode replacement character: visible, so a reader can see that
+ * something was there, and never mistaken for text the peer sent.
+ */
+const UNPRINTABLE_REPLACEMENT = "\uFFFD";
+
+/**
+ * Make a piece of text that did not originate in this package safe to carry.
+ *
+ * The length is cut first, so the work done is bounded however large the input
+ * is, and each unprintable character is then replaced one for one, so the
+ * result is never longer than the bound.
+ *
+ * @param text The untrusted text.
+ * @returns At most {@link DECISION_ERROR_BODY_EXCERPT} leading characters of
+ * it, with every unprintable character replaced.
  */
 export function decisionErrorExcerpt(text: string): string {
-  return text.slice(0, DECISION_ERROR_BODY_EXCERPT);
+  return text.slice(0, DECISION_ERROR_BODY_EXCERPT).replace(UNPRINTABLE_CHARACTERS, UNPRINTABLE_REPLACEMENT);
 }
 
 /**
- * Bound a vendor body, keeping "no body" distinct from "an empty body".
+ * Excerpt text that may be absent, keeping "none" distinct from "empty".
  *
- * @param body The body text, or `null` when no response was received.
- * @returns The bounded excerpt, or `null` when there was no body.
+ * @param text The untrusted text, or `null` when there was none to read.
+ * @returns The excerpt, or `null` when there was no text.
  */
-function excerptOrNull(body: string | null): string | null {
-  return body === null ? null : decisionErrorExcerpt(body);
+function excerptOrNull(text: string | null): string | null {
+  return text === null ? null : decisionErrorExcerpt(text);
 }
 
 /**
@@ -126,6 +166,14 @@ interface DecisionCallErrorInit {
 }
 
 /**
+ * The facts of an attempt that some error classes state themselves, beyond the
+ * ones every error states.
+ *
+ * See {@link DecisionCallError.statedAttemptFacts}.
+ */
+type DecisionStatedAttemptFacts = Partial<Pick<DecisionAttemptMeasurement, "budgetMs" | "servedModel">>;
+
+/**
  * The fields a later layer may complete, with the class's own types.
  *
  * See {@link DecisionCallError.withAttempt}.
@@ -145,13 +193,15 @@ type DecisionCallErrorCompletion = Pick<
  * A field a layer could not know is `null`. The codec does not know which route
  * it is encoding for and the transport does not know how long the call queued,
  * so an error raised below the client is completed by the client through
- * {@link DecisionCallError.withAttempt} rather than each layer guessing.
+ * {@link DecisionCallError.withAttempt} rather than each layer guessing. An
+ * absent input stays `null` on every path: it is never defaulted to zero or to
+ * an empty string, which would read as a measurement.
  */
 export abstract class DecisionCallError extends Error {
   /** Which of the closed set of failures this is. */
   public readonly fault: DecisionFault;
 
-  /** The route the call named, or `null` until the client completes the error. */
+  /** The route the call named, or `null` until the client completes an error raised without one. */
   public readonly route: DecisionRoute | null;
 
   /** The HTTP status received, or `null` when no response arrived. */
@@ -160,7 +210,7 @@ export abstract class DecisionCallError extends Error {
   /** The vendor's retry hint in milliseconds, or `null` when it gave none. Never slept on here. */
   public readonly retryAfterMs: number | null;
 
-  /** The vendor's id for the request, or `null` when none was read. */
+  /** An excerpt of the vendor's id for the request, or `null` when none was read. */
   public readonly vendorRequestId: string | null;
 
   /**
@@ -183,35 +233,63 @@ export abstract class DecisionCallError extends Error {
     this.route = init.route;
     this.status = init.status;
     this.retryAfterMs = init.retryAfterMs;
-    this.vendorRequestId = init.vendorRequestId;
+    this.vendorRequestId = excerptOrNull(init.vendorRequestId);
     this.usage = init.usage;
     this.attempt = null;
+  }
+
+  /**
+   * The facts of an attempt this error states in a field of its own.
+   *
+   * A class that carries such a fact returns it here, so the attempt record is
+   * written from the error's value and never from a second reading of it.
+   *
+   * @returns The stated facts; none, unless a class overrides this.
+   */
+  protected statedAttemptFacts(): DecisionStatedAttemptFacts {
+    return {};
   }
 
   /**
    * Complete the error with the attempt it ended.
    *
    * The record is built here rather than accepted whole, so it cannot disagree
-   * with the error it belongs to: its fault is this error's fault, and for the
-   * four facts both carry (status, retry hint, request id, usage) the value the
-   * raising layer read wins and the client's measurement fills only what that
-   * layer could not see. The route is always the client's, which alone knows it.
+   * with the error it belongs to. One rule covers every fact both carry: the
+   * value the error states stands, and the client's measurement fills only
+   * what the raising layer could not see. That holds for the fault, the route,
+   * the status, the retry hint, the request id and the usage, which every
+   * error carries, and for the budget and the answering model, which the
+   * classes that are about them carry. An error's message is written from
+   * those same values when it is raised, so the message, the fields and the
+   * record all say one thing.
    *
    * @param measured What the client measured about the attempt.
    * @returns This error, completed.
    */
   public withAttempt(measured: DecisionAttemptMeasurement): this {
+    const route = this.route ?? measured.route;
     const status = this.status ?? measured.status;
     const retryAfterMs = this.retryAfterMs ?? measured.retryAfterMs;
-    const vendorRequestId = this.vendorRequestId ?? measured.vendorRequestId;
+    const vendorRequestId = this.vendorRequestId ?? excerptOrNull(measured.vendorRequestId);
     const usage = this.usage ?? measured.usage;
     const completion: DecisionCallErrorCompletion = {
-      route: measured.route,
+      route,
       status,
       retryAfterMs,
       vendorRequestId,
       usage,
-      attempt: { ...measured, status, retryAfterMs, vendorRequestId, usage, outcome: "fault", fault: this.fault },
+      attempt: {
+        ...measured,
+        servedModel: excerptOrNull(measured.servedModel),
+        ...this.statedAttemptFacts(),
+        route,
+        status,
+        retryAfterMs,
+        vendorRequestId,
+        usage,
+        outcome: "fault",
+        fault: this.fault,
+      },
     };
     Object.assign(this, completion);
     return this;
@@ -238,18 +316,17 @@ export class DecisionRouteUnavailableError extends DecisionCallError {
   /** Why the route is closed. */
   public readonly code: DecisionUnavailableCode;
 
-  /** What about the route closes it. */
+  /** An excerpt of what about the route closes it. */
   public readonly reason: string;
 
   /**
    * @param details The route, the code and the reason.
    */
   public constructor(details: DecisionRouteUnavailableDetails) {
+    const reason = decisionErrorExcerpt(details.reason);
     super({
       fault: "unavailable",
-      message:
-        `${describeRoute(details.route)} is unavailable (${details.code}): ` +
-        decisionErrorExcerpt(details.reason),
+      message: `${describeRoute(details.route)} is unavailable (${details.code}): ${reason}`,
       route: details.route,
       status: null,
       retryAfterMs: null,
@@ -258,7 +335,7 @@ export class DecisionRouteUnavailableError extends DecisionCallError {
     });
     this.name = "DecisionRouteUnavailableError";
     this.code = details.code;
-    this.reason = details.reason;
+    this.reason = reason;
   }
 }
 
@@ -296,15 +373,16 @@ export class DecisionRequestInvalidError extends DecisionCallError {
   public readonly source: "request_validation" | "vendor_rejected";
 
   /**
-   * Path of the offending field, or `null` when the vendor refused the request:
-   * the body that names the field has an unobserved shape and is not parsed.
+   * An excerpt of the offending field's path, or `null` when the vendor refused
+   * the request: the body that names the field has an unobserved shape and is
+   * not parsed.
    */
   public readonly fieldPath: string | null;
 
   /** A bounded excerpt of the vendor's body, or `null` when no request was sent. */
   public readonly bodyExcerpt: string | null;
 
-  /** The vendor's own error type where the body has the one observed shape, else `null`. */
+  /** An excerpt of the vendor's own error type where the body has the one observed shape, else `null`. */
   public readonly vendorErrorType: string | null;
 
   /**
@@ -328,9 +406,9 @@ export class DecisionRequestInvalidError extends DecisionCallError {
     });
     this.name = "DecisionRequestInvalidError";
     this.source = details.source;
-    this.fieldPath = sent ? null : details.fieldPath;
-    this.bodyExcerpt = excerptOrNull(sent ? details.body : null);
-    this.vendorErrorType = sent ? details.vendorErrorType : null;
+    this.fieldPath = sent ? null : decisionErrorExcerpt(details.fieldPath);
+    this.bodyExcerpt = sent ? decisionErrorExcerpt(details.body) : null;
+    this.vendorErrorType = sent ? excerptOrNull(details.vendorErrorType) : null;
   }
 }
 
@@ -385,6 +463,13 @@ export class DecisionAdmissionError extends DecisionCallError {
     this.source = details.source;
     this.budgetMs = details.budgetMs;
   }
+
+  /**
+   * @returns The budget this error was raised under, which its message quotes.
+   */
+  protected override statedAttemptFacts(): DecisionStatedAttemptFacts {
+    return { budgetMs: this.budgetMs };
+  }
 }
 
 /** How a {@link DecisionCredentialError} is built. */
@@ -425,7 +510,7 @@ export class DecisionCredentialError extends DecisionCallError {
   /** A bounded excerpt of the vendor's body, or `null` when no request was made. */
   public readonly bodyExcerpt: string | null;
 
-  /** The vendor's own error type where the body has the one observed shape, else `null`. */
+  /** An excerpt of the vendor's own error type where the body has the one observed shape, else `null`. */
   public readonly vendorErrorType: string | null;
 
   /**
@@ -450,8 +535,8 @@ export class DecisionCredentialError extends DecisionCallError {
     this.name = "DecisionCredentialError";
     this.source = details.source;
     this.apiKeyEnv = sent ? null : details.apiKeyEnv;
-    this.bodyExcerpt = excerptOrNull(sent ? details.body : null);
-    this.vendorErrorType = sent ? details.vendorErrorType : null;
+    this.bodyExcerpt = sent ? decisionErrorExcerpt(details.body) : null;
+    this.vendorErrorType = sent ? excerptOrNull(details.vendorErrorType) : null;
   }
 }
 
@@ -504,7 +589,7 @@ export class DecisionTransportError extends DecisionCallError {
   /** A bounded excerpt of the vendor's body, or `null` when no response arrived. */
   public readonly bodyExcerpt: string | null;
 
-  /** The vendor's own error type where the body has the one observed shape, else `null`. */
+  /** An excerpt of the vendor's own error type where the body has the one observed shape, else `null`. */
   public readonly vendorErrorType: string | null;
 
   /**
@@ -527,8 +612,8 @@ export class DecisionTransportError extends DecisionCallError {
     this.name = "DecisionTransportError";
     this.source = details.source;
     this.retryable = details.retryable;
-    this.bodyExcerpt = excerptOrNull(answered ? details.body : null);
-    this.vendorErrorType = answered ? details.vendorErrorType : null;
+    this.bodyExcerpt = answered ? decisionErrorExcerpt(details.body) : null;
+    this.vendorErrorType = answered ? excerptOrNull(details.vendorErrorType) : null;
   }
 }
 
@@ -582,6 +667,13 @@ export class DecisionTimeoutError extends DecisionCallError {
     this.source = details.source;
     this.budgetMs = details.budgetMs;
   }
+
+  /**
+   * @returns The budget this error was raised under, which its message quotes.
+   */
+  protected override statedAttemptFacts(): DecisionStatedAttemptFacts {
+    return { budgetMs: this.budgetMs };
+  }
 }
 
 /** How a {@link DecisionResponseFormatError} is built. */
@@ -607,7 +699,7 @@ export interface DecisionResponseFormatDetails {
 export class DecisionResponseFormatError extends DecisionCallError {
   public declare readonly fault: "schema";
 
-  /** Path of the field that failed validation. */
+  /** An excerpt of the path of the field that failed validation; it may quote a key the vendor sent. */
   public readonly fieldPath: string;
 
   /**
@@ -615,11 +707,12 @@ export class DecisionResponseFormatError extends DecisionCallError {
    */
   public constructor(details: DecisionResponseFormatDetails) {
     const route = details.route ?? null;
+    const fieldPath = decisionErrorExcerpt(details.fieldPath);
     super({
       fault: "schema",
       message:
         `${describeRoute(route)} answered with a body that fails validation at ` +
-        `${decisionErrorExcerpt(details.fieldPath)}: ${decisionErrorExcerpt(details.reason)}`,
+        `${fieldPath}: ${decisionErrorExcerpt(details.reason)}`,
       route,
       status: details.status,
       retryAfterMs: null,
@@ -627,7 +720,7 @@ export class DecisionResponseFormatError extends DecisionCallError {
       usage: details.usage,
     });
     this.name = "DecisionResponseFormatError";
-    this.fieldPath = details.fieldPath;
+    this.fieldPath = fieldPath;
   }
 }
 
@@ -658,17 +751,24 @@ export class DecisionRouteMismatchError extends DecisionCallError {
   /** The model id the route requires a response to report. */
   public readonly expectedServedModel: string;
 
-  /** The model id the response reported, verbatim. */
+  /**
+   * An excerpt of the model id the response reported.
+   *
+   * The comparison that found the mismatch is made on the whole id, before this
+   * error exists; what is kept here is for a reader, and a model id of ordinary
+   * length is kept whole.
+   */
   public readonly servedModel: string;
 
   /**
    * @param details The route, the two model ids, and what the answer cost.
    */
   public constructor(details: DecisionRouteMismatchDetails) {
+    const servedModel = decisionErrorExcerpt(details.servedModel);
     super({
       fault: "route_mismatch",
       message:
-        `${describeRoute(details.route)} was answered by ${decisionErrorExcerpt(details.servedModel)}, ` +
+        `${describeRoute(details.route)} was answered by ${servedModel}, ` +
         `not by its pinned model ${details.expectedServedModel}`,
       route: details.route,
       status: details.status,
@@ -678,6 +778,13 @@ export class DecisionRouteMismatchError extends DecisionCallError {
     });
     this.name = "DecisionRouteMismatchError";
     this.expectedServedModel = details.expectedServedModel;
-    this.servedModel = details.servedModel;
+    this.servedModel = servedModel;
+  }
+
+  /**
+   * @returns The model that answered, which is the whole content of this fault.
+   */
+  protected override statedAttemptFacts(): DecisionStatedAttemptFacts {
+    return { servedModel: this.servedModel };
   }
 }
