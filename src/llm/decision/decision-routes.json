@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "policy_source": "docs/superpowers/specs/2026-10-01-typed-decision-models-design.md (D1, section 3.2)",
+  "revised": "2026-10-01",
+  "defaults": {
+    "circuit_breaker": {
+      "failure_threshold": 5,
+      "cooldown_ms": 60000,
+      "capacity_cooldown_ms": 15000,
+      "half_open_probes": 1
+    }
+  },
+  "providers": {
+    "typesafe": {
+      "api_style": "systemone",
+      "display_name": "TypeSafe",
+      "base_url": "https://api.typesafe.ai",
+      "base_url_env": "TYPESAFE_BASE_URL",
+      "api_key_env": "TYPESAFE_API_KEY",
+      "secret_path": "llm/typesafe/apiKey",
+      "account_status": "pending-onboarding",
+      "docs_url": "https://docs.typesafe.ai/api.md",
+      "notes": "No account exists and no key has been issued, so account_status is pending-onboarding and every route naming this provider is refused. The base URL is the one the vendor's API reference and SDK default to. Setting account_status to live is an operator act that follows opening the account, and it ships as a release of this package."
+    },
+    "engine-judge": {
+      "api_style": "engine-judge",
+      "display_name": "Engine-served judge",
+      "account_status": "pending-onboarding",
+      "notes": "A checkpoint the consumer loads and serves in a process of its own. This package declares it so every consumer reads one table, and holds no transport for it: it has no URL and no key name here because nothing in this package addresses or authenticates against it. pending-onboarding until the consumer's serving process exists."
+    }
+  },
+  "routes": {
+    "dm.hosted": {
+      "provider": "typesafe",
+      "served_by": "utils",
+      "response_kind": "typed-distribution",
+      "version_pin": "jev-1.13.0",
+      "expected_served_model": "jev-1.13.0",
+      "model_id_status": "confirmed",
+      "model_id_source": "https://docs.typesafe.ai/models.md",
+      "contract_evidence": "documentation",
+      "contract_verified": null,
+      "budget_ms": 1500,
+      "caps": {
+        "max_options": 255,
+        "max_score_levels": 10,
+        "max_questions": null
+      },
+      "max_state_tokens": 32000,
+      "max_state_tokens_basis": "vendor-documented-ceiling",
+      "price_per_mtok": {
+        "input": 0.042,
+        "output": 0,
+        "as_of": "2026-10-01",
+        "source": "https://docs.typesafe.ai/models.md"
+      },
+      "notes": "Pinned to the versioned id the models page lists for Jev 1.13, never to jev-latest or jev-preview: the same page says an alias \"moves when a new release ships, so the answers behind it can change without a change on your side\". contract_evidence is documentation because the request, response and error shapes were read from the API reference and never exercised with a key; only an authenticated call makes it authenticated-call, with the date in contract_verified. Caps are the documented ones: \"a maximum of 255 options per Choice\" and a Score that \"accepts up to 10\" levels; no per-request question limit is published, so max_questions is null. Price is the models page's $0.042 per 1M input tokens with \"Output tokens are free\". Three numbers on this route are free parameters of a route nothing can reach yet, to be re-derived from the first authenticated measurements. budget_ms 1500 is a ceiling and not an operating point: about twice the largest third-party median latency on record (710 ms, for five questions in one request) and well under the vendor SDK's 10000 ms per-attempt default; the consumer's own deadline for a typed step is what a call actually runs under. max_state_tokens 32000 is the documented ceiling for the state plus the longest question (\"64k tokens per request; 32k tokens for state plus the longest question\"), an upper bound and not a target: a state shared across routes is bound by the smallest ceiling among them. defaults.circuit_breaker (5 failures, 60000 ms cooldown, 15000 ms capacity cooldown, 1 half-open probe, no latency trip) is carried from the generative alias table and has not been measured against this vendor; it applies only to a route this package serves, which is this one."
+    },
+    "dm.local": {
+      "provider": "engine-judge",
+      "served_by": "engine",
+      "response_kind": "typed-distribution",
+      "checkpoint": "english",
+      "package_version": "0.3.22",
+      "revision": "55cf4c4ebb4ebe31b2550e8bdf3bd21b99753851",
+      "artifact_sha256": null,
+      "pin_status": "pending-artifact-digests",
+      "budget_ms": 1000,
+      "caps": {
+        "max_options": 20,
+        "max_score_levels": 32,
+        "max_questions": 64
+      },
+      "max_state_tokens": 320,
+      "max_state_tokens_basis": "checkpoint-window",
+      "price_per_mtok": null,
+      "notes": "Declared here and answered by the consumer's own process; this package refuses to serve it. The checkpoint is the English one, loaded with laya 0.3.22 at the Hugging Face revision that was the head when the model card was read. artifact_sha256 is null and pin_status is pending-artifact-digests because no per-artifact SHA-256 has been recorded anywhere: a digest is transcribed from the downloaded artifact, never written from memory, and the consumer refuses to serve the checkpoint until the map is filled. max_state_tokens 320 is what the model card leaves for state in the English checkpoint's 512-token window once 192 tokens are reserved for the question and its options. max_options 20 is where the card says options start to be trimmed to fit (\"around 20 options with a short description each\"); max_score_levels 32 and max_questions 64 are the serving package's own request limits. budget_ms 1000 is a free parameter: it sits above the card's 771 ms for 50 questions on a T4 GPU and is a ceiling the consumer's deadline narrows. A CPU replay does not fit inside it (580 ms for one question on a 4-core server CPU) and is the consumer's concern. price_per_mtok is null because the route bills nothing per token."
+    }
+  }
+}
