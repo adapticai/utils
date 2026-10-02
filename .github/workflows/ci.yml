@@ -33,6 +33,12 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Lint
         run: npm run lint
+      # Tests run through a transpiler that erases types, and the build excludes
+      # test sources, so this is the only step that reads a test's types. A test
+      # whose claim is that a typed literal is admitted by the contract it names
+      # is checked here and nowhere else.
+      - name: Typecheck
+        run: npm run typecheck
       - name: Tests
         run: npm test
       - name: Build

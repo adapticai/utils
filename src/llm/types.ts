@@ -511,7 +511,7 @@ export interface AliasCallResult<T> extends LlmTransportResponse<T> {
  * - `credential`: it rejected the caller's credentials (HTTP 401 or 403).
  * - `capacity`: it said it is full rather than broken.
  * - `gateway_unreachable`: the gateway in front of it could not be reached.
- * - `provider_error`: any other failure.
+ * - `provider_error`: every other failure.
  */
 export const LLM_ATTEMPT_FAILURE_CLASSES = [
   "leg_timeout",

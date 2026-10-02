@@ -1,0 +1,18 @@
+{
+  "body": {
+    "state": "Help! My payouts have been failing for 3 days.",
+    "model": "jev-1.13.0",
+    "questions": {
+      "urgency": {
+        "type": "score",
+        "instructions": "How urgent is this request?",
+        "criteria": [
+          "No action is needed",
+          "Can wait for the normal queue",
+          "Needs attention today",
+          "Blocks the customer right now"
+        ]
+      }
+    }
+  }
+}
