@@ -37,7 +37,14 @@ import type { DecisionRoute } from "../../src/llm/decision/types";
 import { PROBE_DEFAULT_SAMPLES, ProbePlanError, buildProbePlan } from "./probe-plan";
 import type { ProbePlan } from "./probe-plan";
 import { probeReportFileName, renderProbeSummary, utcDateOf } from "./probe-report";
-import { ProbeRefusal, probeDispatchIntervalMs, resolveProbeTarget, runDecisionProbe } from "./probe-run";
+import {
+  PROBE_CAPACITY_REFUSALS_BEFORE_STOP,
+  PROBE_LONGEST_HONOURED_WAIT_MS,
+  ProbeRefusal,
+  probeDispatchIntervalMs,
+  resolveProbeTarget,
+  runDecisionProbe,
+} from "./probe-run";
 import type { ProbeClock, ProbeFetch, ProbeTarget } from "./probe-run";
 
 /** Exit status of a dry run, and of a run that confirmed the contract. */
@@ -82,6 +89,16 @@ const WHOLE_NUMBER = /^\d+$/;
 /** The form of a system failure code, such as `EACCES`. */
 const SYSTEM_CODE = /^[A-Z][A-Z0-9_]{0,31}$/;
 
+/**
+ * A character a key never holds: anything outside visible ASCII.
+ *
+ * The rule the hosted transport refuses a key by before it builds a request.
+ * Applied here first, so a value that cannot be sent is refused with the other
+ * refusals, before a run is begun and a report written for a call that never
+ * left the machine.
+ */
+const NOT_A_KEY_CHARACTER = /[^\x21-\x7e]/;
+
 /** How many spaces the report is indented by, so a reviewer can read it. */
 const REPORT_INDENT = 2;
 
@@ -99,7 +116,8 @@ const USAGE: readonly string[] = [
   "      The key is read from the environment variable the route's provider names.",
   "",
   `  Exit status: ${PROBE_EXIT_OK} a dry run, or a run that confirmed the contract;`,
-  `  ${PROBE_EXIT_NOT_CONFIRMED} a run that did not confirm it;`,
+  `  ${PROBE_EXIT_NOT_CONFIRMED} a run that did not confirm it: a call faulted, another model answered any`,
+  "  request, or the vendor rate limited the run and it stopped;",
   `  ${PROBE_EXIT_REFUSED} a command refused before any call.`,
 ];
 
@@ -349,6 +367,11 @@ function printPlan(route: DecisionRoute, args: ProbeArguments, deps: ProbeCliDep
     `  one call in flight at a time, at least ${intervalMs} ms between dispatches, ` +
       `each abandoned after ${DECISION_BUDGET_CEILING_MS} ms`,
   );
+  deps.print(
+    `  a response that asks the run to wait is waited out, up to ${PROBE_LONGEST_HONOURED_WAIT_MS} ms; ` +
+      `the run stops at once on a refused key, and after ${PROBE_CAPACITY_REFUSALS_BEFORE_STOP} responses ` +
+      "that say the vendor is rate limiting or full",
+  );
   plan.requests.forEach((request, index) => {
     const expects = request.expect === "answer" ? "an answer" : "a refusal";
     deps.print(`  request ${index + 1} (${request.shape}, expects ${expects}): ${JSON.stringify(request.body)}`);
@@ -419,6 +442,12 @@ async function execute(args: ProbeArguments, deps: ProbeCliDeps): Promise<number
   const key = keyOf(target);
   if (key === null) {
     throw new ProbeRefusal(`${target.resolved.apiKeyEnv} is unset, so there is no key to make the calls with`);
+  }
+  if (NOT_A_KEY_CHARACTER.test(key)) {
+    throw new ProbeRefusal(
+      `${target.resolved.apiKeyEnv} holds a value that cannot be sent as a key ` +
+        "(a space or a character outside visible ASCII), so no call was made",
+    );
   }
   try {
     deps.prepareOut(args.out);

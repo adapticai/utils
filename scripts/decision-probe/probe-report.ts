@@ -114,7 +114,7 @@ export interface ProbeSample {
   readonly probabilitySums: Readonly<Record<string, number | null>> | null;
 }
 
-/** One call's sample, with what is used of its answer and never written. */
+/** One call's sample, with what is used of its response and never written. */
 export interface ProbeDispatchResult {
   readonly sample: ProbeSample;
   /**
@@ -122,7 +122,33 @@ export interface ProbeDispatchResult {
    * answers one request drew. `null` when no answer decoded. Never written.
    */
   readonly answerKey: string | null;
+  /**
+   * How long the vendor asked to be left alone for, in milliseconds, or `null`
+   * when it did not say. The run waits on it. Never written: it is the value
+   * of a header.
+   */
+  readonly retryAfterMs: number | null;
 }
+
+/**
+ * Why a run stopped before its plan was done.
+ *
+ * - `credential`: the key was refused, or there was none that could be sent.
+ * - `rate_limited`: the vendor answered that the run was calling too often.
+ * - `vendor_unavailable`: the vendor answered that it was full or not serving.
+ */
+export type ProbeStop = "credential" | "rate_limited" | "vendor_unavailable";
+
+/**
+ * Which calls a shape's latency summary is of.
+ *
+ * Every call a status in the success range arrived for and whose body was read
+ * whole, whatever was then made of the answer: one that decoded, one that
+ * failed validation and one another model sent are all in it, because each is
+ * a whole answer the vendor took that long to give. A failing status, a body
+ * that could not be read and a call that drew no response are not.
+ */
+export const PROBE_LATENCY_POPULATION = "success_status_whole_body";
 
 /** A percentile the report states, and the smallest sample it is stated from. */
 interface LatencyPercentile {
@@ -211,14 +237,30 @@ export interface ProbeShapeSummary {
   /** How many ended in each fault. A fault that never occurred is absent. */
   readonly faults: Readonly<Partial<Record<DecisionFault, number>>>;
   /**
-   * The latency of the calls a status in the success range arrived for, from
-   * the request leaving until the whole body was read.
+   * The latency of the calls named by {@link ProbeShapeSummary.latencyPopulation},
+   * from the request leaving until the whole body was read. Its `n` is how
+   * many of the calls made are in it, which can be fewer than `dispatched`.
    */
   readonly latencyMs: ProbeLatencySummary;
+  /** Which of the calls made the latency summary is of. */
+  readonly latencyPopulation: typeof PROBE_LATENCY_POPULATION;
   /** The durations that summary is of, in the order the calls were made. */
   readonly durationsMs: readonly number[];
-  /** How many of those took longer than the budget the route declares. */
+  /**
+   * How many of the calls made, whatever they ended as, took longer than the
+   * budget the route declares: a whole response arrived later than that, or
+   * the call was still without one when that long had passed. A call under the
+   * route's budget would have timed out on each.
+   */
   readonly overRouteBudget: number;
+  /** How many of the calls made drew a whole response inside the route's budget, whatever its status. */
+  readonly withinRouteBudget: number;
+  /**
+   * How many of the calls made ended inside the route's budget without a
+   * whole response, so that how long one would have taken is not known. They
+   * are neither over the budget nor within it.
+   */
+  readonly routeBudgetUnknown: number;
   /** Each different input-token count the vendor reported, ascending. */
   readonly inputTokens: readonly number[];
   /** How many different answers the decoded calls drew, or `null` when none decoded. */
@@ -286,7 +328,9 @@ export interface ProbeRunFacts {
   readonly startedAtMs: number;
   readonly finishedAtMs: number;
   /** Why the run stopped before its plan was done, or `null` when it ran to the end. */
-  readonly stopped: "credential" | null;
+  readonly stopped: ProbeStop | null;
+  /** How many responses asked the run to wait before calling again. */
+  readonly retryHints: number;
 }
 
 /** The report of a run. */
@@ -312,14 +356,27 @@ export interface ProbeReport {
   readonly samplesPerShape: number;
   readonly planned: number;
   readonly dispatched: number;
-  readonly stopped: "credential" | null;
+  readonly stopped: ProbeStop | null;
+  /**
+   * How many responses asked the run to wait before calling again. The run
+   * waited at least that long each time, or stopped. A count: how long was
+   * asked for is the value of a header and is not written.
+   */
+  readonly retryHints: number;
   readonly verdict: ProbeVerdict;
-  /** Why the contract is not confirmed, sorted: the faults that occurred, and `stopped_early`. */
+  /**
+   * Why the contract is not confirmed, sorted: the faults that occurred,
+   * `stopped_early`, and `rate_limited` or `vendor_unavailable` when that is
+   * what stopped the run.
+   */
   readonly verdictReasons: readonly string[];
   readonly findings: ProbeFindings;
   readonly shapes: Readonly<Record<ProbeAnswerableShape, ProbeShapeSummary>>;
   readonly samples: readonly ProbeSample[];
 }
+
+/** The fault of a call another model answered. */
+const ROUTE_MISMATCH: DecisionFault = "route_mismatch";
 
 /** How many characters of an ISO timestamp are its calendar date. */
 const ISO_DATE_LENGTH = 10;
@@ -394,6 +451,27 @@ function carriesRequestId(sample: ProbeSample): boolean {
 }
 
 /**
+ * Where one call stands against the route's budget.
+ *
+ * A call that drew a whole response, of any status, took as long as that
+ * response took to arrive. A call that drew none was still without one when it
+ * settled: if that was later than the budget, it exceeded the budget, however
+ * it then ended. If it settled sooner (a connection refused at once, a key
+ * that could not be sent), how long a whole response would have taken was not
+ * measured, and a call that was not measured is not a call inside the budget.
+ *
+ * @param sample The call.
+ * @param routeBudgetMs The budget the route declares.
+ * @returns `over`, `within`, or `unknown` when the call ended early without a whole response.
+ */
+function budgetStandingOf(sample: ProbeSample, routeBudgetMs: number): "over" | "within" | "unknown" {
+  if (sample.bodyMs !== null) {
+    return sample.bodyMs > routeBudgetMs ? "over" : "within";
+  }
+  return sample.settledMs > routeBudgetMs ? "over" : "unknown";
+}
+
+/**
  * Summarise the calls of one answerable shape.
  *
  * @param results The calls of that shape, in the order they were made.
@@ -411,6 +489,7 @@ function summariseShape(results: readonly ProbeDispatchResult[], routeBudgetMs: 
   const durationsMs = samples.flatMap((sample) =>
     isSuccess(sample) && sample.bodyMs !== null ? [sample.bodyMs] : [],
   );
+  const againstBudget = samples.map((sample) => budgetStandingOf(sample, routeBudgetMs));
   const answerKeys = results.flatMap((result) => (result.answerKey === null ? [] : [result.answerKey]));
   const inputTokens = samples.flatMap((sample) => (sample.inputTokens === null ? [] : [sample.inputTokens]));
   return {
@@ -418,8 +497,11 @@ function summariseShape(results: readonly ProbeDispatchResult[], routeBudgetMs: 
     answered: samples.filter((sample) => sample.outcome === "answered").length,
     faults,
     latencyMs: summariseLatency(durationsMs),
+    latencyPopulation: PROBE_LATENCY_POPULATION,
     durationsMs,
-    overRouteBudget: durationsMs.filter((duration) => duration > routeBudgetMs).length,
+    overRouteBudget: againstBudget.filter((standing) => standing === "over").length,
+    withinRouteBudget: againstBudget.filter((standing) => standing === "within").length,
+    routeBudgetUnknown: againstBudget.filter((standing) => standing === "unknown").length,
     inputTokens: [...new Set(inputTokens)].sort((left, right) => left - right),
     distinctAnswers: answerKeys.length === 0 ? null : new Set(answerKeys).size,
     largestSumDeviation: largestSumDeviationOf(samples),
@@ -430,9 +512,13 @@ function summariseShape(results: readonly ProbeDispatchResult[], routeBudgetMs: 
  * Assemble the report of a run.
  *
  * The contract is confirmed only when every answerable call the plan held was
- * made, was answered by the pinned model, and decoded. The refused request
- * does not decide the verdict: what it drew is a finding, whichever way it
- * went.
+ * made, was answered by the pinned model, and decoded, and no call of any
+ * shape was answered by another model. What the refused request drew is
+ * otherwise a finding and does not decide the verdict, whichever way it went:
+ * whether the vendor requires the field it leaves out is an open question. An
+ * answer to it from a model other than the pin is the one exception, because
+ * which model answers is what a route is, and a substitution seen on any call
+ * is a substitution.
  *
  * The report is labelled as evidence about the vendor only when the calls went
  * to the base URL the route table declares and at least one was answered. A
@@ -456,8 +542,14 @@ export function assembleProbeReport(facts: ProbeRunFacts, results: readonly Prob
       reasons.add(sample.fault);
     }
   }
+  if (samples.some((sample) => sample.fault === ROUTE_MISMATCH)) {
+    reasons.add(ROUTE_MISMATCH);
+  }
   if (answerableSamples.length < facts.plannedAnswerable) {
     reasons.add("stopped_early");
+  }
+  if (facts.stopped !== null && facts.stopped !== "credential") {
+    reasons.add(facts.stopped);
   }
   const answeredAll =
     facts.plannedAnswerable > 0 &&
@@ -498,6 +590,7 @@ export function assembleProbeReport(facts: ProbeRunFacts, results: readonly Prob
     planned: facts.planned,
     dispatched: samples.length,
     stopped: facts.stopped,
+    retryHints: facts.retryHints,
     verdict: answeredAll && reasons.size === 0 ? "confirmed" : "not_confirmed",
     verdictReasons: [...reasons].sort(),
     findings: {
@@ -561,9 +654,12 @@ export function renderProbeSummary(report: ProbeReport): string[] {
     const latency = summary.latencyMs;
     lines.push(
       `${shape}: ${summary.answered} of ${summary.dispatched} answered by the pin and decoded; ` +
-        `latency ms over n=${latency.n}: min ${shown(latency.min)}, p50 ${shown(latency.p50)}, ` +
+        `latency ms over the n=${latency.n} of ${summary.dispatched} that drew a success status and a whole body: ` +
+        `min ${shown(latency.min)}, p50 ${shown(latency.p50)}, ` +
         `p90 ${shown(latency.p90)}, p95 ${shown(latency.p95)}, p99 ${shown(latency.p99)}, max ${shown(latency.max)}; ` +
-        `${summary.overRouteBudget} over the route's ${report.routeBudgetMs} ms budget; ` +
+        `of ${summary.dispatched} made, whatever they ended as: ${summary.overRouteBudget} over the route's ` +
+        `${report.routeBudgetMs} ms budget, ${summary.withinRouteBudget} within it, ` +
+        `${summary.routeBudgetUnknown} not measured against it; ` +
         `input tokens ${listed(summary.inputTokens.map(String), "not reported")}; ` +
         `different answers ${shown(summary.distinctAnswers)}`,
     );
@@ -599,12 +695,45 @@ export function renderProbeSummary(report: ProbeReport): string[] {
       ? `evidence: none about the vendor (${shown(report.evidenceWithheld)})`
       : `evidence: ${report.evidence}, ${report.observedOn}`,
   );
+  if (report.retryHints > 0) {
+    lines.push(`responses that asked the run to wait before calling again: ${report.retryHints}`);
+  }
   lines.push(
     report.verdict === "confirmed"
       ? "verdict: confirmed"
-      : `verdict: not confirmed (${listed(report.verdictReasons, "no answerable call was answered")})`,
+      : `verdict: not confirmed (${listed(report.verdictReasons, "no answerable call was answered")})` +
+          verdictExplained(report),
   );
   return lines;
+}
+
+/**
+ * What the verdict line adds for the two reasons an operator must act on.
+ *
+ * @param report The report.
+ * @returns Which model answered in place of the pin, and that the vendor
+ *   stopped the run and after how many calls; empty when neither happened.
+ */
+function verdictExplained(report: ProbeReport): string {
+  let explained = "";
+  const substituted = report.samples.filter((sample) => sample.fault === ROUTE_MISMATCH);
+  if (substituted.length > 0) {
+    const named = [...new Set(substituted.flatMap((sample) => (sample.servedModel === null ? [] : [sample.servedModel])))];
+    const unnamed = substituted.some((sample) => sample.servedModel === null);
+    const models = [...named.sort(), ...(unnamed ? ["a model whose id is not written"] : [])].join(", ");
+    explained +=
+      `; ${substituted.length} call(s) were answered by a model other than the pin ` +
+      `${report.expectedServedModel}: ${models}`;
+  }
+  if (report.stopped === "rate_limited") {
+    explained +=
+      `; the vendor rate-limited the run, which stopped after ${report.dispatched} of ${report.planned} calls were sent`;
+  } else if (report.stopped === "vendor_unavailable") {
+    explained +=
+      `; the vendor said it was full or not serving, and the run stopped after ` +
+      `${report.dispatched} of ${report.planned} calls were sent`;
+  }
+  return explained;
 }
 
 /**
