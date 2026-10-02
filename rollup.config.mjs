@@ -31,9 +31,15 @@ const external = [
 // declaration emit — where its output path falls outside rootDir and the build
 // fails. Typechecking still covers tests: `tsc --noEmit` reads tsconfig
 // directly and is unaffected by this.
+//
+// Both patterns begin with `**`. The plugin resolves a pattern that does not
+// against the compiler's `rootDir`, which is `src`, so one written from the
+// package root (`src/__tests__/**`) names a directory that does not exist and
+// excludes nothing: every test-support module then stays in the program and
+// has a declaration emitted for it into the published types.
 const mainTsConfig = {
   tsconfig: "./tsconfig.json",
-  exclude: ["src/__tests__/**", "**/*.test.ts"],
+  exclude: ["**/__tests__/**", "**/*.test.ts"],
 };
 
 // Test-specific TypeScript configuration
