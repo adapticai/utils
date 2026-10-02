@@ -22,11 +22,17 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { decisionRouteTable } from "../../../llm/decision/decision-route-table";
 import type { DecisionUtilsServedRouteDeclaration } from "../../../llm/decision/route-types";
-import { limitsFor, limitsInventory } from "../../../llm/rate-guard";
+import {
+  guardSnapshots,
+  limitsFor,
+  limitsInventory,
+  resetProviderGuards,
+  withProviderGuards,
+} from "../../../llm/rate-guard";
 
 /** The package root, which the verifier resolves its inputs against. */
 const UTILS_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -48,6 +54,12 @@ const SUCCESS_TOKEN = "PROVIDER_LIMITS_OK";
 
 /** The package default queue timeout, which is what an unregistered provider would wait for. */
 const PACKAGE_DEFAULT_ACQUIRE_TIMEOUT_MS = 15_000;
+
+/** The hosted vendor's published ceiling on requests in one second, as the limits entry transcribes it. */
+const HOSTED_PUBLISHED_REQUESTS_PER_SECOND = 40;
+
+/** How many hosted calls a cold guard admits before any has to wait for a token. */
+const HOSTED_COLD_BURST = 600;
 
 /** Longest the verifier may run before the test gives up on it, in milliseconds. */
 const VERIFIER_TIMEOUT_MS = 30_000;
@@ -151,6 +163,39 @@ describe("limits for the decision providers", () => {
     expect(limits).toMatchObject({ requests_per_minute: 600, max_concurrent: 8, acquire_timeout_ms: 250 });
     expect(limits.note).toContain("40 requests per second");
     expect(limits.note).toContain("can change without notice");
+  });
+
+  const coldBurst =
+    "a cold guard admits 600 hosted calls in one burst, fifteen times the vendor's published 40 per second";
+  it(coldBurst, async () => {
+    const limits = limitsFor("typesafe");
+    expect(limits.note).toContain(`${HOSTED_PUBLISHED_REQUESTS_PER_SECOND} requests per second`);
+
+    const tokensLeft = (): number =>
+      guardSnapshots().find(({ provider }) => provider === "typesafe")?.availableTokens ?? Number.NaN;
+
+    // The clock is held still, so nothing refills: every call admitted below is admitted in one instant.
+    vi.useFakeTimers();
+    resetProviderGuards();
+    try {
+      let admitted = 0;
+      do {
+        await withProviderGuards("typesafe", () => Promise.resolve());
+        admitted += 1;
+      } while (tokensLeft() >= 1 && admitted < HOSTED_COLD_BURST * HOSTED_PUBLISHED_REQUESTS_PER_SECOND);
+
+      // max_concurrent bounds how many are in flight together, not how many are admitted in a second.
+      expect(admitted).toBe(HOSTED_COLD_BURST);
+      expect(admitted / HOSTED_PUBLISHED_REQUESTS_PER_SECOND).toBe(15);
+      // The bucket is the per-minute allowance and nothing smaller.
+      expect(admitted).toBe(limits.requests_per_minute);
+      // The entry names the missing bound, so the number above is not read as a chosen one.
+      expect(limits.note).toContain("admits 600 calls at once");
+      expect(limits.note).toContain("a bucket capacity of its own");
+    } finally {
+      resetProviderGuards();
+      vi.useRealTimers();
+    }
   });
 
   it("gives the consumer-served provider no entry, because nothing here guards it", () => {

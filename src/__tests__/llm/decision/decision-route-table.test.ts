@@ -52,6 +52,106 @@ const EMPTY_ENV: Readonly<Record<string, string | undefined>> = {};
 /** A base URL an operator might point the hosted route at instead of the vendor's. */
 const OVERRIDE_BASE_URL = "https://decision-proxy.internal.example";
 
+/** The name a secret in a URL is given here, so a test can show it is never repeated. */
+const URL_PASSWORD = "secretpw";
+
+/** One base URL that must be refused, and what the refusal says is wrong with it. */
+interface RefusedBaseUrl {
+  readonly name: string;
+  readonly url: string;
+  readonly defect: string;
+}
+
+/** One base URL that is admitted, and the form it is handed over in. */
+interface AdmittedBaseUrl {
+  readonly name: string;
+  readonly url: string;
+  readonly baseUrl: string;
+}
+
+/** What a refusal says of a value that is not a URL at all. */
+const NOT_ABSOLUTE = "is not an absolute URL";
+
+/** What a refusal says of a value a URL parser would silently strip characters from. */
+const HAS_WHITESPACE = "contains whitespace or a control character";
+
+/** What a refusal says of a scheme that would send the request in the clear, or not over HTTP. */
+const WRONG_SCHEME = "is not https, or http to a loopback host";
+
+/** What a refusal says of a URL that carries a credential of its own. */
+const HAS_USERINFO = "carries a user name or a password";
+
+/** What a refusal says of a URL a path cannot be appended to. */
+const HAS_QUERY_OR_FRAGMENT = "carries a query or a fragment";
+
+/**
+ * Base URLs that are refused, one row per way of breaking the rule.
+ *
+ * Each row breaks one part of it, so a row goes red when its own check is
+ * removed and for no other reason.
+ */
+const REFUSED_BASE_URLS: readonly RefusedBaseUrl[] = [
+  { name: "text that is not a URL", url: "not-a-url-7f3a", defect: NOT_ABSOLUTE },
+  { name: "a host with no scheme", url: "api.example.com", defect: NOT_ABSOLUTE },
+  { name: "a path with no host", url: "/v1/systemone", defect: NOT_ABSOLUTE },
+  { name: "spaces around the URL", url: " https://proxy.example.com ", defect: HAS_WHITESPACE },
+  { name: "a trailing newline", url: "https://proxy.example.com/\n", defect: HAS_WHITESPACE },
+  { name: "a tab inside the host", url: "https://proxy.exa\tmple.com", defect: HAS_WHITESPACE },
+  {
+    name: "a user name and a password",
+    url: `https://user:${URL_PASSWORD}@proxy.example.com/`,
+    defect: HAS_USERINFO,
+  },
+  { name: "a user name alone", url: "https://user@proxy.example.com", defect: HAS_USERINFO },
+  { name: "a query", url: "https://proxy.example.com/?x=1", defect: HAS_QUERY_OR_FRAGMENT },
+  { name: "a query with nothing in it", url: "https://proxy.example.com/v1?", defect: HAS_QUERY_OR_FRAGMENT },
+  { name: "a fragment", url: "https://proxy.example.com/#frag", defect: HAS_QUERY_OR_FRAGMENT },
+  { name: "http to a host that is not this machine", url: "http://proxy.example.com", defect: WRONG_SCHEME },
+  {
+    name: "http to a host whose name only starts like a loopback address",
+    url: "http://127.0.0.1.example.com",
+    defect: WRONG_SCHEME,
+  },
+  {
+    name: "http to a host whose name only starts like localhost",
+    url: "http://localhost.example.com",
+    defect: WRONG_SCHEME,
+  },
+  { name: "http to the unspecified address", url: "http://0.0.0.0:8787", defect: WRONG_SCHEME },
+  { name: "http to an IPv6 address that is not loopback", url: "http://[::2]:8787", defect: WRONG_SCHEME },
+  { name: "a scheme that is not http at all", url: "ftp://files.example.com", defect: WRONG_SCHEME },
+  { name: "a secure scheme that is not http", url: "wss://proxy.example.com", defect: WRONG_SCHEME },
+];
+
+/** Base URLs that are admitted, each with the one form it is handed over in. */
+const ADMITTED_BASE_URLS: readonly AdmittedBaseUrl[] = [
+  { name: "https to any host", url: OVERRIDE_BASE_URL, baseUrl: OVERRIDE_BASE_URL },
+  { name: "a trailing slash", url: `${OVERRIDE_BASE_URL}/`, baseUrl: OVERRIDE_BASE_URL },
+  {
+    name: "a path",
+    url: "https://proxy.example.com/typesafe/v2/",
+    baseUrl: "https://proxy.example.com/typesafe/v2",
+  },
+  { name: "http to the IPv4 loopback address", url: "http://127.0.0.1:8787/", baseUrl: "http://127.0.0.1:8787" },
+  {
+    name: "http to another address in the loopback block",
+    url: "http://127.8.9.10:8787",
+    baseUrl: "http://127.8.9.10:8787",
+  },
+  { name: "http to the IPv6 loopback address", url: "http://[::1]:8787", baseUrl: "http://[::1]:8787" },
+  { name: "http to localhost", url: "http://localhost:8787", baseUrl: "http://localhost:8787" },
+  {
+    name: "a scheme and a host in upper case, handed over as they are read",
+    url: "HTTPS://Proxy.Example.COM",
+    baseUrl: "https://proxy.example.com",
+  },
+  {
+    name: "the scheme's own port, which is not repeated",
+    url: "https://proxy.example.com:443/",
+    baseUrl: "https://proxy.example.com",
+  },
+];
+
 /** A budget below the generative table's one-second floor, which a typed route must be able to declare. */
 const SUB_SECOND_BUDGET_MS = 300;
 
@@ -259,7 +359,7 @@ describe("load-time violations", () => {
   });
 
   it("a hosted pin is a versioned id, never an alias", () => {
-    for (const movingName of ["jev-latest", "jev-preview", "JEV-LATEST"]) {
+    for (const movingName of ["jev-latest", "jev-preview", "JEV-LATEST", "jev-Latest"]) {
       const pinned = violationsAfter((table) => {
         hostedRouteOf(table).version_pin = movingName;
       });
@@ -277,6 +377,52 @@ describe("load-time violations", () => {
         hostedRouteOf(table).version_pin = "";
       }),
     ).toEqual([expect.stringContaining("version_pin must be a non-empty model id")]);
+  });
+
+  it("a hosted pin is a bare model id, so a moving name cannot hide behind a trailing character", () => {
+    const disguises = ["jev-latest ", "jev-latest\n", "jev-preview.", "jev-latest\u200b", " jev-1.13.0", "jev-latest-"];
+    for (const disguised of disguises) {
+      for (const field of ["version_pin", "expected_served_model"] as const) {
+        const table = admittedDecisionRouteTable();
+        hostedRouteOf(table)[field] = disguised;
+
+        expect(decisionRouteViolations(table), JSON.stringify(disguised)).toEqual([
+          expect.stringContaining(`routes.dm.hosted.${field} must be a model id of letters, digits, dots, dashes`),
+        ]);
+        expect(validateAgainstSchema(table, decisionRoutesSchema), JSON.stringify(disguised)).toHaveLength(1);
+      }
+    }
+  });
+
+  it("the loader and the schema agree on which pins move, whatever their case", () => {
+    for (const movingName of ["jev-latest", "jev-preview", "JEV-LATEST", "jev-Latest", "jev-PREVIEW"]) {
+      const table = admittedDecisionRouteTable();
+      hostedRouteOf(table).version_pin = movingName;
+
+      expect(decisionRouteViolations(table), movingName).toHaveLength(1);
+      expect(validateAgainstSchema(table, decisionRoutesSchema), movingName).toHaveLength(1);
+    }
+  });
+
+  it("a date is a day of the calendar, not only a date's shape", () => {
+    for (const impossible of ["2099-13-45", "2026-02-30", "2026-00-10", "2025-02-29"]) {
+      const verified = violationsAfter((table) => {
+        hostedRouteOf(table).contract_verified = impossible;
+      });
+      expect(verified, impossible).toEqual(["routes.dm.hosted.contract_verified must be a date, or null"]);
+
+      const priced = admittedDecisionRouteTable();
+      Object.assign(hostedRouteOf(priced).price_per_mtok ?? {}, { as_of: impossible });
+      expect(decisionRouteViolations(priced), impossible).toEqual([
+        "routes.dm.hosted.price_per_mtok.as_of must be a date",
+      ]);
+      expect(validateAgainstSchema(priced, decisionRoutesSchema), impossible).toHaveLength(1);
+    }
+
+    const leapDay = admittedDecisionRouteTable();
+    hostedRouteOf(leapDay).contract_verified = "2024-02-29";
+    expect(decisionRouteViolations(leapDay)).toEqual([]);
+    expect(validateAgainstSchema(leapDay, decisionRoutesSchema)).toEqual([]);
   });
 
   it("a budget below 50 ms or above 10,000 ms is a load-time violation, and a sub-second budget is admitted", () => {
@@ -414,7 +560,21 @@ describe("load-time violations", () => {
         edit: (table) => {
           hostedProviderOf(table).base_url = "http://api.example.com";
         },
-        violation: "providers.typesafe.base_url must be an absolute https URL, or null",
+        violation: "providers.typesafe.base_url must be an https base URL, or null",
+      },
+      {
+        name: "a table of a schema version this loader does not read",
+        edit: (table) => {
+          table.schema_version = 2;
+        },
+        violation: "schema_version must be 1",
+      },
+      {
+        name: "a table that names no policy it implements",
+        edit: (table) => {
+          table.policy_source = "";
+        },
+        violation: "policy_source must be a non-empty string",
       },
       {
         name: "a hosted provider with no way to resolve a base URL",
@@ -512,20 +672,73 @@ describe("admission", () => {
     expect(admission).toEqual({ admit: false, code: "engine_served", reason: expect.any(String) });
   });
 
-  it("a base URL override that is set and unusable is a refusal, never a fall back to the declared URL", () => {
-    const table = admittedDecisionRouteTable();
-    const overrideName = hostedProviderOf(table).base_url_env;
-    if (overrideName === null) {
-      throw new Error("the hosted provider declares no base URL override variable");
+  describe("a base URL override that is set and unusable is a refusal, never a fall back to the declared URL", () => {
+    for (const { name, url, defect } of REFUSED_BASE_URLS) {
+      it(name, () => {
+        const table = admittedDecisionRouteTable();
+        const refusal = refusalOf(HOSTED_ROUTE, table, { TYPESAFE_BASE_URL: url });
+
+        expect(hostedProviderOf(table).base_url_env).toBe("TYPESAFE_BASE_URL");
+        expect(refusal.code).toBe("route_not_admitted");
+        expect(refusal.reason).toBe(`base URL unresolved: TYPESAFE_BASE_URL is set to a value that ${defect}`);
+        expect(refusal.message).not.toContain(url);
+        expect(refusal.message).not.toContain(URL_PASSWORD);
+      });
     }
-    for (const unusable of ["not-a-url-7f3a", "api.example.com", "ftp://files.example.com", "/v1/systemone"]) {
-      const refusal = refusalOf(HOSTED_ROUTE, table, { [overrideName]: unusable });
-      expect(refusal.code).toBe("route_not_admitted");
-      expect(refusal.reason).toBe(
-        `base URL unresolved: ${overrideName} is set to something that is not an absolute http(s) URL`,
+  });
+
+  describe("a declared base URL is held to the same rule as an override, and to https", () => {
+    for (const { name, url, defect } of REFUSED_BASE_URLS) {
+      it(name, () => {
+        const violations = violationsAfter((table) => {
+          hostedProviderOf(table).base_url = url;
+        });
+
+        expect(violations).toEqual([`providers.typesafe.base_url must be an https base URL, or null: it ${defect}`]);
+        expect(violations.join()).not.toContain(URL_PASSWORD);
+      });
+    }
+
+    for (const { name, url } of ADMITTED_BASE_URLS.filter((row) => row.url.toLowerCase().startsWith("http:"))) {
+      it(`${name}, which an override may be and a release may not declare`, () => {
+        const violations = violationsAfter((table) => {
+          hostedProviderOf(table).base_url = url;
+        });
+
+        expect(violations).toEqual([
+          "providers.typesafe.base_url must be an https base URL, or null: it is not https",
+        ]);
+      });
+    }
+
+    it("every base URL the canonical table declares passes the rule and resolves as it is written", () => {
+      const declared = Object.values(decisionRouteTable.providers).flatMap((provider) =>
+        provider.api_style === "systemone" && provider.base_url !== null ? [provider.base_url] : [],
       );
-      expect(refusal.message).not.toContain(unusable);
-    }
+      expect(declared).toEqual(["https://api.typesafe.ai"]);
+
+      for (const url of declared) {
+        const table = admittedDecisionRouteTable();
+        const provider = hostedProviderOf(table);
+        provider.base_url = url;
+        provider.base_url_env = null;
+        expect(resolveDecisionRoute(HOSTED_ROUTE, table, EMPTY_ENV).baseUrl).toBe(url);
+      }
+    });
+
+    it("a declaration that was never checked as a table is still refused at admission", () => {
+      const table = admittedDecisionRouteTable();
+      const provider = hostedProviderOf(table);
+      provider.base_url = `https://user:${URL_PASSWORD}@proxy.example.com`;
+
+      const admission = decisionRouteAdmission(hostedRouteOf(table), provider, EMPTY_ENV);
+
+      expect(admission).toEqual({
+        admit: false,
+        code: "route_not_admitted",
+        reason: `base URL unresolved: the declared base URL ${HAS_USERINFO}`,
+      });
+    });
   });
 
   it("a table that breaks a rule is refused when it is handed to the resolver", () => {
@@ -535,6 +748,19 @@ describe("admission", () => {
     expect(refusal.code).toBe("route_not_admitted");
     expect(refusal.reason).toContain("the route table is invalid");
     expect(refusal.reason).toContain("version_pin must be a versioned model id");
+  });
+
+  it("reading a route from a table that has no routes is the typed refusal, not a failed property read", () => {
+    for (const broken of [{}, { routes: null }, { routes: ["dm.hosted"] }, null]) {
+      let thrown: unknown = null;
+      try {
+        decisionRouteDeclaration(HOSTED_ROUTE, broken as unknown as DecisionRouteTable);
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(DecisionRouteUnavailableError);
+      expect(thrown).toMatchObject({ fault: "unavailable", code: "route_not_admitted" });
+    }
   });
 
   it("a name that is not a route is refused with a typed error, whatever every object inherits", () => {
@@ -607,6 +833,18 @@ describe("resolution", () => {
     expect(resolveDecisionRoute(HOSTED_ROUTE, table, { [overrideName]: OVERRIDE_BASE_URL }).baseUrl).toBe(
       OVERRIDE_BASE_URL,
     );
+  });
+
+  describe("an admitted base URL is handed over in one form, built from what the URL parser read", () => {
+    for (const { name, url, baseUrl } of ADMITTED_BASE_URLS) {
+      it(name, () => {
+        const resolved = resolveDecisionRoute(HOSTED_ROUTE, admittedDecisionRouteTable(), { TYPESAFE_BASE_URL: url });
+
+        expect(resolved.baseUrl).toBe(baseUrl);
+        // A path appended by the one rule lands where it was meant to.
+        expect(new URL(`${resolved.baseUrl}/v1/decide`).href).toBe(`${baseUrl}/v1/decide`);
+      });
+    }
   });
 
   it("a base URL is handed over without trailing slashes, so a path is appended by one rule", () => {

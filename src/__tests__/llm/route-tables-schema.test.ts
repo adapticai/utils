@@ -123,13 +123,14 @@ describe("the decision schema", () => {
   });
 
   it("rejects a pin that follows the vendor's releases", () => {
-    for (const movingName of ["jev-latest", "jev-preview"]) {
+    const refused = ["jev-latest", "jev-preview", "JEV-LATEST", "jev-Preview", "jev-latest\n", "jev-preview."];
+    for (const movingName of refused) {
       for (const field of ["version_pin", "expected_served_model"] as const) {
         const table = editableDecisionRouteTable();
         hostedRouteOf(table)[field] = movingName;
         const errors = validateAgainstSchema(table, decisionRoutesSchema);
         expect(errors).toHaveLength(1);
-        expect(errors[0]).toContain(`$.routes.dm.hosted.${field}: "${movingName}" does not match`);
+        expect(errors[0]).toContain(`$.routes.dm.hosted.${field}: ${JSON.stringify(movingName)} does not match`);
       }
     }
   });
@@ -176,5 +177,37 @@ describe("the decision schema", () => {
     const cleartext = editableCopy(decisionRoutes);
     cleartext.providers.typesafe.base_url = "http://api.example.com";
     expect(validateAgainstSchema(cleartext, decisionRoutesSchema)).toHaveLength(1);
+  });
+
+  it("takes a declared base URL only without credentials, a query, a fragment or whitespace", () => {
+    for (const unusable of [
+      "https://user:pw@api.example.com",
+      "https://user@api.example.com",
+      "https://api.example.com/?x=1",
+      "https://api.example.com/v1?",
+      "https://api.example.com/#frag",
+      " https://api.example.com",
+      "https://api.example.com/\n",
+      "https://api.exa\tmple.com",
+      "https://",
+    ]) {
+      const table = editableCopy(decisionRoutes);
+      table.providers.typesafe.base_url = unusable;
+      expect(validateAgainstSchema(table, decisionRoutesSchema), JSON.stringify(unusable)).toHaveLength(1);
+    }
+
+    for (const usable of ["https://api.example.com", "https://api.example.com/", "https://api.example.com:8443/v2"]) {
+      const table = editableCopy(decisionRoutes);
+      table.providers.typesafe.base_url = usable;
+      expect(validateAgainstSchema(table, decisionRoutesSchema), usable).toEqual([]);
+    }
+  });
+
+  it("reads a date as a day of the calendar", () => {
+    expect(validateAgainstSchema("2026-02-30", { type: "string", format: "date" })).toEqual([
+      '$: "2026-02-30" is not an ISO date',
+    ]);
+    expect(validateAgainstSchema("2099-13-45", { type: "string", format: "date" })).toHaveLength(1);
+    expect(validateAgainstSchema("2024-02-29", { type: "string", format: "date" })).toEqual([]);
   });
 });

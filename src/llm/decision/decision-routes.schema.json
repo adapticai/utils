@@ -51,13 +51,13 @@
           "display_name": { "type": "string", "minLength": 1 },
           "base_url": {
             "type": ["string", "null"],
-            "pattern": "^https://[^/]+",
-            "description": "The provider's base URL, or null when only the environment supplies one. A declared URL is HTTPS: the key travels in a request header."
+            "pattern": "^https://[^/?#@\\s]+(/[^?#\\s]*)?$",
+            "description": "The provider's base URL, or null when only the environment supplies one. A declared URL is HTTPS, because a request carries trading state and a credential, and it holds no user name or password, no query, no fragment and no whitespace: a path is appended to it as it stands."
           },
           "base_url_env": {
             "type": ["string", "null"],
             "pattern": "^[A-Z][A-Z0-9_]*$",
-            "description": "Env-var NAME that overrides base_url, or null when none does."
+            "description": "Env-var NAME that overrides base_url, or null when none does. The value it holds is read by the rule a declared URL is, except that it may also be http to a loopback host; one that breaks the rule refuses the route and is never replaced by base_url."
           },
           "api_key_env": {
             "type": "string",
@@ -107,13 +107,13 @@
             "version_pin": {
               "type": "string",
               "minLength": 1,
-              "pattern": "^(?!.*(latest|preview)$)",
-              "description": "The model id written into every request. A versioned id: a name ending latest or preview follows the vendor's releases, so the answering model would change with no change on this side."
+              "pattern": "^(?!.*([Ll][Aa][Tt][Ee][Ss][Tt]|[Pp][Rr][Ee][Vv][Ii][Ee][Ww])$)[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$",
+              "description": "The model id written into every request. A versioned id: a name ending latest or preview, in whatever case, follows the vendor's releases, so the answering model would change with no change on this side. Written in letters, digits, dots, dashes and underscores only, starting and ending with a letter or a digit, so no trailing character can hide such a name."
             },
             "expected_served_model": {
               "type": "string",
               "minLength": 1,
-              "pattern": "^(?!.*(latest|preview)$)",
+              "pattern": "^(?!.*([Ll][Aa][Tt][Ee][Ss][Tt]|[Pp][Rr][Ee][Vv][Ii][Ee][Ww])$)[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$",
               "description": "The model id a response must report. Any other answering model is a fault."
             },
             "model_id_status": { "enum": ["confirmed", "pending-provider-confirmation"] },

@@ -49,6 +49,24 @@ const DATE_FORMAT = "date";
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
+ * Whether text is a day of the calendar, written as the schemas write one.
+ *
+ * The form alone admits a thirteenth month, so the day is rebuilt from its
+ * parts and must come back as the same day.
+ *
+ * @param text The text.
+ * @returns Whether it is a date that exists.
+ */
+function isCalendarDate(text: string): boolean {
+  if (!ISO_DATE.test(text)) {
+    return false;
+  }
+  const [year, month, day] = text.split("-").map(Number);
+  const rebuilt = new Date(Date.UTC(year, month - 1, day));
+  return rebuilt.getUTCFullYear() === year && rebuilt.getUTCMonth() === month - 1 && rebuilt.getUTCDate() === day;
+}
+
+/**
  * Whether a value is a JSON object, as opposed to an array or `null`.
  *
  * @param value The value.
@@ -171,7 +189,7 @@ export function validateAgainstSchema(value: unknown, schema: JsonSchemaNode, pa
     if (schema.format !== undefined && schema.format !== DATE_FORMAT) {
       errors.push(`${path}: schema format ${JSON.stringify(schema.format)} is not implemented by this validator`);
     }
-    if (schema.format === DATE_FORMAT && !ISO_DATE.test(value)) {
+    if (schema.format === DATE_FORMAT && !isCalendarDate(value)) {
       errors.push(`${path}: ${JSON.stringify(value)} is not an ISO date`);
     }
   }

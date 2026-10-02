@@ -106,6 +106,17 @@ const CONTRACT_EVIDENCE: readonly string[] = ["documentation", "authenticated-ca
 const HOSTED_PROVIDER_FIELDS: readonly string[] = ["base_url", "base_url_env", "api_key_env", "secret_path"];
 
 /**
+ * The form of a model id: letters, digits, dots, dashes and underscores,
+ * starting and ending with a letter or a digit.
+ *
+ * A pin is compared with the id a response reports character for character,
+ * and a moving name is recognised by how the id ends. An id carrying anything
+ * else (a trailing space, a line break, a mark that prints as nothing) defeats
+ * both while reading the same in review, so it is not an id.
+ */
+const MODEL_ID = /^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/;
+
+/**
  * A model name that follows a vendor's releases instead of naming one.
  *
  * A request sent to such a name is answered by whichever model the vendor
@@ -126,11 +137,32 @@ const COMMIT_HASH = /^[0-9a-f]{40}$/;
 /** A SHA-256 digest in hexadecimal. */
 const SHA256_HEX = /^[0-9a-f]{64}$/;
 
-/** The schemes a base URL may use. */
-const BASE_URL_PROTOCOLS: readonly string[] = ["https:", "http:"];
+/** The table layout this loader reads. */
+const SCHEMA_VERSION = 1;
 
-/** The scheme a base URL written in the table must use: the key travels in a request header. */
-const DECLARED_BASE_URL_PROTOCOL = "https:";
+/** The scheme that keeps a request private between this process and the host it names. */
+const SECURE_PROTOCOL = "https:";
+
+/** The scheme that sends a request as it is, readable by anything on the path. */
+const CLEARTEXT_PROTOCOL = "http:";
+
+/** The names a URL parser reports for this machine itself: the name, and the IPv6 loopback address. */
+const LOOPBACK_HOSTNAMES: readonly string[] = ["localhost", "[::1]"];
+
+/** An address in the IPv4 loopback block, in the dotted form a URL parser reports every IPv4 host in. */
+const LOOPBACK_IPV4 = /^127(?:\.\d{1,3}){3}$/;
+
+/**
+ * Whitespace or a control character.
+ *
+ * A URL parser removes these from the ends of its input, and tabs and line
+ * breaks from anywhere in it, without saying so. Text that contains one is
+ * therefore not the URL it parses as.
+ */
+const WHITESPACE_OR_CONTROL = /[\s\p{Cc}]/u;
+
+/** The marks that begin a query and a fragment. */
+const QUERY_OR_FRAGMENT_MARK = /[?#]/;
 
 /** The fewest levels a score can have, so the smallest useful cap on them. */
 const MIN_SCORE_LEVELS = 2;
@@ -248,18 +280,104 @@ function ownField<Value>(holder: Readonly<Record<string, Value>>, key: string): 
 }
 
 /**
- * Normalise a base URL, or say it is not one.
+ * Whether a value is a day of the calendar, written as the table writes one.
+ *
+ * The form alone admits a thirteenth month and a thirtieth of February. The
+ * day is rebuilt from its parts and must come back as the same day.
+ *
+ * @param value The value.
+ * @returns Whether it is a date that exists.
+ */
+function isCalendarDate(value: unknown): value is string {
+  if (!isStringOf(value, ISO_DATE)) {
+    return false;
+  }
+  const [year, month, day] = value.split("-").map(Number);
+  const rebuilt = new Date(Date.UTC(year, month - 1, day));
+  return rebuilt.getUTCFullYear() === year && rebuilt.getUTCMonth() === month - 1 && rebuilt.getUTCDate() === day;
+}
+
+/**
+ * Whether a host, as a URL parser reports it, is this machine itself.
+ *
+ * @param hostname The parsed URL's host name.
+ * @returns Whether a request to it never leaves the machine.
+ */
+function isLoopbackHost(hostname: string): boolean {
+  return LOOPBACK_HOSTNAMES.includes(hostname) || LOOPBACK_IPV4.test(hostname);
+}
+
+/** A base URL in the one form it is handed over in, or what is wrong with the text it was read from. */
+type BaseUrlReading =
+  | { readonly url: string; readonly defect: null }
+  | { readonly url: null; readonly defect: string };
+
+/**
+ * Read a base URL, or say what is wrong with it.
+ *
+ * One rule for every base URL, whether the table declares it or the
+ * environment overrides it:
+ *
+ * - It is an absolute URL with no whitespace or control character in it.
+ * - Its scheme is https, or http when its host is this machine. A decision
+ *   request carries trading state and a credential, so it is sent in the clear
+ *   only where it never leaves the machine.
+ * - It carries no user name or password. A credential in the URL would travel
+ *   to every place the URL is written, and the route's key has its own header.
+ * - It carries no query and no fragment. A path is appended to a base URL, and
+ *   appended to either of those it lands inside them.
+ *
+ * The URL handed back is built from what the parser read and not from the text,
+ * so the request goes to exactly the host that was checked, in one spelling:
+ * scheme and host in lower case, the scheme's own port left out, no trailing
+ * slash.
+ *
+ * A defect names the kind of fault and never quotes the text, because the text
+ * can hold a credential.
  *
  * @param text The URL as written.
- * @param protocols The schemes it may use.
- * @returns The URL without trailing slashes, or `null` when the text is not an
- * absolute URL in one of the schemes.
+ * @returns The URL to append a path to, or the defect.
  */
-function usableBaseUrl(text: string, protocols: readonly string[]): string | null {
-  if (!URL.canParse(text)) {
-    return null;
+function readBaseUrl(text: string): BaseUrlReading {
+  if (WHITESPACE_OR_CONTROL.test(text)) {
+    return { url: null, defect: "contains whitespace or a control character" };
   }
-  return protocols.includes(new URL(text).protocol) ? text.replace(TRAILING_SLASHES, "") : null;
+  if (!URL.canParse(text)) {
+    return { url: null, defect: "is not an absolute URL" };
+  }
+  const url = new URL(text);
+  const cleartextToSelf = url.protocol === CLEARTEXT_PROTOCOL && isLoopbackHost(url.hostname);
+  if (url.protocol !== SECURE_PROTOCOL && !cleartextToSelf) {
+    return { url: null, defect: "is not https, or http to a loopback host" };
+  }
+  if (url.username !== "" || url.password !== "") {
+    return { url: null, defect: "carries a user name or a password" };
+  }
+  if (QUERY_OR_FRAGMENT_MARK.test(text)) {
+    return { url: null, defect: "carries a query or a fragment" };
+  }
+  return { url: `${url.origin}${url.pathname}`.replace(TRAILING_SLASHES, ""), defect: null };
+}
+
+/**
+ * What is wrong with a base URL written in the table, if anything.
+ *
+ * A declared URL passes the rule every base URL passes, and is https besides:
+ * a release declares where a vendor is reached, and a vendor is never this
+ * machine.
+ *
+ * @param value The table's `base_url`, as parsed and not `null`.
+ * @returns The defect, or `null` when the URL may be declared.
+ */
+function declaredBaseUrlDefect(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return "is not a string";
+  }
+  const reading = readBaseUrl(value);
+  if (reading.url === null) {
+    return reading.defect;
+  }
+  return new URL(reading.url).protocol === SECURE_PROTOCOL ? null : "is not https";
 }
 
 /**
@@ -350,12 +468,10 @@ function providerViolations(name: string, provider: unknown): string[] {
     provider.base_url_env === null || isStringOf(provider.base_url_env, ENV_VAR_NAME),
     "base_url_env must be the NAME of an environment variable, or null",
   );
-  check(
-    provider.base_url === null ||
-      (typeof provider.base_url === "string" &&
-        usableBaseUrl(provider.base_url, [DECLARED_BASE_URL_PROTOCOL]) !== null),
-    "base_url must be an absolute https URL, or null",
-  );
+  const declaredDefect = provider.base_url === null ? null : declaredBaseUrlDefect(provider.base_url);
+  if (declaredDefect !== null) {
+    violations.push(`${at}.base_url must be an https base URL, or null: it ${declaredDefect}`);
+  }
   check(
     provider.base_url !== null || provider.base_url_env !== null,
     "base_url and base_url_env are both null, so no base URL could ever resolve",
@@ -381,7 +497,7 @@ function priceViolations(at: string, price: unknown): string[] {
   if (!isNonNegativeFinite(price.input) || !isNonNegativeFinite(price.output)) {
     violations.push(`${at}.price_per_mtok.input and .output must be non-negative numbers`);
   }
-  if (!isStringOf(price.as_of, ISO_DATE)) {
+  if (!isCalendarDate(price.as_of)) {
     violations.push(`${at}.price_per_mtok.as_of must be a date`);
   }
   return violations;
@@ -405,6 +521,11 @@ function utilsServedViolations(at: string, route: Readonly<Record<string, unknow
     const modelId = route[field];
     check(isNonEmptyString(modelId), `${field} must be a non-empty model id`);
     check(
+      !isNonEmptyString(modelId) || MODEL_ID.test(modelId),
+      `${field} must be a model id of letters, digits, dots, dashes and underscores ` +
+        "that starts and ends with a letter or a digit",
+    );
+    check(
       !isStringOf(modelId, MOVING_MODEL_NAME),
       `${field} must be a versioned model id: ${JSON.stringify(modelId)} ` +
         "is a name that moves with the vendor's releases",
@@ -419,7 +540,7 @@ function utilsServedViolations(at: string, route: Readonly<Record<string, unknow
     `contract_evidence must be one of ${CONTRACT_EVIDENCE.join(", ")}`,
   );
   check(
-    route.contract_verified === null || isStringOf(route.contract_verified, ISO_DATE),
+    route.contract_verified === null || isCalendarDate(route.contract_verified),
     "contract_verified must be a date, or null",
   );
   check(
@@ -553,6 +674,12 @@ export function decisionRouteViolations(table: DecisionRouteTable): string[] {
     return ["the table must be an object"];
   }
   const violations: string[] = [];
+  if (root.schema_version !== SCHEMA_VERSION) {
+    violations.push(`schema_version must be ${SCHEMA_VERSION}: this loader reads no other layout`);
+  }
+  if (!isNonEmptyString(root.policy_source)) {
+    violations.push("policy_source must be a non-empty string: a table names the decision it implements");
+  }
   violations.push(...breakerViolations(isRecord(root.defaults) ? root.defaults.circuit_breaker : undefined));
 
   const providers = isRecord(root.providers) ? root.providers : null;
@@ -621,14 +748,16 @@ export function decisionRouteDeclaration(
   route: DecisionRoute,
   table: DecisionRouteTable = decisionRouteTable,
 ): DecisionRouteDeclaration {
-  const declaration = ownField(table.routes, route);
+  const root: unknown = table;
+  const routes = isRecord(root) && isRecord(root.routes) ? table.routes : null;
+  const declaration = routes === null ? undefined : ownField(routes, route);
   if (declaration === undefined) {
     throw new DecisionRouteUnavailableError({
       route,
       code: "route_not_admitted",
       reason:
         "the decision route table declares no route of that name; " +
-        `it declares ${Object.keys(table.routes).join(", ")}`,
+        (routes === null ? "it declares no routes" : `it declares ${Object.keys(routes).join(", ")}`),
     });
   }
   return declaration;
@@ -657,11 +786,12 @@ function notAdmitted(reason: string): AdmissionOutcome {
 /**
  * The base URL a provider is called at, or why none resolves.
  *
- * The environment override wins over the declared URL. An override that is set
- * and unusable is a refusal rather than a fall back to the declared URL: the
- * operator who set it meant the traffic to go somewhere else, and sending it to
- * the default instead would be a silent change of destination. The override's
- * value is never quoted, because a URL can carry a credential.
+ * The environment override wins over the declared URL, and both are read by
+ * the one rule. An override that is set and unusable is a refusal rather than a
+ * fall back to the declared URL: the operator who set it meant the traffic to
+ * go somewhere else, and sending it to the default instead would be a silent
+ * change of destination. The reason says what kind of fault the value has and
+ * never quotes it, because a URL can carry a credential.
  *
  * @param provider The provider.
  * @param env The environment to read the override from.
@@ -674,13 +804,10 @@ function resolveBaseUrl(
   const overrideName = provider.base_url_env;
   const override = overrideName === null ? undefined : env[overrideName];
   if (overrideName !== null && override !== undefined && override.length > 0) {
-    const url = usableBaseUrl(override, BASE_URL_PROTOCOLS);
-    return url === null
-      ? {
-          url: null,
-          reason: `base URL unresolved: ${overrideName} is set to something that is not an absolute http(s) URL`,
-        }
-      : { url };
+    const reading = readBaseUrl(override);
+    return reading.url === null
+      ? { url: null, reason: `base URL unresolved: ${overrideName} is set to a value that ${reading.defect}` }
+      : { url: reading.url };
   }
   if (provider.base_url === null) {
     return {
@@ -691,10 +818,10 @@ function resolveBaseUrl(
           : `base URL unresolved: the provider declares none and ${overrideName} is unset`,
     };
   }
-  const url = usableBaseUrl(provider.base_url, BASE_URL_PROTOCOLS);
-  return url === null
-    ? { url: null, reason: "base URL unresolved: the declared base URL is not an absolute URL" }
-    : { url };
+  const reading = readBaseUrl(provider.base_url);
+  return reading.url === null
+    ? { url: null, reason: `base URL unresolved: the declared base URL ${reading.defect}` }
+    : { url: reading.url };
 }
 
 /**
