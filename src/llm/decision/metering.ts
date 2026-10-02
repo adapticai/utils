@@ -147,7 +147,9 @@ function sideCost(tokens: number | null, rate: number): number | null {
  * @param inputTokens The reported input count, or `null`.
  * @param outputTokens The reported output count, or `null`.
  * @param anchor The route's price anchor, or `null` when it declares none.
- * @returns The cost, or `null` when any term of it is unknown.
+ * @returns The cost, or `null` when any term of it is unknown, or when the
+ *   terms are known and their sum is past what a number can hold: an infinite
+ *   cost is not an amount, and a spend limit compared against it is not a limit.
  */
 function costOf(inputTokens: number | null, outputTokens: number | null, anchor: LlmPriceAnchor | null): number | null {
   if (anchor === null || inputTokens === null || !isRate(anchor.input) || !isRate(anchor.output)) {
@@ -157,7 +159,8 @@ function costOf(inputTokens: number | null, outputTokens: number | null, anchor:
   if (outputCost === null) {
     return null;
   }
-  return (inputTokens * anchor.input + outputCost) / TOKENS_PER_PRICED_UNIT;
+  const cost = (inputTokens * anchor.input + outputCost) / TOKENS_PER_PRICED_UNIT;
+  return Number.isFinite(cost) ? cost : null;
 }
 
 /**

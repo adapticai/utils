@@ -26,17 +26,22 @@
  * substitution is caught.
  *
  * The key is read from the environment by NAME on every call and exists only
- * in the request's authorization header. It is never stored, and three rules
- * keep it out of everything raised here. A failure below this layer is
+ * in the request's authorization header. It is never stored, and four rules
+ * keep it out of everything raised here. A value that cannot be sent as a
+ * credential is refused before a request exists, as a credential fault that
+ * names the variable: sent on, it would be refused by the runtime as a
+ * connection failure, and a mangled key would be counted as a vendor outage.
+ * A failure below this layer is
  * described by its class and system code, never by its message, because a
  * runtime that refuses a request it could not build quotes the offending
  * header in that message. Once the caller has aborted, what is raised is the
  * reason the caller aborted with and never what the layer below threw, because
  * a call can fail for a reason of its own at the moment it is aborted. And
  * text a vendor answered with, or a lower layer named its failure with, has
- * the key taken out wherever it stands verbatim before that text is put on an
- * error, because a vendor may quote back the credential it was sent. A key
- * handed back altered, masked or encoded for instance, is not recognised.
+ * the key taken out wherever it stands, verbatim or as a JSON string writes
+ * it, before that text is put on an error, because a vendor may quote back the
+ * credential it was sent. A key handed back altered in any other way, masked
+ * or encoded for instance, is not recognised.
  *
  * Nothing in this file names a vendor host or a model. Both arrive with the
  * route.
@@ -96,6 +101,18 @@ const FAILURE_CAUSE_DEPTH = 4;
 
 /** What stands where the key was, in text this layer did not write. */
 const KEY_REMOVED = "[credential removed]";
+
+/**
+ * A character a credential never holds: anything outside visible ASCII.
+ *
+ * A bearer credential is a run of visible ASCII characters with no space in
+ * it. A value holding anything else was not issued as a key: it was cut, joined
+ * or pasted wrongly on its way into the variable.
+ */
+const NOT_A_CREDENTIAL_CHARACTER = /[^\x21-\x7e]/;
+
+/** What a link of a failure's chain is called when it has no printable class name. */
+const UNNAMED_FAILURE = "an unnamed failure";
 
 /**
  * What a failure's class name or system code looks like.
@@ -257,9 +274,12 @@ export interface SystemOneTransport {
    *
    * @param request The route, the encoded request and the abort signal.
    * @returns The undecoded answer and what the call cost.
-   * @throws {DecisionCallError} For every failure while the signal is live.
-   *   Once the signal has aborted, a call that gets no answer rejects with the
-   *   signal's reason instead.
+   * @throws {DecisionCallError} For every failure while the signal is live,
+   *   and, whatever the signal's state, for a call refused before a request
+   *   exists (no usable key, a body that cannot be written) and for a failing
+   *   status that had already arrived. Once the signal has aborted, any other
+   *   call that gets no answer rejects with the signal's reason instead: the
+   *   very value, `null` included.
    */
   execute(request: SystemOneTransportRequest): Promise<SystemOneTransportResult>;
 }
@@ -326,6 +346,26 @@ function identifierOrNull(value: unknown): string | null {
 }
 
 /**
+ * Read one member of a thrown value.
+ *
+ * A thrown value is not this package's object, and a member of it may be an
+ * accessor that throws. A member that cannot be read is treated as absent: the
+ * failure being described has already happened, and a second one raised while
+ * describing it would reach the caller in place of this package's own fault.
+ *
+ * @param holder The thrown value, or one of its causes.
+ * @param member The member to read.
+ * @returns The member's value, or `undefined` when it is absent or unreadable.
+ */
+function readMember(holder: Readonly<Record<string, unknown>>, member: "name" | "code" | "cause"): unknown {
+  try {
+    return holder[member];
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Describe a failure of the HTTP layer without quoting it.
  *
  * Built from the class name and the system code of the failure and of each of
@@ -340,10 +380,10 @@ function describeFailure(error: unknown): string {
   const links: string[] = [];
   let current: unknown = error;
   for (let depth = 0; depth < FAILURE_CAUSE_DEPTH && isRecord(current); depth += 1) {
-    const name = identifierOrNull(current.name) ?? "an unnamed failure";
-    const code = identifierOrNull(current.code);
+    const name = identifierOrNull(readMember(current, "name")) ?? UNNAMED_FAILURE;
+    const code = identifierOrNull(readMember(current, "code"));
     links.push(code === null ? name : `${name} ${code}`);
-    current = current.cause;
+    current = readMember(current, "cause");
   }
   return links.length === 0 ? "a thrown value that is not an error" : links.join(", caused by ");
 }
@@ -351,17 +391,21 @@ function describeFailure(error: unknown): string {
 /**
  * Take the key out of text this layer did not write.
  *
- * Every exact occurrence is replaced, and the replacement is done on the whole
- * text before any of it is excerpted, so a key lying across an excerpt's bound
- * is removed whole and not cut to a prefix. Text that does not hold the key is
- * returned unchanged.
+ * Every occurrence is replaced, in the key's own form and in the form a JSON
+ * string writes it, which differs when the key holds a quote or a backslash
+ * and is the form a vendor's JSON body quotes it in. The replacement is done
+ * on the whole text before any of it is excerpted, so a key lying across an
+ * excerpt's bound is removed whole and not cut to a prefix. Text that does not
+ * hold the key is returned unchanged.
  *
  * @param text Text from a vendor or from a lower layer.
  * @param key The key the request was sent with; never empty.
  * @returns The text with the key replaced wherever it stood.
  */
 function withoutKey(text: string, key: string): string {
-  return text.split(key).join(KEY_REMOVED);
+  const asJson = JSON.stringify(key).slice(1, -1);
+  const verbatimRemoved = text.split(key).join(KEY_REMOVED);
+  return asJson === key ? verbatimRemoved : verbatimRemoved.split(asJson).join(KEY_REMOVED);
 }
 
 /**
@@ -371,13 +415,20 @@ function withoutKey(text: string, key: string): string {
  * @returns The key, without surrounding whitespace, which is never part of one.
  * @throws {DecisionCredentialError} When the variable is unset or holds no
  *   key, because a request sent without one would reach the vendor anonymous
- *   and be rejected there later and less clearly.
+ *   and be rejected there later and less clearly. And when it holds a value
+ *   that cannot be sent as a credential, because the runtime would refuse the
+ *   request and the refusal would read as a vendor that could not be reached.
+ *   Both name the variable and never its value, and both are raised whatever
+ *   the state of the call's signal: no request exists yet to abort.
  */
 function readKey(route: ResolvedDecisionRoute): string {
   const value = process.env[route.apiKeyEnv];
   const key = value === undefined ? "" : value.trim();
   if (key.length === 0) {
     throw new DecisionCredentialError({ source: "key_unset", route: route.route, apiKeyEnv: route.apiKeyEnv });
+  }
+  if (NOT_A_CREDENTIAL_CHARACTER.test(key)) {
+    throw new DecisionCredentialError({ source: "key_unusable", route: route.route, apiKeyEnv: route.apiKeyEnv });
   }
   return key;
 }

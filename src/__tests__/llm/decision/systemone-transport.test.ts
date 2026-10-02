@@ -72,6 +72,12 @@ const ROTATED_KEY = ["dk", "test", "rotated", "0d5a"].join("-");
  */
 const IDENTIFIER_KEY = ["dk", "Test", "9f3c5a7e1b2d4068", "DoNotLeak"].join("");
 
+/** What follows the key in a value that is not a usable key. It must not appear in an error either. */
+const AFTER_THE_KEY = ["after", "the", "key", "7e2d"].join("-");
+
+/** A key a JSON string has to escape: it holds a quote and a backslash. */
+const ESCAPED_KEY = ["dk", "test", '6f"3a\\8c', "do-not-leak"].join("-");
+
 /** What the transport leaves where it took the key out of text it did not write. */
 const KEY_REMOVED = "[credential removed]";
 
@@ -96,6 +102,9 @@ const NOW_MS = Date.UTC(2026, 9, 1, 12, 0, 0);
 
 /** How long the scripted vendor takes to answer, on the injected clock. */
 const VENDOR_LATENCY_MS = 137;
+
+/** How long the scripted vendor takes before it answers with a retry date, on the injected clock. */
+const LATENCY_BEFORE_A_HINT_MS = 5_000;
 
 /** The retry hint the tests send, in seconds and in the milliseconds it means. */
 const RETRY_AFTER_SECONDS = "30";
@@ -216,6 +225,20 @@ function harnessOver(script: DecisionFetchScript): Harness {
       nowMs += ms;
     },
   };
+}
+
+/**
+ * Whether a text is exactly the expected one.
+ *
+ * Asked as a boolean, so that an assertion which fails prints neither text:
+ * the one a regression would produce here is the one that holds the key.
+ *
+ * @param actual The text under test, or whatever stands where it should be.
+ * @param expected The text it must be.
+ * @returns True when they are the same text.
+ */
+function isExactly(actual: unknown, expected: string): boolean {
+  return actual === expected;
 }
 
 /**
@@ -429,6 +452,67 @@ describe("the hosted decision transport", () => {
     expect(double.calls).toHaveLength(0);
   });
 
+  it("a key that cannot be sent as a credential is a credential fault and no request is made", async () => {
+    // Counted where the transport calls it: the scripted call below builds a
+    // real request first, so a key the runtime refuses would never be recorded
+    // by it, whether or not the transport tried to send one.
+    let handedToHttp = 0;
+    const double = createDecisionFetchDouble(() => documentedSuccess());
+    const transport = createSystemOneTransport({
+      fetchImpl: (url, init) => {
+        handedToHttp += 1;
+        return double.fetchImpl(url, init);
+      },
+      now: () => NOW_MS,
+    });
+
+    const unusable: readonly string[] = [
+      `${SENTINEL_KEY}\n${AFTER_THE_KEY}`,
+      `${SENTINEL_KEY}\r\n${AFTER_THE_KEY}`,
+      `${SENTINEL_KEY} ${AFTER_THE_KEY}`,
+      `${SENTINEL_KEY}\t${AFTER_THE_KEY}`,
+      `${SENTINEL_KEY}\u0001${AFTER_THE_KEY}`,
+      `${SENTINEL_KEY}\u007f${AFTER_THE_KEY}`,
+      `${SENTINEL_KEY}\u00e9${AFTER_THE_KEY}`,
+      `${SENTINEL_KEY}\u201d${AFTER_THE_KEY}`,
+      `  ${SENTINEL_KEY}\n${AFTER_THE_KEY}\n`,
+    ];
+    for (const [index, value] of unusable.entries()) {
+      process.env[KEY_ENV] = value;
+      // Whatever the signal's state: the refusal is made before a request exists.
+      for (const signal of [new AbortController().signal, AbortSignal.abort()]) {
+        const where = `value ${index}, signal ${signal.aborted ? "aborted" : "live"}`;
+        const error = asInstance(await rejectionOf(call(transport, signal)), DecisionCredentialError);
+        expect(error.fault, where).toBe("credential");
+        expect(error.source, where).toBe("key_unusable");
+        expect(error.apiKeyEnv, where).toBe(KEY_ENV);
+        expect(error.route, where).toBe(ROUTE.route);
+        expect(error.status, where).toBeNull();
+        expect(error.retryAfterMs, where).toBeNull();
+        expect(error.bodyExcerpt, where).toBeNull();
+        expect(showsText(error, SENTINEL_KEY), `${where}: the error carried the key`).toBe(false);
+        expect(showsText(error, AFTER_THE_KEY), `${where}: the error carried the value`).toBe(false);
+        expect(
+          isExactly(
+            error.message,
+            `${KEY_ENV} holds a value that cannot be sent as a credential, so decision route ${ROUTE.route} ` +
+              "cannot be authenticated against; no request was made",
+          ),
+          where,
+        ).toBe(true);
+      }
+    }
+    expect(handedToHttp).toBe(0);
+    expect(double.calls).toHaveLength(0);
+
+    // Every character a credential can be made of is sent, so nothing usable is refused.
+    const visible = Array.from({ length: 0x7e - 0x21 + 1 }, (_unused, offset) => String.fromCharCode(0x21 + offset)).join("");
+    process.env[KEY_ENV] = visible;
+    await call(transport);
+    expect(handedToHttp).toBe(1);
+    expect(double.calls[0].headers.authorization === `${BEARER}${visible}`).toBe(true);
+  });
+
   it("sends a key without the whitespace around it", async () => {
     const { transport, double } = harnessOver(() => documentedSuccess());
     process.env[KEY_ENV] = `  ${SENTINEL_KEY}\n`;
@@ -640,6 +724,29 @@ describe("the hosted decision transport", () => {
     expect(error.retryAfterMs).toBe(RETRY_AFTER_MS);
   });
 
+  it("measures a retry date against the instant the answer arrived, not the instant the call was sent", async () => {
+    const harness = harnessOver(() => {
+      harness.advance(LATENCY_BEFORE_A_HINT_MS);
+      return decisionResponse(503, "", { "retry-after": "Thu, 01 Oct 2026 12:00:30 GMT" });
+    });
+
+    const error = asInstance(await rejectionOf(call(harness.transport)), DecisionTransportError);
+
+    // The wait the vendor asked for is what is left of it when its answer is read.
+    expect(error.retryAfterMs).toBe(RETRY_AFTER_MS - LATENCY_BEFORE_A_HINT_MS);
+  });
+
+  it("a request id header that is blank is no request id", async () => {
+    for (const blank of ["", " ", "\t "]) {
+      const answered = harnessOver(() => documentedSuccess({ [VENDOR_REQUEST_ID_HEADER]: blank }));
+      expect((await call(answered.transport)).vendorRequestId, `answer, header ${JSON.stringify(blank)}`).toBeNull();
+
+      const failed = harnessOver(() => decisionResponse(529, "", { [VENDOR_REQUEST_ID_HEADER]: blank }));
+      const error = asInstance(await rejectionOf(call(failed.transport)), DecisionTransportError);
+      expect(error.vendorRequestId, `failure, header ${JSON.stringify(blank)}`).toBeNull();
+    }
+  });
+
   it("an abort rejects with the signal's own reason and a network failure is a transport fault", async () => {
     // Aborted while the request is in flight. The platform's call rejects with
     // the signal's reason, and that very object is what the caller gets back.
@@ -706,6 +813,63 @@ describe("the hosted decision transport", () => {
     const oddError = asInstance(await rejectionOf(call(odd.transport)), DecisionTransportError);
     expect(oddError.source).toBe("network");
     expect(oddError.message).not.toContain("connection reset");
+  });
+
+  it("names a network failure only by an identifier, and by nothing when it has none", async () => {
+    // A name and a code that are free text are another layer's words, like a message.
+    const worded = harnessOver(() => {
+      throw Object.assign(new Error("request failed"), { name: "the request was refused", code: "see the log" });
+    });
+    const wordedError = asInstance(await rejectionOf(call(worded.transport)), DecisionTransportError);
+    expect(wordedError.message).toBe(`decision route ${ROUTE.route} could not be reached: an unnamed failure`);
+
+    // A failure whose members cannot even be read is described all the same:
+    // what is raised is this package's fault, never the failure of describing one.
+    const unreadable = harnessOver(() => {
+      throw Object.defineProperties(
+        {},
+        {
+          name: {
+            get: (): string => {
+              throw new RangeError("the name cannot be read");
+            },
+          },
+          code: {
+            get: (): string => {
+              throw new RangeError("the code cannot be read");
+            },
+          },
+          cause: {
+            get: (): unknown => {
+              throw new RangeError("the cause cannot be read");
+            },
+          },
+        },
+      );
+    });
+    const unreadableError = asInstance(await rejectionOf(call(unreadable.transport)), DecisionTransportError);
+    expect(unreadableError.source).toBe("network");
+    expect(unreadableError.retryable).toBe(true);
+    expect(unreadableError.message).toBe(`decision route ${ROUTE.route} could not be reached: an unnamed failure`);
+  });
+
+  it("an abort with a null reason rejects with null, not with what the HTTP layer threw", async () => {
+    const controller = new AbortController();
+    const { transport, double } = harnessOver((sent) => {
+      controller.abort(null);
+      throw new TypeError(`request failed; headers were ${JSON.stringify(sent.headers)}`);
+    });
+
+    let raised: unknown = "the call resolved";
+    try {
+      await call(transport, controller.signal);
+    } catch (error) {
+      raised = error;
+    }
+
+    expect(double.calls).toHaveLength(1);
+    expect(reasonOf(controller.signal)).toBeNull();
+    expect(raised === null).toBe(true);
   });
 
   it("over the platform's own HTTP call an abort is the signal's reason, the object that call itself raises", async () => {
@@ -972,21 +1136,17 @@ describe("the hosted decision transport", () => {
     });
 
     // The key the runtime cannot send, on a call the caller has already
-    // aborted: the runtime refuses the request before it looks at the signal.
+    // aborted. It is refused before a request exists, so the runtime, which
+    // would refuse the request before it looked at the signal, is never asked.
     process.env[KEY_ENV] = unsendable;
     const preAborted = AbortSignal.abort();
     const overDouble = harnessOver(() => documentedSuccess());
-    abortedCalls.push({
-      raised: await rejectionOf(call(overDouble.transport, preAborted)),
-      signal: preAborted,
-      where: "an unsendable key on an aborted call, over the double",
-    });
+    raised.push(await rejectionOf(call(overDouble.transport, preAborted)));
     expect(overDouble.double.calls).toHaveLength(0);
-    abortedCalls.push({
-      raised: await rejectionOf(call(createSystemOneTransport(), preAborted)),
-      signal: preAborted,
-      where: "an unsendable key on an aborted call, over the platform's own call",
-    });
+    raised.push(await rejectionOf(call(createSystemOneTransport(), preAborted)));
+    for (const refusal of raised.slice(-3)) {
+      expect(asInstance(refusal, DecisionCredentialError).source).toBe("key_unusable");
+    }
 
     for (const { raised: abortRaised, signal, where } of abortedCalls) {
       expect(showsText(abortRaised, SENTINEL_KEY), `${where}: the raised value carried the key`).toBe(false);
@@ -1058,6 +1218,17 @@ describe("the hosted decision transport", () => {
     expect(showsText(formatError, SENTINEL_KEY)).toBe(false);
     const answered = harnessOver(() => documentedSuccess({ [VENDOR_REQUEST_ID_HEADER]: authorization }));
     expect((await call(answered.transport)).vendorRequestId).toBe(`${BEARER}${KEY_REMOVED}`);
+
+    // A key a JSON body has to escape is quoted there in its escaped form, and
+    // is taken out in that form too.
+    process.env[KEY_ENV] = ESCAPED_KEY;
+    const escapedEcho = JSON.stringify({ detail: `no such key: ${ESCAPED_KEY}` });
+    expect(escapedEcho.includes(ESCAPED_KEY), "the body holds the key verbatim, so this case proves nothing").toBe(false);
+    const escaped = harnessOver(() => decisionResponse(401, escapedEcho));
+    const escapedError = asInstance(await rejectionOf(call(escaped.transport)), DecisionCredentialError);
+    expect(escaped.double.calls.map((sent) => sent.headers.authorization === `${BEARER}${ESCAPED_KEY}`)).toEqual([true]);
+    expect(isExactly(escapedError.bodyExcerpt, JSON.stringify({ detail: `no such key: ${KEY_REMOVED}` }))).toBe(true);
+    expect(showsText(escapedError, JSON.stringify(ESCAPED_KEY).slice(1, -1))).toBe(false);
 
     // A lower layer that names its failure, or codes it, with the key itself.
     process.env[KEY_ENV] = IDENTIFIER_KEY;

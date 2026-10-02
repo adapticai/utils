@@ -306,6 +306,11 @@ const ABSENT_CASES: readonly AbsentCase[] = [
     nullFields: ["status", "retryAfterMs", "vendorRequestId", "usage", "bodyExcerpt", "vendorErrorType"],
   },
   {
+    label: "key unusable",
+    build: () => new DecisionCredentialError({ source: "key_unusable", apiKeyEnv: "DECISION_VENDOR_API_KEY" }),
+    nullFields: ["status", "retryAfterMs", "vendorRequestId", "usage", "bodyExcerpt", "vendorErrorType"],
+  },
+  {
     label: "key rejected by the vendor",
     build: () =>
       new DecisionCredentialError({
@@ -424,6 +429,22 @@ const HOSTILE_CASES: readonly HostileCase[] = [
     carriedOnceCompleted: 3,
   },
   {
+    // The variable's name is this package's own, from the route table, and is
+    // carried as given; no text from outside reaches either key path.
+    label: "key unset",
+    build: () => new DecisionCredentialError({ source: "key_unset", apiKeyEnv: "DECISION_VENDOR_API_KEY" }),
+    carried: 0,
+    quoted: 0,
+    carriedOnceCompleted: 3,
+  },
+  {
+    label: "key unusable",
+    build: () => new DecisionCredentialError({ source: "key_unusable", apiKeyEnv: "DECISION_VENDOR_API_KEY" }),
+    carried: 0,
+    quoted: 0,
+    carriedOnceCompleted: 3,
+  },
+  {
     label: "key rejected by the vendor",
     build: (text) =>
       new DecisionCredentialError({
@@ -496,6 +517,20 @@ const HOSTILE_CASES: readonly HostileCase[] = [
     quoted: 1,
     carriedOnceCompleted: 4,
   },
+];
+
+/**
+ * Every construction path, as a row of the class table: each path of
+ * {@link ABSENT_CASES} beside the one {@link ERROR_CASES} builds per class. A
+ * rule stated for every error is checked over these, so a path added to a
+ * class is held to it without being added in a third place.
+ */
+const CONSTRUCTION_PATHS: readonly ErrorCase[] = [
+  ...ERROR_CASES,
+  ...ABSENT_CASES.map((row): ErrorCase => {
+    const built = row.build();
+    return { className: `${built.name} (${row.label})`, fault: built.fault, build: row.build };
+  }),
 ];
 
 /**
@@ -882,6 +917,29 @@ describe("decision call errors", () => {
     expect(unset.source).toBe("key_unset");
     expect(unset.apiKeyEnv).toBe("DECISION_VENDOR_API_KEY");
     expect(unset.message).toContain("DECISION_VENDOR_API_KEY");
+    // Word for word what an unset key has always said.
+    expect(unset.message).toBe(
+      "DECISION_VENDOR_API_KEY is unset, so a decision route cannot be authenticated against; no request was made",
+    );
+
+    const unusable = new DecisionCredentialError({
+      source: "key_unusable",
+      route: ROUTE,
+      apiKeyEnv: "DECISION_VENDOR_API_KEY",
+    });
+    expect(unusable.source).toBe("key_unusable");
+    expect(unusable.fault).toBe("credential");
+    expect(unusable.apiKeyEnv).toBe("DECISION_VENDOR_API_KEY");
+    expect(unusable.route).toBe(ROUTE);
+    expect(unusable.status).toBeNull();
+    expect(unusable.bodyExcerpt).toBeNull();
+    // It names the variable and says that nothing was sent; it does not say
+    // the variable is unset, which would send an operator to the wrong fix.
+    expect(unusable.message).toBe(
+      `DECISION_VENDOR_API_KEY holds a value that cannot be sent as a credential, so decision route ${ROUTE} ` +
+        "cannot be authenticated against; no request was made",
+    );
+    expect(unusable.message).not.toContain("unset");
 
     const rejected = new DecisionCredentialError({
       source: "vendor_rejected",
@@ -984,10 +1042,30 @@ describe("decision call errors", () => {
     expect(raised[1].message).toContain("pending-onboarding");
   });
 
+  it("the tables of construction paths name the same paths", () => {
+    // A path present in one table and missing from another is held to one
+    // rule and not the other, so the tables are compared by name.
+    const absent = ABSENT_CASES.map((row) => row.label);
+    const hostile = HOSTILE_CASES.map((row) => row.label);
+    expect(new Set(absent).size).toBe(absent.length);
+    expect(new Set(hostile).size).toBe(hostile.length);
+    // The two tables name one path differently where it reads differently:
+    // what is absent there is the retry hint, and what is untrusted is the body.
+    const renamed = new Map([["failing status with no retry hint", "failing status"]]);
+    expect([...absent.map((label) => renamed.get(label) ?? label)].sort()).toEqual([...hostile].sort());
+    expect(CONSTRUCTION_PATHS).toHaveLength(ERROR_CASES.length + ABSENT_CASES.length);
+
+    // Every source a credential error can state is built by some row.
+    const credentialSources = ABSENT_CASES.map((row) => row.build())
+      .filter((error): error is DecisionCredentialError => error instanceof DecisionCredentialError)
+      .map((error) => error.source);
+    expect([...credentialSources].sort()).toEqual(["key_unset", "key_unusable", "vendor_rejected"]);
+  });
+
   it("completing an error attaches an attempt that cannot disagree with it", () => {
     for (const measured of [DISAGREEING, UNMEASURED]) {
       const measuredFacts = ownFacts(measured);
-      for (const row of ERROR_CASES) {
+      for (const row of CONSTRUCTION_PATHS) {
         const error = row.build();
         const stated = ownFacts(error);
         const message = error.message;
@@ -1020,7 +1098,7 @@ describe("decision call errors", () => {
         }
         // The comparison above is over the facts both carry; naming them here
         // keeps it from passing on an empty intersection.
-        const expectedShared = [...BASE_SHARED_FACTS, ...(CLASS_SHARED_FACTS[row.className] ?? [])];
+        const expectedShared = [...BASE_SHARED_FACTS, ...(CLASS_SHARED_FACTS[error.name] ?? [])];
         expect([...shared].sort(), row.className).toEqual([...expectedShared].sort());
       }
     }

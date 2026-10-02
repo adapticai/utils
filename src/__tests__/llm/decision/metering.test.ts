@@ -158,6 +158,22 @@ describe("decisionUsageOf", () => {
     }
   });
 
+  it("a cost too large for a number to hold is unknown, never infinite", () => {
+    // Each rate passes as a price and each count as a count; only their
+    // product is past what a number holds.
+    const absurdInput: LlmPriceAnchor = { input: Number.MAX_VALUE, output: 0, as_of: ANCHOR_DATE };
+    const absurdOutput: LlmPriceAnchor = { input: 0.042, output: Number.MAX_VALUE, as_of: ANCHOR_DATE };
+    const counts = { input_tokens: Number.MAX_SAFE_INTEGER, output_tokens: Number.MAX_SAFE_INTEGER };
+
+    for (const anchor of [absurdInput, absurdOutput]) {
+      const usage = decisionUsageOf(counts, IDENTITY, anchor);
+      expect(usage.cost).toBeNull();
+      // The counts were reported, and stay reported.
+      expect(usage.prompt_tokens).toBe(Number.MAX_SAFE_INTEGER);
+      expect(usage.completion_tokens).toBe(Number.MAX_SAFE_INTEGER);
+    }
+  });
+
   it("unreported output prices only when output is documented free", () => {
     const inputOnly = { input_tokens: 318 };
 

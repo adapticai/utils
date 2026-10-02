@@ -58,8 +58,10 @@ import type { DecisionAttemptMeasurement, DecisionFaultedAttemptRecord, Decision
  *   that is neither an answer nor a statement about the request or the key.
  * - `schema`: the request breaks the wire contract or the route's limits, or
  *   the vendor's answer does.
- * - `credential`: there is no key to send, or the vendor rejected the one sent.
- *   Kept apart from `transport` so a revoked key cannot pass for a slow vendor.
+ * - `credential`: there is no key to send, the value held where the key should
+ *   be cannot be sent as one, or the vendor rejected the one sent. Kept apart
+ *   from `transport` so a missing, mangled or revoked key cannot pass for a
+ *   slow vendor.
  * - `route_mismatch`: a model other than the route's pin answered.
  * - `unavailable`: the route may not be called from here at all.
  */
@@ -472,11 +474,30 @@ export class DecisionAdmissionError extends DecisionCallError {
   }
 }
 
+/**
+ * What is wrong with a key variable when no request was made, as the words
+ * that follow the variable's name in the message.
+ */
+const NO_KEY_TO_SEND: Readonly<Record<"key_unset" | "key_unusable", string>> = {
+  key_unset: "is unset",
+  key_unusable: "holds a value that cannot be sent as a credential",
+};
+
 /** How a {@link DecisionCredentialError} is built. */
 export type DecisionCredentialDetails =
   | {
       /** The key variable is unset or empty, so no request was made. */
       readonly source: "key_unset";
+      readonly route?: DecisionRoute;
+      /** The variable's NAME. Never its value. */
+      readonly apiKeyEnv: string;
+    }
+  | {
+      /**
+       * The key variable holds a value that cannot be sent as a credential, so
+       * no request was made.
+       */
+      readonly source: "key_unusable";
       readonly route?: DecisionRoute;
       /** The variable's NAME. Never its value. */
       readonly apiKeyEnv: string;
@@ -494,17 +515,24 @@ export type DecisionCredentialDetails =
 /**
  * Thrown when a call cannot be authenticated.
  *
- * Its own fault, so a missing or revoked key is counted and alerted on by
- * itself. Filed under a general transport failure it would be absorbed into a
- * fallback rate and read as a slow vendor, and the caller would keep calling.
+ * Its own fault, so a missing, mangled or revoked key is counted and alerted on
+ * by itself. Filed under a general transport failure it would be absorbed into
+ * a fallback rate and read as a slow vendor, and the caller would keep calling.
+ *
+ * A value that cannot be sent as a key is told apart from an unset one because
+ * the remedy differs: the variable is there, and what it holds has to be
+ * provisioned again.
  */
 export class DecisionCredentialError extends DecisionCallError {
   public declare readonly fault: "credential";
 
-  /** Whether there was no key to send, or the vendor rejected the one sent. */
-  public readonly source: "key_unset" | "vendor_rejected";
+  /**
+   * Whether there was no key to send, the value held could not be sent as one,
+   * or the vendor rejected the one sent.
+   */
+  public readonly source: "key_unset" | "key_unusable" | "vendor_rejected";
 
-  /** NAME of the unset key variable, or `null` when a key was sent. Never a key. */
+  /** NAME of the key variable when no request was made, or `null` when a key was sent. Never a key. */
   public readonly apiKeyEnv: string | null;
 
   /** A bounded excerpt of the vendor's body, or `null` when no request was made. */
@@ -514,7 +542,7 @@ export class DecisionCredentialError extends DecisionCallError {
   public readonly vendorErrorType: string | null;
 
   /**
-   * @param details Whether a key existed, and what the vendor said if one was sent.
+   * @param details Whether a usable key existed, and what the vendor said if one was sent.
    */
   public constructor(details: DecisionCredentialDetails) {
     const route = details.route ?? null;
@@ -524,8 +552,8 @@ export class DecisionCredentialError extends DecisionCallError {
       message: sent
         ? `${describeRoute(route)} rejected the credential (HTTP ${details.status}): ` +
           decisionErrorExcerpt(details.body)
-        : `${details.apiKeyEnv} is unset, so ${describeRoute(route)} cannot be authenticated against; ` +
-          "no request was made",
+        : `${details.apiKeyEnv} ${NO_KEY_TO_SEND[details.source]}, so ${describeRoute(route)} ` +
+          "cannot be authenticated against; no request was made",
       route,
       status: sent ? details.status : null,
       retryAfterMs: null,
