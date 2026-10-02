@@ -357,9 +357,7 @@ export class CircuitBreakerRegistry implements BreakerPathView {
    *   {@link onAttemptAbandoned}, or the slot is never returned.
    */
   public onAttemptStart(routeKey: string): boolean {
-    const inFlight = (this.inFlight.get(routeKey) ?? 0) + 1;
-    this.inFlight.set(routeKey, inFlight);
-    this.peakInFlight.set(routeKey, Math.max(this.peakInFlight.get(routeKey) ?? 0, inFlight));
+    this.onLoadStart(routeKey);
     if (this.stateOf(routeKey) === "half-open") {
       this.recordFor(routeKey).probesInFlight += 1;
       return true;
@@ -396,6 +394,43 @@ export class CircuitBreakerRegistry implements BreakerPathView {
    * @returns void
    */
   public onAttemptEnd(routeKey: string): void {
+    this.onLoadEnd(routeKey);
+  }
+
+  /**
+   * Count an attempt against a route's CONCURRENT LOAD, and nothing else.
+   *
+   * The half-open probe budget scales with how much traffic a route was
+   * carrying when it opened, because a route that was serving forty calls at
+   * once must not be re-tested by a single probe whose one slow answer decides
+   * it. That quantity is a property of the PROVIDER's load, so every attempt
+   * that reaches the provider belongs in it — including one whose answer is
+   * discarded, which occupies the provider's capacity exactly as a live call
+   * does. Leaving measurement attempts out would shrink the budget a recovering
+   * route is re-tested with, lengthening the time live traffic spends on a
+   * substitute model; the route's exclusion would be fixed and its recovery
+   * slowed by the same change.
+   *
+   * Deliberately touches neither `probesInFlight` nor any failure run, so a
+   * caller on another path can contribute its load to a route without taking
+   * one of that route's scarce probe slots or earning it a failure.
+   *
+   * @param routeKey The registry key to count the load against.
+   * @returns void
+   */
+  public onLoadStart(routeKey: string): void {
+    const inFlight = (this.inFlight.get(routeKey) ?? 0) + 1;
+    this.inFlight.set(routeKey, inFlight);
+    this.peakInFlight.set(routeKey, Math.max(this.peakInFlight.get(routeKey) ?? 0, inFlight));
+  }
+
+  /**
+   * Release an attempt counted by {@link onLoadStart}.
+   *
+   * @param routeKey The registry key the load was counted against.
+   * @returns void
+   */
+  public onLoadEnd(routeKey: string): void {
     const inFlight = this.inFlight.get(routeKey) ?? 0;
     this.inFlight.set(routeKey, Math.max(0, inFlight - 1));
   }
@@ -695,6 +730,14 @@ class MeasurementPathView implements BreakerPathView {
    * @returns Whether the attempt took one of THIS path's half-open probe slots.
    */
   public onAttemptStart(routeKey: string): boolean {
+    // The load goes on the LIVE key too: a measurement attempt occupies the
+    // provider's capacity exactly as a live call does, and the live route's
+    // half-open probe budget scales with the load it was carrying. Scoping the
+    // load away would shrink that budget and slow live traffic's return to the
+    // route — fixing the lockout while lengthening recovery from it. This is
+    // the load counters only; `probesInFlight` and the failure run stay scoped,
+    // so no live probe slot is taken and no live failure is earned.
+    this.registry.onLoadStart(routeKey);
     return this.registry.onAttemptStart(this.scoped(routeKey));
   }
 
@@ -711,6 +754,7 @@ class MeasurementPathView implements BreakerPathView {
    * @returns void
    */
   public onAttemptEnd(routeKey: string): void {
+    this.registry.onLoadEnd(routeKey);
     this.registry.onAttemptEnd(this.scoped(routeKey));
   }
 

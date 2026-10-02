@@ -54,6 +54,26 @@ const OVER_THRESHOLD = BREAKER.failure_threshold + 3;
  */
 const UNBOUNDED_BURST = 100;
 
+/** Concurrent attempts on one path, for the mixed-load differential. */
+const TEN_CONCURRENT = 10;
+
+/** The same total load carried entirely on the live path: the baseline arm. */
+const TWENTY_CONCURRENT = TEN_CONCURRENT * 2;
+
+/**
+ * The probe budget twenty concurrent attempts earn: `max(half_open_probes,
+ * ceil(probe_fraction x concurrencyAtOpen))`. Spelled out rather than recomputed
+ * from the config, so a change to either constant is visible here rather than
+ * silently tracked by the expectation.
+ */
+const BASELINE_PROBE_BUDGET = 2;
+
+/** Seeds for the randomized live-load differential. */
+const DIFFERENTIAL_SEEDS = 40;
+
+/** Largest concurrent burst a seed may draw. */
+const DIFFERENTIAL_MAX_STARTS = 40;
+
 /** A fixed instant, so cooldown arithmetic is exact rather than wall-clock. */
 const T0 = 1_000_000;
 
@@ -258,6 +278,161 @@ describe("no volume of measurement failure can open a live breaker", () => {
   });
 });
 
+describe("the live route's concurrent-load accounting matches the single-key baseline", () => {
+  /**
+   * Drive a route to open after a burst of concurrent attempts, counting
+   * `liveStarts` of them on the live path and `measurementStarts` through a
+   * measurement view.
+   *
+   * The baseline is reproduced by counting EVERY start on the live path, which
+   * is what the single-key registry did: before the path dimension a
+   * measurement attempt called the live route's own `onAttemptStart`. The
+   * failures are live in both arms, so the only difference between them is
+   * which path the attempt starts were counted on — and the probe budget must
+   * not be able to tell.
+   *
+   * @param liveStarts Attempts counted on the live path.
+   * @param measurementStarts Attempts counted through the measurement view.
+   * @returns The live route's snapshot once it has opened.
+   */
+  function budgetAfterBurst(liveStarts: number, measurementStarts: number): BreakerSnapshot {
+    const { breakers } = registryWithClock();
+    const route = makeRoute({ alias: ALIAS, role: "primary" });
+    const shadow = breakers.forPath("shadow");
+
+    for (let index = 0; index < liveStarts; index += 1) {
+      breakers.onAttemptStart(route.routeKey);
+    }
+    for (let index = 0; index < measurementStarts; index += 1) {
+      shadow.onAttemptStart(route.routeKey);
+    }
+    for (let index = 0; index < BREAKER.failure_threshold; index += 1) {
+      breakers.onFailure(route.routeKey, "hard");
+    }
+    return breakers.snapshot(route.routeKey);
+  }
+
+  it("a mixed live and measurement burst yields the single-key baseline probe budget", () => {
+    const baseline = budgetAfterBurst(TWENTY_CONCURRENT, 0);
+    const split = budgetAfterBurst(TEN_CONCURRENT, TEN_CONCURRENT);
+
+    expect(baseline.probeBudget).toBe(BASELINE_PROBE_BUDGET);
+    expect(
+      split.probeBudget,
+      "a measurement attempt no longer counts toward the live route's concurrent load, so its " +
+        "half-open probe budget has shrunk: live traffic is re-tested on the route with fewer " +
+        "probes and spends longer on the substitute model after a trip — the lockout is fixed " +
+        "and recovery from it is slower",
+    ).toBe(baseline.probeBudget);
+    expect(split.state).toBe("open");
+  });
+
+  it("admits the second concurrent live probe the baseline admitted", () => {
+    const { breakers, advance } = registryWithClock();
+    const route = makeRoute({ alias: ALIAS, role: "primary" });
+    const shadow = breakers.forPath("shadow");
+
+    for (let index = 0; index < TEN_CONCURRENT; index += 1) {
+      breakers.onAttemptStart(route.routeKey);
+      shadow.onAttemptStart(route.routeKey);
+    }
+    for (let index = 0; index < BREAKER.failure_threshold; index += 1) {
+      breakers.onFailure(route.routeKey, "hard");
+    }
+    advance(BREAKER.cooldown_ms);
+    expect(breakers.stateOf(route.routeKey)).toBe("half-open");
+
+    // The first probe, then the SECOND concurrently with it.
+    expect(breakers.allows(route.routeKey)).toBe(true);
+    expect(breakers.onAttemptStart(route.routeKey)).toBe(true);
+    expect(
+      breakers.allows(route.routeKey),
+      "the second concurrent half-open probe is refused: the recovering route is re-tested by " +
+        "one probe where the baseline used two",
+    ).toBe(true);
+    expect(breakers.onAttemptStart(route.routeKey)).toBe(true);
+    // And the budget is a bound, not unlimited.
+    expect(breakers.allows(route.routeKey)).toBe(false);
+  });
+
+  it("matches the baseline probe budget over randomized start sequences", () => {
+    for (let seed = 1; seed <= DIFFERENTIAL_SEEDS; seed += 1) {
+      let state = seed;
+      /**
+       * A deterministic pseudo-random draw, so a disagreement is reproducible
+       * from its seed rather than lost with the run.
+       *
+       * @param bound Exclusive upper bound.
+       * @returns An integer in [0, bound).
+       */
+      const next = (bound: number): number => {
+        state = (state * 1103515245 + 12345) % 2147483648;
+        return state % bound;
+      };
+      const total = 1 + next(DIFFERENTIAL_MAX_STARTS);
+      let measurementStarts = 0;
+      for (let index = 0; index < total; index += 1) {
+        measurementStarts += next(2);
+      }
+
+      const baseline = budgetAfterBurst(total, 0);
+      const split = budgetAfterBurst(total - measurementStarts, measurementStarts);
+      expect(
+        split.probeBudget,
+        `seed ${seed}: ${total} concurrent attempts, ${measurementStarts} of them measurement — ` +
+          "the live probe budget diverged from the single-key baseline",
+      ).toBe(baseline.probeBudget);
+    }
+  });
+
+  it("a measurement attempt takes no live probe slot even while the live route is half-open", () => {
+    const { breakers, advance } = registryWithClock();
+    const route = makeRoute({ alias: ALIAS, role: "primary" });
+    const shadow = breakers.forPath("shadow");
+
+    for (let index = 0; index < BREAKER.failure_threshold; index += 1) {
+      breakers.onFailure(route.routeKey, "hard");
+    }
+    advance(BREAKER.cooldown_ms);
+    expect(breakers.stateOf(route.routeKey)).toBe("half-open");
+
+    // The view refuses here, but the start is called directly: nothing may
+    // depend on the refusal having been consulted first, or a lost race would
+    // strand a live probe slot and exclude the route for the life of the process.
+    expect(shadow.onAttemptStart(route.routeKey)).toBe(false);
+
+    expect(
+      breakers.snapshot(route.routeKey).probesInFlight,
+      "a measurement attempt took one of the live route's half-open probe slots — the slot is " +
+        "returned to the measurement run, so the live route can never probe again",
+    ).toBe(0);
+    expect(breakers.allows(route.routeKey)).toBe(true);
+    expect(breakers.onAttemptStart(route.routeKey)).toBe(true);
+
+    shadow.onAttemptEnd(route.routeKey);
+    expect(breakers.snapshot(route.routeKey).probesInFlight).toBe(1);
+  });
+
+  it("the restored live load still carries no measurement failure onto the live run", () => {
+    const { breakers } = registryWithClock();
+    const route = makeRoute({ alias: ALIAS, role: "primary" });
+    const shadow = breakers.forPath("shadow");
+
+    for (let index = 0; index < UNBOUNDED_BURST; index += 1) {
+      shadow.onAttemptStart(route.routeKey);
+      shadow.onFailure(route.routeKey, "hard");
+      shadow.onAttemptEnd(route.routeKey);
+    }
+
+    expect(breakers.stateOf(route.routeKey)).toBe("closed");
+    expect(breakers.snapshot(route.routeKey).consecutiveFailures).toBe(0);
+    expect(breakers.snapshot(route.routeKey).opens).toBe(0);
+    expect(breakers.snapshotOnPath(route.routeKey, "shadow").consecutiveFailures).toBe(
+      UNBOUNDED_BURST,
+    );
+  });
+});
+
 describe("a breaker open is attributable to the path whose failures drove it", () => {
   it("names the path on every run and counts that path's opens", () => {
     const { breakers } = registryWithClock();
@@ -413,6 +588,38 @@ describe("the live partition is unchanged", () => {
       openedByLatency: false,
       probeBudget: BREAKER.half_open_probes,
     });
+  });
+
+  it("scales the half-open probe budget from concurrent live load exactly as before", () => {
+    // Uses only the API that predates the path dimension — `onAttemptStart`,
+    // `onAttemptEnd`, `onFailure` — so this assertion runs unchanged against the
+    // source before the change and pins the peakInFlight -> concurrencyAtOpen ->
+    // probeBudget arithmetic the measurement view now also writes into.
+    const { breakers, advance } = registryWithClock();
+    const route = makeRoute({ alias: ALIAS, role: "primary" });
+
+    for (let index = 0; index < TWENTY_CONCURRENT; index += 1) {
+      breakers.onAttemptStart(route.routeKey);
+    }
+    for (let index = 0; index < TWENTY_CONCURRENT; index += 1) {
+      breakers.onAttemptEnd(route.routeKey);
+    }
+    for (let index = 0; index < BREAKER.failure_threshold; index += 1) {
+      breakers.onFailure(route.routeKey, "hard");
+    }
+    // The high-water mark of concurrent load, not the load at the instant of
+    // the open: a burst that drained a moment before the route failed is still
+    // the traffic the route has to be re-tested for.
+    expect(breakers.snapshot(route.routeKey).probeBudget).toBe(BASELINE_PROBE_BUDGET);
+
+    // Opening re-bases the peak to the load still in flight at that instant, so
+    // a LATER open does not inherit a burst that has since drained.
+    advance(BREAKER.cooldown_ms);
+    breakers.onSuccess(route.routeKey);
+    for (let index = 0; index < BREAKER.failure_threshold; index += 1) {
+      breakers.onFailure(route.routeKey, "hard");
+    }
+    expect(breakers.snapshot(route.routeKey).probeBudget).toBe(BREAKER.half_open_probes);
   });
 
   it("still opens the live breaker on the live threshold, with the same reason text", async () => {
