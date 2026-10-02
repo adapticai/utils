@@ -77,8 +77,13 @@ export type {
 export { LlmResponseFormatError } from "./structured-content";
 export type { StructuredResponseFormat } from "./structured-content";
 
-export { CircuitBreakerRegistry } from "./circuit-breaker";
-export type { BreakerFailureKind, BreakerSnapshot, BreakerState } from "./circuit-breaker";
+export { CircuitBreakerRegistry, LIVE_BREAKER_PATH } from "./circuit-breaker";
+export type {
+  BreakerFailureKind,
+  BreakerPathView,
+  BreakerSnapshot,
+  BreakerState,
+} from "./circuit-breaker";
 
 export { SchemaRetryExhaustedError, buildRetryPrompt, callWithValidation } from "./schema-retry";
 export type { ValidatedOutcome } from "./schema-retry";
@@ -117,6 +122,7 @@ export type {
 export type {
   AliasCallOptions,
   AliasCallResult,
+  BreakerPath,
   LlmAlias,
   LlmAliasBudget,
   LlmAliasDefinition,

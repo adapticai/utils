@@ -45,7 +45,7 @@
  * @module llm/hedge
  */
 
-import type { CircuitBreakerRegistry } from "./circuit-breaker";
+import type { BreakerPathView } from "./circuit-breaker";
 import {
   AttemptSupersededError,
   HedgeLoserError,
@@ -126,7 +126,7 @@ export type AttemptFields =
 /** What the group needs from the chain around it. */
 export interface SameModelGroupContext {
   readonly request: AttemptRequest;
-  readonly breakers: CircuitBreakerRegistry;
+  readonly breakers: BreakerPathView;
   readonly now: () => number;
   /** Absent: no hedging, no measured timeouts — one attempt with the full budget. */
   readonly policy?: SameModelPolicy;

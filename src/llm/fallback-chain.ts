@@ -29,7 +29,8 @@
  * @module llm/fallback-chain
  */
 
-import type { CircuitBreakerRegistry } from "./circuit-breaker";
+import { LIVE_BREAKER_PATH } from "./circuit-breaker";
+import type { BreakerPathView, CircuitBreakerRegistry } from "./circuit-breaker";
 import { runSameModelGroup } from "./hedge";
 import type { AttemptFields, SameModelPolicy } from "./hedge";
 import { isAborted } from "./leg-attempt";
@@ -39,6 +40,7 @@ import { estimatePromptTokens } from "./leg-latency-tracker";
 import { UnsupportedCapabilityError } from "./param-matrix";
 import type {
   AliasAttemptRecord,
+  BreakerPath,
   LlmCrossModelPolicy,
   LlmHedgeRefusals,
   LlmModelClassRelation,
@@ -107,6 +109,15 @@ export interface ChainExecution {
   readonly developerPrompt?: string;
   readonly context?: readonly unknown[];
   readonly breakers: CircuitBreakerRegistry;
+  /**
+   * The traffic class this call belongs to. Absent means `live`.
+   *
+   * A measurement call (a shadow comparison, a health probe) reads the live
+   * route's breaker to decide whether it may run and charges its own failures
+   * to its own run, so measuring a candidate can never be the reason the model
+   * that serves live decisions is excluded.
+   */
+  readonly breakerPath?: BreakerPath;
   readonly correlationId?: string;
   /** The caller's own cancellation, honoured ahead of any per-leg budget. */
   readonly callerSignal?: AbortSignal;
@@ -436,6 +447,12 @@ export async function executeChain<T>(
   const configuredClass =
     execution.configuredModelClass ?? (firstRoute === undefined ? "" : modelClassOf(firstRoute));
   const policy = execution.crossModelPolicy ?? "allow_record";
+  // Resolved once, where the call's traffic class is known, rather than at each
+  // site that observes an attempt: one site left on the registry would be one
+  // path whose failures still reach the live run.
+  const breakers: BreakerPathView = execution.breakers.forPath(
+    execution.breakerPath ?? LIVE_BREAKER_PATH,
+  );
   const promptTokens = execution.latency === undefined ? null : promptTokensOf(execution);
   let totalUsage = EMPTY_USAGE;
   let hedgeRefusals = NO_HEDGE_REFUSALS;
@@ -519,11 +536,11 @@ export async function executeChain<T>(
       continue;
     }
 
-    if (!execution.breakers.allows(route.routeKey)) {
+    if (!breakers.allows(route.routeKey)) {
       record(route, {
         ...undispatched(route),
         outcome: "breaker-open",
-        reason: `circuit breaker is ${execution.breakers.stateOf(route.routeKey)}`,
+        reason: breakers.refusalReason(route.routeKey),
         failureClass: "breaker_open",
       });
       continue;
@@ -546,7 +563,7 @@ export async function executeChain<T>(
     lastModelClass = modelClassOf(route);
     const group = await runSameModelGroup<T>(leg, budgetMs, budgetMs < route.timeoutMs, {
       request: execution,
-      breakers: execution.breakers,
+      breakers,
       now,
       policy: execution.hedging,
       tracker: execution.latency,

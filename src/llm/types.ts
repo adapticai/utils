@@ -172,6 +172,18 @@ export interface LlmAliasDefinition {
   readonly routes: readonly LlmRoute[];
 }
 
+/**
+ * Which traffic class a call — and so each breaker observation it produces —
+ * belongs to.
+ *
+ * `live` is the only path whose failures may decide which route serves a
+ * caller. `shadow` is measurement: a call whose answer is compared and
+ * discarded. It reads the live verdict and keeps its own failure run. The two
+ * values match the path label a consumer's attempt metrics carry, so one
+ * call's breaker run and its metric series name the same thing.
+ */
+export type BreakerPath = "live" | "shadow";
+
 /** Circuit-breaker tuning shared by every route. */
 export interface LlmBreakerDefaults {
   readonly failure_threshold: number;
@@ -645,6 +657,17 @@ export interface AliasCallOptions<T = unknown> {
    * historical behaviour.
    */
   readonly crossModelPolicy?: LlmCrossModelPolicy;
+  /**
+   * The traffic class this call belongs to. Absent means `live`.
+   *
+   * A caller whose answer is DISCARDED — a shadow comparison against a
+   * candidate alias, a health probe — declares itself here. Such a call reads
+   * the live route's breaker to decide whether it may run at all, and charges
+   * its own failures to its own failure run, so measuring a candidate can never
+   * be the reason the model that serves live decisions is excluded. A caller
+   * that leaves it unset is served exactly as before.
+   */
+  readonly breakerPath?: BreakerPath;
 }
 
 /** A transport that can execute one resolved route. */

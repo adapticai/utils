@@ -347,6 +347,7 @@ export async function callLLMByAlias<T = unknown>(
     latency: latencyTracker,
     admitDuplicate,
     crossModelPolicy: options.crossModelPolicy,
+    breakerPath: options.breakerPath,
     configuredModelClass: modelClassOf(chain.routes[0]),
   };
 
