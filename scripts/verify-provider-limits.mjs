@@ -30,6 +30,7 @@ import { fileURLToPath } from "node:url";
 const UTILS_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const LIMITS_PATH = join(UTILS_ROOT, "src/llm/provider-limits.json");
 const ROUTES_PATH = join(UTILS_ROOT, "src/llm/alias-routes.json");
+const DECISION_ROUTES_PATH = join(UTILS_ROOT, "src/llm/decision/decision-routes.json");
 const CHAIN_PATH = join(UTILS_ROOT, "src/llm/fallback-chain.ts");
 const GUARD_PATH = join(UTILS_ROOT, "src/llm/rate-guard.ts");
 
@@ -39,6 +40,11 @@ const MIN_SENSIBLE_RPM = 1;
 /**
  * Assert the limits config is complete and honestly labelled.
  *
+ * Complete is judged against both route tables: every provider the generative
+ * alias table registers, and every provider of a decision route this package
+ * serves, has an entry; and no decision route can queue in a guard for longer
+ * than the route's own budget.
+ *
  * @returns {string[]} Failures.
  */
 function checkConfig() {
@@ -46,6 +52,15 @@ function checkConfig() {
   const failures = [];
   const limits = JSON.parse(readFileSync(LIMITS_PATH, "utf8"));
   const routes = JSON.parse(readFileSync(ROUTES_PATH, "utf8"));
+  const decisionRoutes = JSON.parse(readFileSync(DECISION_ROUTES_PATH, "utf8"));
+
+  // The decision routes this package serves itself are the only ones its
+  // guards ever hold. A route the consumer serves in its own process is
+  // declared in the same table and never passes through a guard here.
+  const guardedDecisionRoutes = Object.entries(decisionRoutes.routes ?? {}).filter(
+    ([, route]) => route.served_by === "utils",
+  );
+  const guardedDecisionProviders = new Set(guardedDecisionRoutes.map(([, route]) => route.provider));
 
   if (limits.defaults === undefined) {
     failures.push("no defaults block: an unregistered provider would run unbounded");
@@ -121,6 +136,11 @@ function checkConfig() {
         }
       }
     }
+    for (const [, route] of guardedDecisionRoutes) {
+      if (route.provider === providerName && typeof route.version_pin === "string") {
+        routedModels.add(route.version_pin);
+      }
+    }
     for (const [modelId, override] of Object.entries(entry.models)) {
       const name = `${providerName}/${modelId}`;
       if (override.basis !== "published" && override.basis !== "conservative-default") {
@@ -153,9 +173,41 @@ function checkConfig() {
     }
   }
 
+  // The same holds for a decision route this package serves: its provider is
+  // reached through the same guards, and without an entry of its own it would
+  // queue for the package default, which is many times a typed call's budget.
+  for (const [routeName, route] of guardedDecisionRoutes) {
+    const entry = limits.providers?.[route.provider];
+    if (entry === undefined) {
+      failures.push(
+        `${route.provider}: serves decision route ${routeName} but is absent from the limits config, so it would run on defaults without anyone deciding that`,
+      );
+      continue;
+    }
+    // The rate wait is bounded by the entry's own timeout and by nothing the
+    // caller passes, so a timeout longer than the route's budget lets a call
+    // sit in this package's queue past the point its answer could still be used.
+    const override = entry.scope === "model" ? entry.models?.[route.version_pin] : undefined;
+    const acquireTimeoutMs = (override ?? entry).acquire_timeout_ms;
+    if (typeof acquireTimeoutMs === "number" && acquireTimeoutMs > route.budget_ms) {
+      failures.push(
+        `${route.provider}: acquire_timeout_ms ${acquireTimeoutMs} exceeds the ${route.budget_ms} ms budget of decision route ${routeName}, so a call could queue here for longer than it is allowed to take`,
+      );
+    }
+  }
+
+  // A provider is registered when either table declares it. One that only a
+  // consumer-served decision route names is registered and still unguarded:
+  // this package never calls it, so a limit written for it would bind nothing.
   for (const providerName of Object.keys(limits.providers ?? {})) {
-    if (routes.providers[providerName] === undefined) {
+    const inAliasTable = routes.providers[providerName] !== undefined;
+    const inDecisionTable = decisionRoutes.providers?.[providerName] !== undefined;
+    if (!inAliasTable && !inDecisionTable) {
       failures.push(`${providerName}: has limits but is not a registered provider`);
+    } else if (!inAliasTable && !guardedDecisionProviders.has(providerName)) {
+      failures.push(
+        `${providerName}: has limits but this package never guards it: only a decision route the consumer serves names it, so the entry binds nothing`,
+      );
     }
   }
 
