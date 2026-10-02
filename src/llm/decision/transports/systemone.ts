@@ -26,10 +26,17 @@
  * substitution is caught.
  *
  * The key is read from the environment by NAME on every call and exists only
- * in the request's authorization header. It is never stored, and no error
- * raised here can hold it: a failure below this layer is described by its
- * class and system code, never by its message, because a runtime that refuses
- * a request it could not build quotes the offending header in that message.
+ * in the request's authorization header. It is never stored, and three rules
+ * keep it out of everything raised here. A failure below this layer is
+ * described by its class and system code, never by its message, because a
+ * runtime that refuses a request it could not build quotes the offending
+ * header in that message. Once the caller has aborted, what is raised is the
+ * reason the caller aborted with and never what the layer below threw, because
+ * a call can fail for a reason of its own at the moment it is aborted. And
+ * text a vendor answered with, or a lower layer named its failure with, has
+ * the key taken out wherever it stands verbatim before that text is put on an
+ * error, because a vendor may quote back the credential it was sent. A key
+ * handed back altered, masked or encoded for instance, is not recognised.
  *
  * Nothing in this file names a vendor host or a model. Both arrive with the
  * route.
@@ -86,6 +93,9 @@ const CAPACITY_STATUSES: ReadonlySet<number> = new Set([408, 429, 503, 529]);
 
 /** How many links of a failure's chain of causes are described. */
 const FAILURE_CAUSE_DEPTH = 4;
+
+/** What stands where the key was, in text this layer did not write. */
+const KEY_REMOVED = "[credential removed]";
 
 /**
  * What a failure's class name or system code looks like.
@@ -216,7 +226,10 @@ export interface SystemOneTransportRequest {
   readonly route: ResolvedDecisionRoute;
   /** The encoded request, sent as it is given. */
   readonly body: DecisionWireRequest;
-  /** Aborts the call. An abort is rethrown as the HTTP layer raised it. */
+  /**
+   * Aborts the call. An aborted call rejects with this signal's own reason,
+   * the very value, so the caller that aborted recognises its own abort.
+   */
   readonly signal: AbortSignal;
 }
 
@@ -244,8 +257,9 @@ export interface SystemOneTransport {
    *
    * @param request The route, the encoded request and the abort signal.
    * @returns The undecoded answer and what the call cost.
-   * @throws {DecisionCallError} For every failure except an abort, which is
-   *   rethrown as the HTTP layer raised it.
+   * @throws {DecisionCallError} For every failure while the signal is live.
+   *   Once the signal has aborted, a call that gets no answer rejects with the
+   *   signal's reason instead.
    */
   execute(request: SystemOneTransportRequest): Promise<SystemOneTransportResult>;
 }
@@ -335,6 +349,22 @@ function describeFailure(error: unknown): string {
 }
 
 /**
+ * Take the key out of text this layer did not write.
+ *
+ * Every exact occurrence is replaced, and the replacement is done on the whole
+ * text before any of it is excerpted, so a key lying across an excerpt's bound
+ * is removed whole and not cut to a prefix. Text that does not hold the key is
+ * returned unchanged.
+ *
+ * @param text Text from a vendor or from a lower layer.
+ * @param key The key the request was sent with; never empty.
+ * @returns The text with the key replaced wherever it stood.
+ */
+function withoutKey(text: string, key: string): string {
+  return text.split(key).join(KEY_REMOVED);
+}
+
+/**
  * Read the key for a route from the environment, by name.
  *
  * @param route The route whose key is wanted.
@@ -390,12 +420,26 @@ function headerOrNull(response: SystemOneFetchResponse, name: string): string | 
   return value === null || value.trim() === "" ? null : value;
 }
 
+/**
+ * The vendor's id for a request, with the key taken out of it.
+ *
+ * @param response The response.
+ * @param key The key the request was sent with.
+ * @returns The id, or `null` when the response carried none.
+ */
+function vendorRequestIdOf(response: SystemOneFetchResponse, key: string): string | null {
+  const id = headerOrNull(response, VENDOR_REQUEST_ID_HEADER);
+  return id === null ? null : withoutKey(id, key);
+}
+
 /** What a failing status came with. */
 interface StatusFailureContext {
   readonly route: ResolvedDecisionRoute;
   readonly response: SystemOneFetchResponse;
-  /** The response body as text; empty when it could not be read. */
+  /** The response body as text, the key taken out; empty when it could not be read. */
   readonly body: string;
+  /** The vendor's id for the request, the key taken out; `null` when there was none. */
+  readonly vendorRequestId: string | null;
   readonly nowMs: number;
 }
 
@@ -412,13 +456,13 @@ interface StatusFailureContext {
  * @returns The error to raise.
  */
 function failureForStatus(statusFault: DecisionStatusFault, context: StatusFailureContext): DecisionCallError {
-  const { route, response, body } = context;
+  const { route, response, body, vendorRequestId } = context;
   const answered = {
     route: route.route,
     status: response.status,
     body,
     vendorErrorType: observedErrorType(body),
-    vendorRequestId: headerOrNull(response, VENDOR_REQUEST_ID_HEADER),
+    vendorRequestId,
   };
   switch (statusFault.fault) {
     case "credential":
@@ -454,22 +498,36 @@ async function readFailureBody(response: SystemOneFetchResponse): Promise<string
 /**
  * Turn a throw of the HTTP layer into the call's outcome.
  *
- * An abort is rethrown untouched, so the caller that aborted can tell its own
- * deadline from a vendor failure. Anything else is a transport fault with no
- * status. It is marked retryable because no response arrived, which says
- * nothing against the request itself.
+ * Once the signal has aborted, the outcome is the signal's own reason, so the
+ * caller that aborted can tell its own deadline from a vendor failure. What
+ * the HTTP layer threw is dropped and not rethrown. For an abort that loses
+ * nothing: the platform's call rejects with the signal's reason, so the two
+ * are one object. For anything else it is the point: a failure that merely
+ * coincides with the abort is free text from another layer, and it may quote
+ * the request it failed on.
+ *
+ * While the signal is live, the throw is a transport fault with no status. It
+ * is marked retryable because no response arrived, which says nothing against
+ * the request itself.
  *
  * @param error What the HTTP layer threw.
  * @param signal The call's abort signal.
  * @param route The route being called.
+ * @param key The key the request was sent with, to keep it out of the fault.
  * @returns Never.
- * @throws The abort as it was raised, or a {@link DecisionTransportError}.
+ * @throws The signal's reason, or a {@link DecisionTransportError}.
  */
-function raiseWithoutAnswer(error: unknown, signal: AbortSignal, route: DecisionRoute): never {
+function raiseWithoutAnswer(error: unknown, signal: AbortSignal, route: DecisionRoute, key: string): never {
   if (signal.aborted) {
-    throw error;
+    const reason: unknown = signal.reason;
+    throw reason;
   }
-  throw new DecisionTransportError({ source: "network", route, retryable: true, detail: describeFailure(error) });
+  throw new DecisionTransportError({
+    source: "network",
+    route,
+    retryable: true,
+    detail: withoutKey(describeFailure(error), key),
+  });
 }
 
 /**
@@ -505,16 +563,18 @@ export function createSystemOneTransport(config: SystemOneTransportConfig = {}):
           signal,
         });
       } catch (error) {
-        return raiseWithoutAnswer(error, signal, routeName);
+        return raiseWithoutAnswer(error, signal, routeName, key);
       }
 
       const status = response.status;
+      const vendorRequestId = vendorRequestIdOf(response, key);
       const statusFault = decisionFaultForStatus(status);
       if (statusFault !== null) {
         throw failureForStatus(statusFault, {
           route,
           response,
-          body: await readFailureBody(response),
+          body: withoutKey(await readFailureBody(response), key),
+          vendorRequestId,
           nowMs: now(),
         });
       }
@@ -523,10 +583,9 @@ export function createSystemOneTransport(config: SystemOneTransportConfig = {}):
       try {
         text = await response.text();
       } catch (error) {
-        return raiseWithoutAnswer(error, signal, routeName);
+        return raiseWithoutAnswer(error, signal, routeName, key);
       }
 
-      const vendorRequestId = headerOrNull(response, VENDOR_REQUEST_ID_HEADER);
       let payload: unknown;
       try {
         payload = JSON.parse(text);

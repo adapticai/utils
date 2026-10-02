@@ -4,8 +4,9 @@
  * The transport is the only code in this package that speaks to the vendor, so
  * these tests pin what a caller relies on it for: that it makes one request and
  * only one, that a failing status means the same thing whatever body came with
- * it, that an answer is handed back exactly as the vendor gave it, and that the
- * key cannot be read out of anything it raises.
+ * it, that an answer is handed back exactly as the vendor gave it, that an
+ * abort comes back as the reason the caller aborted with, and that the key
+ * cannot be read out of anything it raises.
  *
  * No request leaves the process. Vendor behaviour is replayed from the contract
  * fixtures, each loaded under the class of evidence it rests on, and the clock
@@ -48,7 +49,7 @@ import {
   decisionResponseFromFixture,
   unreadableDecisionResponse,
 } from "./support/fetch-double";
-import type { DecisionFetchDouble, DecisionFetchScript } from "./support/fetch-double";
+import type { DecisionFetchDouble, DecisionFetchScript, RecordedDecisionFetch } from "./support/fetch-double";
 import { loadDecisionFixture } from "./support/fixtures";
 
 /** Env-var NAME the test route reads its key from. */
@@ -64,6 +65,18 @@ const SENTINEL_KEY = ["dk", "test", "4b8e1f0a7c2d9e63", "do-not-leak"].join("-")
 
 /** A second key, to show the variable is read again on every call. */
 const ROTATED_KEY = ["dk", "test", "rotated", "0d5a"].join("-");
+
+/**
+ * A key made only of letters and digits, so that it has the form of a
+ * failure's class name or system code and would be printed as one.
+ */
+const IDENTIFIER_KEY = ["dk", "Test", "9f3c5a7e1b2d4068", "DoNotLeak"].join("");
+
+/** What the transport leaves where it took the key out of text it did not write. */
+const KEY_REMOVED = "[credential removed]";
+
+/** The scheme the key is sent under, as it would be quoted with the key. */
+const BEARER = "Bearer ";
 
 /** Base URL of the test route; reserved, so it can never resolve. */
 const BASE_URL = "https://decision-vendor.invalid";
@@ -108,6 +121,9 @@ const COST_DIGITS = 12;
 
 /** Length of a header value far past the excerpt bound. */
 const LONG_HEADER_CHARS = 5_000;
+
+/** How much of a key lies inside the excerpt's bound when the rest lies past it. */
+const KEY_CHARS_INSIDE_THE_BOUND = 12;
 
 /** How deep a raised error is printed when it is searched for the key. */
 const INSPECT_DEPTH = 8;
@@ -227,6 +243,27 @@ async function rejectionOf(promise: Promise<unknown>): Promise<unknown> {
     return error;
   }
   throw new Error("the call resolved; it should have rejected");
+}
+
+/**
+ * The reason a signal was aborted with.
+ *
+ * @param signal The signal.
+ * @returns Its reason, untyped, exactly as the platform holds it.
+ */
+function reasonOf(signal: AbortSignal): unknown {
+  return signal.reason;
+}
+
+/**
+ * Whether anything a reader of a raised value could see holds a piece of text.
+ *
+ * @param raised The raised value.
+ * @param needle The text looked for.
+ * @returns True when some rendering of the value holds it.
+ */
+function showsText(raised: unknown, needle: string): boolean {
+  return everyTextOf(raised).some((text) => text.includes(needle));
 }
 
 /**
@@ -603,26 +640,39 @@ describe("the hosted decision transport", () => {
     expect(error.retryAfterMs).toBe(RETRY_AFTER_MS);
   });
 
-  it("an abort is rethrown untouched and a network failure is a transport fault", async () => {
-    // Aborted while the request is in flight.
+  it("an abort rejects with the signal's own reason and a network failure is a transport fault", async () => {
+    // Aborted while the request is in flight. The platform's call rejects with
+    // the signal's reason, and that very object is what the caller gets back.
     const inFlight = new AbortController();
-    const abortError = new DOMException("This operation was aborted", "AbortError");
     const aborted = harnessOver(() => {
       inFlight.abort();
-      throw abortError;
+      return Promise.reject<SystemOneFetchResponse>(reasonOf(inFlight.signal));
     });
-    const rethrown = await rejectionOf(call(aborted.transport, inFlight.signal));
-    expect(rethrown).toBe(abortError);
-    expect(rethrown).not.toBeInstanceOf(DecisionCallError);
+    const raised = await rejectionOf(call(aborted.transport, inFlight.signal));
+    expect(raised).toBe(reasonOf(inFlight.signal));
+    expect(raised).toBeInstanceOf(DOMException);
+    expect(raised).not.toBeInstanceOf(DecisionCallError);
+
+    // A reason the caller chose comes back as the caller gave it, whatever the
+    // HTTP layer raised of its own: that is how a caller tells its own deadline
+    // from a vendor failure.
+    const deadline = new Error("the caller's own deadline");
+    const timed = new AbortController();
+    const late = harnessOver(() => {
+      timed.abort(deadline);
+      throw new DOMException("This operation was aborted", "AbortError");
+    });
+    expect(await rejectionOf(call(late.transport, timed.signal))).toBe(deadline);
 
     // Aborted while an answer's body is being read.
     const midBody = new AbortController();
-    const bodyAbort = new DOMException("This operation was aborted", "AbortError");
     const cut = harnessOver(() => {
       midBody.abort();
-      return unreadableDecisionResponse(OK, bodyAbort);
+      return unreadableDecisionResponse(OK, new DOMException("This operation was aborted", "AbortError"));
     });
-    expect(await rejectionOf(call(cut.transport, midBody.signal))).toBe(bodyAbort);
+    const cutRaised = await rejectionOf(call(cut.transport, midBody.signal));
+    expect(cutRaised).toBe(reasonOf(midBody.signal));
+    expect(cutRaised).not.toBeInstanceOf(DecisionCallError);
 
     // The connection failed, and nobody aborted.
     const refused = Object.assign(new TypeError("fetch failed"), {
@@ -656,6 +706,22 @@ describe("the hosted decision transport", () => {
     const oddError = asInstance(await rejectionOf(call(odd.transport)), DecisionTransportError);
     expect(oddError.source).toBe("network");
     expect(oddError.message).not.toContain("connection reset");
+  });
+
+  it("over the platform's own HTTP call an abort is the signal's reason, the object that call itself raises", async () => {
+    // The request is aborted before it is made, so nothing leaves the process.
+    const signal = AbortSignal.abort();
+
+    // What the platform's call raises for an aborted request is the reason itself.
+    const platformRaised = await rejectionOf(
+      fetch(`${BASE_URL}${SYSTEMONE_PATH}`, { method: "POST", body: JSON.stringify(WIRE_REQUEST), signal }),
+    );
+    expect(platformRaised).toBe(reasonOf(signal));
+
+    // So raising the reason hands a caller of the platform's call the same
+    // object that rethrowing the platform's error would.
+    const transport = createSystemOneTransport();
+    expect(await rejectionOf(call(transport, signal))).toBe(platformRaised);
   });
 
   it("a success returns the vendor's answering model, request id, usage and the undecoded payload", async () => {
@@ -826,6 +892,107 @@ describe("the hosted decision transport", () => {
     raised.push(await rejectionOf(call(refused.transport)));
     expect(refused.double.calls).toHaveLength(0);
 
+    // The caller's abort opens no way round. Whatever the HTTP layer raised as
+    // the signal aborted is dropped, and the signal's own reason is raised.
+    const abortedCalls: { readonly raised: unknown; readonly signal: AbortSignal; readonly where: string }[] = [];
+    /**
+     * Make one call whose HTTP layer fails, quoting the key, as the caller aborts.
+     *
+     * @param where The case, for a failure message.
+     * @param layerFailure What the HTTP layer does, given the request and a way to abort the call.
+     */
+    const failAsAborted = async (
+      where: string,
+      layerFailure: (sent: RecordedDecisionFetch, abort: () => void) => SystemOneFetchResponse,
+    ): Promise<void> => {
+      const controller = new AbortController();
+      const layerRaised: unknown[] = [];
+      const { transport } = harnessOver((sent) => {
+        try {
+          const response = layerFailure(sent, () => controller.abort());
+          return {
+            ...response,
+            text: () =>
+              response.text().catch((error: unknown) => {
+                layerRaised.push(error);
+                throw error;
+              }),
+          };
+        } catch (error) {
+          layerRaised.push(error);
+          throw error;
+        }
+      });
+      abortedCalls.push({ raised: await rejectionOf(call(transport, controller.signal)), signal: controller.signal, where });
+      // Anti-vacuity: the HTTP layer really did raise something holding the key.
+      expect(layerRaised, where).toHaveLength(1);
+      expect(showsText(layerRaised[0], SENTINEL_KEY), `${where}: the layer's failure did not hold the key`).toBe(true);
+      expect(controller.signal.aborted, where).toBe(true);
+    };
+
+    process.env[KEY_ENV] = SENTINEL_KEY;
+    await failAsAborted("a failure quoting the headers", (sent, abort) => {
+      abort();
+      throw new TypeError(`request failed; headers were ${JSON.stringify(sent.headers)}`);
+    });
+    await failAsAborted("a failure with the form of an abort, quoting the header", (sent, abort) => {
+      abort();
+      throw new DOMException(`aborted while sending ${sent.headers.authorization}`, "AbortError");
+    });
+    await failAsAborted("a failure with the form of a timeout, holding the header as its cause", (sent, abort) => {
+      abort();
+      throw Object.assign(new DOMException("The operation timed out", "TimeoutError"), {
+        cause: new Error(sent.headers.authorization),
+      });
+    });
+    await failAsAborted("an answer's body cut short, quoting the header", (sent, abort) => {
+      abort();
+      return unreadableDecisionResponse(OK, new Error(`reset while sending ${sent.headers.authorization}`));
+    });
+
+    // An abort as the platform's call reports one: it rejects with the reason
+    // itself, so the reason is the one value of another layer's that does come
+    // back, and it comes back as the caller made it.
+    const reported = new AbortController();
+    const asPlatform = harnessOver(() => {
+      reported.abort();
+      return Promise.reject<SystemOneFetchResponse>(reasonOf(reported.signal));
+    });
+    abortedCalls.push({
+      raised: await rejectionOf(call(asPlatform.transport, reported.signal)),
+      signal: reported.signal,
+      where: "an abort reported with the reason itself, over the double",
+    });
+    expect(asPlatform.double.calls.map((sent) => sent.headers.authorization)).toEqual([`${BEARER}${SENTINEL_KEY}`]);
+    const abortedBeforeSending = AbortSignal.abort();
+    abortedCalls.push({
+      raised: await rejectionOf(call(createSystemOneTransport(), abortedBeforeSending)),
+      signal: abortedBeforeSending,
+      where: "an aborted call over the platform's own call",
+    });
+
+    // The key the runtime cannot send, on a call the caller has already
+    // aborted: the runtime refuses the request before it looks at the signal.
+    process.env[KEY_ENV] = unsendable;
+    const preAborted = AbortSignal.abort();
+    const overDouble = harnessOver(() => documentedSuccess());
+    abortedCalls.push({
+      raised: await rejectionOf(call(overDouble.transport, preAborted)),
+      signal: preAborted,
+      where: "an unsendable key on an aborted call, over the double",
+    });
+    expect(overDouble.double.calls).toHaveLength(0);
+    abortedCalls.push({
+      raised: await rejectionOf(call(createSystemOneTransport(), preAborted)),
+      signal: preAborted,
+      where: "an unsendable key on an aborted call, over the platform's own call",
+    });
+
+    for (const { raised: abortRaised, signal, where } of abortedCalls) {
+      expect(showsText(abortRaised, SENTINEL_KEY), `${where}: the raised value carried the key`).toBe(false);
+      expect(abortRaised, where).toBe(reasonOf(signal));
+    }
+
     for (const error of raised) {
       const typed = asCallError(error);
       const completed = typed.withAttempt({
@@ -845,6 +1012,63 @@ describe("the hosted decision transport", () => {
       for (const text of everyTextOf(completed)) {
         expect(text, `${typed.name} carried the key`).not.toContain(SENTINEL_KEY);
       }
+    }
+  });
+
+  it("a vendor or a lower layer that hands the key back does not put it in an error", async () => {
+    const authorization = `${BEARER}${SENTINEL_KEY}`;
+    const echo = JSON.stringify({
+      detail: { error_type: "authentication_error", message: `Invalid credential: ${authorization}. ${SENTINEL_KEY}` },
+    });
+    const echoWithoutKey = echo.split(SENTINEL_KEY).join(KEY_REMOVED);
+    expect(echoWithoutKey).not.toBe(echo);
+
+    // Every kind of failing status, with the key quoted twice in the body and
+    // once in the vendor's request id.
+    for (const status of [401, 403, 404, 422, 429, 500, 529]) {
+      const where = `status ${status}`;
+      const { transport, double } = harnessOver(() =>
+        decisionResponse(status, echo, { [VENDOR_REQUEST_ID_HEADER]: `req-${SENTINEL_KEY}` }),
+      );
+      const error = asCallError(await rejectionOf(call(transport)));
+      expect(double.calls.map((sent) => sent.headers.authorization), where).toEqual([authorization]);
+      expect(showsText(error, SENTINEL_KEY), `${where}: ${error.name} carried the key`).toBe(false);
+      // Everything else the vendor said is kept, and still read.
+      expect(error, where).toMatchObject({
+        status,
+        bodyExcerpt: echoWithoutKey,
+        vendorErrorType: "authentication_error",
+        vendorRequestId: `req-${KEY_REMOVED}`,
+      });
+    }
+
+    // A key that begins inside the excerpt and ends past it is taken out whole,
+    // not cut to a prefix by the excerpt's bound.
+    const straddling = `${"x".repeat(DECISION_ERROR_BODY_EXCERPT - KEY_CHARS_INSIDE_THE_BOUND)}${SENTINEL_KEY} and more`;
+    const cut = harnessOver(() => decisionResponse(401, straddling));
+    const cutError = asInstance(await rejectionOf(call(cut.transport)), DecisionCredentialError);
+    expect(cutError.bodyExcerpt).toHaveLength(DECISION_ERROR_BODY_EXCERPT);
+    expect(showsText(cutError, SENTINEL_KEY.slice(0, KEY_CHARS_INSIDE_THE_BOUND))).toBe(false);
+
+    // An answer whose request id quotes the key: on the fault raised for an
+    // unusable answer, and on the answer handed back.
+    const unusable = harnessOver(() => decisionResponse(OK, "not json", { [VENDOR_REQUEST_ID_HEADER]: authorization }));
+    const formatError = asInstance(await rejectionOf(call(unusable.transport)), DecisionResponseFormatError);
+    expect(formatError.vendorRequestId).toBe(`${BEARER}${KEY_REMOVED}`);
+    expect(showsText(formatError, SENTINEL_KEY)).toBe(false);
+    const answered = harnessOver(() => documentedSuccess({ [VENDOR_REQUEST_ID_HEADER]: authorization }));
+    expect((await call(answered.transport)).vendorRequestId).toBe(`${BEARER}${KEY_REMOVED}`);
+
+    // A lower layer that names its failure, or codes it, with the key itself.
+    process.env[KEY_ENV] = IDENTIFIER_KEY;
+    for (const field of ["name", "code"]) {
+      const named = harnessOver((sent) => {
+        throw Object.assign(new Error("request failed"), { [field]: sent.headers.authorization.slice(BEARER.length) });
+      });
+      const networkError = asInstance(await rejectionOf(call(named.transport)), DecisionTransportError);
+      expect(named.double.calls.map((sent) => sent.headers.authorization), field).toEqual([`${BEARER}${IDENTIFIER_KEY}`]);
+      expect(showsText(networkError, IDENTIFIER_KEY), `the failure's ${field} carried the key`).toBe(false);
+      expect(networkError.message, field).toContain(KEY_REMOVED);
     }
   });
 
