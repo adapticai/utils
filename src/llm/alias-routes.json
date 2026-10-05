@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "policy_source": "docs/llm-provider-migration.md#3-routing-policy (v1.1)",
-  "revised": "2026-09-11",
+  "revised": "2026-10-06",
   "defaults": {
     "request_timeout_ms": {
       "hot-path": 30000,
@@ -246,15 +246,15 @@
         {
           "role": "closed_incumbent",
           "provider": "anthropic",
-          "model_id": "claude-opus-4-7",
+          "model_id": "claude-sonnet-5-5",
           "model_id_status": "confirmed",
-          "model_id_source": "lumic-utils/src/types/openai-types.ts SUPPORTED_MODELS — already routed on in production",
-          "model_family": "Opus-class",
-          "lumic_model": "claude-opus-4-7",
+          "model_id_source": "Anthropic model overview (https://platform.claude.com/docs/en/docs/about-claude/models/overview), read 2026-10-06; registered in lumic-utils/src/types/openai-types.ts SUPPORTED_MODELS, which is the registry the direct transport resolves lumic_model against",
+          "model_family": "Sonnet-class",
+          "lumic_model": "claude-sonnet-5-5",
           "params": {
             "temperature": null,
             "max_output_tokens": 128000,
-            "supports_temperature": true,
+            "supports_temperature": false,
             "supports_json_schema": true,
             "supports_tools": true,
             "supports_cache_control": true,
@@ -263,11 +263,12 @@
             "context_window": 1000000
           },
           "price_per_mtok": {
-            "input": 5,
-            "output": 25,
-            "as_of": "2026-09-10",
-            "source": "docs/llm-provider-migration.md#3 Opus-class anchor; matches lumic-utils/src/functions/llm-config.ts"
-          }
+            "input": 2,
+            "output": 10,
+            "as_of": "2026-10-06",
+            "source": "Anthropic model overview pricing table, read 2026-10-06: Sonnet 5.5 is $2/MTok input and $10/MTok output — half the Opus tier on both sides. Matches lumic-utils/src/functions/llm-config.ts anthropicModelCosts['claude-sonnet-5-5']."
+          },
+          "notes": "The revert target is held on the vendor's current generation rather than the generation the table was written against. A leg nobody expects to serve is the one most easily left behind, and a revert onto a superseded model reverts to less capability than the comparison that chose the challengers assumed. Sonnet-class rather than Opus-class because what this leg has to do is answer the alias's workload reliably at a known rate, not match the frontier — and at half the Opus input and output price, a cheaper revert target is one that can be left armed."
         }
       ]
     },
@@ -277,7 +278,7 @@
       "criticality": "ops",
       "isolation_capable": true,
       "eval_gate": "tool-call",
-      "policy_note": "Section 3 names the primary as Fable-class. The strongest Anthropic model registered in the lumic model registry — the table this codebase actually routes on — is claude-opus-4-7, so that is the configured id. Registering a Fable-class model in @adaptic/lumic-utils would change live model selection for every consumer of the advanced tier and is therefore a separate, evidence-gated decision, recorded as open item OI-02 rather than smuggled in here.",
+      "policy_note": "Section 3 names the primary as Fable-class. The configured primary is the open-weight Kimi K3 leg and the Anthropic leg is the revert target, so the Fable-class question is about the incumbent's tier, not the primary's. It is answered Sonnet-class on cost: a revert target is selected for reliable tool-calling at a known rate, and the Fable tier prices input and output five times the Sonnet tier for capability this leg does not need. Registering a model in @adaptic/lumic-utils is additive and moves no existing caller — the unversioned family aliases there are the single place a tier's current best is chosen — so the registry no longer constrains which generation this leg may name.",
       "budget": {
         "basis": "provisional-pre-baseline",
         "monthly_usd": 1500,
@@ -345,15 +346,15 @@
         {
           "role": "closed_incumbent",
           "provider": "anthropic",
-          "model_id": "claude-opus-4-7",
+          "model_id": "claude-sonnet-5-5",
           "model_id_status": "confirmed",
-          "model_id_source": "lumic-utils/src/types/openai-types.ts SUPPORTED_MODELS — already routed on in production",
-          "model_family": "Fable-class (see policy_note)",
-          "lumic_model": "claude-opus-4-7",
+          "model_id_source": "Anthropic model overview (https://platform.claude.com/docs/en/docs/about-claude/models/overview), read 2026-10-06; registered in lumic-utils/src/types/openai-types.ts SUPPORTED_MODELS, which is the registry the direct transport resolves lumic_model against",
+          "model_family": "Sonnet-class",
+          "lumic_model": "claude-sonnet-5-5",
           "params": {
             "temperature": null,
             "max_output_tokens": 128000,
-            "supports_temperature": true,
+            "supports_temperature": false,
             "supports_json_schema": true,
             "supports_tools": true,
             "supports_cache_control": true,
@@ -362,11 +363,12 @@
             "context_window": 1000000
           },
           "price_per_mtok": {
-            "input": 5,
-            "output": 25,
-            "as_of": "2026-09-30",
-            "source": "lumic-utils/src/functions/llm-config.ts anthropicModelCosts['claude-opus-4-7'] = 5/25, the Opus-tier rate. CORRECTED from 10/50, which is the claude-fable-5 rate: this leg carried a Fable-class anchor for an Opus-class model, so the same model id was priced 2x apart on llm.reason and llm.agentic and the declared cost of every alias's revert target depended on which alias a reader happened to look at."
-          }
+            "input": 2,
+            "output": 10,
+            "as_of": "2026-10-06",
+            "source": "Anthropic model overview pricing table, read 2026-10-06: Sonnet 5.5 is $2/MTok input and $10/MTok output — half the Opus tier on both sides. Matches lumic-utils/src/functions/llm-config.ts anthropicModelCosts['claude-sonnet-5-5']."
+          },
+          "notes": "The same model and the same price as llm.reason's revert target, so the declared cost of reverting does not depend on which alias a reader looks at. Sonnet-class is deliberate here too: an incumbent's job on the hardest workload is tool-calling that holds, which the Sonnet tier does at half the Opus rate."
         }
       ]
     },
@@ -717,8 +719,8 @@
   "open_items": [
     {
       "id": "OI-02",
-      "question": "Section 3 names a Fable-class primary for llm.agentic, but the lumic model registry's strongest registered Anthropic model is claude-opus-4-7. Register a Fable-class model in @adaptic/lumic-utils, or accept opus-4-7 as the llm.agentic primary?",
-      "blocks": "llm.agentic primary fidelity to Section 3",
+      "question": "llm.agentic's revert target is Sonnet-class on cost grounds while Section 3 names the tier Fable-class. Accept the Sonnet-class incumbent, or pay the Fable tier (5x the Sonnet input and output rate) for a leg that serves only when both open-weight legs are out? Superseded the original framing, which asked whether a Fable-class model could be registered in @adaptic/lumic-utils at all — registration is additive and is no longer the constraint.",
+      "blocks": "llm.agentic revert-target tier vs Section 3",
       "owner": "CEO"
     },
     {

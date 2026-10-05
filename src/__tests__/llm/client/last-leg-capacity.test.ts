@@ -30,8 +30,16 @@ import { ScriptedTransport, fails, hangs } from "./support/transports";
 /** The closed incumbent of llm.fast, llm.decide and llm.extract. */
 const HAIKU = "claude-haiku-4-5";
 
-/** An Anthropic model that is not overridden and must keep the provider numbers. */
-const OPUS = "claude-opus-4-7";
+/**
+ * An Anthropic model that is not overridden and must keep the provider numbers.
+ *
+ * Named from the table so the "not overridden" half of this contract is tested
+ * against a model the chain actually reaches. The per-model override exists for
+ * the incumbent of a hot-path alias, which absorbs that alias's whole load when
+ * every leg above it is out; a background alias's incumbent has a leg budget
+ * three times longer and keeps the provider numbers.
+ */
+const BACKGROUND_INCUMBENT = "claude-sonnet-5-5";
 
 /** Numbers this change sets for the incumbent. */
 const HAIKU_MAX_CONCURRENT = 48;
@@ -129,7 +137,7 @@ describe("llm.fast closed-incumbent capacity", () => {
     });
 
     it("keeps every other Anthropic model, and the provider itself, on the provider numbers", () => {
-      for (const limits of [limitsFor("anthropic", OPUS), limitsFor("anthropic")]) {
+      for (const limits of [limitsFor("anthropic", BACKGROUND_INCUMBENT), limitsFor("anthropic")]) {
         expect(limits.max_concurrent).toBe(ANTHROPIC_MAX_CONCURRENT);
         expect(limits.requests_per_minute).toBe(ANTHROPIC_RPM);
         expect(limits.acquire_timeout_ms).toBe(ANTHROPIC_ACQUIRE_TIMEOUT_MS);
@@ -164,14 +172,14 @@ describe("llm.fast closed-incumbent capacity", () => {
     });
 
     it("still holds a non-overridden Anthropic model to 12", async () => {
-      const { release, held } = saturate("anthropic", OPUS, ANTHROPIC_MAX_CONCURRENT);
+      const { release, held } = saturate("anthropic", BACKGROUND_INCUMBENT, ANTHROPIC_MAX_CONCURRENT);
       await nextMacrotask();
 
       const overflow = await withProviderGuards(
         "anthropic",
         async () => "served",
         SHORT_WAIT_MS,
-        { modelId: OPUS },
+        { modelId: BACKGROUND_INCUMBENT },
       ).catch((error: unknown) => error);
       expect(overflow).toBeInstanceOf(RateGuardTimeoutError);
 
