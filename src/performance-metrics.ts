@@ -178,15 +178,34 @@ export async function calculateExpenseRatio({
 const EXPENSE_TRAILING_WINDOW_DAYS = 365;
 /** Milliseconds in one day. */
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
-/** Alpaca account-activity types that represent fees/regulatory charges. */
-const FEE_ACTIVITY_TYPES = "FEE,REG,CFEE";
+/**
+ * Alpaca account-activity types that represent fees/regulatory charges.
+ *
+ * ONLY MEMBERS OF THE BROKER'S `ActivityType` ENUM BELONG HERE. `activity_types`
+ * is one comma-joined query parameter the broker validates as a whole, so a
+ * token it does not recognise fails the ENTIRE request with
+ * `422 {"code":40010001,"message":"invalid activity type: <token>"}` and names
+ * only the first offender. One wrong token therefore costs every type in the
+ * list, on every call, for as long as it is here.
+ *
+ * `REG` is NOT a member and must not be added back: in the broker's taxonomy it
+ * is an activity SUB-type under `FEE`, carried on the activity body rather than
+ * selected by the query. Its regulatory charges are returned by `FEE` whether
+ * or not `REG` is sent, so omitting it narrows nothing — while sending it made
+ * every call 422 and {@link fetchTrailingFeeExpenses} return `0`, which this
+ * function's `number` return type cannot distinguish from a fee-free year.
+ *
+ * Enum reference:
+ * `https://docs.alpaca.markets/us/reference/getaccountactivitiesbyactivitytype-1`
+ */
+const FEE_ACTIVITY_TYPES = "FEE,CFEE";
 /** Page size for the paginated Alpaca account-activities endpoint. */
 const ACTIVITIES_PAGE_SIZE = 100;
 /** Hard cap on activity pages to bound pagination on unexpected responses. */
 const ACTIVITIES_MAX_PAGES = 1000;
 
 /**
- * A non-trade Alpaca account activity (e.g. a FEE/REG/CFEE entry). Only the
+ * A non-trade Alpaca account activity (e.g. a `FEE` or `CFEE` entry). Only the
  * fields required to aggregate fees are modelled.
  */
 interface AlpacaNonTradeActivity {
