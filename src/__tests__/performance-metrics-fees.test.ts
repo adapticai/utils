@@ -73,7 +73,18 @@ describe("fetchTrailingFeeExpenses", () => {
     expect(secondCall.queryString).toContain(
       `page_token=act-${PAGE_SIZE - 1}`,
     );
-    expect(secondCall.queryString).toContain("activity_types=FEE%2CREG%2CCFEE");
+    // Pinned because the request is what the broker VALIDATES: `activity_types`
+    // is one comma-joined parameter, so a token outside the broker's
+    // ActivityType enum 422s the whole call and this function returns 0 —
+    // indistinguishable, in a `number`, from a fee-free year. `REG` is such a
+    // token: it is a SUB-type under `FEE`, so its charges arrive under `FEE`
+    // anyway and asking for it by type only breaks the call.
+    expect(secondCall.queryString).toContain("activity_types=FEE%2CCFEE");
+    expect(secondCall.queryString).not.toContain("REG");
+    // POSITIVE CONTROL for the negative assertion above: the leg REG's charges
+    // actually arrive under IS still requested, so this pins the token's LEVEL
+    // in the taxonomy rather than quietly narrowing what is measured.
+    expect(secondCall.queryString).toContain("FEE");
   });
 
   it("stops at the first partial page and skips non-numeric net_amount rows", async () => {
