@@ -111,6 +111,26 @@ export const REGISTRY_FILES: readonly RegistryRecord[] = [
       "The alias route table itself. Vendor ids here are the authoring surface the migration exists to concentrate them into.",
   },
   {
+    path: "utils/src/llm/alias-routes.schema.json",
+    reason:
+      "Schema of the alias route table. Defines the fields a route may carry, and the test suite validates the table against it; it names no route and makes no call.",
+  },
+  {
+    path: "utils/src/llm/provider-limits.json",
+    reason:
+      "Client-side rate and concurrency limits per provider. Vendor model ids appear only as keys of per-model overrides; the file is read by the rate guard and makes no call.",
+  },
+  {
+    path: "utils/src/llm/decision/decision-routes.json",
+    reason:
+      "The decision route table. Pins each typed-decision route to a provider and a versioned model id as data, the one place those ids are authored; it makes no call.",
+  },
+  {
+    path: "utils/src/llm/decision/decision-routes.schema.json",
+    reason:
+      "Schema of the decision route table. Enumerates the provider API styles and fields a decision route may declare, and the test suite validates the table against it; it names no route and makes no call.",
+  },
+  {
     path: "backend-legacy/src/types/llm-configuration.ts",
     reason:
       "Generated type registry for the LlmConfiguration model. Vendor ids appear as a permitted-value union, not as a call.",
