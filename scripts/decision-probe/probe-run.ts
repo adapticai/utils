@@ -391,6 +391,12 @@ interface ObservedArrival {
  */
 interface ArrivalSlot {
   arrival: ObservedArrival | null;
+  /**
+   * When the request was handed to the HTTP call, or `null` while it has not
+   * been. The spacing between requests is counted from here, the moment a
+   * request actually leaves, and not from when the run began preparing it.
+   */
+  sentAtMs: number | null;
 }
 
 /**
@@ -410,6 +416,7 @@ interface ArrivalSlot {
 function observing(send: ProbeFetch, clock: ProbeClock, slot: ArrivalSlot): SystemOneFetch {
   return async (url, init) => {
     const sentAt = clock.monotonicMs();
+    slot.sentAtMs = sentAt;
     const response = await send(url, init);
     const headersMs = roundedMs(clock.monotonicMs() - sentAt);
     let body: string;
@@ -757,7 +764,7 @@ export async function runDecisionProbe(config: ProbeRunConfig): Promise<ProbeRep
   const minDispatchIntervalMs = probeDispatchIntervalMs(resolved.providerName, resolved.modelPin);
   const requestTimeoutMs = config.requestTimeoutMs ?? DECISION_BUDGET_CEILING_MS;
 
-  const slot: ArrivalSlot = { arrival: null };
+  const slot: ArrivalSlot = { arrival: null, sentAtMs: null };
   const transport = createSystemOneTransport({
     fetchImpl: observing(config.fetchImpl, clock, slot),
     now: () => clock.epochMs(),
@@ -773,14 +780,18 @@ export async function runDecisionProbe(config: ProbeRunConfig): Promise<ProbeRep
   let nextDispatchNotBefore: number | null = null;
   for (const [sequence, planned] of plan.dispatches.entries()) {
     if (nextDispatchNotBefore !== null) {
-      const untilAllowed = nextDispatchNotBefore - clock.monotonicMs();
-      if (untilAllowed > 0) {
+      // A timer can fire a little before the time it was set for, so the
+      // spacing is measured again after every wait and never assumed.
+      const notBefore = nextDispatchNotBefore;
+      for (let untilAllowed = notBefore - clock.monotonicMs(); untilAllowed > 0; ) {
         await clock.wait(untilAllowed);
+        untilAllowed = notBefore - clock.monotonicMs();
       }
     }
     const dispatchedAt = clock.monotonicMs();
     nextDispatchNotBefore = dispatchedAt + minDispatchIntervalMs;
     slot.arrival = null;
+    slot.sentAtMs = null;
     const deadline = new AbortController();
     const timer = setTimeout(() => deadline.abort(), requestTimeoutMs);
     const contextNow = (): DispatchContext => ({
@@ -810,6 +821,12 @@ export async function runDecisionProbe(config: ProbeRunConfig): Promise<ProbeRep
       clearTimeout(timer);
     }
     const settledAt = clock.monotonicMs();
+    if (slot.sentAtMs !== null) {
+      // The transport prepares a request before it sends it, and that takes
+      // longer on some calls than on others. Counting the spacing from when
+      // this request left keeps the next one from leaving any sooner.
+      nextDispatchNotBefore = Math.max(nextDispatchNotBefore, slot.sentAtMs + minDispatchIntervalMs);
+    }
     results.push(result);
     if (result.sample.fault === "credential") {
       // A key the vendor refuses is refused on every call, and a key that is

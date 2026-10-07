@@ -950,6 +950,37 @@ describe("a run", () => {
     expect(instant.peakInFlight()).toBe(1);
   });
 
+  it("measures the spacing again after every wait, so a timer that fires early never brings two requests closer", async () => {
+    const interval = probeDispatchIntervalMs(HOSTED.provider, PIN);
+    const timerFiresEarlyMs = 1;
+    const time = fakeTime();
+    const asked: number[] = [];
+    const earlyTimers: ProbeClock = {
+      monotonicMs: time.clock.monotonicMs,
+      epochMs: time.clock.epochMs,
+      wait: (ms) => {
+        asked.push(ms);
+        // A timer for more than its own error fires that much early; one for
+        // less fires on time, as a timer cannot fire before it was set.
+        time.advance(ms > timerFiresEarlyMs ? ms - timerFiresEarlyMs : ms);
+        return Promise.resolve();
+      },
+    };
+    const sentAt: number[] = [];
+    const instant = vendor((call, index) => {
+      sentAt.push(time.nowMs());
+      return answering()(call, index);
+    });
+
+    await probe(instant, { samples: 3, clock: earlyTimers }, time);
+
+    expect(sentAt).toHaveLength(3 * 3 + 1);
+    const gaps = sentAt.slice(1).map((at, index) => at - sentAt[index]);
+    expect(gaps).toEqual(gaps.map(() => interval));
+    // Each wait is followed by a second, for what the early timer left.
+    expect(asked.slice(0, 4)).toEqual([interval, timerFiresEarlyMs, interval, timerFiresEarlyMs]);
+  });
+
   it("a vendor that asks the run to wait is waited for, counted from when it answered and not from when it was asked", async () => {
     const interval = probeDispatchIntervalMs(HOSTED.provider, PIN);
     // Each form a hint is sent in, and the earliest instant it allows the next
