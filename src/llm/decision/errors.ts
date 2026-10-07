@@ -830,9 +830,9 @@ export class DecisionRouteMismatchError extends DecisionCallError {
  * - `resolving`: the route was being looked up in the route table.
  * - `admitting`: the breaker and the guards were being passed. No request
  *   existed yet, so the vendor was not contacted.
- * - `recording`: the call already had its outcome, and the breaker was being
- *   told of it. A vendor may have answered and billed; the attempt record
- *   keeps the status and the usage.
+ * - `recording`: the call already had its outcome, and was being timed or the
+ *   breaker told of it. A vendor may have answered and billed; the attempt
+ *   record keeps the status and the usage.
  */
 export const DECISION_CLIENT_FAULT_STAGES = ["resolving", "admitting", "recording"] as const;
 

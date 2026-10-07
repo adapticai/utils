@@ -1365,6 +1365,7 @@ describe("the decision client", () => {
         [{ timeoutMs: "300" }, "options.timeoutMs"],
         [{ probabilitySumTolerance: -1 }, "options.probabilitySumTolerance"],
         [{ signal: { aborted: false } }, "options.signal"],
+        [{ signal: Object.create(AbortSignal.prototype) as unknown }, "options.signal"],
         [{ correlationId: 7 }, "options.correlationId"],
       ];
 
@@ -1873,6 +1874,43 @@ describe("the decision client", () => {
         },
       },
       {
+        source: "an injected clock that throws once the vendor has answered",
+        reject: () => {
+          let clockBroken = false;
+          wire(
+            (call) => {
+              clockBroken = true;
+              return scriptedAnswer(call.route, CHOICE_ANSWER(), { vendorRequestId: REQUEST_ID });
+            },
+            {
+              now: () => {
+                if (clockBroken) {
+                  throw foreignFailure(TypeError);
+                }
+                return NOW_MS;
+              },
+            },
+          );
+          return rejected(HOSTED_ROUTE, CHOICE_REQUEST());
+        },
+        fault: "internal",
+        type: DecisionClientFaultError,
+        dispatches: 1,
+        consecutiveFailures: 0,
+        says: ["The decision client failed while recording how the call ended", "it raised TypeError."],
+        also: (error) => {
+          expect(asInstance(error, DecisionClientFaultError).stage).toBe("recording");
+          expect(error).not.toBeInstanceOf(DecisionTransportError);
+          // The vendor answered and billed, and the record of the attempt says so.
+          expect(error.status).toBe(OK);
+          expect(error.vendorRequestId).toBe(REQUEST_ID);
+          expect(error.usage?.prompt_tokens).toBe(DOCUMENTED_INPUT_TOKENS);
+          expect(error.attempt).toMatchObject({ status: OK, vendorRequestId: REQUEST_ID, fault: "internal" });
+          expect(error.attempt?.usage?.prompt_tokens).toBe(DOCUMENTED_INPUT_TOKENS);
+          expect(error.attempt?.servedModel).toBe(hostedRouteOf(admittedDecisionRouteTable()).expected_served_model);
+        },
+      },
+      {
         source: "the breaker registry, raising while it is asked whether the route may be called",
         reject: () => {
           wire(answers);
@@ -1904,7 +1942,8 @@ describe("the decision client", () => {
         says: ["failed before any request was made", "it raised RangeError."],
         also: (error) => {
           expect(asInstance(error, DecisionClientFaultError).stage).toBe("admitting");
-          expect(error.attempt).toMatchObject({ queueMs: 0, durationMs: null });
+          // The wait was measured, on the system clock, and no request was dispatched.
+          expect(error.attempt).toMatchObject({ queueMs: expect.any(Number), durationMs: null });
         },
       },
       {
@@ -2046,7 +2085,8 @@ describe("the decision client", () => {
         consecutiveFailures: 0,
         says: ["fails validation at $", "the answer could not be read: reading it raised TypeError"],
         also: (error) => {
-          expect(error.attempt).toMatchObject({ status: null, usage: null, queueMs: 0 });
+          // The call was timed on the system clock; nothing about an answer was recorded.
+          expect(error.attempt).toMatchObject({ status: null, usage: null, queueMs: expect.any(Number) });
         },
       },
       {
@@ -2200,6 +2240,7 @@ describe("the decision client", () => {
       for (const text of row.says) {
         expect(error.message).toContain(text);
       }
+      row.also?.(error);
       // A failure is described by its class and code. Its own words, which
       // can quote the request, appear nowhere on what is raised.
       expect(showsText(error, QUOTED_REQUEST_TEXT)).toBe(false);
@@ -2263,6 +2304,98 @@ describe("the decision client", () => {
       expect(asInstance(outcome(), DecisionTimeoutError).budgetMs).toBe(NARROWING_TIMEOUT_MS);
       expect(harness.double.calls).toHaveLength(1);
     });
+
+    /** Ways telling the breaker how a call ended can fail while the call holds a half-open route's one probe. */
+    const recordingFailures: readonly {
+      readonly label: string;
+      readonly outcome: "fails" | "answers";
+      readonly breaks: (registry: ReturnType<typeof decisionBreakers>, breakClock: (broken: boolean) => void) => void;
+    }[] = [
+      {
+        label: "the clock fails while the breaker is told of a failure",
+        outcome: "fails",
+        breaks: (registry, breakClock) => {
+          const tell = registry.onFailure.bind(registry);
+          vi.spyOn(registry, "onFailure").mockImplementation((key, kind) => {
+            breakClock(true);
+            try {
+              tell(key, kind);
+            } finally {
+              breakClock(false);
+            }
+          });
+        },
+      },
+      {
+        label: "the breaker raises while it is told of a failure",
+        outcome: "fails",
+        breaks: (registry) => {
+          vi.spyOn(registry, "onFailure").mockImplementation(() => {
+            throw new RangeError("the breaker could not be told");
+          });
+        },
+      },
+      {
+        label: "the breaker raises while it is told of an answer",
+        outcome: "answers",
+        breaks: (registry) => {
+          vi.spyOn(registry, "onSuccess").mockImplementation(() => {
+            throw new RangeError("the breaker could not be told");
+          });
+        },
+      },
+    ];
+
+    it.each(recordingFailures)(
+      "gives back a half-open route's probe slot when $label, so the route admits a new probe afterwards",
+      async ({ outcome, breaks }) => {
+        const table = admittedDecisionRouteTable();
+        const breaker = table.defaults.circuit_breaker;
+        expect(breaker.half_open_probes).toBe(1);
+        let nowMs = NOW_MS;
+        let clockBroken = false;
+        let probing = false;
+        const double = createDecisionTransportDouble((call) => {
+          if (call.index < breaker.failure_threshold || (probing && outcome === "fails")) {
+            throw serverFailure();
+          }
+          return scriptedAnswer(call.route, CHOICE_ANSWER());
+        });
+        configureDecisionClient({
+          routeTable: table,
+          transport: double.transport,
+          now: () => {
+            if (clockBroken) {
+              throw new TypeError("the clock failed");
+            }
+            return nowMs;
+          },
+        });
+        for (let failure = 0; failure < breaker.failure_threshold; failure += 1) {
+          await rejectionOf(ask());
+        }
+        nowMs += breaker.cooldown_ms;
+        expect(decisionBreakers().stateOf(breakerKey)).toBe("half-open");
+
+        probing = true;
+        breaks(decisionBreakers(), (broken) => {
+          clockBroken = broken;
+        });
+        const failed = asInstance(await rejectionOf(ask()), DecisionClientFaultError);
+        expect(failed.stage).toBe("recording");
+        expect(double.calls).toHaveLength(breaker.failure_threshold + 1);
+        vi.restoreAllMocks();
+        probing = false;
+
+        expect(decisionBreakers().snapshot(breakerKey).probesInFlight).toBe(0);
+        // The route is not shut: a later call is admitted, and once the cooldown
+        // that a counted failure re-opens has run, the probe it makes is let through.
+        nowMs += breaker.cooldown_ms;
+        const result = await ask();
+        expect(result.answers.department.type).toBe("choice");
+        expect(double.calls).toHaveLength(breaker.failure_threshold + 2);
+      },
+    );
 
     it("gives back the probe slot of an attempt that fails before it is dispatched", async () => {
       vi.useFakeTimers();

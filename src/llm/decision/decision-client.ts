@@ -461,6 +461,25 @@ function correlationIdOf(options: unknown): string | null {
 }
 
 /**
+ * Whether a signal's state can be read.
+ *
+ * An object can carry the signal's prototype without being one, and then
+ * reading whether it has aborted throws. The call reads that state later, in
+ * the middle of its own machinery, so it is read once here, where a failure is
+ * the caller's and is refused as such.
+ *
+ * @param signal The signal as passed.
+ * @returns True when its `aborted` state reads as a boolean.
+ */
+function signalStateReadable(signal: AbortSignal): boolean {
+  try {
+    return typeof signal.aborted === "boolean";
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Check the options of a call.
  *
  * An option that cannot be honoured is refused, never replaced by a default.
@@ -487,8 +506,8 @@ function usableOptions(options: DecisionCallOptions): DecisionCallOptions {
       "a deadline must be a number of milliseconds; leave it out to run under the route's budget",
     );
   }
-  if (signal !== undefined && !(signal instanceof AbortSignal)) {
-    throw invalidCall("options.signal", "a signal must be an AbortSignal");
+  if (signal !== undefined && !(signal instanceof AbortSignal && signalStateReadable(signal))) {
+    throw invalidCall("options.signal", "a signal must be an AbortSignal whose state can be read");
   }
   if (correlationId !== undefined && typeof correlationId !== "string") {
     throw invalidCall("options.correlationId", "a correlation id must be a string");
@@ -650,6 +669,42 @@ function decodeAnswered(
 }
 
 /**
+ * Write onto the attempt that an answer arrived, and what it was billed.
+ *
+ * Done as soon as the answer is in hand and before anything else the client
+ * does with it, so that whatever fails afterwards, the record still says the
+ * vendor answered and charged for it.
+ *
+ * @param result What the transport returned.
+ * @param measured The attempt's measurement.
+ * @param key The key the request was sent with, or empty when none was read.
+ * @returns The vendor's request id as recorded, or `null` when it sent none.
+ */
+function recordAnswer(result: SystemOneTransportResult, measured: AttemptInProgress, key: string): string | null {
+  const vendorRequestId =
+    result.vendorRequestId === null ? null : decisionErrorExcerpt(withoutCredential(result.vendorRequestId, key));
+  measured.status = result.status;
+  measured.vendorRequestId = vendorRequestId;
+  measured.usage = result.usage;
+  measured.servedModel = withoutCredential(result.servedModel, key);
+  return vendorRequestId;
+}
+
+/**
+ * Whether a transport returned something an answer can be recorded from.
+ *
+ * The hosted transport always does. A transport handed in at wiring may not,
+ * and what it returned is then judged where the answer is read.
+ *
+ * @param result What the transport returned.
+ * @returns True when it is an object naming the model that answered.
+ */
+function isRecordableAnswer(result: SystemOneTransportResult): boolean {
+  const given: unknown = result;
+  return typeof given === "object" && given !== null && typeof result.servedModel === "string";
+}
+
+/**
  * Turn a transport's answer into the caller's result.
  *
  * The answering model is compared with the route's pin first, on the whole id
@@ -670,18 +725,13 @@ function resultOf(
   key: string,
 ): DecisionCallResult {
   const { resolved } = prepared;
-  const vendorRequestId =
-    result.vendorRequestId === null ? null : decisionErrorExcerpt(withoutCredential(result.vendorRequestId, key));
-  measured.status = result.status;
-  measured.vendorRequestId = vendorRequestId;
-  measured.usage = result.usage;
-  measured.servedModel = withoutCredential(result.servedModel, key);
+  const vendorRequestId = recordAnswer(result, measured, key);
 
   if (result.servedModel !== resolved.expectedServedModel) {
     throw new DecisionRouteMismatchError({
       route: resolved.route,
       expectedServedModel: resolved.expectedServedModel,
-      servedModel: measured.servedModel,
+      servedModel: withoutCredential(result.servedModel, key),
       status: result.status,
       usage: result.usage,
       vendorRequestId,
@@ -709,6 +759,48 @@ function resultOf(
       usage: result.usage,
     },
   };
+}
+
+/**
+ * Tell a route's breaker how an attempt ended.
+ *
+ * Telling it can fail part-way: the breaker reads its clock before it frees a
+ * half-open route's probe slot, and a clock or a hook can throw. The slot this
+ * attempt holds is then returned before the failure is raised, or a half-open
+ * route would admit no probe for the life of the process. Returning a slot
+ * already freed changes nothing.
+ *
+ * @param registry The registry the attempt was counted in.
+ * @param key The route's breaker key.
+ * @param verdict What the attempt says about the vendor.
+ * @param holdsProbe Whether the attempt took the route's probe slot.
+ * @param dispatchedAtMs When the request was dispatched, or `null` when it was not.
+ * @returns void
+ * @throws Whatever telling the breaker raised, once the slot is returned.
+ */
+function tellBreaker(
+  registry: CircuitBreakerRegistry,
+  key: string,
+  verdict: BreakerVerdict,
+  holdsProbe: boolean,
+  dispatchedAtMs: number | null,
+): void {
+  try {
+    if (verdict.kind === "reachable") {
+      registry.onSuccess(key, dispatchedAtMs ?? undefined);
+    } else if (verdict.kind === "failed") {
+      registry.onFailure(key, verdict.failureKind);
+    } else if (holdsProbe) {
+      // No verdict, but the probe slot this attempt took must come back, or a
+      // half-open route admits no probe again.
+      registry.onAttemptAbandoned(key);
+    }
+  } catch (error) {
+    if (holdsProbe) {
+      registry.onAttemptAbandoned(key);
+    }
+    throw error;
+  }
 }
 
 /**
@@ -826,15 +918,28 @@ async function runAttempt(
     );
     const settlement = await settled.promise;
 
+    if (settlement.kind === "answered") {
+      // An answer arrived in time, whatever is then made of it, and it was
+      // billed: both are on the record before the client does anything else.
+      verdict = { kind: "reachable" };
+      progress.stage = "answered";
+      if (isRecordableAnswer(settlement.result)) {
+        recordAnswer(settlement.result, measured, progress.key);
+      }
+    }
+
+    // Timing the call is the client's own work, done once its outcome is in
+    // hand, so a clock that fails here is the client's failure and not the
+    // vendor's, whatever the outcome was.
+    const stageBeforeTiming = progress.stage;
+    progress.stage = "recording";
     const settledAtMs = now();
+    progress.stage = stageBeforeTiming;
     const dispatchedAtMs = progress.dispatchedAtMs;
     measured.queueMs = (dispatchedAtMs ?? settledAtMs) - queuedAtMs;
     measured.durationMs = dispatchedAtMs === null ? null : settledAtMs - dispatchedAtMs;
 
     if (settlement.kind === "answered") {
-      // An answer arrived in time, whatever is then made of it.
-      verdict = { kind: "reachable" };
-      progress.stage = "answered";
       return resultOf(settlement.result, prepared, measured, progress.key);
     }
 
@@ -874,15 +979,7 @@ async function runAttempt(
     const outcomeStage = progress.stage;
     progress.stage = "recording";
     try {
-      if (verdict.kind === "reachable") {
-        registry.onSuccess(key, progress.dispatchedAtMs ?? undefined);
-      } else if (verdict.kind === "failed") {
-        registry.onFailure(key, verdict.failureKind);
-      } else if (holdsProbe) {
-        // No verdict, but the probe slot this attempt took must come back, or
-        // a half-open route admits no probe again.
-        registry.onAttemptAbandoned(key);
-      }
+      tellBreaker(registry, key, verdict, holdsProbe, progress.dispatchedAtMs);
     } finally {
       registry.onAttemptEnd(key);
     }
