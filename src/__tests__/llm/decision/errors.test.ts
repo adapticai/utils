@@ -19,10 +19,12 @@ import { describe, expect, it } from "vitest";
 
 import {
   DECISION_ERROR_BODY_EXCERPT,
+  DECISION_CLIENT_FAULT_STAGES,
   DECISION_FAULTS,
   DECISION_UNAVAILABLE_CODES,
   DecisionAdmissionError,
   DecisionCallError,
+  DecisionClientFaultError,
   DecisionCredentialError,
   DecisionRequestInvalidError,
   DecisionResponseFormatError,
@@ -184,6 +186,12 @@ const ERROR_CASES: readonly ErrorCase[] = [
         usage: BILLED_USAGE,
         vendorRequestId: REQUEST_ID,
       }),
+  },
+  {
+    className: "DecisionClientFaultError",
+    fault: "internal",
+    build: () =>
+      new DecisionClientFaultError({ route: ROUTE, stage: "admitting", description: "TypeError ERR_INVALID_STATE" }),
   },
 ];
 
@@ -371,6 +379,11 @@ const ABSENT_CASES: readonly AbsentCase[] = [
       }),
     nullFields: ["status", "retryAfterMs", "vendorRequestId", "usage"],
   },
+  {
+    label: "client fault",
+    build: () => new DecisionClientFaultError({ route: ROUTE, stage: "recording", description: "RangeError" }),
+    nullFields: ["status", "retryAfterMs", "vendorRequestId", "usage"],
+  },
 ];
 
 /** One way to build an error from text an untrusted peer controls. */
@@ -514,6 +527,15 @@ const HOSTILE_CASES: readonly HostileCase[] = [
         vendorRequestId: text,
       }),
     carried: 2,
+    quoted: 1,
+    carriedOnceCompleted: 4,
+  },
+  {
+    // A description is built from identifiers a runtime assigns, and is still
+    // bounded like any text this package did not write.
+    label: "client fault",
+    build: (text) => new DecisionClientFaultError({ route: ROUTE, stage: "resolving", description: text }),
+    carried: 1,
     quoted: 1,
     carriedOnceCompleted: 4,
   },
@@ -661,9 +683,10 @@ describe("decision call errors", () => {
       "credential",
       "route_mismatch",
       "unavailable",
+      "internal",
     ]);
-    expect(ERROR_CASES).toHaveLength(8);
-    expect(new Set(ERROR_CASES.map((row) => row.className)).size).toBe(8);
+    expect(ERROR_CASES).toHaveLength(9);
+    expect(new Set(ERROR_CASES.map((row) => row.className)).size).toBe(9);
 
     for (const row of ERROR_CASES) {
       const error = row.build();
@@ -1000,6 +1023,35 @@ describe("decision call errors", () => {
     expect(mismatch.expectedServedModel).toBe(MODEL_PIN);
     expect(mismatch.servedModel).toBe(OTHER_MODEL);
     expect(mismatch.usage).toEqual(BILLED_USAGE);
+
+    // A failure of the client's own machinery says at which stage, by what
+    // class of failure, and that it is not the vendor's and not worth retrying.
+    expect([...DECISION_CLIENT_FAULT_STAGES]).toEqual(["resolving", "admitting", "recording"]);
+    const stageWords: Readonly<Record<(typeof DECISION_CLIENT_FAULT_STAGES)[number], string>> = {
+      resolving: "while resolving the route",
+      admitting: "before any request was made",
+      recording: "while recording how the call ended",
+    };
+    for (const stage of DECISION_CLIENT_FAULT_STAGES) {
+      const defect = new DecisionClientFaultError({ route: ROUTE, stage, description: "TypeError, caused by Error EPIPE" });
+      expect(defect.fault).toBe("internal");
+      expect(defect.stage).toBe(stage);
+      expect(defect.description).toBe("TypeError, caused by Error EPIPE");
+      expect(defect.retryable).toBe(false);
+      expect(defect.route).toBe(ROUTE);
+      expect(defect.status).toBeNull();
+      expect(defect.message).toBe(
+        `The decision client failed ${stageWords[stage]} on decision route ${ROUTE}: ` +
+          "it raised TypeError, caused by Error EPIPE. " +
+          "This is a defect of the client or of what it was wired with, and says nothing about the vendor",
+      );
+      expect(Object.keys(defect)).toEqual(expect.arrayContaining(["fault", "stage", "description", "retryable"]));
+    }
+    // It is not the transport fault: a consumer counting the vendor's failures
+    // by fault or by class does not count this one.
+    const defect = new DecisionClientFaultError({ route: ROUTE, stage: "admitting", description: "TypeError" });
+    expect(defect).not.toBeInstanceOf(DecisionTransportError);
+    expect(defect.fault).not.toBe("transport");
   });
 
   it("a route is declared in one of two shapes, and a refused route maps onto the unavailable error", () => {

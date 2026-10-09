@@ -43,3 +43,12 @@ jobs:
         run: npm test
       - name: Build
         run: npm run build
+      # Gates that are scripts, not tests. The limits verifier holds the
+      # provider-limits config and the two route tables to one another. The
+      # client verifier holds the LLM barrel to what it must reach and may
+      # import, typechecks what it reaches, and reads the build output for
+      # declarations of test-only sources, so it runs after Build.
+      - name: Verify provider limits
+        run: node scripts/verify-provider-limits.mjs
+      - name: Verify LLM client build
+        run: node scripts/verify-llm-client-build.mjs
