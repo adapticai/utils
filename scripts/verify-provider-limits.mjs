@@ -14,25 +14,29 @@
  *
  * The second is wiring. A guard that exists but is not on the path is the
  * built-but-never-wired failure: it reviews well, tests well in isolation, and
- * bounds nothing. So this also asserts that the chain executor reaches every
- * transport through the guards, and that a guard timeout is not counted against
- * provider health.
+ * bounds nothing. So the `wiring` mode asserts, against the files that own each
+ * construct, that a leg reaches its transport only through the guards, that a
+ * guard timeout is not counted against provider health, that the guard bounds
+ * its queue and returns its permit, and that no other source dispatches to a
+ * transport around them.
  *
  * Usage: node scripts/verify-provider-limits.mjs [wiring]   (from the utils root)
+ *
+ * Imported, the module runs nothing; `checkWiring` and `readWiringSources` are
+ * exported so the wiring assertions can be exercised against altered sources.
  *
  * @module utils/scripts/verify-provider-limits
  */
 
-import { readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const UTILS_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const LIMITS_PATH = join(UTILS_ROOT, "src/llm/provider-limits.json");
 const ROUTES_PATH = join(UTILS_ROOT, "src/llm/alias-routes.json");
 const DECISION_ROUTES_PATH = join(UTILS_ROOT, "src/llm/decision/decision-routes.json");
-const CHAIN_PATH = join(UTILS_ROOT, "src/llm/fallback-chain.ts");
-const GUARD_PATH = join(UTILS_ROOT, "src/llm/rate-guard.ts");
 
 /** A rate ceiling at or below this is treated as suspiciously permissive to have been guessed. */
 const MIN_SENSIBLE_RPM = 1;
@@ -215,54 +219,441 @@ function checkConfig() {
 }
 
 /**
+ * The files that own each guarded construct, relative to the package root.
+ *
+ * The leg attempt dispatches a generative leg to its transport and classifies
+ * how the attempt ended; the same-model group owns the breaker probe slot an
+ * attempt may hold; the guard module owns the queue bound and the permit. The
+ * chain executor reaches transports only through the group and the attempt.
+ */
+export const WIRING_FILES = Object.freeze({
+  legAttempt: "src/llm/leg-attempt.ts",
+  hedge: "src/llm/hedge.ts",
+  guard: "src/llm/rate-guard.ts",
+});
+
+/**
+ * The directory the transports and every caller that dispatches to one live
+ * under, relative to the package root. Every production source here is swept
+ * for a dispatch that bypasses the guards.
+ */
+const LLM_SOURCE_DIR = "src/llm";
+
+/** The transport interface's one dispatch method. */
+const DISPATCH_METHOD = "execute";
+
+/** The guard every dispatch must pass through. */
+const GUARD_FUNCTION = "withProviderGuards";
+
+/** Argument positions of `withProviderGuards(provider, call, maxWaitMs, scope)`. */
+const GUARD_THUNK_ARGUMENT = 1;
+const GUARD_SCOPE_ARGUMENT = 3;
+
+const requireFromHere = createRequire(import.meta.url);
+
+/**
+ * The TypeScript compiler, loaded only by the wiring mode.
+ *
+ * The wiring assertions read syntax, not text, so a name mentioned in a
+ * comment or an import satisfies nothing. The config mode needs no parser and
+ * runs without the package's dependencies installed.
+ *
+ * @returns {typeof import("typescript")} The compiler API.
+ */
+function loadTypeScript() {
+  return requireFromHere("typescript");
+}
+
+/**
+ * @typedef {object} WiringSources
+ * @property {string} legAttempt Text of the leg attempt.
+ * @property {string} hedge Text of the same-model group.
+ * @property {string} guard Text of the rate and concurrency guards.
+ * @property {Readonly<Record<string, string>>} others Text of every other
+ *   production source under `src/llm`, keyed by package-relative path.
+ */
+
+/**
+ * List the production TypeScript sources under a directory, tests excluded.
+ *
+ * @param {string} dir Absolute directory.
+ * @returns {string[]} Absolute paths, sorted.
+ */
+function listSources(dir) {
+  /** @type {string[]} */
+  const paths = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name !== "__tests__") {
+        paths.push(...listSources(path));
+      }
+      continue;
+    }
+    if (
+      entry.isFile() &&
+      entry.name.endsWith(".ts") &&
+      !entry.name.endsWith(".d.ts") &&
+      !/\.(test|spec)\.ts$/.test(entry.name)
+    ) {
+      paths.push(path);
+    }
+  }
+  return paths.sort();
+}
+
+/**
+ * Read the sources the wiring check inspects.
+ *
+ * @param {string} [root] The package root.
+ * @returns {WiringSources} The three owning files and every other production source under `src/llm`.
+ */
+export function readWiringSources(root = UTILS_ROOT) {
+  const named = new Set(Object.values(WIRING_FILES));
+  /** @type {Record<string, string>} */
+  const others = {};
+  for (const path of listSources(join(root, LLM_SOURCE_DIR))) {
+    const packagePath = relative(root, path).split(sep).join("/");
+    if (!named.has(packagePath)) {
+      others[packagePath] = readFileSync(path, "utf8");
+    }
+  }
+  return {
+    legAttempt: readFileSync(join(root, WIRING_FILES.legAttempt), "utf8"),
+    hedge: readFileSync(join(root, WIRING_FILES.hedge), "utf8"),
+    guard: readFileSync(join(root, WIRING_FILES.guard), "utf8"),
+    others,
+  };
+}
+
+/**
+ * Every node under `root` the predicate accepts, in source order.
+ *
+ * @param {typeof import("typescript")} ts The compiler API.
+ * @param {import("typescript").Node} root Where to search.
+ * @param {(node: import("typescript").Node) => boolean} predicate The test.
+ * @returns {import("typescript").Node[]} The matches.
+ */
+function collect(ts, root, predicate) {
+  /** @type {import("typescript").Node[]} */
+  const found = [];
+  const visit = (/** @type {import("typescript").Node} */ node) => {
+    if (predicate(node)) {
+      found.push(node);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(root);
+  return found;
+}
+
+/**
+ * Whether a node is a call to a free function of the given name.
+ *
+ * @param {typeof import("typescript")} ts The compiler API.
+ * @param {import("typescript").Node} node The node.
+ * @param {string} name The function name.
+ * @returns {node is import("typescript").CallExpression} Whether it is.
+ */
+function isCallTo(ts, node, name) {
+  return ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === name;
+}
+
+/**
+ * Whether a node is a call to a method of the given name, on any receiver.
+ *
+ * @param {typeof import("typescript")} ts The compiler API.
+ * @param {import("typescript").Node} node The node.
+ * @param {string} name The method name.
+ * @returns {node is import("typescript").CallExpression} Whether it is.
+ */
+function isMethodCall(ts, node, name) {
+  return (
+    ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === name
+  );
+}
+
+/**
+ * Whether `inner` lies within `outer`'s source range.
+ *
+ * @param {import("typescript").Node} outer The container.
+ * @param {import("typescript").Node} inner The candidate.
+ * @returns {boolean} Whether it does.
+ */
+function within(outer, inner) {
+  return inner.pos >= outer.pos && inner.end <= outer.end;
+}
+
+/**
+ * One parsed source and its guard calls.
+ *
+ * @typedef {object} ParsedSource
+ * @property {import("typescript").SourceFile} file The syntax tree.
+ * @property {import("typescript").CallExpression[]} guardCalls Every call to `withProviderGuards`.
+ * @property {import("typescript").Node[]} guardedBodies The function bodies those calls run as their admitted work.
+ */
+
+/**
+ * Parse a source and find what its guard calls run.
+ *
+ * A guard call's work is its second argument. Inline, that is the function
+ * itself. Named, it is the in-file function of that name, and only when every
+ * other reference to the name is also a guard call's work: a function the
+ * file also calls directly reaches its transport unguarded on that path.
+ *
+ * @param {typeof import("typescript")} ts The compiler API.
+ * @param {string} path Package-relative path, for the parser.
+ * @param {string} text The source.
+ * @returns {ParsedSource} The parse.
+ */
+function parseSource(ts, path, text) {
+  const file = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const guardCalls = /** @type {import("typescript").CallExpression[]} */ (
+    collect(ts, file, (node) => isCallTo(ts, node, GUARD_FUNCTION))
+  );
+
+  /** @type {Map<string, import("typescript").Node>} */
+  const functionsByName = new Map();
+  for (const node of collect(ts, file, () => true)) {
+    if (ts.isFunctionDeclaration(node) && node.name !== undefined) {
+      functionsByName.set(node.name.text, node);
+    } else if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer !== undefined &&
+      (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer))
+    ) {
+      functionsByName.set(node.name.text, node.initializer);
+    }
+  }
+  const thunks = new Set(guardCalls.map((call) => call.arguments[GUARD_THUNK_ARGUMENT]).filter(Boolean));
+
+  /** @type {import("typescript").Node[]} */
+  const guardedBodies = [];
+  for (const thunk of thunks) {
+    if (ts.isArrowFunction(thunk) || ts.isFunctionExpression(thunk)) {
+      guardedBodies.push(thunk);
+      continue;
+    }
+    if (!ts.isIdentifier(thunk)) {
+      continue;
+    }
+    const target = functionsByName.get(thunk.text);
+    if (target === undefined) {
+      continue;
+    }
+    const declarationName = ts.isFunctionDeclaration(target) ? target.name : target.parent.name;
+    const references = collect(
+      ts,
+      file,
+      (node) => ts.isIdentifier(node) && node.text === thunk.text && node !== declarationName,
+    );
+    if (references.every((reference) => thunks.has(reference))) {
+      guardedBodies.push(target);
+    }
+  }
+  return { file, guardCalls, guardedBodies };
+}
+
+/**
+ * The calls in a parsed source that dispatch to a transport outside every guard.
+ *
+ * @param {typeof import("typescript")} ts The compiler API.
+ * @param {ParsedSource} parsed The parse.
+ * @returns {{ dispatches: number, unguardedLines: number[] }} How many dispatches, and the lines of the unguarded ones.
+ */
+function dispatchesOutsideGuards(ts, parsed) {
+  const dispatches = collect(ts, parsed.file, (node) => isMethodCall(ts, node, DISPATCH_METHOD));
+  const unguardedLines = dispatches
+    .filter((dispatch) => !parsed.guardedBodies.some((body) => within(body, dispatch)))
+    .map((dispatch) => parsed.file.getLineAndCharacterOfPosition(dispatch.getStart(parsed.file)).line + 1);
+  return { dispatches: dispatches.length, unguardedLines };
+}
+
+/**
+ * The source text of a property of a guard call's scope argument.
+ *
+ * @param {typeof import("typescript")} ts The compiler API.
+ * @param {import("typescript").SourceFile} file The file the call is in.
+ * @param {import("typescript").CallExpression} call The guard call.
+ * @param {string} name The property.
+ * @returns {string | undefined} The initializer's text, or undefined when the scope is not a literal naming it.
+ */
+function scopeProperty(ts, file, call, name) {
+  const scope = call.arguments[GUARD_SCOPE_ARGUMENT];
+  if (scope === undefined || !ts.isObjectLiteralExpression(scope)) {
+    return undefined;
+  }
+  for (const property of scope.properties) {
+    if (ts.isPropertyAssignment(property) && property.name.getText(file) === name) {
+      return property.initializer.getText(file);
+    }
+    if (ts.isShorthandPropertyAssignment(property) && property.name.text === name) {
+      return name;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Whether every `countsAgainstHealth` a guard-timeout branch sets is `false`.
+ *
+ * @param {typeof import("typescript")} ts The compiler API.
+ * @param {import("typescript").Node[]} timeoutTests The `instanceof RateGuardTimeoutError` tests.
+ * @returns {boolean} True when at least one branch sets it and none sets anything but `false`.
+ */
+function guardTimeoutSparesHealth(ts, timeoutTests) {
+  /** @type {import("typescript").Node[]} */
+  const verdicts = [];
+  for (const test of timeoutTests) {
+    let node = test.parent;
+    while (node !== undefined && !(ts.isIfStatement(node) && within(node.expression, test))) {
+      node = node.parent;
+    }
+    if (node === undefined || !ts.isIfStatement(node)) {
+      continue;
+    }
+    for (const property of collect(
+      ts,
+      node.thenStatement,
+      (candidate) =>
+        ts.isPropertyAssignment(candidate) &&
+        ts.isIdentifier(candidate.name) &&
+        candidate.name.text === "countsAgainstHealth",
+    )) {
+      verdicts.push(/** @type {import("typescript").PropertyAssignment} */ (property).initializer);
+    }
+  }
+  return verdicts.length > 0 && verdicts.every((verdict) => verdict.kind === ts.SyntaxKind.FalseKeyword);
+}
+
+/**
  * Assert the guards are on the execution path, not merely present.
  *
+ * Each assertion reads the file that owns the construct it describes and names
+ * that file in its failure, so a refactor that moves a construct fails here
+ * with the file it left rather than passing on a stale one. Assertions read
+ * syntax: a name in a comment or an import satisfies nothing. Besides the
+ * owning files, every other production source under `src/llm` is swept for a
+ * transport dispatch outside a guard, so a new dispatch site is held to the
+ * same rule wherever it is written.
+ *
+ * @param {WiringSources} [sources] The sources; the default reads the tree.
  * @returns {string[]} Failures.
  */
-function checkWiring() {
+export function checkWiring(sources = readWiringSources()) {
+  const ts = loadTypeScript();
   /** @type {string[]} */
   const failures = [];
-  const chain = readFileSync(CHAIN_PATH, "utf8");
-  const guard = readFileSync(GUARD_PATH, "utf8");
+  const { legAttempt: legPath, hedge: hedgePath, guard: guardPath } = WIRING_FILES;
 
-  if (!chain.includes("withProviderGuards")) {
+  const leg = parseSource(ts, legPath, sources.legAttempt);
+  const legGuarded = leg.guardCalls.length > 0;
+  if (!legGuarded) {
     failures.push(
-      "the chain executor does not call withProviderGuards, so a leg can reach a transport unbounded — the guard would exist without guarding anything",
+      `${legPath}: the leg attempt does not call withProviderGuards, so a leg can reach a transport unbounded — the guard would exist without guarding anything`,
+    );
+  } else {
+    const legDispatch = dispatchesOutsideGuards(ts, leg);
+    if (legDispatch.dispatches === 0 || legDispatch.unguardedLines.length > 0) {
+      failures.push(
+        `${legPath}: withProviderGuards does not wrap the transport call itself${
+          legDispatch.dispatches === 0
+            ? " (no transport dispatch found)"
+            : ` (unguarded dispatch at line ${legDispatch.unguardedLines.join(", ")})`
+        }`,
+      );
+    }
+  }
+
+  const timeoutTests = collect(
+    ts,
+    leg.file,
+    (node) =>
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind === ts.SyntaxKind.InstanceOfKeyword &&
+      ts.isIdentifier(node.right) &&
+      node.right.text === "RateGuardTimeoutError",
+  );
+  if (timeoutTests.length === 0) {
+    failures.push(
+      `${legPath}: the leg attempt does not classify a guard timeout, so the client's own pacing would be counted against provider health and could open a breaker on a healthy route`,
+    );
+  } else if (!guardTimeoutSparesHealth(ts, timeoutTests)) {
+    failures.push(`${legPath}: a guard timeout is counted against provider health; the provider was never contacted`);
+  }
+
+  const guard = parseSource(ts, guardPath, sources.guard);
+  const guardFunction = collect(
+    ts,
+    guard.file,
+    (node) => ts.isFunctionDeclaration(node) && node.name?.text === GUARD_FUNCTION,
+  )[0];
+  const boundsQueue =
+    guardFunction !== undefined &&
+    collect(
+      ts,
+      guardFunction,
+      (node) =>
+        isMethodCall(ts, node, "min") &&
+        ts.isIdentifier(node.expression.expression) &&
+        node.expression.expression.text === "Math" &&
+        node.arguments[0] !== undefined &&
+        ts.isIdentifier(node.arguments[0]) &&
+        node.arguments[0].text === "maxWaitMs",
+    ).length > 0;
+  if (!boundsQueue) {
+    failures.push(
+      `${guardPath}: withProviderGuards does not bound queue time by the caller's budget, so a caller could spend its whole deadline queuing and never reach the fallback chain`,
     );
   }
-  if (!/withProviderGuards\([\s\S]{0,400}?transport\.execute/.test(chain)) {
-    failures.push("withProviderGuards does not wrap the transport call itself");
-  }
-  if (!chain.includes("RateGuardTimeoutError")) {
+  const releasesAlways =
+    guardFunction !== undefined &&
+    collect(
+      ts,
+      guardFunction,
+      (node) =>
+        ts.isTryStatement(node) &&
+        node.finallyBlock !== undefined &&
+        collect(ts, node.finallyBlock, (inner) => isCallTo(ts, inner, "release")).length > 0,
+    ).length > 0;
+  if (!releasesAlways) {
     failures.push(
-      "the chain does not classify a guard timeout, so the client's own pacing would be counted against provider health and could open a breaker on a healthy route",
+      `${guardPath}: the concurrency permit is not released on every path; failures would shrink the limit permanently`,
     );
   }
-  if (!/RateGuardTimeoutError[\s\S]{0,300}?countsAgainstHealth: false/.test(chain)) {
-    failures.push("a guard timeout is counted against provider health; the provider was never contacted");
+
+  if (legGuarded) {
+    if (!leg.guardCalls.every((call) => scopeProperty(ts, leg.file, call, "modelId") === "leg.route.modelId")) {
+      failures.push(
+        `${legPath}: the leg attempt does not tell the guard which model a leg addresses, so a per-model scope in the limits config is never applied and every model of a provider shares one guard`,
+      );
+    }
+    if (!leg.guardCalls.every((call) => scopeProperty(ts, leg.file, call, "signal") === "controller.signal")) {
+      failures.push(
+        `${legPath}: the leg attempt does not hand the leg's signal to the guard, so a leg whose budget or caller is gone keeps its place in the queue until the wait budget runs out`,
+      );
+    }
   }
-  if (!guard.includes("Math.min(maxWaitMs")) {
+
+  const hedge = parseSource(ts, hedgePath, sources.hedge);
+  if (collect(ts, hedge.file, (node) => isMethodCall(ts, node, "onAttemptAbandoned")).length === 0) {
     failures.push(
-      "the guard does not bound queue time by the caller's budget, so a caller could spend its whole deadline queuing and never reach the fallback chain",
+      `${hedgePath}: the same-model group never returns a half-open probe slot for an attempt that ended without a verdict, so one refused probe wedges its route shut`,
     );
   }
-  if (!/finally\s*\{[\s\S]{0,400}?release\(\);/.test(guard)) {
-    failures.push("the concurrency permit is not released on every path; failures would shrink the limit permanently");
-  }
-  if (!/withProviderGuards\([\s\S]{0,800}?modelId: leg\.route\.modelId/.test(chain)) {
-    failures.push(
-      "the chain does not tell the guard which model a leg addresses, so a per-model scope in the limits config is never applied and every model of a provider shares one guard",
-    );
-  }
-  if (!/withProviderGuards\([\s\S]{0,800}?signal: controller\.signal \}/.test(chain)) {
-    failures.push(
-      "the chain does not hand the leg's signal to the guard, so a leg whose budget or caller is gone keeps its place in the queue until the wait budget runs out",
-    );
-  }
-  if (!chain.includes("onAttemptAbandoned")) {
-    failures.push(
-      "the chain never returns a half-open probe slot for an attempt that ended without a verdict, so one refused probe wedges its route shut",
-    );
+
+  const swept = [
+    [hedgePath, hedge],
+    [guardPath, guard],
+    ...Object.entries(sources.others).map(([path, text]) => [path, parseSource(ts, path, text)]),
+  ];
+  for (const [path, parsed] of swept) {
+    for (const line of dispatchesOutsideGuards(ts, parsed).unguardedLines) {
+      failures.push(
+        `${path}:${line}: dispatches to a transport outside withProviderGuards, so that call is held by no rate or concurrency limit`,
+      );
+    }
   }
 
   return failures;
@@ -288,6 +679,22 @@ function report(failures, token) {
 }
 
 /**
+ * Whether this module is the program node was asked to run, rather than an
+ * import. Importing the module, as its tests do, must run no check and set no
+ * exit code.
+ *
+ * @returns {boolean} Whether it is.
+ */
+function isEntryPoint() {
+  const invoked = process.argv[1];
+  return (
+    invoked !== undefined &&
+    existsSync(invoked) &&
+    realpathSync(invoked) === realpathSync(fileURLToPath(import.meta.url))
+  );
+}
+
+/**
  * Entry point.
  *
  * @returns {void}
@@ -300,4 +707,6 @@ function main() {
   report(checkConfig(), "PROVIDER_LIMITS_OK");
 }
 
-main();
+if (isEntryPoint()) {
+  main();
+}
