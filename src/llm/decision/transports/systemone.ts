@@ -50,6 +50,7 @@
  */
 
 import type { BreakerFailureKind } from "../../circuit-breaker";
+import { describeFailure, withoutCredential } from "../../transports/failure-description";
 import type { LlmUsageRecord } from "../../types";
 import {
   DecisionCredentialError,
@@ -96,12 +97,6 @@ const REQUEST_INVALID_STATUS = 422;
  */
 const CAPACITY_STATUSES: ReadonlySet<number> = new Set([408, 429, 503, 529]);
 
-/** How many links of a failure's chain of causes are described. */
-const FAILURE_CAUSE_DEPTH = 4;
-
-/** What stands where the key was, in text this layer did not write. */
-const KEY_REMOVED = "[credential removed]";
-
 /**
  * A character a credential never holds: anything outside visible ASCII.
  *
@@ -110,17 +105,6 @@ const KEY_REMOVED = "[credential removed]";
  * or pasted wrongly on its way into the variable.
  */
 const NOT_A_CREDENTIAL_CHARACTER = /[^\x21-\x7e]/;
-
-/** What a link of a failure's chain is called when it has no printable class name. */
-const UNNAMED_FAILURE = "an unnamed failure";
-
-/**
- * What a failure's class name or system code looks like.
- *
- * Anything else found in those fields is not printed, so a description is made
- * only of identifiers a runtime assigns.
- */
-const FAILURE_IDENTIFIER = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
 
 /** What a status says about a call, when the status is not an answer. */
 export type DecisionStatusFault =
@@ -336,79 +320,6 @@ function observedErrorType(body: string): string | null {
 }
 
 /**
- * A printable identifier, or `null`.
- *
- * @param value A failure's `name` or `code`.
- * @returns The value when it is a short identifier, else `null`.
- */
-function identifierOrNull(value: unknown): string | null {
-  return typeof value === "string" && FAILURE_IDENTIFIER.test(value) ? value : null;
-}
-
-/**
- * Read one member of a thrown value.
- *
- * A thrown value is not this package's object, and a member of it may be an
- * accessor that throws. A member that cannot be read is treated as absent: the
- * failure being described has already happened, and a second one raised while
- * describing it would reach the caller in place of this package's own fault.
- *
- * @param holder The thrown value, or one of its causes.
- * @param member The member to read.
- * @returns The member's value, or `undefined` when it is absent or unreadable.
- */
-function readMember(holder: Readonly<Record<string, unknown>>, member: "name" | "code" | "cause"): unknown {
-  try {
-    return holder[member];
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * Describe a failure of the HTTP layer without quoting it.
- *
- * Built from the class name and the system code of the failure and of each of
- * its causes, and never from a message. A message is free text written by the
- * layer that failed, and when that layer refused to build the request it
- * quotes the header it refused, which is where the key is.
- *
- * @param error Whatever the HTTP layer threw.
- * @returns A description that names the failure and holds no text from it.
- */
-function describeFailure(error: unknown): string {
-  const links: string[] = [];
-  let current: unknown = error;
-  for (let depth = 0; depth < FAILURE_CAUSE_DEPTH && isRecord(current); depth += 1) {
-    const name = identifierOrNull(readMember(current, "name")) ?? UNNAMED_FAILURE;
-    const code = identifierOrNull(readMember(current, "code"));
-    links.push(code === null ? name : `${name} ${code}`);
-    current = readMember(current, "cause");
-  }
-  return links.length === 0 ? "a thrown value that is not an error" : links.join(", caused by ");
-}
-
-/**
- * Take the key out of text this layer did not write.
- *
- * Every occurrence is replaced, in the key's own form and in the form a JSON
- * string writes it, which differs when the key holds a quote or a backslash
- * and is the form a vendor's JSON body quotes it in. The replacement is done
- * on the whole text before any of it is excerpted, so a key lying across an
- * excerpt's bound is removed whole and not cut to a prefix. Text that does not
- * hold the key is returned unchanged.
- *
- * @param text Text from a vendor or from a lower layer.
- * @param key The key the request was sent with; never empty.
- * @returns The text with the key replaced wherever it stood.
- */
-function withoutKey(text: string, key: string): string {
-  const asJson = JSON.stringify(key).slice(1, -1);
-  const verbatimRemoved = text.split(key).join(KEY_REMOVED);
-  return asJson === key ? verbatimRemoved : verbatimRemoved.split(asJson).join(KEY_REMOVED);
-}
-
-/**
  * Read the key for a route from the environment, by name.
  *
  * @param route The route whose key is wanted.
@@ -480,7 +391,7 @@ function headerOrNull(response: SystemOneFetchResponse, name: string): string | 
  */
 function vendorRequestIdOf(response: SystemOneFetchResponse, key: string): string | null {
   const id = headerOrNull(response, VENDOR_REQUEST_ID_HEADER);
-  return id === null ? null : withoutKey(id, key);
+  return id === null ? null : withoutCredential(id, key);
 }
 
 /** What a failing status came with. */
@@ -577,7 +488,7 @@ function raiseWithoutAnswer(error: unknown, signal: AbortSignal, route: Decision
     source: "network",
     route,
     retryable: true,
-    detail: withoutKey(describeFailure(error), key),
+    detail: withoutCredential(describeFailure(error), key),
   });
 }
 
@@ -624,7 +535,7 @@ export function createSystemOneTransport(config: SystemOneTransportConfig = {}):
         throw failureForStatus(statusFault, {
           route,
           response,
-          body: withoutKey(await readFailureBody(response), key),
+          body: withoutCredential(await readFailureBody(response), key),
           vendorRequestId,
           nowMs: now(),
         });

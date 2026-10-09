@@ -36,7 +36,7 @@
  * @module llm/rate-guard
  */
 
-import { TokenBucketRateLimiter } from "../rate-limiter";
+import { RateLimitWaitAbandonedError, TokenBucketRateLimiter } from "../rate-limiter";
 
 import limitsConfig from "./provider-limits.json";
 
@@ -177,6 +177,19 @@ export interface GuardCallScope {
    * permit freed after it has gone goes to a caller that is still waiting.
    */
   readonly signal?: AbortSignal;
+  /**
+   * Whether {@link GuardCallScope.signal} also ends the wait for a rate token.
+   *
+   * Unset, the signal is heard by the concurrency queue alone: a call whose
+   * caller has gone stays in the rate queue until it is granted a token or the
+   * limiter's own wait runs out, and is refused at the concurrency gate after
+   * that. Set, a caller that stops waiting leaves the rate queue at once and
+   * takes no token, so the token goes to the caller behind it. It is a choice
+   * of the caller's and not the guard's default, because when a queued call
+   * ends decides which call a chain of fallbacks makes next, and a caller
+   * changes that for itself deliberately.
+   */
+  readonly signalEndsRateWait?: boolean;
 }
 
 /** What a refusal says about the call it refused. */
@@ -487,10 +500,15 @@ export async function withProviderGuards<T>(
       : Math.min(maxWaitMs, limits.acquire_timeout_ms);
 
   try {
-    await rateLimiterFor(identity).acquire();
-  } catch {
+    if (scope.signalEndsRateWait === true && scope.signal !== undefined) {
+      await rateLimiterFor(identity).acquire(scope.signal);
+    } else {
+      await rateLimiterFor(identity).acquire();
+    }
+  } catch (error) {
     throw new RateGuardTimeoutError(provider, "rate", waitBudgetMs, {
       modelId: identity.modelId,
+      abandoned: error instanceof RateLimitWaitAbandonedError,
     });
   }
 
