@@ -496,7 +496,62 @@ function scopeProperty(ts, file, call, name) {
 }
 
 /**
+ * What a node's truth value implies about the truth of a test inside it: the
+ * test's value whenever the node is truthy, and whenever it is falsy, or null
+ * where the node's value implies nothing about the test.
+ *
+ * @typedef {{ whenTrue: boolean | null, whenFalse: boolean | null }} Implication
+ */
+
+/**
+ * The `if` whose condition implies a test is true, read through the operators
+ * between them, or undefined when there is no such `if`.
+ *
+ * A branch is the guard-timeout branch only when it runs for guard timeouts
+ * alone. Finding the test somewhere in the condition is not enough: under a
+ * `!` the branch runs for every other error, and beside an `||` it also runs
+ * for whatever the other operand admits. So the implication is carried up from
+ * the test: a parenthesis keeps it, a `!` swaps its two halves, an `&&` keeps
+ * only what its truth implies (both operands hold), an `||` keeps only what its
+ * falsity implies (neither holds), and any other construct implies nothing.
+ *
+ * @param {typeof import("typescript")} ts The compiler API.
+ * @param {import("typescript").Node} test The test.
+ * @returns {import("typescript").IfStatement | undefined} The `if` whose then-branch runs only when the test holds.
+ */
+function ifImplyingTest(ts, test) {
+  /** @type {Implication} */
+  let implication = { whenTrue: true, whenFalse: false };
+  let child = test;
+  let node = test.parent;
+  while (node !== undefined) {
+    if (ts.isIfStatement(node) && node.expression === child) {
+      return implication.whenTrue === true ? node : undefined;
+    }
+    if (ts.isParenthesizedExpression(node)) {
+      // A parenthesis changes nothing about what its value implies.
+    } else if (ts.isPrefixUnaryExpression(node) && node.operator === ts.SyntaxKind.ExclamationToken) {
+      implication = { whenTrue: implication.whenFalse, whenFalse: implication.whenTrue };
+    } else if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) {
+      implication = { whenTrue: implication.whenTrue, whenFalse: null };
+    } else if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.BarBarToken) {
+      implication = { whenTrue: null, whenFalse: implication.whenFalse };
+    } else {
+      return undefined;
+    }
+    child = node;
+    node = node.parent;
+  }
+  return undefined;
+}
+
+/**
  * Whether every `countsAgainstHealth` a guard-timeout branch sets is `false`.
+ *
+ * Only a then-branch that runs for guard timeouts alone counts
+ * ({@link ifImplyingTest}): a negated or widened condition sends real provider
+ * errors down the branch that spares health, and guard timeouts down the one
+ * that charges it.
  *
  * @param {typeof import("typescript")} ts The compiler API.
  * @param {import("typescript").Node[]} timeoutTests The `instanceof RateGuardTimeoutError` tests.
@@ -506,11 +561,8 @@ function guardTimeoutSparesHealth(ts, timeoutTests) {
   /** @type {import("typescript").Node[]} */
   const verdicts = [];
   for (const test of timeoutTests) {
-    let node = test.parent;
-    while (node !== undefined && !(ts.isIfStatement(node) && within(node.expression, test))) {
-      node = node.parent;
-    }
-    if (node === undefined || !ts.isIfStatement(node)) {
+    const node = ifImplyingTest(ts, test);
+    if (node === undefined) {
       continue;
     }
     for (const property of collect(

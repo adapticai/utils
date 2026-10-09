@@ -241,6 +241,31 @@ describe("provider limits wiring verifier", () => {
     });
   });
 
+  describe("the guard-timeout branch is read by the polarity of its condition", () => {
+    /** The guard-timeout test as the leg attempt writes it. */
+    const POSITIVE = "if (error instanceof RateGuardTimeoutError) {";
+
+    it.each([
+      ["a negated", "if (!(error instanceof RateGuardTimeoutError)) {"],
+      ["an or-widened", "if (error instanceof RangeError || error instanceof RateGuardTimeoutError) {"],
+      ["a negated-conjunction", "if (!(error instanceof RateGuardTimeoutError && error.message !== \"\")) {"],
+    ])("%s condition, whose branch runs for errors that are not guard timeouts, spares nothing", (_form, condition) => {
+      const sources = readWiringSources();
+      const failures = checkWiring({ ...sources, legAttempt: replaceEvery(sources.legAttempt, POSITIVE, condition) });
+      expect(failures).toHaveLength(1);
+      expect(failures[0]).toMatch(new RegExp(`^${LEG}: a guard timeout is counted against provider health`));
+    });
+
+    it.each([
+      ["an and-narrowed", "if (error instanceof RateGuardTimeoutError && error.message !== \"\") {"],
+      ["a doubly negated", "if (!!(error instanceof RateGuardTimeoutError)) {"],
+      ["a negated disjunction of negations", "if (!(!(error instanceof RateGuardTimeoutError) || error.message === \"\")) {"],
+    ])("%s condition, whose branch runs only for guard timeouts, spares health", (_form, condition) => {
+      const sources = readWiringSources();
+      expect(checkWiring({ ...sources, legAttempt: replaceEvery(sources.legAttempt, POSITIVE, condition) })).toEqual([]);
+    });
+  });
+
   it("a dispatch beside the guarded one in the leg attempt fails the wrap assertion", () => {
     const sources = readWiringSources();
     const bypass = `${sources.legAttempt}\nexport function bypass(leg: ChainLeg): unknown {\n  return leg.transport.execute({} as never);\n}\n`;
