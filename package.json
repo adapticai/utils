@@ -1,6 +1,6 @@
 {
   "name": "@adaptic/utils",
-  "version": "0.0.1048",
+  "version": "0.0.1051",
   "author": "Adaptic.ai",
   "description": "Utility functions used in Adaptic app and Lambda functions",
   "always-build-npm": true,
@@ -26,8 +26,8 @@
     "build": "npm run clean && rollup -c",
     "prepare": "npm run build",
     "prepublishOnly": "npm run build",
-    "lint": "eslint src/",
-    "lint:fix": "eslint src/ --fix",
+    "lint": "eslint src/ scripts/decision-probe/",
+    "lint:fix": "eslint src/ scripts/decision-probe/ --fix",
     "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -85,6 +85,10 @@
     "vitest": "^4.0.18"
   },
   "overrides": {
+    "msgpack5": "^6.1.0",
     "picomatch": "^4.0.4"
+  },
+  "resolutions": {
+    "msgpack5": "^6.1.0"
   }
 }

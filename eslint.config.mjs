@@ -2,7 +2,7 @@ import eslint from "@eslint/js";
 import tseslint from "@typescript-eslint/eslint-plugin";
 import tsparser from "@typescript-eslint/parser";
 
-export default [
+const config = [
   {
     ignores: [
       // Dependencies
@@ -276,3 +276,32 @@ export default [
     },
   },
 ];
+
+/** The operator's decision contract probe, which is TypeScript outside `src`. */
+const PROBE_SOURCES = "scripts/decision-probe/**/*.ts";
+
+/** The block that holds production sources to the package's rules. */
+const productionBlock = config.find(
+  (block) => Array.isArray(block.files) && block.files.includes("src/**/*.ts"),
+);
+if (productionBlock === undefined) {
+  throw new Error("eslint.config.mjs: the production source block is missing");
+}
+
+// The probe spends real, billed calls under an operator's key, so it is held
+// to the same rules as the code this package publishes. It is not part of the
+// build, so it is read against the typecheck project, which includes it.
+config.push({
+  ...productionBlock,
+  files: [PROBE_SOURCES],
+  ignores: [],
+  languageOptions: {
+    ...productionBlock.languageOptions,
+    parserOptions: {
+      ...productionBlock.languageOptions.parserOptions,
+      project: "./tsconfig.typecheck.json",
+    },
+  },
+});
+
+export default config;
