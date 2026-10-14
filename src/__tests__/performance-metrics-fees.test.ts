@@ -75,10 +75,11 @@ describe("fetchTrailingFeeExpenses", () => {
     );
     // Pinned because the request is what the broker VALIDATES: `activity_types`
     // is one comma-joined parameter, so a token outside the broker's
-    // ActivityType enum 422s the whole call and this function returns 0 —
-    // indistinguishable, in a `number`, from a fee-free year. `REG` is such a
-    // token: it is a SUB-type under `FEE`, so its charges arrive under `FEE`
-    // anyway and asking for it by type only breaks the call.
+    // ActivityType enum 422s the whole call, the rejection propagates out of
+    // `fetchTrailingFeeExpenses`, and the expense ratio reads "N/A" for as long
+    // as the token is sent. `REG` is such a token: it is a SUB-type under
+    // `FEE`, so its charges arrive under `FEE` anyway and asking for it by type
+    // only breaks the call.
     expect(secondCall.queryString).toContain("activity_types=FEE%2CCFEE");
     expect(secondCall.queryString).not.toContain("REG");
     // POSITIVE CONTROL for the negative assertion above: the leg REG's charges

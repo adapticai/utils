@@ -191,9 +191,13 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
  * `REG` is NOT a member and must not be added back: in the broker's taxonomy it
  * is an activity SUB-type under `FEE`, carried on the activity body rather than
  * selected by the query. Its regulatory charges are returned by `FEE` whether
- * or not `REG` is sent, so omitting it narrows nothing — while sending it made
- * every call 422 and {@link fetchTrailingFeeExpenses} return `0`, which this
- * function's `number` return type cannot distinguish from a fee-free year.
+ * or not `REG` is sent, so omitting it narrows nothing — while sending it 422'd
+ * every call. `makeRequest` throws on a non-OK status, so the rejection
+ * propagates out of {@link fetchTrailingFeeExpenses} and
+ * {@link calculateExpenseRatio} returns the deliberate `"N/A"`: the ratio was
+ * UNMEASURABLE for as long as the token was here, never a fabricated `0.00%`.
+ * An unknown stayed unknown, which is why the defect was silent to a reader of
+ * the number but never fabricated one.
  *
  * Enum reference:
  * `https://docs.alpaca.markets/us/reference/getaccountactivitiesbyactivitytype-1`
