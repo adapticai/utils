@@ -61,6 +61,19 @@ const MIGRATION_TEST_PREFIX = "src/__tests__/llm/";
 const FAIL_PREFIX = "FAIL ";
 
 /**
+ * Byte budget for the captured vitest output.
+ *
+ * `spawnSync` defaults to a 1 MiB buffer and KILLS the child once its output
+ * passes it, returning a truncated prefix. The dot reporter over this suite
+ * already writes past that, and the `Test Files` summary is the final line, so
+ * the default silently removed the one thing this check reads. The budget is
+ * set well clear of the suite's current size so growth does not quietly
+ * reintroduce the same blind spot, and an overrun is now reported as the
+ * truncation it is rather than as a suite that did not run.
+ */
+const VITEST_OUTPUT_BUDGET_BYTES = 64 * 1024 * 1024;
+
+/**
  * Reduce a Vitest failure line to the test file it names.
  *
  * @param {string} line A trimmed `FAIL ...` line.
@@ -84,8 +97,23 @@ function main() {
   const run = spawnSync("npx", ["vitest", "run", "--reporter=dot"], {
     cwd: UTILS_ROOT,
     encoding: "utf8",
+    maxBuffer: VITEST_OUTPUT_BUDGET_BYTES,
   });
   const output = `${run.stdout ?? ""}${run.stderr ?? ""}`;
+
+  /** @type {string[]} */
+  const failures = [];
+
+  // A child killed for exceeding `maxBuffer` reports ENOBUFS and hands back a
+  // TRUNCATED prefix of its output. The summary line is the last thing vitest
+  // writes, so a truncated run looks exactly like a run that never started —
+  // and the two have different remedies. Name the truncation instead of
+  // inferring the wrong one from a missing summary.
+  if (run.error) {
+    failures.push(
+      `vitest could not be read to completion (${run.error.code ?? run.error.message}), so this run measured nothing. Its output is a truncated prefix, not a result.`,
+    );
+  }
 
   const failingFiles = new Set(
     output
@@ -94,9 +122,6 @@ function main() {
       .filter((line) => line.startsWith(FAIL_PREFIX))
       .map(fileOf),
   );
-
-  /** @type {string[]} */
-  const failures = [];
 
   for (const file of failingFiles) {
     if (file.startsWith(MIGRATION_TEST_PREFIX)) {
