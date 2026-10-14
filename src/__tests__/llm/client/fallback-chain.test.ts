@@ -125,6 +125,58 @@ describe("ordered fallback chain (PD-3)", () => {
     expect(outcome.attempts[2].reason).toBeUndefined();
   });
 
+  it("carries the answering leg's fence attribution onto its attempt record", async () => {
+    // The gateway transport removes at most one enclosing markdown fence before
+    // parsing a structured answer. Whether it had to is a property of the LEG,
+    // not of the client: an alias whose incumbent answers in a fence and whose
+    // primary answers bare is the observation that tells an operator which
+    // provider needs its prompt tightened. It is therefore recorded on the
+    // attempt, where per-leg telemetry already reads, rather than only on the
+    // result the caller gets back.
+    const routes = makeThreeLegChain(ALIAS);
+    const transport = new ScriptedTransport("gateway", (call) =>
+      call.route.role === "closed_incumbent"
+        ? answers(INCUMBENT_ANSWER, usageFor(call.route), undefined, true)
+        : fails(new Error(`${call.route.role} provider returned 503`)),
+    );
+    const observed: AliasAttemptRecord[] = [];
+
+    const outcome = await executeChain<string>(ALIAS, {
+      legs: legsOf(routes, transport),
+      content: "prompt",
+      responseFormat: "json",
+      breakers,
+      onAttempt: (attempt) => observed.push(attempt),
+    });
+
+    const answered = outcome.attempts.find((attempt) => attempt.outcome === "ok");
+    expect(answered?.fenceStripped).toBe(true);
+    expect(observed.find((attempt) => attempt.outcome === "ok")?.fenceStripped).toBe(true);
+    // A leg that never answered reports nothing, rather than `false`: it did not
+    // observe a fence either way, and a false there would read as "answered bare".
+    expect(outcome.attempts[0].fenceStripped).toBeUndefined();
+  });
+
+  it("records no fence attribution for a transport that does not parse the answer itself", async () => {
+    // The degraded direct path delegates parsing downstream, so it reports
+    // nothing here. Absent must stay absent: defaulting it to `false` would
+    // claim a measurement the transport never made.
+    const routes = makeThreeLegChain(ALIAS);
+    const transport = new ScriptedTransport("gateway", (call) =>
+      answers(INCUMBENT_ANSWER, usageFor(call.route)),
+    );
+
+    const outcome = await executeChain<string>(ALIAS, {
+      legs: legsOf(routes, transport),
+      content: "prompt",
+      responseFormat: "json",
+      breakers,
+    });
+
+    expect(outcome.attempts[0].outcome).toBe("ok");
+    expect(outcome.attempts[0].fenceStripped).toBeUndefined();
+  });
+
   it("attributes usage to the leg that answered and invents nothing for the legs that did not", async () => {
     const routes = makeThreeLegChain(ALIAS);
     const transport = new ScriptedTransport("gateway", (call) =>
