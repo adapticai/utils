@@ -49,6 +49,21 @@ const REPLACEMENT_ORDER = {
 } as unknown as AlpacaOrder;
 
 /**
+ * The resting percent-trail stop `updateTrailingStop` reads before its replace
+ * (the replace `trail` is resolved against this order's unit).
+ */
+const RESTING_PERCENT_STOP = {
+  id: "order-abc",
+  status: "new",
+  symbol: "AAPL",
+  type: "trailing_stop",
+  trail_percent: "2",
+  trail_price: null,
+  hwm: "100",
+  stop_price: "98",
+} as unknown as AlpacaOrder;
+
+/**
  * Builds a minimal fake client whose SDK `replaceOrder` either resolves the
  * replacement order or rejects with the supplied error. `executeWithRateLimit`
  * runs the operation directly (the wrappers under test add no retry semantics
@@ -56,6 +71,7 @@ const REPLACEMENT_ORDER = {
  */
 function makeClient(replaceResult: AlpacaOrder | Error): AlpacaClient {
   const sdk = {
+    getOrder: (): Promise<AlpacaOrder> => Promise.resolve(RESTING_PERCENT_STOP),
     replaceOrder: (): Promise<AlpacaOrder> =>
       replaceResult instanceof Error
         ? Promise.reject(replaceResult)
@@ -93,7 +109,10 @@ describe("updateTrailingStop broker-code preservation (the 08-20 site)", () => {
   it("is a strict no-op on the success path — one SDK call, exact order returned, nothing enriched", async () => {
     const replaceSpy = vi.fn().mockResolvedValue(REPLACEMENT_ORDER);
     const client = {
-      getSDK: () => ({ replaceOrder: replaceSpy }),
+      getSDK: () => ({
+        getOrder: vi.fn().mockResolvedValue(RESTING_PERCENT_STOP),
+        replaceOrder: replaceSpy,
+      }),
       executeWithRateLimit: <T>(op: () => Promise<T>): Promise<T> => op(),
     } as unknown as AlpacaClient;
 

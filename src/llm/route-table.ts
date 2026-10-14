@@ -22,8 +22,10 @@ import rawTable from "./alias-routes.json";
 import type {
   LlmAlias,
   LlmAliasDefinition,
+  LlmLatencyClass,
   LlmProvider,
   LlmRoute,
+  LlmRouteDefaults,
   LlmRouteTable,
   ResolvedRoute,
 } from "./types";
@@ -42,6 +44,126 @@ export const ISOLATED_SUFFIX = ".isolated";
  * caller change every other caller's routing.
  */
 export const routeTable: LlmRouteTable = rawTable as unknown as LlmRouteTable;
+
+/** Separates a leg's route key from the provider of one of its equivalents. */
+export const EQUIVALENT_SEPARATOR = "~";
+
+/** Gateway name segment for an equivalent leg. */
+const EQUIVALENT_NAMESPACE = "equivalent";
+
+/**
+ * Whether a number lies in a closed or open range.
+ *
+ * @param value The value.
+ * @param min Lower bound.
+ * @param max Upper bound.
+ * @param open Whether the bounds are excluded.
+ * @returns Whether it is in range.
+ */
+function inRange(value: unknown, min: number, max: number, open: boolean): boolean {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return false;
+  }
+  return open ? value > min && value < max : value >= min && value <= max;
+}
+
+/**
+ * Bounds violations in the tail-latency defaults (hedging, probe scaling and
+ * the latency trip).
+ *
+ * These values are mechanics rather than routing choices, but a value outside
+ * its bounds turns a mechanic into a routing change — a quantile of 1.0 makes
+ * every hedge wait for the slowest answer ever seen, a zero floor lets a
+ * measured timeout cut an attempt the instant it starts — so they are checked
+ * as strictly as the routing itself.
+ *
+ * @param defaults The table's defaults.
+ * @returns One message per violation; empty when every value is in bounds.
+ */
+export function tailLatencyViolations(defaults: LlmRouteDefaults): string[] {
+  const violations: string[] = [];
+  const check = (ok: boolean, message: string): void => {
+    if (!ok) {
+      violations.push(message);
+    }
+  };
+  const hedging = defaults.hedging;
+  if (hedging !== undefined) {
+    check(
+      Number.isInteger(hedging.max_same_model_hedges) && inRange(hedging.max_same_model_hedges, 0, 3, false),
+      "hedging.max_same_model_hedges must be an integer in [0, 3]",
+    );
+    check(inRange(hedging.hedge_quantile, 0.5, 1, true), "hedging.hedge_quantile must be in (0.5, 1)");
+    check(inRange(hedging.timeout_quantile, 0.5, 1, true), "hedging.timeout_quantile must be in (0.5, 1)");
+    check(
+      hedging.timeout_quantile >= hedging.hedge_quantile,
+      "hedging.timeout_quantile must not be below hedging.hedge_quantile",
+    );
+    check(inRange(hedging.k_timeout, 1, 10, false), "hedging.k_timeout must be in [1, 10]");
+    check(
+      inRange(hedging.attempt_timeout_floor_ms, 1000, Number.MAX_SAFE_INTEGER, false),
+      "hedging.attempt_timeout_floor_ms must be at least 1000",
+    );
+    check(inRange(hedging.max_attempt_share, 0.25, 1, false), "hedging.max_attempt_share must be in [0.25, 1]");
+    check(
+      inRange(hedging.duplicate_headroom_reserve, 0, 0.9, false),
+      "hedging.duplicate_headroom_reserve must be in [0, 0.9]",
+    );
+    check(
+      Number.isInteger(hedging.min_samples) && inRange(hedging.min_samples, 5, 10_000, false),
+      "hedging.min_samples must be an integer in [5, 10000]",
+    );
+    check(
+      Number.isInteger(hedging.window_size) && hedging.window_size >= hedging.min_samples,
+      "hedging.window_size must be an integer no smaller than min_samples",
+    );
+    check(
+      inRange(hedging.sample_max_age_ms, 60_000, Number.MAX_SAFE_INTEGER, false),
+      "hedging.sample_max_age_ms must be at least 60000",
+    );
+    check(
+      hedging.prompt_token_buckets.every(
+        (edge, index, edges) => Number.isFinite(edge) && edge > 0 && (index === 0 || edge > edges[index - 1]),
+      ),
+      "hedging.prompt_token_buckets must be positive and strictly ascending",
+    );
+  }
+  const breaker = defaults.circuit_breaker;
+  if (breaker.probe_fraction !== undefined) {
+    check(inRange(breaker.probe_fraction, 0, 0.5, false), "circuit_breaker.probe_fraction must be in [0, 0.5]");
+  }
+  const trip = breaker.latency_trip;
+  if (trip !== undefined) {
+    check(inRange(trip.quantile, 0.5, 1, true), "circuit_breaker.latency_trip.quantile must be in (0.5, 1)");
+    check(
+      Number.isInteger(trip.window_size) && trip.window_size >= 5,
+      "circuit_breaker.latency_trip.window_size must be an integer of at least 5",
+    );
+    check(
+      Number.isInteger(trip.of_windows) &&
+        Number.isInteger(trip.trip_windows) &&
+        trip.trip_windows >= 1 &&
+        trip.trip_windows <= trip.of_windows,
+      "circuit_breaker.latency_trip needs integer 1 <= trip_windows <= of_windows",
+    );
+    for (const latencyClass of Object.keys(defaults.request_timeout_ms) as LlmLatencyClass[]) {
+      check(
+        inRange(trip.slo_ms[latencyClass], 1000, defaults.request_timeout_ms[latencyClass], false),
+        `circuit_breaker.latency_trip.slo_ms.${latencyClass} must be in [1000, its request timeout]`,
+      );
+    }
+  }
+  return violations;
+}
+
+{
+  // Checked when the table loads: it is bundled, so a violation can only
+  // arrive in a release, and it must stop that release rather than run it.
+  const violations = tailLatencyViolations(routeTable.defaults);
+  if (violations.length > 0) {
+    throw new Error(`alias route table has out-of-bounds tail-latency defaults: ${violations.join("; ")}`);
+  }
+}
 
 /**
  * Every alias the table defines.
@@ -276,6 +398,8 @@ export function resolveChain(
       continue;
     }
 
+    const routeKey = routeKeyFor(alias, isolated, route.role);
+    const modelClass = route.model_class ?? admission.modelId;
     resolved.push({
       alias,
       isolated,
@@ -285,13 +409,80 @@ export function resolveChain(
       modelId: admission.modelId,
       lumicModel: route.lumic_model ?? null,
       params: route.params ?? {},
-      routeKey: routeKeyFor(alias, isolated, route.role),
+      routeKey,
       timeoutMs,
-      retriesPerLeg: routeTable.defaults.retries_per_leg,
+      modelClass,
+      latencyClass: definition.latency_class,
+      equivalents: resolveEquivalents(route, {
+        alias,
+        isolated,
+        routeKey,
+        timeoutMs,
+        modelClass,
+        latencyClass: definition.latency_class,
+      }),
     });
   }
 
   return { alias, isolated, routes: resolved, exclusions };
+}
+
+/**
+ * Resolve a leg's same-model equivalents that can serve today.
+ *
+ * An equivalent is admitted by the leg's own rules — a confirmed model id and a
+ * live provider account — and inherits the leg's model class, because being the
+ * same model is what makes it an equivalent. One that cannot serve is simply
+ * absent: it is never a reason to skip the leg.
+ *
+ * @param route The authored leg.
+ * @param leg The resolved leg's identity.
+ * @param leg.alias The alias.
+ * @param leg.isolated Whether this is the isolated variant.
+ * @param leg.routeKey The leg's route key.
+ * @param leg.timeoutMs The leg's budget.
+ * @param leg.modelClass The leg's model class.
+ * @param leg.latencyClass The alias's latency class.
+ * @returns The servable equivalents, in table order.
+ */
+function resolveEquivalents(
+  route: LlmRoute,
+  leg: {
+    readonly alias: LlmAlias;
+    readonly isolated: boolean;
+    readonly routeKey: string;
+    readonly timeoutMs: number;
+    readonly modelClass: string;
+    readonly latencyClass: LlmLatencyClass;
+  },
+): ResolvedRoute[] {
+  const resolved: ResolvedRoute[] = [];
+  for (const equivalent of route.equivalents ?? []) {
+    const provider = routeTable.providers[equivalent.provider];
+    if (
+      provider === undefined ||
+      provider.account_status !== "live" ||
+      equivalent.model_id_status !== "confirmed" ||
+      equivalent.model_id === null
+    ) {
+      continue;
+    }
+    resolved.push({
+      alias: leg.alias,
+      isolated: leg.isolated,
+      role: route.role,
+      providerName: equivalent.provider,
+      provider,
+      modelId: equivalent.model_id,
+      lumicModel: equivalent.lumic_model ?? null,
+      params: equivalent.params ?? route.params ?? {},
+      routeKey: `${leg.routeKey}${EQUIVALENT_SEPARATOR}${equivalent.provider}`,
+      timeoutMs: leg.timeoutMs,
+      modelClass: leg.modelClass,
+      latencyClass: leg.latencyClass,
+    });
+  }
+  return resolved;
 }
 
 /**
@@ -326,6 +517,12 @@ export function gatewayModelNameFor(
   chain: ResolvedChain,
 ): string {
   const base = `${route.alias}${route.isolated ? ISOLATED_SUFFIX : ""}`;
+  if (route.routeKey.includes(EQUIVALENT_SEPARATOR)) {
+    // The same model at another provider is its own gateway deployment, named
+    // so the gateway serves exactly that deployment and nothing it might fall
+    // back to on its own.
+    return `${base}.${EQUIVALENT_NAMESPACE}.${route.role}.${route.providerName}`;
+  }
   return chain.routes[0]?.routeKey === route.routeKey
     ? base
     : `${base}.fallback.${route.role}`;

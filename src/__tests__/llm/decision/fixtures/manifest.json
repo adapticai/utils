@@ -1,0 +1,112 @@
+{
+  "schema_version": 1,
+  "description": "Contract fixtures for the hosted typed-decision API and the compatible server. Each file is an envelope of an optional status, optional response headers (lower-case names) and a body. A request has neither status nor headers, and no status is quoted for a documented success, so a success envelope carries a body only and the test that replays it supplies the status. Every file is listed here with the class of evidence it rests on; a test loads a fixture by naming the classes it is prepared to rely on.",
+  "findings_document": "docs/audits/2026-10-01-decision-model/findings/external-verification.md in the adapticai meta repository",
+  "evidence_classes": {
+    "documented-verbatim": "Quoted from the vendor's published reference. Pinned by digest.",
+    "observed-unauthenticated": "Recorded from a real response to a request that carried no credential. Pinned by digest.",
+    "observed-authenticated": "Recorded from a real response to an authenticated call. Empty until such a call is made; only the contract probe's output may use it. Pinned by digest.",
+    "constructed-from-documented-fields": "Assembled from documented field tables where the reference quotes no example. The shape is documented; the values are not the vendor's.",
+    "synthetic-unobserved": "A body for a response nobody has seen. Only the status is documented. It says nothing about what the vendor returns and exists to prove that classification does not depend on a body."
+  },
+  "fixtures": {
+    "request.choice.documented.json": {
+      "evidence": "documented-verbatim",
+      "source_url": "https://docs.typesafe.ai/api.md",
+      "findings": "external-verification.md §3A, \"Example request, verbatim\"",
+      "retrieved": "2026-10-01",
+      "notes": "The only request example the findings quote. It sends a moving model name; a route pins a versioned id instead."
+    },
+    "response.choice.documented.json": {
+      "evidence": "documented-verbatim",
+      "source_url": "https://docs.typesafe.ai/api.md",
+      "findings": "external-verification.md §3A, \"Example response, verbatim\"",
+      "retrieved": "2026-10-01",
+      "notes": "The only response example the findings quote. Its probabilities are rounded to two decimals, so it does not establish how tightly a live distribution sums to one."
+    },
+    "error.403-missing-key.observed.json": {
+      "evidence": "observed-unauthenticated",
+      "source_url": "https://api.typesafe.ai/v1/models",
+      "findings": "external-verification.md §3C, GET /v1/models with no key",
+      "retrieved": "2026-10-01",
+      "notes": "A missing key returned 403 where the reference documents 401. The one error body shape and the one error_type value ever observed."
+    },
+    "error.405-method-not-allowed.observed.json": {
+      "evidence": "observed-unauthenticated",
+      "source_url": "https://api.typesafe.ai/v1/systemone",
+      "findings": "external-verification.md §3C, GET /v1/systemone",
+      "retrieved": "2026-10-01",
+      "notes": "Status and body as recorded. The response carried a request-id header whose value was not recorded, so the envelope holds no headers."
+    },
+    "request.noul.constructed.json": {
+      "evidence": "constructed-from-documented-fields",
+      "source_url": "https://docs.typesafe.ai/api.md",
+      "findings": "external-verification.md §3A, question types table (noul: instructions, optional criteria of true and false)",
+      "retrieved": "2026-10-01",
+      "notes": "The reference quotes no yes/no request. Field names and nesting follow the documented table; the question text is ours."
+    },
+    "request.score.constructed.json": {
+      "evidence": "constructed-from-documented-fields",
+      "source_url": "https://docs.typesafe.ai/api.md",
+      "findings": "external-verification.md §3A, question types table (score: instructions, ordered criteria array of 2 to 10 levels)",
+      "retrieved": "2026-10-01",
+      "notes": "The reference quotes no score request. Field names and nesting follow the documented table; the level text is ours."
+    },
+    "response.noul.constructed.json": {
+      "evidence": "constructed-from-documented-fields",
+      "source_url": "https://docs.typesafe.ai/api.md",
+      "findings": "external-verification.md §3A, answer types table (noul: a number from 0 to 1 and no confidence)",
+      "retrieved": "2026-10-01",
+      "notes": "The answer holds type and noul and nothing else, as documented. The probability and the token counts are illustrative."
+    },
+    "response.score.constructed.json": {
+      "evidence": "constructed-from-documented-fields",
+      "source_url": "https://docs.typesafe.ai/api.md",
+      "findings": "external-verification.md §3A, answer types table (score: score, legend, probabilities keyed by zero-based level index, confidence)",
+      "retrieved": "2026-10-01",
+      "notes": "The probabilities are binary-exact and sum to one, and the score is their weighted level. The confidence follows the formula a third party attributes to the vendor; the vendor publishes none, so the value is illustrative and not a claim about the vendor's statistic."
+    },
+    "response.laya-serve-shape.constructed.json": {
+      "evidence": "constructed-from-documented-fields",
+      "source_url": "https://github.com/NandhaKishorM/laya",
+      "findings": "external-verification.md §3E (output fields) and §3F (response shape, model field, confidence definition)",
+      "retrieved": "2026-10-01",
+      "notes": "The compatible server's shape: the documented example's distribution answered under a checkpoint name, with a routing object and a confidence of one minus normalised entropy, which differs from the hosted value for the same distribution. Only routing.model is recorded in the findings, so routing holds nothing else. The inner fields of usage and the placement of answer_confidence are not recorded, so usage is empty and answer_confidence is absent; neither is a claim that the server omits them."
+    },
+    "error.401.unobserved.json": {
+      "evidence": "synthetic-unobserved",
+      "source_url": null,
+      "findings": "external-verification.md §3A errors table (status and meaning only), §3B (body shapes the vendor SDK tolerates), §3I (bodies not verified)",
+      "retrieved": "2026-10-01",
+      "notes": "Invented body in the detail-string shape. The text is the documented meaning of the status."
+    },
+    "error.422.unobserved.json": {
+      "evidence": "synthetic-unobserved",
+      "source_url": null,
+      "findings": "external-verification.md §3A errors table (status and meaning only), §3B (body shapes the vendor SDK tolerates), §3I (bodies not verified)",
+      "retrieved": "2026-10-01",
+      "notes": "Invented body in the detail-list shape of location and message. The reference says only that the body details the offending field."
+    },
+    "error.429.unobserved.json": {
+      "evidence": "synthetic-unobserved",
+      "source_url": null,
+      "findings": "external-verification.md §3A errors table (status and meaning only), §3B (body shapes the vendor SDK tolerates, retry-after handling), §3I (bodies not verified)",
+      "retrieved": "2026-10-01",
+      "notes": "Invented body in the nested error-message shape, with a retry-after header in seconds. Whether the vendor sends that header is unobserved."
+    },
+    "error.529.unobserved.json": {
+      "evidence": "synthetic-unobserved",
+      "source_url": null,
+      "findings": "external-verification.md §3A errors table (status and meaning only), §3B (body shapes the vendor SDK tolerates, retry-after handling), §3I (bodies not verified)",
+      "retrieved": "2026-10-01",
+      "notes": "Invented body in the top-level message shape, with a retry-after-ms header. Whether the vendor sends that header is unobserved."
+    },
+    "error.500.unobserved.json": {
+      "evidence": "synthetic-unobserved",
+      "source_url": null,
+      "findings": "external-verification.md §3B (the vendor SDK retries 500 to 599; body shapes it tolerates), §3I (bodies not verified)",
+      "retrieved": "2026-10-01",
+      "notes": "Invented body in the error-string shape. The reference does not list this status at all."
+    }
+  }
+}

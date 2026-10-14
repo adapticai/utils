@@ -1,0 +1,16 @@
+{
+  "body": {
+    "state": "Help! My payouts have been failing for 3 days.",
+    "model": "jev-1.13.0",
+    "questions": {
+      "payment_failure": {
+        "type": "noul",
+        "instructions": "Is the customer reporting a payment that failed?",
+        "criteria": {
+          "true": "The message describes a payment or payout that did not complete",
+          "false": "The message is about anything else"
+        }
+      }
+    }
+  }
+}

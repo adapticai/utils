@@ -47,7 +47,70 @@
               "minimum": 1000,
               "description": "Open window for a breaker tripped only by capacity signals (provider busy, 429, 503, 529, leg timeout). Shorter than cooldown_ms because a full provider sheds load it expects to take back within seconds; a run containing any hard failure keeps cooldown_ms."
             },
-            "half_open_probes": { "type": "integer", "minimum": 1 }
+            "half_open_probes": { "type": "integer", "minimum": 1 },
+            "probe_fraction": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 0.5,
+              "description": "Half-open probes as a fraction of the route's concurrency before it opened; the probe budget is the larger of this and half_open_probes."
+            },
+            "latency_trip": {
+              "type": "object",
+              "required": ["enabled", "slo_ms", "quantile", "window_size", "trip_windows", "of_windows"],
+              "additionalProperties": false,
+              "description": "Open a breaker on sustained slowness: the quantile of each window of attempt durations is compared with the latency class's objective, and M of the last N windows over it open the route. Opening moves traffic to the next leg, usually a different model, so it ships disarmed.",
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "slo_ms": {
+                  "type": "object",
+                  "required": ["hot-path", "background", "batch"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "hot-path": { "type": "integer", "minimum": 1000 },
+                    "background": { "type": "integer", "minimum": 1000 },
+                    "batch": { "type": "integer", "minimum": 1000 }
+                  }
+                },
+                "quantile": { "type": "number", "exclusiveMinimum": 0.5, "maximum": 0.999 },
+                "window_size": { "type": "integer", "minimum": 5 },
+                "trip_windows": { "type": "integer", "minimum": 1 },
+                "of_windows": { "type": "integer", "minimum": 1 }
+              }
+            }
+          }
+        },
+        "hedging": {
+          "type": "object",
+          "description": "Tail-latency controls for attempts on the SAME model: when a hedge starts, how long one attempt may run once latency evidence exists, and how much of the deadline a same-model equivalent is reserved. None selects a different model. Bounds are also enforced in code when the table loads.",
+          "required": [
+            "max_same_model_hedges",
+            "hedge_quantile",
+            "timeout_quantile",
+            "k_timeout",
+            "attempt_timeout_floor_ms",
+            "max_attempt_share",
+            "duplicate_headroom_reserve",
+            "min_samples",
+            "window_size",
+            "sample_max_age_ms",
+            "prompt_token_buckets"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "max_same_model_hedges": { "type": "integer", "minimum": 0, "maximum": 3 },
+            "hedge_quantile": { "type": "number", "exclusiveMinimum": 0.5, "maximum": 0.999 },
+            "timeout_quantile": { "type": "number", "exclusiveMinimum": 0.5, "maximum": 0.999 },
+            "k_timeout": { "type": "number", "minimum": 1, "maximum": 10 },
+            "attempt_timeout_floor_ms": { "type": "integer", "minimum": 1000 },
+            "max_attempt_share": { "type": "number", "minimum": 0.25, "maximum": 1 },
+            "duplicate_headroom_reserve": { "type": "number", "minimum": 0, "maximum": 0.9 },
+            "min_samples": { "type": "integer", "minimum": 5, "maximum": 10000 },
+            "window_size": { "type": "integer", "minimum": 5 },
+            "sample_max_age_ms": { "type": "integer", "minimum": 60000 },
+            "prompt_token_buckets": {
+              "type": "array",
+              "items": { "type": "integer", "minimum": 1 }
+            }
           }
         }
       }
@@ -218,6 +281,31 @@
                 "shadow_only": {
                   "type": "boolean",
                   "description": "Configured and continuously evaluated, but never served to a caller. Used where the backlog admits a model for shadow evaluation only."
+                },
+                "model_class": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "The model this leg serves, independent of provider. Absent means model_id. Two legs are the same model exactly when their classes are equal; a leg of a different class is a different-model fallback, which the caller's cross-model policy may deny."
+                },
+                "equivalents": {
+                  "type": "array",
+                  "description": "The same model at other providers or deployments. The client hedges and fails over across these before any different-model leg. Admitted like a leg: confirmed model id, live provider account. The gateway addresses each as <alias>.equivalent.<role>.<provider>.",
+                  "items": {
+                    "type": "object",
+                    "required": ["provider", "model_id", "model_id_status"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "provider": { "type": "string", "minLength": 1 },
+                      "model_id": { "type": ["string", "null"] },
+                      "model_id_status": {
+                        "enum": ["confirmed", "pending-provider-confirmation"]
+                      },
+                      "model_id_source": { "type": ["string", "null"] },
+                      "lumic_model": { "type": ["string", "null"] },
+                      "params": { "type": "object" },
+                      "notes": { "type": "string" }
+                    }
+                  }
                 },
                 "notes": { "type": "string" }
               }

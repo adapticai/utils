@@ -36,7 +36,7 @@
  * @module llm/rate-guard
  */
 
-import { TokenBucketRateLimiter } from "../rate-limiter";
+import { RateLimitWaitAbandonedError, TokenBucketRateLimiter } from "../rate-limiter";
 
 import limitsConfig from "./provider-limits.json";
 
@@ -177,6 +177,19 @@ export interface GuardCallScope {
    * permit freed after it has gone goes to a caller that is still waiting.
    */
   readonly signal?: AbortSignal;
+  /**
+   * Whether {@link GuardCallScope.signal} also ends the wait for a rate token.
+   *
+   * Unset, the signal is heard by the concurrency queue alone: a call whose
+   * caller has gone stays in the rate queue until it is granted a token or the
+   * limiter's own wait runs out, and is refused at the concurrency gate after
+   * that. Set, a caller that stops waiting leaves the rate queue at once and
+   * takes no token, so the token goes to the caller behind it. It is a choice
+   * of the caller's and not the guard's default, because when a queued call
+   * ends decides which call a chain of fallbacks makes next, and a caller
+   * changes that for itself deliberately.
+   */
+  readonly signalEndsRateWait?: boolean;
 }
 
 /** What a refusal says about the call it refused. */
@@ -487,10 +500,15 @@ export async function withProviderGuards<T>(
       : Math.min(maxWaitMs, limits.acquire_timeout_ms);
 
   try {
-    await rateLimiterFor(identity).acquire();
-  } catch {
+    if (scope.signalEndsRateWait === true && scope.signal !== undefined) {
+      await rateLimiterFor(identity).acquire(scope.signal);
+    } else {
+      await rateLimiterFor(identity).acquire();
+    }
+  } catch (error) {
     throw new RateGuardTimeoutError(provider, "rate", waitBudgetMs, {
       modelId: identity.modelId,
+      abandoned: error instanceof RateLimitWaitAbandonedError,
     });
   }
 
@@ -503,6 +521,42 @@ export async function withProviderGuards<T>(
     // failures cluster exactly when throughput matters most.
     release();
   }
+}
+
+/**
+ * Whether a provider guard has room for a DUPLICATE attempt above a reserve.
+ *
+ * A duplicate is a hedge: a second request for an answer another attempt is
+ * already fetching. It is only worth sending with capacity no first attempt
+ * needs, so it is admitted only when nobody is queued behind either bound and
+ * both the free concurrency (after the duplicate) and the rate tokens stay at
+ * or above the reserved fraction of the guard's ceilings. A provider that is
+ * already busy therefore never sees duplicates, which is when they would do
+ * the most harm.
+ *
+ * @param provider The provider key.
+ * @param modelId The model the duplicate would address.
+ * @param reserveFraction Fraction of each ceiling kept free, in [0, 1).
+ * @returns Whether the duplicate may start.
+ */
+export function hasDuplicateHeadroom(
+  provider: string,
+  modelId: string,
+  reserveFraction: number,
+): boolean {
+  const identity = guardIdentity(provider, modelId);
+  const limits = limitsFor(provider, identity.modelId);
+  const limiter = rateLimiterFor(identity);
+  const gate = concurrencyGateFor(identity);
+  if (limiter.getQueueLength() > 0 || gate.queueLength() > 0) {
+    return false;
+  }
+  const freeAfter = limits.max_concurrent - gate.inFlightCount() - 1;
+  const tokensAfter = limiter.getAvailableTokens() - TOKENS_PER_REQUEST;
+  return (
+    freeAfter >= Math.ceil(limits.max_concurrent * reserveFraction) &&
+    tokensAfter >= Math.ceil(limits.requests_per_minute * reserveFraction)
+  );
 }
 
 /** Observable guard state, for dashboards and tests. */

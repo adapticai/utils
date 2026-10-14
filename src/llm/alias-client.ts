@@ -16,7 +16,9 @@
  * Every call gets, in order: alias resolution against the canonical route
  * table, per-provider parameter normalisation, a hard per-leg timeout, a
  * per-route circuit breaker, an ordered fallback chain ending at the closed
- * incumbent, and — where the caller supplies a validator — one schema-feedback
+ * incumbent — each leg first hedged and failed over on the SAME model (see
+ * `hedge.ts`), and a different-model leg reached only when the caller's
+ * cross-model policy allows it — and, where the caller supplies a validator, one schema-feedback
  * retry ahead of the chain. The caller's `timeoutMs` is ONE deadline for the
  * whole call: each leg runs for its route budget or for what remains of that
  * deadline, whichever is shorter, so the chain is the single fallback owner and
@@ -28,9 +30,18 @@
  */
 
 import { CircuitBreakerRegistry } from "./circuit-breaker";
-import { ChainExhaustedError, executeChain } from "./fallback-chain";
-import type { ChainLeg } from "./fallback-chain";
+import {
+  ChainExhaustedError,
+  NO_HEDGE_REFUSALS,
+  executeChain,
+  modelClassOf,
+  sumHedgeRefusals,
+} from "./fallback-chain";
+import type { ChainExecution, ChainLeg } from "./fallback-chain";
+import { sameModelPolicyFrom } from "./hedge";
+import { LegLatencyTracker } from "./leg-latency-tracker";
 import { UnsupportedCapabilityError, normaliseParams } from "./param-matrix";
+import { hasDuplicateHeadroom } from "./rate-guard";
 import { gatewayModelNameFor, resolveChain, routeTable } from "./route-table";
 import type { ResolvedChain } from "./route-table";
 import { callWithValidation } from "./schema-retry";
@@ -46,8 +57,10 @@ import type {
   LlmAlias,
   LlmClientConfig,
   LlmResponseFormat,
+  LlmModelClassRelation,
   LlmTransport,
   LlmTransportResponse,
+  ResolvedRoute,
 } from "./types";
 
 /** Env var naming the gateway's base URL. */
@@ -60,6 +73,41 @@ const DEFAULT_GATEWAY_KEY_ENV = "LLM_GATEWAY_API_KEY";
 let breakers = new CircuitBreakerRegistry(
   routeTable.defaults.circuit_breaker,
 );
+
+/**
+ * Build the process-wide latency tracker from the table's hedging defaults.
+ *
+ * @param now Clock.
+ * @returns The tracker, or undefined when the table configures no hedging.
+ */
+function buildLatencyTracker(now?: () => number): LegLatencyTracker | undefined {
+  const hedging = routeTable.defaults.hedging;
+  if (hedging === undefined) {
+    return undefined;
+  }
+  return new LegLatencyTracker(
+    {
+      minSamples: hedging.min_samples,
+      windowSize: hedging.window_size,
+      sampleMaxAgeMs: hedging.sample_max_age_ms,
+      promptTokenBuckets: hedging.prompt_token_buckets,
+    },
+    now,
+  );
+}
+
+/**
+ * Process-wide healthy-latency evidence, shared across call sites for the same
+ * reason the breakers are: a model's health is one population however many
+ * callers reach it.
+ */
+let latencyTracker = buildLatencyTracker();
+
+/** Same-model hedging policy from the table, or undefined when none is configured. */
+const hedgingPolicy =
+  routeTable.defaults.hedging === undefined
+    ? undefined
+    : sameModelPolicyFrom(routeTable.defaults.hedging);
 
 /** Active runtime wiring. */
 let config: LlmClientConfig = {};
@@ -87,6 +135,30 @@ export function configureLlmClient(next: LlmClientConfig): void {
     routeTable.defaults.circuit_breaker,
     next.now,
   );
+  latencyTracker = buildLatencyTracker(next.now);
+}
+
+/**
+ * Inspect the healthy-latency evidence the hedging controls read.
+ *
+ * @returns The live tracker, or undefined when the table configures no hedging.
+ */
+export function llmLatencyTracker(): LegLatencyTracker | undefined {
+  return latencyTracker;
+}
+
+/**
+ * Whether a duplicate attempt on the same provider may start.
+ *
+ * @param route The leg the duplicate would address.
+ * @param reserveFraction Share of the provider's capacity kept free.
+ * @returns Whether it may start.
+ */
+function admitDuplicate(route: ResolvedRoute, reserveFraction: number): boolean {
+  if (config.duplicateAdmission !== undefined) {
+    return config.duplicateAdmission(route, reserveFraction);
+  }
+  return hasDuplicateHeadroom(route.providerName, route.modelId, reserveFraction);
 }
 
 /**
@@ -167,6 +239,7 @@ function directFor(): LlmTransport {
  * @param options The caller's options.
  * @param responseFormat The requested response shape.
  * @param transport The transport to carry every leg.
+ * @param admitEquivalent Which same-model equivalents this transport can reach.
  * @returns Prepared legs, in chain order.
  */
 function prepareLegs(
@@ -174,8 +247,9 @@ function prepareLegs(
   options: AliasCallOptions,
   responseFormat: LlmResponseFormat,
   transport: LlmTransport,
+  admitEquivalent: (route: ResolvedRoute) => boolean = () => true,
 ): ChainLeg[] {
-  return chain.routes.map((route) => {
+  const prepare = (route: ResolvedRoute): ChainLeg => {
     try {
       return {
         route,
@@ -188,7 +262,11 @@ function prepareLegs(
       }
       throw error;
     }
-  });
+  };
+  return chain.routes.map((route) => ({
+    ...prepare(route),
+    equivalents: (route.equivalents ?? []).filter(admitEquivalent).map(prepare),
+  }));
 }
 
 /**
@@ -232,6 +310,7 @@ export async function callLLMByAlias<T = unknown>(
           outcome: "skipped",
           durationMs: 0,
           reason: exclusion.reason,
+          failureClass: "unresolvable_route",
         }),
       ),
       {
@@ -246,6 +325,31 @@ export async function callLLMByAlias<T = unknown>(
 
   const gateway = gatewayFor();
   const attemptLog: AliasAttemptRecord[] = [];
+  // Like the attempt log, refusals accumulate across every run of this call: a
+  // validation retry and the degraded direct path are the same call.
+  let hedgeRefusals = NO_HEDGE_REFUSALS;
+
+  // What every execution of this call shares, whichever transport carries it.
+  // The configured model is the head of the full chain, so the degraded path —
+  // whose legs are only the closed incumbents — still knows that its answer is
+  // a different model from the one configured.
+  const shared: Omit<ChainExecution, "legs" | "content"> = {
+    responseFormat,
+    developerPrompt: options.developerPrompt,
+    context: options.context,
+    breakers,
+    correlationId: options.correlationId,
+    callerSignal: options.signal,
+    deadlineAtMs,
+    now: config.now,
+    onAttempt: (record) => attemptLog.push(record),
+    hedging: hedgingPolicy,
+    latency: latencyTracker,
+    admitDuplicate,
+    crossModelPolicy: options.crossModelPolicy,
+    breakerPath: options.breakerPath,
+    configuredModelClass: modelClassOf(chain.routes[0]),
+  };
 
   /**
    * Run the chain, falling back from the gateway to the degraded direct path
@@ -262,23 +366,18 @@ export async function callLLMByAlias<T = unknown>(
     attempts: readonly AliasAttemptRecord[];
     totalUsage: AliasCallResult<T>["totalUsage"];
     degraded: boolean;
+    modelClassRelation: LlmModelClassRelation;
+    hedged: boolean;
   }> => {
     const boundContent = prompt;
     if (gateway !== null) {
       try {
         const outcome = await executeChain<unknown>(options.alias, {
+          ...shared,
           legs: prepareLegs(chain, options, responseFormat, gateway),
           content: boundContent,
-          responseFormat,
-          developerPrompt: options.developerPrompt,
-          context: options.context,
-          breakers,
-          correlationId: options.correlationId,
-          callerSignal: options.signal,
-          deadlineAtMs,
-          now: config.now,
-          onAttempt: (record) => attemptLog.push(record),
         });
+        hedgeRefusals = sumHedgeRefusals(hedgeRefusals, outcome.hedgesRefusedBelowFloor);
         return { ...outcome, degraded: false };
       } catch (error) {
         if (!isGatewayOutage(error)) {
@@ -287,38 +386,44 @@ export async function callLLMByAlias<T = unknown>(
         // The proxy is gone, not a provider behind it. Walking the chain again
         // through the gateway would repeat the same failure on every leg, so
         // the degraded path takes over — restricted to the closed incumbent.
+        // What the failed walk refused is kept: the call continues.
+        if (error instanceof ChainExhaustedError) {
+          hedgeRefusals = sumHedgeRefusals(hedgeRefusals, error.hedgesRefusedBelowFloor);
+        }
       }
     }
 
     const direct = directFor();
     const closedLegs = chain.routes.filter((route) => route.provider.tier === "closed");
     if (closedLegs.length === 0) {
-      throw new ChainExhaustedError(options.alias, attemptLog, {
-        prompt_tokens: 0,
-        completion_tokens: 0,
-        provider: "none",
-        model: "none",
-        cost: 0,
-      });
+      throw new ChainExhaustedError(
+        options.alias,
+        attemptLog,
+        {
+          prompt_tokens: 0,
+          completion_tokens: 0,
+          provider: "none",
+          model: "none",
+          cost: 0,
+        },
+        "exhausted",
+        hedgeRefusals,
+      );
     }
     const outcome = await executeChain<unknown>(options.alias, {
+      ...shared,
+      // The direct transport serves closed vendors only, so only a closed
+      // equivalent can be reached on the degraded path.
       legs: prepareLegs(
         { ...chain, routes: closedLegs },
         options,
         responseFormat,
         direct,
+        (route) => route.provider.tier === "closed",
       ),
       content: boundContent,
-      responseFormat,
-      developerPrompt: options.developerPrompt,
-      context: options.context,
-      breakers,
-      correlationId: options.correlationId,
-      callerSignal: options.signal,
-      deadlineAtMs,
-      now: config.now,
-      onAttempt: (record) => attemptLog.push(record),
     });
+    hedgeRefusals = sumHedgeRefusals(hedgeRefusals, outcome.hedgesRefusedBelowFloor);
     return { ...outcome, degraded: true };
   };
 
@@ -330,12 +435,16 @@ export async function callLLMByAlias<T = unknown>(
       tool_calls: outcome.response.tool_calls,
       servedBy: outcome.servedBy,
       servedModel: outcome.response.servedModel ?? null,
+      finishReason: outcome.response.finishReason ?? null,
       ...(outcome.response.fenceStripped === undefined
         ? {}
         : { fenceStripped: outcome.response.fenceStripped }),
       attempts: attemptLog,
       degraded: outcome.degraded,
       totalUsage: outcome.totalUsage,
+      modelClassRelation: outcome.modelClassRelation,
+      hedged: outcome.hedged,
+      hedgesRefusedBelowFloor: hedgeRefusals,
     };
   }
 
@@ -351,6 +460,8 @@ export async function callLLMByAlias<T = unknown>(
     servedBy: ChainLeg["route"];
     degraded: boolean;
     totalUsage: AliasCallResult<T>["totalUsage"];
+    modelClassRelation: LlmModelClassRelation;
+    hedged: boolean;
   } | null = null;
 
   const validated = await callWithValidation<T>({
@@ -362,6 +473,8 @@ export async function callLLMByAlias<T = unknown>(
         servedBy: outcome.servedBy,
         degraded: outcome.degraded,
         totalUsage: outcome.totalUsage,
+        modelClassRelation: outcome.modelClassRelation,
+        hedged: outcome.hedged,
       };
       return outcome.response;
     },
@@ -374,6 +487,8 @@ export async function callLLMByAlias<T = unknown>(
     servedBy: ChainLeg["route"];
     degraded: boolean;
     totalUsage: AliasCallResult<T>["totalUsage"];
+    modelClassRelation: LlmModelClassRelation;
+    hedged: boolean;
   } = lastRouting;
 
   return {
@@ -382,12 +497,19 @@ export async function callLLMByAlias<T = unknown>(
     tool_calls: validated.response.tool_calls,
     servedBy: routing.servedBy,
     servedModel: validated.response.servedModel ?? null,
+    // The finish reason of the attempt that VALIDATED, not of an earlier one a
+    // validator rejected: a truncated attempt that was retried and then answered
+    // cleanly must not report `length` for the answer the caller received.
+    finishReason: validated.response.finishReason ?? null,
     ...(validated.response.fenceStripped === undefined
       ? {}
       : { fenceStripped: validated.response.fenceStripped }),
     attempts: attemptLog,
     degraded: routing.degraded,
     totalUsage: validated.totalUsage,
+    modelClassRelation: routing.modelClassRelation,
+    hedged: routing.hedged,
+    hedgesRefusedBelowFloor: hedgeRefusals,
   };
 }
 

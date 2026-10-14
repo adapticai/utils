@@ -1,0 +1,12 @@
+{
+  "body": {
+    "model": "jev-1.13.0",
+    "answers": {
+      "payment_failure": {
+        "type": "noul",
+        "noul": 0.95
+      }
+    },
+    "usage": { "input_tokens": 301, "output_tokens": 18 }
+  }
+}

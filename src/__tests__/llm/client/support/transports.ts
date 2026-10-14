@@ -46,6 +46,16 @@ export type LegBehaviour =
       readonly toolCalls?: readonly LlmToolCall[];
     }
   | { readonly kind: "fail"; readonly error: Error }
+  /** Answers after a delay on the (fake) clock, unless its signal aborts first. */
+  | {
+      readonly kind: "delayed";
+      readonly afterMs: number;
+      readonly response: unknown;
+      readonly usage: LlmUsageRecord;
+      readonly servedModel?: string | null;
+    }
+  /** Fails after a delay on the (fake) clock, unless its signal aborts first. */
+  | { readonly kind: "delayed-fail"; readonly afterMs: number; readonly error: Error }
   /** Never settles on its own: the leg ends only when its signal aborts. */
   | { readonly kind: "hang" };
 
@@ -102,6 +112,35 @@ export function answers(
  */
 export function fails(error: Error): LegBehaviour {
   return { kind: "fail", error };
+}
+
+/**
+ * A leg that answers after a delay, unless it is cancelled first.
+ *
+ * @param afterMs Delay on the test clock.
+ * @param response The payload.
+ * @param usage The usage to report.
+ * @param servedModel The model the provider reports, if any.
+ * @returns The behaviour.
+ */
+export function answersAfter(
+  afterMs: number,
+  response: unknown,
+  usage: LlmUsageRecord,
+  servedModel?: string | null,
+): LegBehaviour {
+  return { kind: "delayed", afterMs, response, usage, servedModel };
+}
+
+/**
+ * A leg that fails after a delay, unless it is cancelled first.
+ *
+ * @param afterMs Delay on the test clock.
+ * @param error The error to fail with.
+ * @returns The behaviour.
+ */
+export function failsAfter(afterMs: number, error: Error): LegBehaviour {
+  return { kind: "delayed-fail", afterMs, error };
 }
 
 /**
@@ -193,6 +232,32 @@ export class ScriptedTransport implements LlmTransport {
         usage: behaviour.usage,
         tool_calls: behaviour.toolCalls,
       };
+    }
+
+    if (behaviour.kind === "delayed" || behaviour.kind === "delayed-fail") {
+      return new Promise<LlmTransportResponse<T>>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          request.signal.removeEventListener("abort", onAbort);
+          if (behaviour.kind === "delayed-fail") {
+            reject(behaviour.error);
+            return;
+          }
+          resolve({
+            response: asPayload<T>(behaviour.response),
+            usage: behaviour.usage,
+            servedModel: behaviour.servedModel,
+          });
+        }, behaviour.afterMs);
+        const onAbort = (): void => {
+          clearTimeout(timer);
+          reject(request.signal.reason);
+        };
+        if (request.signal.aborted) {
+          onAbort();
+          return;
+        }
+        request.signal.addEventListener("abort", onAbort, { once: true });
+      });
     }
 
     // A hanging leg ends only when something aborts it, which is precisely what

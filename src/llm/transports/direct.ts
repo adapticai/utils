@@ -55,6 +55,14 @@ export type DirectCaller = <T>(
   response: T;
   usage?: DirectCallerUsage;
   tool_calls?: unknown;
+  /**
+   * Why the provider stopped generating, if the incumbent client surfaces it.
+   *
+   * Optional because the incumbent's own result shape is not this package's to
+   * change; when it is absent the transport reports `null` rather than guessing,
+   * so "the incumbent did not say" stays distinguishable from `"stop"`.
+   */
+  finish_reason?: unknown;
 }>;
 
 /** Configuration for the direct transport. */
@@ -145,6 +153,14 @@ export function createDirectTransport(
         servedModel:
           typeof result.usage?.model === "string" && result.usage.model !== ""
             ? result.usage.model
+            : null,
+        // Stated rather than omitted. This path is the degraded incumbent, which
+        // may not surface a finish reason at all — but a consumer must be able to
+        // tell "not reported" from "reported as a clean stop", so the field is
+        // always present and `null` carries the absence.
+        finishReason:
+          typeof result.finish_reason === "string" && result.finish_reason.trim() !== ""
+            ? result.finish_reason
             : null,
       };
     },

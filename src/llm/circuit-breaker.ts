@@ -15,6 +15,18 @@
  * traffic can neither trip nor be tripped by traffic on the other side of the
  * PD-9 boundary.
  *
+ * Breakers are keyed by TRAFFIC PATH as well. A shadow call exists to measure a
+ * candidate, not to decide anything. If its failures advanced the same failure
+ * run that gates live calls, a shadow lane could exclude the model that serves
+ * live decisions — the measurement would have changed the thing it measures, and
+ * the exclusion would be unattributable, since nothing recorded which traffic
+ * earned it. So a non-live path WRITES its failures to its own run and READS the
+ * live run to decide admission: shadow work is refused outright while the route
+ * live traffic depends on is anything but healthy, and can never itself be the
+ * reason that route is excluded. Each path's run is separately visible in
+ * {@link CircuitBreakerRegistry.snapshotAll}, which is what makes an exclusion
+ * attributable to the traffic that caused it.
+ *
  * How long a tripped breaker stays open depends on WHY it tripped. A provider
  * that is refusing work because it is momentarily full ("model busy", 429,
  * 503, 529, or a leg that ran out its budget queued behind other traffic) is
@@ -27,13 +39,25 @@
  * for the full `cooldown_ms`. Either way the route then admits a bounded number
  * of half-open probes, and one success closes it.
  *
+ * A route can also be opened by LATENCY (when `latency_trip` is armed): a
+ * provider whose answers arrive, but later than the latency class's objective
+ * in most recent windows, is failing a hot path without ever producing an
+ * error. A latency-opened breaker is not closed by an answer from an attempt
+ * that started before it opened, because such an answer is exactly the slow
+ * evidence that opened it.
+ *
+ * The half-open probe budget scales with how much traffic the route carried
+ * before it opened (`probe_fraction`), so a route that served forty calls at
+ * once is not re-tested by a single probe whose one slow answer decides it.
+ *
  * The clock is injected. Breaker behaviour is entirely about elapsed time, and
  * a test that must sleep to observe a cooldown is a test nobody runs.
  *
  * @module llm/circuit-breaker
  */
 
-import type { LlmBreakerDefaults } from "./types";
+import { nearestRank } from "./leg-latency-tracker";
+import type { BreakerPath, LlmBreakerDefaults, LlmLatencyClass } from "./types";
 
 /** What the breaker will currently permit for a route. */
 export type BreakerState = "closed" | "open" | "half-open";
@@ -47,9 +71,94 @@ export type BreakerState = "closed" | "open" | "half-open";
  */
 export type BreakerFailureKind = "capacity" | "hard";
 
+/** The path whose failures decide what serves a caller. */
+export const LIVE_BREAKER_PATH: BreakerPath = "live";
+
+/**
+ * Separator between a route key and a non-live path inside the registry's map
+ * keys. NUL cannot occur in a route key, so no route key can collide with a
+ * scoped one however the route table is extended.
+ */
+const PATH_SEPARATOR = "\u0000";
+
+/**
+ * The registry key for one route on one path.
+ *
+ * The live path's key is the route key VERBATIM. Live state, and every
+ * dashboard and test that reads a breaker by its route key, therefore keep
+ * working unchanged across this boundary — scoping is additive, never a rename.
+ *
+ * @param routeKey The route's stable key.
+ * @param path The traffic class.
+ * @returns The registry key.
+ */
+function keyFor(routeKey: string, path: BreakerPath): string {
+  return path === LIVE_BREAKER_PATH ? routeKey : `${routeKey}${PATH_SEPARATOR}${path}`;
+}
+
+/**
+ * Split a registry key back into the route and the path it belongs to.
+ *
+ * @param key A registry key.
+ * @returns Its route key and path.
+ */
+function splitKey(key: string): { routeKey: string; path: BreakerPath } {
+  const at = key.indexOf(PATH_SEPARATOR);
+  if (at < 0) {
+    return { routeKey: key, path: LIVE_BREAKER_PATH };
+  }
+  // `shadow` is the only non-live path, so a scoped key can carry no other.
+  return { routeKey: key.slice(0, at), path: "shadow" };
+}
+
+/**
+ * The breaker surface one traffic path sees.
+ *
+ * The chain holds a view rather than the registry so that the path is decided
+ * once, where the call's class is known, instead of at each of the dozen sites
+ * that observe an attempt — one forgotten site is the whole defect.
+ */
+export interface BreakerPathView {
+  /** Whether a route may be attempted now on this path. */
+  allows(routeKey: string): boolean;
+  /** The state that governs this path's admission for the route. */
+  stateOf(routeKey: string): BreakerState;
+  /** Why an attempt was refused, naming the breaker that refused it. */
+  refusalReason(routeKey: string): string;
+  /** Register that an attempt is starting; true when it took a half-open probe slot. */
+  onAttemptStart(routeKey: string): boolean;
+  /** Return a probe slot whose attempt ended without a verdict. */
+  onAttemptAbandoned(routeKey: string): void;
+  /** Mark an attempt finished, whatever its outcome. */
+  onAttemptEnd(routeKey: string): void;
+  /** Record a success. */
+  onSuccess(routeKey: string, startedAtMs?: number): void;
+  /** Record a failure against this path's run. */
+  onFailure(routeKey: string, kind?: BreakerFailureKind): void;
+  /** Record how long an attempt that reached the provider took. */
+  onLatencySample(
+    routeKey: string,
+    durationMs: number,
+    latencyClass: LlmLatencyClass | undefined,
+  ): void;
+}
+
 /** Snapshot of one route's breaker, for observability and tests. */
 export interface BreakerSnapshot {
   readonly routeKey: string;
+  /**
+   * The traffic class whose observations this run holds. A route carries one
+   * independent run per path, so a reader never has to infer which traffic
+   * earned an open — the run that opened is the one that reports it.
+   */
+  readonly path: BreakerPath;
+  /**
+   * How many times this route has opened on this path since the registry was
+   * built. Monotonic, and deliberately not cleared by a success: the failure
+   * run that opened a breaker is erased the moment one call succeeds, so a
+   * count that a close resets can never answer how often a path tripped.
+   */
+  readonly opens: number;
   readonly state: BreakerState;
   readonly consecutiveFailures: number;
   readonly openedAtMs: number | null;
@@ -62,6 +171,10 @@ export interface BreakerSnapshot {
   readonly failureKind: BreakerFailureKind | null;
   /** How long the breaker stays open from `openedAtMs`, given that kind. */
   readonly cooldownMs: number;
+  /** Whether the current open was caused by latency rather than failures. */
+  readonly openedByLatency: boolean;
+  /** Half-open probes admitted at once. */
+  readonly probeBudget: number;
 }
 
 interface BreakerRecord {
@@ -70,6 +183,17 @@ interface BreakerRecord {
   probesInFlight: number;
   /** Whether any failure in the current run was hard rather than capacity. */
   runHasHardFailure: boolean;
+  /** Whether the current open was caused by the latency trip. */
+  openedByLatency: boolean;
+  /** Peak concurrent attempts observed before the breaker last opened. */
+  concurrencyAtOpen: number;
+}
+
+/** Latency-trip state, kept apart from the failure record so a success does not erase it. */
+interface LatencyRecord {
+  samples: number[];
+  /** Whether each recent completed window exceeded the objective, oldest first. */
+  verdicts: boolean[];
 }
 
 /**
@@ -81,14 +205,31 @@ function freshRecord(): BreakerRecord {
     openedAtMs: null,
     probesInFlight: 0,
     runHasHardFailure: false,
+    openedByLatency: false,
+    concurrencyAtOpen: 0,
   };
 }
 
 /**
  * Tracks route health and decides whether a leg may be attempted.
  */
-export class CircuitBreakerRegistry {
+export class CircuitBreakerRegistry implements BreakerPathView {
   private readonly records = new Map<string, BreakerRecord>();
+
+  /**
+   * Opens per registry key, kept apart from the records so that a success —
+   * which discards the failure run entirely — cannot erase the evidence that
+   * the route tripped.
+   */
+  private readonly openCount = new Map<string, number>();
+
+  private readonly latency = new Map<string, LatencyRecord>();
+
+  /** Attempts currently in flight per route, for scaling the probe budget. */
+  private readonly inFlight = new Map<string, number>();
+
+  /** Peak of {@link inFlight} since the route last opened. */
+  private readonly peakInFlight = new Map<string, number>();
 
   private readonly config: LlmBreakerDefaults;
 
@@ -101,6 +242,30 @@ export class CircuitBreakerRegistry {
   public constructor(config: LlmBreakerDefaults, now: () => number = Date.now) {
     this.config = config;
     this.now = now;
+  }
+
+  /**
+   * The breaker surface for one traffic path.
+   *
+   * The live path is served by the registry ITSELF rather than by a wrapper, so
+   * live admission runs the same code against the same keys it always has —
+   * there is no live-path branch that could drift from the unscoped behaviour.
+   *
+   * @param path The traffic class the caller belongs to.
+   * @returns The view that path must observe its attempts through.
+   */
+  public forPath(path: BreakerPath): BreakerPathView {
+    return path === LIVE_BREAKER_PATH ? this : new MeasurementPathView(this, path);
+  }
+
+  /**
+   * Why an attempt on the live path was refused.
+   *
+   * @param routeKey The route's stable key.
+   * @returns The reason, for the attempt record.
+   */
+  public refusalReason(routeKey: string): string {
+    return `circuit breaker is ${this.stateOf(routeKey)}`;
   }
 
   /**
@@ -163,7 +328,24 @@ export class CircuitBreakerRegistry {
       return false;
     }
     const record = this.recordFor(routeKey);
-    return record.probesInFlight < this.config.half_open_probes;
+    return record.probesInFlight < this.probeBudgetFor(record);
+  }
+
+  /**
+   * How many half-open probes a route admits at once.
+   *
+   * @param record The route's record.
+   * @returns The larger of the configured floor and the concurrency-scaled budget.
+   */
+  private probeBudgetFor(record: BreakerRecord): number {
+    const fraction = this.config.probe_fraction;
+    if (fraction === undefined || fraction <= 0) {
+      return this.config.half_open_probes;
+    }
+    return Math.max(
+      this.config.half_open_probes,
+      Math.ceil(fraction * record.concurrencyAtOpen),
+    );
   }
 
   /**
@@ -175,6 +357,7 @@ export class CircuitBreakerRegistry {
    *   {@link onAttemptAbandoned}, or the slot is never returned.
    */
   public onAttemptStart(routeKey: string): boolean {
+    this.onLoadStart(routeKey);
     if (this.stateOf(routeKey) === "half-open") {
       this.recordFor(routeKey).probesInFlight += 1;
       return true;
@@ -204,6 +387,55 @@ export class CircuitBreakerRegistry {
   }
 
   /**
+   * Mark an attempt started with {@link onAttemptStart} as finished, whatever
+   * its outcome, so the in-flight count that scales the probe budget stays true.
+   *
+   * @param routeKey The route's stable key.
+   * @returns void
+   */
+  public onAttemptEnd(routeKey: string): void {
+    this.onLoadEnd(routeKey);
+  }
+
+  /**
+   * Count an attempt against a route's CONCURRENT LOAD, and nothing else.
+   *
+   * The half-open probe budget scales with how much traffic a route was
+   * carrying when it opened, because a route that was serving forty calls at
+   * once must not be re-tested by a single probe whose one slow answer decides
+   * it. That quantity is a property of the PROVIDER's load, so every attempt
+   * that reaches the provider belongs in it — including one whose answer is
+   * discarded, which occupies the provider's capacity exactly as a live call
+   * does. Leaving measurement attempts out would shrink the budget a recovering
+   * route is re-tested with, lengthening the time live traffic spends on a
+   * substitute model; the route's exclusion would be fixed and its recovery
+   * slowed by the same change.
+   *
+   * Deliberately touches neither `probesInFlight` nor any failure run, so a
+   * caller on another path can contribute its load to a route without taking
+   * one of that route's scarce probe slots or earning it a failure.
+   *
+   * @param routeKey The registry key to count the load against.
+   * @returns void
+   */
+  public onLoadStart(routeKey: string): void {
+    const inFlight = (this.inFlight.get(routeKey) ?? 0) + 1;
+    this.inFlight.set(routeKey, inFlight);
+    this.peakInFlight.set(routeKey, Math.max(this.peakInFlight.get(routeKey) ?? 0, inFlight));
+  }
+
+  /**
+   * Release an attempt counted by {@link onLoadStart}.
+   *
+   * @param routeKey The registry key the load was counted against.
+   * @returns void
+   */
+  public onLoadEnd(routeKey: string): void {
+    const inFlight = this.inFlight.get(routeKey) ?? 0;
+    this.inFlight.set(routeKey, Math.max(0, inFlight - 1));
+  }
+
+  /**
    * Record a success, closing the breaker.
    *
    * A single success closes it fully rather than decrementing the failure
@@ -211,11 +443,75 @@ export class CircuitBreakerRegistry {
    * working call answers it; requiring several would keep a recovered provider
    * excluded while the chain paid for slower legs.
    *
+   * The one exception is a breaker opened by latency: an answer from an
+   * attempt that started before it opened is the slow evidence that opened it,
+   * not evidence of recovery, and is ignored.
+   *
    * @param routeKey The route's stable key.
+   * @param startedAtMs When the answering attempt started, on the registry's clock.
    * @returns void
    */
-  public onSuccess(routeKey: string): void {
+  public onSuccess(routeKey: string, startedAtMs?: number): void {
+    const record = this.records.get(routeKey);
+    if (
+      record !== undefined &&
+      record.openedByLatency &&
+      record.openedAtMs !== null &&
+      startedAtMs !== undefined &&
+      startedAtMs < record.openedAtMs
+    ) {
+      return;
+    }
     this.records.set(routeKey, freshRecord());
+  }
+
+  /**
+   * Record how long an attempt that reached the provider took.
+   *
+   * Durations fill fixed-size windows; each full window is judged against the
+   * latency class's objective at the configured quantile, and the breaker opens
+   * when enough of the recent windows were over it. Does nothing unless the
+   * latency trip is armed.
+   *
+   * @param routeKey The route's stable key.
+   * @param durationMs The attempt's duration.
+   * @param latencyClass The alias's latency class, which selects the objective.
+   * @returns void
+   */
+  public onLatencySample(
+    routeKey: string,
+    durationMs: number,
+    latencyClass: LlmLatencyClass | undefined,
+  ): void {
+    const trip = this.config.latency_trip;
+    if (trip === undefined || !trip.enabled || latencyClass === undefined) {
+      return;
+    }
+    if (!Number.isFinite(durationMs) || durationMs < 0) {
+      return;
+    }
+    let state = this.latency.get(routeKey);
+    if (state === undefined) {
+      state = { samples: [], verdicts: [] };
+      this.latency.set(routeKey, state);
+    }
+    state.samples.push(durationMs);
+    if (state.samples.length < trip.window_size) {
+      return;
+    }
+    const sorted = [...state.samples].sort((a, b) => a - b);
+    state.samples = [];
+    state.verdicts.push(nearestRank(sorted, trip.quantile) > trip.slo_ms[latencyClass]);
+    while (state.verdicts.length > trip.of_windows) {
+      state.verdicts.shift();
+    }
+    const over = state.verdicts.filter(Boolean).length;
+    if (over >= trip.trip_windows && this.stateOf(routeKey) === "closed") {
+      const record = this.recordFor(routeKey);
+      this.open(routeKey, record);
+      record.openedByLatency = true;
+      state.verdicts = [];
+    }
   }
 
   /**
@@ -240,8 +536,28 @@ export class CircuitBreakerRegistry {
     }
 
     if (wasHalfOpen || record.consecutiveFailures >= this.config.failure_threshold) {
-      record.openedAtMs = this.now();
+      this.open(routeKey, record);
+      record.openedByLatency = false;
     }
+  }
+
+  /**
+   * Open a route, capturing the concurrency its probe budget scales with.
+   *
+   * @param routeKey The route's stable key.
+   * @param record Its record.
+   * @returns void
+   */
+  private open(routeKey: string, record: BreakerRecord): void {
+    if (record.openedAtMs === null) {
+      this.openCount.set(routeKey, (this.openCount.get(routeKey) ?? 0) + 1);
+    }
+    record.openedAtMs = this.now();
+    record.concurrencyAtOpen = Math.max(
+      record.concurrencyAtOpen,
+      this.peakInFlight.get(routeKey) ?? 0,
+    );
+    this.peakInFlight.set(routeKey, this.inFlight.get(routeKey) ?? 0);
   }
 
   /**
@@ -251,10 +567,34 @@ export class CircuitBreakerRegistry {
    * @returns A snapshot.
    */
   public snapshot(routeKey: string): BreakerSnapshot {
-    const record = this.records.get(routeKey) ?? freshRecord();
+    return this.snapshotOfKey(routeKey);
+  }
+
+  /**
+   * Inspect one route's breaker on one traffic path.
+   *
+   * @param routeKey The route's stable key.
+   * @param path The traffic class.
+   * @returns A snapshot of that path's own run.
+   */
+  public snapshotOnPath(routeKey: string, path: BreakerPath): BreakerSnapshot {
+    return this.snapshotOfKey(keyFor(routeKey, path));
+  }
+
+  /**
+   * Inspect one registry key.
+   *
+   * @param key The registry key, route-scoped or path-scoped.
+   * @returns A snapshot reporting the route and path the key names.
+   */
+  private snapshotOfKey(key: string): BreakerSnapshot {
+    const record = this.records.get(key) ?? freshRecord();
+    const { routeKey, path } = splitKey(key);
     return {
       routeKey,
-      state: this.stateOf(routeKey),
+      path,
+      opens: this.openCount.get(key) ?? 0,
+      state: this.stateOf(key),
       consecutiveFailures: record.consecutiveFailures,
       openedAtMs: record.openedAtMs,
       probesInFlight: record.probesInFlight,
@@ -265,6 +605,8 @@ export class CircuitBreakerRegistry {
             ? "hard"
             : "capacity",
       cooldownMs: this.cooldownFor(record),
+      openedByLatency: record.openedByLatency,
+      probeBudget: this.probeBudgetFor(record),
     };
   }
 
@@ -276,7 +618,7 @@ export class CircuitBreakerRegistry {
   public snapshotAll(): BreakerSnapshot[] {
     return [...this.records.keys()]
       .sort()
-      .map((routeKey) => this.snapshot(routeKey));
+      .map((key) => this.snapshotOfKey(key));
   }
 
   /**
@@ -286,6 +628,10 @@ export class CircuitBreakerRegistry {
    */
   public reset(): void {
     this.records.clear();
+    this.openCount.clear();
+    this.latency.clear();
+    this.inFlight.clear();
+    this.peakInFlight.clear();
   }
 
   /**
@@ -299,5 +645,148 @@ export class CircuitBreakerRegistry {
       this.records.set(routeKey, record);
     }
     return record;
+  }
+}
+
+/**
+ * The breaker surface a measurement path sees: reads the live verdict, writes
+ * its own.
+ *
+ * Both halves of that split are load-bearing and neither is sufficient alone.
+ * Writing to its own run is what stops a shadow lane from excluding the model
+ * that serves live decisions. Reading the live verdict is what stops shadow
+ * traffic from piling onto a provider live traffic is already struggling with —
+ * measurement that degrades the thing it measures is worse than no measurement.
+ *
+ * Admission is STRICTER than the live path's: a route must be fully closed on
+ * the live path before a measurement attempt starts, where a live call would be
+ * admitted into a half-open route. A half-open route's probes are a scarce,
+ * budgeted test of whether live traffic may resume, and spending one on a call
+ * whose answer is discarded delays that recovery for no decision.
+ */
+class MeasurementPathView implements BreakerPathView {
+  private readonly registry: CircuitBreakerRegistry;
+
+  private readonly path: BreakerPath;
+
+  /**
+   * @param registry The registry holding every path's runs.
+   * @param path This view's traffic class.
+   */
+  public constructor(registry: CircuitBreakerRegistry, path: BreakerPath) {
+    this.registry = registry;
+    this.path = path;
+  }
+
+  /**
+   * @param routeKey The route's stable key.
+   * @returns This path's own key for the route.
+   */
+  private scoped(routeKey: string): string {
+    return keyFor(routeKey, this.path);
+  }
+
+  /**
+   * Whether a measurement attempt may start.
+   *
+   * @param routeKey The route's stable key.
+   * @returns True only when the live route is fully closed and this path's own
+   *   breaker admits the attempt.
+   */
+  public allows(routeKey: string): boolean {
+    return (
+      this.registry.stateOf(routeKey) === "closed" && this.registry.allows(this.scoped(routeKey))
+    );
+  }
+
+  /**
+   * The state that governs this path's admission: the live route's whenever it
+   * is not closed, since that is what refuses the attempt, and otherwise this
+   * path's own.
+   *
+   * @param routeKey The route's stable key.
+   * @returns That state.
+   */
+  public stateOf(routeKey: string): BreakerState {
+    const live = this.registry.stateOf(routeKey);
+    return live === "closed" ? this.registry.stateOf(this.scoped(routeKey)) : live;
+  }
+
+  /**
+   * @param routeKey The route's stable key.
+   * @returns The reason, naming WHICH breaker refused the attempt so an
+   *   operator reading a skipped measurement leg is not left to guess whether
+   *   the live route or the measurement's own run excluded it.
+   */
+  public refusalReason(routeKey: string): string {
+    const live = this.registry.stateOf(routeKey);
+    return live === "closed"
+      ? `circuit breaker is ${this.registry.stateOf(this.scoped(routeKey))} on the ${this.path} path`
+      : `circuit breaker is ${live} on the live path`;
+  }
+
+  /**
+   * @param routeKey The route's stable key.
+   * @returns Whether the attempt took one of THIS path's half-open probe slots.
+   */
+  public onAttemptStart(routeKey: string): boolean {
+    // The load goes on the LIVE key too: a measurement attempt occupies the
+    // provider's capacity exactly as a live call does, and the live route's
+    // half-open probe budget scales with the load it was carrying. Scoping the
+    // load away would shrink that budget and slow live traffic's return to the
+    // route — fixing the lockout while lengthening recovery from it. This is
+    // the load counters only; `probesInFlight` and the failure run stay scoped,
+    // so no live probe slot is taken and no live failure is earned.
+    this.registry.onLoadStart(routeKey);
+    return this.registry.onAttemptStart(this.scoped(routeKey));
+  }
+
+  /**
+   * @param routeKey The route's stable key.
+   * @returns void
+   */
+  public onAttemptAbandoned(routeKey: string): void {
+    this.registry.onAttemptAbandoned(this.scoped(routeKey));
+  }
+
+  /**
+   * @param routeKey The route's stable key.
+   * @returns void
+   */
+  public onAttemptEnd(routeKey: string): void {
+    this.registry.onLoadEnd(routeKey);
+    this.registry.onAttemptEnd(this.scoped(routeKey));
+  }
+
+  /**
+   * @param routeKey The route's stable key.
+   * @param startedAtMs When the answering attempt started.
+   * @returns void
+   */
+  public onSuccess(routeKey: string, startedAtMs?: number): void {
+    this.registry.onSuccess(this.scoped(routeKey), startedAtMs);
+  }
+
+  /**
+   * @param routeKey The route's stable key.
+   * @param kind Whether the failure was a capacity signal or a hard failure.
+   * @returns void
+   */
+  public onFailure(routeKey: string, kind?: BreakerFailureKind): void {
+    this.registry.onFailure(this.scoped(routeKey), kind);
+  }
+
+  /**
+   * @param routeKey The route's stable key.
+   * @param durationMs The attempt's duration.
+   * @param latencyClass The alias's latency class.
+   * @returns void
+   */
+  public onLatencySample(
+    routeKey: string,
+    durationMs: number,
+    latencyClass: LlmLatencyClass | undefined,
+  ): void {
+    this.registry.onLatencySample(this.scoped(routeKey), durationMs, latencyClass);
   }
 }

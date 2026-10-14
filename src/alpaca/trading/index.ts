@@ -96,6 +96,17 @@ export {
 
 export { default as trailingStops } from "./trailing-stops";
 
+// Trailing-stop replace-unit contract
+export {
+  resolveReplaceTrail,
+  readTrailUnit,
+  TrailUnitConversionRefusedError,
+  MIN_CONVERTED_TRAIL_PERCENT,
+  TrailUnit,
+  ResolvedTrail,
+  TrailUnitRefusalReason,
+} from "./trail-unit";
+
 // OCO (One-Cancels-Other) order exports
 export {
   createOCOOrder,

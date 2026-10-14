@@ -88,6 +88,25 @@ export interface LlmPriceAnchor {
   readonly source?: string;
 }
 
+/**
+ * The same model served somewhere else: another provider, or another
+ * deployment at the same provider.
+ *
+ * An equivalent is the only thing a leg may be retried or hedged on without
+ * changing which model answers. It is admitted by the same rules as a leg — a
+ * confirmed model id and a live provider account — so an equivalent that
+ * cannot serve today is carried in the table without being reached.
+ */
+export interface LlmRouteEquivalent {
+  readonly provider: string;
+  readonly model_id: string | null;
+  readonly model_id_status: LlmModelIdStatus;
+  readonly model_id_source?: string | null;
+  readonly lumic_model?: string | null;
+  readonly params?: LlmRouteParams;
+  readonly notes?: string;
+}
+
 /** One leg of an alias's fallback chain. */
 export interface LlmRoute {
   readonly role: LlmRouteRole;
@@ -100,6 +119,14 @@ export interface LlmRoute {
   readonly params?: LlmRouteParams;
   readonly price_per_mtok?: LlmPriceAnchor;
   readonly shadow_only?: boolean;
+  /**
+   * The model this leg serves, independent of which provider hosts it.
+   * Absent means the model id itself: two legs are the same model exactly when
+   * their classes are equal.
+   */
+  readonly model_class?: string;
+  /** The same model at other providers or deployments, reached before any different-model leg. */
+  readonly equivalents?: readonly LlmRouteEquivalent[];
   readonly notes?: string;
 }
 
@@ -145,6 +172,18 @@ export interface LlmAliasDefinition {
   readonly routes: readonly LlmRoute[];
 }
 
+/**
+ * Which traffic class a call — and so each breaker observation it produces —
+ * belongs to.
+ *
+ * `live` is the only path whose failures may decide which route serves a
+ * caller. `shadow` is measurement: a call whose answer is compared and
+ * discarded. It reads the live verdict and keeps its own failure run. The two
+ * values match the path label a consumer's attempt metrics carry, so one
+ * call's breaker run and its metric series name the same thing.
+ */
+export type BreakerPath = "live" | "shadow";
+
 /** Circuit-breaker tuning shared by every route. */
 export interface LlmBreakerDefaults {
   readonly failure_threshold: number;
@@ -156,13 +195,94 @@ export interface LlmBreakerDefaults {
    */
   readonly capacity_cooldown_ms?: number;
   readonly half_open_probes: number;
+  /**
+   * Half-open probes as a fraction of the route's concurrency before it
+   * opened. The probe budget is the larger of this and `half_open_probes`, so
+   * a route that carried forty calls at once is not re-tested by one.
+   * Absent means `half_open_probes` alone.
+   */
+  readonly probe_fraction?: number;
+  /** Open on sustained slowness as well as on failures. Absent means failures only. */
+  readonly latency_trip?: LlmLatencyTripDefaults;
+}
+
+/**
+ * Tripping a breaker on latency rather than on failure.
+ *
+ * A route whose answers arrive, but arrive later than the caller can use, is
+ * failing in every way that matters to a hot path while never producing an
+ * error. The trip reads a quantile of attempt durations over fixed-size
+ * windows and opens when M of the last N windows exceeded the latency class's
+ * objective.
+ */
+export interface LlmLatencyTripDefaults {
+  /**
+   * Whether the trip is armed. Opening a breaker moves its traffic to the next
+   * leg, which is usually a different model; arming it is therefore a routing
+   * choice, not a pure latency mechanic, and it ships disarmed.
+   */
+  readonly enabled: boolean;
+  /** Latency objective per latency class, in milliseconds. */
+  readonly slo_ms: Readonly<Record<LlmLatencyClass, number>>;
+  /** The quantile of a window compared against the objective, in (0, 1). */
+  readonly quantile: number;
+  /** Attempts per window. */
+  readonly window_size: number;
+  /** Windows over the objective, of the last `of_windows`, that open the breaker. */
+  readonly trip_windows: number;
+  readonly of_windows: number;
+}
+
+/**
+ * Tail-latency controls for attempts on the SAME model.
+ *
+ * None of these selects a different model: they decide when a second attempt
+ * on the same model starts, and how long one attempt may hold the caller's
+ * deadline while a same-model alternative waits.
+ */
+export interface LlmHedgingDefaults {
+  /** Extra same-model attempts one leg may start, equivalents and duplicates together. */
+  readonly max_same_model_hedges: number;
+  /** Healthy-latency quantile after which a hedge starts, in (0, 1). */
+  readonly hedge_quantile: number;
+  /** Healthy-latency quantile the per-attempt timeout scales, in (0, 1). */
+  readonly timeout_quantile: number;
+  /** Multiplier on the timeout quantile. */
+  readonly k_timeout: number;
+  /** Lower bound on a measured per-attempt timeout, in milliseconds. */
+  readonly attempt_timeout_floor_ms: number;
+  /**
+   * Share of a leg's remaining budget one attempt may hold before a waiting
+   * same-model equivalent is started beside it, in (0, 1].
+   */
+  readonly max_attempt_share: number;
+  /**
+   * Fraction of a provider guard's concurrency and rate capacity kept free:
+   * a duplicate on the same provider is started only above it, so hedging
+   * never takes the capacity first attempts need.
+   */
+  readonly duplicate_headroom_reserve: number;
+  /** Healthy samples a (provider, model, prompt-size) cell needs before it is used. */
+  readonly min_samples: number;
+  /** Samples kept per cell. */
+  readonly window_size: number;
+  /** Samples older than this are discarded, in milliseconds. */
+  readonly sample_max_age_ms: number;
+  /** Ascending prompt-token boundaries splitting samples into size buckets. */
+  readonly prompt_token_buckets: readonly number[];
 }
 
 /** Defaults every alias inherits. */
 export interface LlmRouteDefaults {
   readonly request_timeout_ms: Readonly<Record<LlmLatencyClass, number>>;
+  /**
+   * Retries the GATEWAY makes within one leg (its rendered `num_retries`). The
+   * client never retries within a leg; it hedges on the same model instead.
+   */
   readonly retries_per_leg: number;
   readonly circuit_breaker: LlmBreakerDefaults;
+  /** Same-model tail-latency controls. Absent means no hedging and route-budget timeouts. */
+  readonly hedging?: LlmHedgingDefaults;
 }
 
 /** A routing question the table cannot settle on its own authority. */
@@ -197,8 +317,38 @@ export interface ResolvedRoute {
   /** Stable identity of this leg, used to key its circuit breaker and its metrics. */
   readonly routeKey: string;
   readonly timeoutMs: number;
-  readonly retriesPerLeg: number;
+  /**
+   * @deprecated Never read by the client, which does not retry within a leg;
+   * the gateway's own retry count lives in the route table's defaults. No
+   * longer populated by the resolver.
+   */
+  readonly retriesPerLeg?: number;
+  /** The model this leg serves, independent of provider. Absent means `modelId`. */
+  readonly modelClass?: string;
+  /** Latency class of the alias, which selects the latency objective. */
+  readonly latencyClass?: LlmLatencyClass;
+  /** The same model at other live providers, in table order. */
+  readonly equivalents?: readonly ResolvedRoute[];
 }
+
+/**
+ * How a different-model leg may be used once the configured model's attempts
+ * are spent.
+ *
+ * `allow` and `allow_record` both run it, and both record the relation on
+ * every attempt; the distinction is the consumer's, which may alert or gate on
+ * `allow_record`. `deny` never runs it: the call ends with a
+ * `cross_model_denied` exhaustion, which a caller maps to no decision.
+ */
+export type LlmCrossModelPolicy = "allow" | "allow_record" | "deny";
+
+/**
+ * Whether an answer came from the configured model.
+ *
+ * `unknown` is a leg that should have been the configured model but whose
+ * provider did not say which model answered: it is not asserted either way.
+ */
+export type LlmModelClassRelation = "same" | "different" | "unknown";
 
 /**
  * Token accounting for one attempt, mirroring the incumbent client's shape.
@@ -226,6 +376,43 @@ export interface LlmToolCall {
   readonly function: { readonly name: string; readonly arguments: string };
 }
 
+/**
+ * Why the provider stopped generating, as it reported it.
+ *
+ * The named members are the values the OpenAI-compatible chat-completions
+ * contract defines. `length` is the load-bearing one for a consumer: it means
+ * the completion hit the request's output cap and was CUT, so a reply that
+ * parses as absent or malformed is the caller's own cap rather than the model
+ * declining — two states with opposite remedies.
+ *
+ * The union stays open to any other non-empty string because a gateway may
+ * forward a provider-specific reason, and narrowing an unrecognized value to a
+ * known member (or to `"other"`) would discard the only evidence of what
+ * happened. Unreported is `null`, never a substituted default: a fabricated
+ * `"stop"` would make a truncated call read as a clean one.
+ */
+export type LlmFinishReason =
+  | "stop"
+  | "length"
+  | "tool_calls"
+  | "content_filter"
+  | "function_call"
+  | (string & Record<never, never>);
+
+/**
+ * The finish reasons the OpenAI-compatible contract defines.
+ *
+ * Exported so a consumer can tell a defined reason from a provider-specific one
+ * without re-stating the list and drifting from it.
+ */
+export const KNOWN_LLM_FINISH_REASONS: readonly string[] = [
+  "stop",
+  "length",
+  "tool_calls",
+  "content_filter",
+  "function_call",
+];
+
 /** The envelope a transport returns. */
 export interface LlmTransportResponse<T> {
   readonly response: T;
@@ -242,6 +429,20 @@ export interface LlmTransportResponse<T> {
   readonly servedModel?: string | null;
   /** The proxy's deployment id for the answer (`x-litellm-model-id`), or `null`. */
   readonly servedDeploymentId?: string | null;
+  /** The provider the gateway reports as having served the answer, or `null`. */
+  readonly servedProvider?: string | null;
+  /**
+   * Why the provider stopped generating, from the answering choice's
+   * `finish_reason`, or `null` when it reported none.
+   *
+   * Carried because a consumer cannot otherwise distinguish a reply the model
+   * chose to end from one the request's own output cap CUT. Those look identical
+   * downstream — both arrive as an absent or unparseable answer — and they have
+   * opposite remedies: raise the cap, or treat the model's answer as given.
+   * {@link LlmFinishReason} documents why an unrecognized value passes through
+   * verbatim and why absence stays `null`.
+   */
+  readonly finishReason?: LlmFinishReason | null;
   /**
    * Whether the structured answer arrived inside one enclosing markdown fence
    * that was removed before parsing. Absent when the transport does not parse
@@ -249,6 +450,21 @@ export interface LlmTransportResponse<T> {
    */
   readonly fenceStripped?: boolean;
 }
+
+/**
+ * Same-model attempts the chain declined to start, by the role of the leg they
+ * belonged to, because less than the attempt floor
+ * (`hedging.attempt_timeout_floor_ms`) of that leg's budget remained when they
+ * were due.
+ *
+ * Such an attempt ends at the leg's end, with less time than the shortest
+ * attempt the chain ever allows, so it cannot be expected to answer: it would
+ * only send the provider a full prompt whose answer nobody can use. Once a
+ * leg's remaining budget is below the floor no extra attempt of that leg can
+ * start, so each leg contributes at most one; under the table's
+ * `max_same_model_hedges` of 1 that is exactly the number of requests not sent.
+ */
+export type LlmHedgeRefusals = Readonly<Record<LlmRouteRole, number>>;
 
 /** What the caller receives, with the routing decision attached for attribution. */
 export interface AliasCallResult<T> extends LlmTransportResponse<T> {
@@ -266,7 +482,76 @@ export interface AliasCallResult<T> extends LlmTransportResponse<T> {
    * See {@link LlmTransportResponse.servedModel}.
    */
   readonly servedModel?: string | null;
+  /** Whether the answer came from the configured model. See {@link LlmModelClassRelation}. */
+  readonly modelClassRelation?: LlmModelClassRelation;
+  /** Whether the answering attempt was a hedge rather than a leg's first attempt. */
+  readonly hedged?: boolean;
+  /**
+   * Same-model attempts refused below the attempt floor across every run of
+   * this call (a validation retry and the degraded direct path included), by
+   * leg role. See {@link LlmHedgeRefusals}. Absent on a result built by a
+   * consumer's own double.
+   */
+  readonly hedgesRefusedBelowFloor?: LlmHedgeRefusals;
 }
+
+/**
+ * Every cause an attempt can end without an answer for, as a closed list.
+ *
+ * {@link AliasAttemptRecord.outcome} groups these into five coarse words and
+ * {@link AliasAttemptRecord.reason} explains one in prose; neither lets a
+ * consumer tell a rejected credential from a full queue from an answer that
+ * did not parse without reading the prose, and prose is not a contract. Each
+ * member is set by the code that knows the cause, never recovered from a
+ * message afterwards.
+ *
+ * The first six are the chain's own decisions and say nothing about a provider:
+ *
+ * - `leg_timeout`: the attempt ran out its budget, or its transport reported
+ *   the request aborted while neither the caller nor the chain had cancelled it.
+ * - `superseded`: replaced by a same-model attempt after its measured timeout.
+ * - `hedge_loser`: a same-model attempt answered first.
+ * - `caller_cancelled`: the caller stopped waiting.
+ * - `deadline_spent`: the caller's deadline ran out before the leg was dispatched.
+ * - `cross_model_denied`: the leg serves a different model and the caller's policy forbade it.
+ *
+ * The next four are legs that could not be asked:
+ *
+ * - `unsupported_capability`: the leg cannot honour a capability the request needs.
+ * - `breaker_open`: the leg's circuit breaker refused it.
+ * - `rate_guard`: the client's own provider guard did not admit the call.
+ * - `unresolvable_route`: the route table excluded the leg before the walk began.
+ *
+ * The last six are what a leg that was asked came back with:
+ *
+ * - `response_format`: it answered a structured request with content that does not parse.
+ * - `tool_choice_ignored`: it answered a mandatory tool call in prose.
+ * - `credential`: it rejected the caller's credentials (HTTP 401 or 403).
+ * - `capacity`: it said it is full rather than broken.
+ * - `gateway_unreachable`: the gateway in front of it could not be reached.
+ * - `provider_error`: every other failure.
+ */
+export const LLM_ATTEMPT_FAILURE_CLASSES = [
+  "leg_timeout",
+  "superseded",
+  "hedge_loser",
+  "caller_cancelled",
+  "deadline_spent",
+  "cross_model_denied",
+  "unsupported_capability",
+  "breaker_open",
+  "rate_guard",
+  "unresolvable_route",
+  "response_format",
+  "tool_choice_ignored",
+  "credential",
+  "capacity",
+  "gateway_unreachable",
+  "provider_error",
+] as const;
+
+/** One cause an attempt ended without an answer for. See {@link LLM_ATTEMPT_FAILURE_CLASSES}. */
+export type LlmAttemptFailureClass = (typeof LLM_ATTEMPT_FAILURE_CLASSES)[number];
 
 /** One attempt against one leg. */
 export interface AliasAttemptRecord {
@@ -275,6 +560,15 @@ export interface AliasAttemptRecord {
   readonly provider: string;
   readonly modelId: string;
   readonly outcome: "ok" | "error" | "timeout" | "breaker-open" | "skipped";
+  /**
+   * The typed cause of an attempt that did not answer. Absent on an `ok`
+   * attempt, and on a record built by a consumer's own double.
+   *
+   * Independent of {@link AliasAttemptRecord.outcome}: the outcome is kept as
+   * consumers already read it, while this names the cause by the failure's
+   * type, so the two can disagree where the outcome was inferred from wording.
+   */
+  readonly failureClass?: LlmAttemptFailureClass;
   readonly durationMs: number;
   /**
    * The budget this leg was given: its route budget, cut to what remained of
@@ -287,6 +581,16 @@ export interface AliasAttemptRecord {
   readonly fenceStripped?: boolean;
   readonly reason?: string;
   readonly usage?: LlmUsageRecord;
+  /** The provider that served, or was asked to serve, this attempt; `null` when unknown. */
+  readonly servedProvider?: string | null;
+  /** The model class the attempt was addressed to. */
+  readonly modelClass?: string;
+  /** Whether this attempt's model is the configured one. */
+  readonly modelClassRelation?: LlmModelClassRelation;
+  /** Whether this attempt was a same-model hedge rather than its leg's first attempt. */
+  readonly hedged?: boolean;
+  /** Zero-based dispatch order across the whole call. */
+  readonly attemptIndex?: number;
 }
 
 /**
@@ -355,6 +659,23 @@ export interface AliasCallOptions<T = unknown> {
   readonly validate?: (raw: unknown) => LlmValidationOutcome<T>;
   /** Correlation id carried into transport metadata for cross-system tracing. */
   readonly correlationId?: string;
+  /**
+   * Whether a different-model leg may answer once the configured model's
+   * attempts are spent. Absent means `allow_record`, which is the chain's
+   * historical behaviour.
+   */
+  readonly crossModelPolicy?: LlmCrossModelPolicy;
+  /**
+   * The traffic class this call belongs to. Absent means `live`.
+   *
+   * A caller whose answer is DISCARDED — a shadow comparison against a
+   * candidate alias, a health probe — declares itself here. Such a call reads
+   * the live route's breaker to decide whether it may run at all, and charges
+   * its own failures to its own failure run, so measuring a candidate can never
+   * be the reason the model that serves live decisions is excluded. A caller
+   * that leaves it unset is served exactly as before.
+   */
+  readonly breakerPath?: BreakerPath;
 }
 
 /** A transport that can execute one resolved route. */
@@ -419,4 +740,9 @@ export interface LlmClientConfig {
   readonly directTransport?: LlmTransport;
   /** Clock, injected so timeout and breaker behaviour is testable without waiting. */
   readonly now?: () => number;
+  /**
+   * Decides whether a duplicate attempt on the same provider may start.
+   * Defaults to the provider guard's headroom check; injectable for tests.
+   */
+  readonly duplicateAdmission?: (route: ResolvedRoute, reserveFraction: number) => boolean;
 }

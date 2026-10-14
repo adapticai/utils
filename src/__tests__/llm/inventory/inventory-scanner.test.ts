@@ -9,7 +9,8 @@
  * widened exclusion is how an inventory develops a blind spot.
  */
 
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
+import { sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
@@ -63,6 +64,24 @@ function readDataFile(relativePath: string): string {
 
 function fixture(name: string): string {
   return readDataFile(`./fixtures/${name}`);
+}
+
+/** Directory names under which a JSON file is test data rather than a shipped table. */
+const TEST_DATA_SEGMENTS: readonly string[] = ["__tests__", "__fixtures__", "fixtures"];
+
+/**
+ * Every JSON file shipped under a directory, as POSIX paths relative to it.
+ *
+ * The scanner parses only code, so a JSON table falls through to "unparsed
+ * file extension" unless it is declared a registry; listing the real tree is
+ * how a newly added table is caught before it drops out of the inventory.
+ */
+function listJsonTables(rootDir: string): string[] {
+  return readdirSync(rootDir, { recursive: true, encoding: "utf8" })
+    .map((entry) => entry.split(sep).join("/"))
+    .filter((entry) => entry.endsWith(".json"))
+    .filter((entry) => !entry.split("/").some((segment) => TEST_DATA_SEGMENTS.includes(segment)))
+    .sort();
 }
 
 const CONFIG: DetectorConfig = buildDetectorConfig(
@@ -414,6 +433,31 @@ describe("scope rules", () => {
         expect(decision.reason.length).toBeGreaterThan(0);
       }
     }
+  });
+
+  it("the decision route table is classified as a registry, not a call site", () => {
+    for (const decisionFile of [
+      "src/llm/decision/decision-routes.json",
+      "src/llm/decision/decision-routes.schema.json",
+    ]) {
+      const decision = classifyScope("utils", decisionFile);
+      expect(decision.kind).toBe("registry");
+      if (decision.kind === "registry") {
+        expect(decision.reason).toContain("decision route table");
+      }
+    }
+  });
+
+  it("records every JSON table the LLM layer ships as a registry, never as an unparsed-extension drop", () => {
+    const llmRoot = fileURLToPath(new URL("../../../llm/", import.meta.url));
+    const shipped = listJsonTables(llmRoot).map((relative) => `src/llm/${relative}`);
+
+    expect(shipped).toContain("src/llm/decision/decision-routes.json");
+    expect(shipped).toContain("src/llm/alias-routes.json");
+    const unregistered = shipped.filter(
+      (candidate) => classifyScope("utils", candidate).kind !== "registry",
+    );
+    expect(unregistered).toEqual([]);
   });
 
   it("scans ordinary production sources", () => {

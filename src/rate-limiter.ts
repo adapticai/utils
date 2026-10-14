@@ -49,6 +49,26 @@ export interface RateLimiterConfig {
 }
 
 /**
+ * Raised to a caller whose own signal ended its wait for a token.
+ *
+ * Told apart from a timeout so the layer that asked can say which it was: a
+ * wait that ran out says the bucket was empty for the whole wait, while a wait
+ * its caller left says nothing about the bucket at all.
+ */
+export class RateLimitWaitAbandonedError extends RateLimitError {
+  /**
+   * @param label The limiter the caller was waiting on.
+   */
+  constructor(label: string) {
+    super(
+      `Rate limit wait for ${label} was left by its caller before a token was granted`,
+      label,
+      undefined,
+    );
+  }
+}
+
+/**
  * Represents a queued request waiting for a token
  */
 interface QueuedRequest {
@@ -111,7 +131,16 @@ export class TokenBucketRateLimiter {
    * If no tokens are available, the request is queued and will resolve
    * when a token becomes available or reject if it times out.
    *
+   * A caller may hand over the signal it cancels its own work with. A caller
+   * that has stopped waiting is taken out of the queue at once and is never
+   * granted a token: a token handed to a waiter nobody is behind is spent on
+   * nothing, and the next caller in line waits one refill longer for it. With
+   * no signal, or with one that never fires, the wait is exactly the wait it
+   * would be without one.
+   *
+   * @param signal - The caller's cancellation, when it has one
    * @throws {RateLimitError} If the request times out waiting for a token
+   * @throws {RateLimitWaitAbandonedError} If the caller's signal fired first
    *
    * @example
    * ```typescript
@@ -125,8 +154,13 @@ export class TokenBucketRateLimiter {
    * }
    * ```
    */
-  async acquire(): Promise<void> {
+  async acquire(signal?: AbortSignal): Promise<void> {
     const logger = getLogger();
+
+    if (signal?.aborted === true) {
+      // Nobody is waiting for this token, so none is taken and nothing queued.
+      throw new RateLimitWaitAbandonedError(this.config.label);
+    }
 
     this.refill();
 
@@ -171,10 +205,53 @@ export class TokenBucketRateLimiter {
           timeoutMs: this.timeoutMs,
         });
 
+        signal?.removeEventListener("abort", onAbandoned);
         reject(error);
       }, this.timeoutMs);
 
-      this.queue.push({ resolve, reject, timeoutHandle });
+      /**
+       * Take this waiter out of the queue because its caller stopped waiting.
+       *
+       * The waiters behind it keep their order and move up one place. The
+       * wake-up already armed stays armed while any of them remains, because
+       * it is timed to the next whole token whoever is first in line; with
+       * nobody left it is cleared, so an abandoned wait leaves no timer.
+       */
+      const onAbandoned = (): void => {
+        const index = this.queue.indexOf(queued);
+        if (index === -1) {
+          return;
+        }
+        this.queue.splice(index, 1);
+        clearTimeout(timeoutHandle);
+        if (this.queue.length === 0) {
+          this.clearWakeTimer();
+        }
+        logger.debug(`Rate limit wait abandoned for ${this.config.label}`, {
+          queueLength: this.queue.length,
+        });
+        reject(new RateLimitWaitAbandonedError(this.config.label));
+      };
+
+      // A waiter that leaves the queue any other way (granted a token, or
+      // rejected by a reset) stops listening as it leaves, so a signal that
+      // outlives the wait holds no reference to it.
+      const queued: QueuedRequest =
+        signal === undefined
+          ? { resolve, reject, timeoutHandle }
+          : {
+              resolve: (): void => {
+                signal.removeEventListener("abort", onAbandoned);
+                resolve();
+              },
+              reject: (error: Error): void => {
+                signal.removeEventListener("abort", onAbandoned);
+                reject(error);
+              },
+              timeoutHandle,
+            };
+      this.queue.push(queued);
+      signal?.addEventListener("abort", onAbandoned, { once: true });
 
       // Ensure the queue is actively drained even if no further acquire() calls
       // arrive: schedule a wake-up to refill tokens and release this request.

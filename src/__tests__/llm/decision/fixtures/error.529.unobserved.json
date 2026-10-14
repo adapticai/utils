@@ -1,0 +1,8 @@
+{
+  "status": 529,
+  "headers": {
+    "content-type": "application/json",
+    "retry-after-ms": "1500"
+  },
+  "body": { "message": "TypeSafe is temporarily overloaded. Retry after a short delay." }
+}

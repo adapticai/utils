@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CircuitBreakerRegistry } from "../../../llm/circuit-breaker";
 import { ChainExhaustedError, executeChain, sumUsage } from "../../../llm/fallback-chain";
@@ -6,6 +6,11 @@ import type { ChainLeg } from "../../../llm/fallback-chain";
 import { routeTable } from "../../../llm/route-table";
 import { LlmResponseFormatError } from "../../../llm/structured-content";
 import type { AliasAttemptRecord, LlmUsageRecord, ResolvedRoute } from "../../../llm/types";
+import { sameModelPolicyFrom } from "../../../llm/hedge";
+import { LegLatencyTracker } from "../../../llm/leg-latency-tracker";
+import legacyGolden from "./support/legacy-golden.json";
+import { LEGACY_SCENARIOS, observeScenario } from "./support/legacy-scenarios";
+import type { LegacyObservation } from "./support/legacy-scenarios";
 import { rejection } from "./support/rejections";
 import { makeThreeLegChain } from "./support/routes";
 import { ScriptedTransport, answers, fails, usageFor } from "./support/transports";
@@ -283,4 +288,72 @@ describe("ordered fallback chain (PD-3)", () => {
       );
     });
   });
+});
+
+describe("no-op on a cold process with no equivalents", () => {
+  /** Captured from the serial executor before hedging existed. */
+  const golden = legacyGolden as unknown as Record<string, LegacyObservation>;
+
+  /**
+   * Compare one observation with the serial executor's.
+   *
+   * The thrown class may be the typed deadline outcome where the serial
+   * executor threw plain exhaustion; it must still BE an exhaustion, so a
+   * consumer matching the old class sees no difference.
+   *
+   * @param observed What the executor did now.
+   * @param expected What the serial executor did.
+   */
+  function expectIdentical(observed: LegacyObservation, expected: LegacyObservation): void {
+    expect(observed.calls).toEqual(expected.calls);
+    expect(observed.attempts).toEqual(expected.attempts);
+    expect(observed.servedBy).toEqual(expected.servedBy);
+    expect(observed.exhausted).toBe(expected.threw === "ChainExhaustedError");
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("covers every captured scenario", () => {
+    expect(Object.keys(golden).sort()).toEqual(LEGACY_SCENARIOS.map((scenario) => scenario.name).sort());
+  });
+
+  for (const scenario of LEGACY_SCENARIOS) {
+    it(`reproduces the serial walk with hedging configured: ${scenario.name}`, async () => {
+      const tracker = new LegLatencyTracker(
+        { minSamples: 20, windowSize: 200, sampleMaxAgeMs: 900_000, promptTokenBuckets: [2_000] },
+        () => Date.now(),
+      );
+      const observed = await observeScenario(
+        scenario,
+        async (ms) => {
+          await vi.advanceTimersByTimeAsync(ms);
+        },
+        {
+          hedging: sameModelPolicyFrom({
+            max_same_model_hedges: 1,
+            hedge_quantile: 0.9,
+            timeout_quantile: 0.99,
+            k_timeout: 3,
+            attempt_timeout_floor_ms: 5_000,
+            max_attempt_share: 0.5,
+            duplicate_headroom_reserve: 0.25,
+            min_samples: 20,
+            window_size: 200,
+            sample_max_age_ms: 900_000,
+            prompt_token_buckets: [2_000],
+          }),
+          latency: tracker,
+          // Capacity to spare everywhere: a cold tracker must still start no duplicate.
+          admitDuplicate: () => true,
+        },
+      );
+      expectIdentical(observed, golden[scenario.name]);
+    });
+  }
 });
