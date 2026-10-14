@@ -137,6 +137,31 @@ describe("gateway transport: structured answers", () => {
       expect(await read("  \n```JSON \r\n" + SENTIMENT_JSON + "\r\n```\n  ")).toEqual(SENTIMENT);
     });
 
+    it("reads a fence labelled with any single-word language tag", async () => {
+      for (const label of ["jsonc", "javascript", "text", "json5", "my_lang-2"]) {
+        expect(await read("```" + label + "\n" + SENTIMENT_JSON + "\n```")).toEqual(SENTIMENT);
+      }
+    });
+
+    it("leaves backticks inside a JSON string value untouched when the answer is fenced", async () => {
+      const inner = '{"a":"use ```code``` here"}';
+      expect(await read("```json\n" + inner + "\n```")).toEqual({ a: "use ```code``` here" });
+    });
+
+    it("leaves a string value that is itself a fenced block untouched inside a fence", async () => {
+      const inner = JSON.stringify({ code: "```js\nconsole.log(1)\n```" });
+      expect(await read("```json\n" + inner + "\n```")).toEqual(JSON.parse(inner));
+    });
+
+    it("reports that a fence was removed, and that an unfenced answer had none", async () => {
+      const fenced = await answering("```json\n" + SENTIMENT_JSON + "\n```").execute<unknown>(
+        requestFor("json"),
+      );
+      expect(fenced.fenceStripped).toBe(true);
+      const bare = await answering(SENTIMENT_JSON).execute<unknown>(requestFor("json"));
+      expect(bare.fenceStripped).toBe(false);
+    });
+
     it("reads the fenced body of a strict-schema request the same way", async () => {
       expect(await read("```json\n" + SENTIMENT_JSON + "\n```", SCHEMA_FORMAT)).toEqual(SENTIMENT);
     });
@@ -153,6 +178,7 @@ describe("gateway transport: structured answers", () => {
       "true",
       "null",
       '{"code": "```js\\nconsole.log(1)\\n```"}',
+      '{"a":"use ```code``` here"}',
     ];
 
     for (const content of alreadyJson) {
@@ -173,7 +199,8 @@ describe("gateway transport: structured answers", () => {
         "```json\n" + SENTIMENT_JSON + "\n```\n\n```json\n" + SENTIMENT_JSON + "\n```",
       ],
       ["a fence that never closes (a truncated answer)", "```json\n" + SENTIMENT_JSON.slice(0, 20)],
-      ["a fence declaring another language", "```python\n" + SENTIMENT_JSON + "\n```"],
+      ["prose on both sides of the fence", "Result:\n```json\n" + SENTIMENT_JSON + "\n```\nDone."],
+      ["a labelled fence around content that is not JSON", "```python\nprint(1)\n```"],
       ["an empty fence", "```json\n```"],
     ];
 
@@ -183,6 +210,20 @@ describe("gateway transport: structured answers", () => {
         expect(error.message).toMatch(/not valid JSON for a json request/);
       });
     }
+
+    it("carries the original content, fence included, when a fenced body does not parse", async () => {
+      const original = "```json\n{\"sentiment\": BULLISH}\n```";
+      const error = await rejection(read(original), LlmResponseFormatError);
+      expect(error.content).toBe(original);
+      expect(error.fenced).toBe(true);
+      expect(error.message).toMatch(/not valid JSON for a json request/);
+    });
+
+    it("carries the original content when two fenced blocks are not stripped", async () => {
+      const original = "```json\n" + SENTIMENT_JSON + "\n```\n```json\n" + SENTIMENT_JSON + "\n```";
+      const error = await rejection(read(original), LlmResponseFormatError);
+      expect(error.content).toBe(original);
+    });
 
     it("says when the failed content was inside a fence, so an operator knows what was attempted", async () => {
       const error = await rejection(read("```json\nnot json\n```"), LlmResponseFormatError);

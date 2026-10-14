@@ -436,6 +436,9 @@ export async function callLLMByAlias<T = unknown>(
       servedBy: outcome.servedBy,
       servedModel: outcome.response.servedModel ?? null,
       finishReason: outcome.response.finishReason ?? null,
+      ...(outcome.response.fenceStripped === undefined
+        ? {}
+        : { fenceStripped: outcome.response.fenceStripped }),
       attempts: attemptLog,
       degraded: outcome.degraded,
       totalUsage: outcome.totalUsage,
@@ -498,6 +501,9 @@ export async function callLLMByAlias<T = unknown>(
     // validator rejected: a truncated attempt that was retried and then answered
     // cleanly must not report `length` for the answer the caller received.
     finishReason: validated.response.finishReason ?? null,
+    ...(validated.response.fenceStripped === undefined
+      ? {}
+      : { fenceStripped: validated.response.fenceStripped }),
     attempts: attemptLog,
     degraded: routing.degraded,
     totalUsage: validated.totalUsage,
