@@ -137,7 +137,7 @@ const VENDOR_WORDS = ["vendor", "wrote", "this", "3f9a1c"].join("-");
 const REQUEST_ID = "req_0123456789abcdef0123456789abcdef";
 
 /** A model a vendor reports answering with that is not the route's pin. */
-const SUBSTITUTED_MODEL = "jev-1.14.0";
+const SUBSTITUTED_MODEL = "jev-1.13.0";
 
 /** The date the injected clock starts on, and the instant. */
 const RUN_DATE = "2026-10-02";
@@ -225,6 +225,23 @@ function recordOf(value: unknown): Record<string, unknown> {
  */
 function fixtureBody(name: string, evidence: DecisionEvidenceClass): unknown {
   return loadDecisionFixture(name, { allow: [evidence] }).envelope.body;
+}
+
+/**
+ * A fixture body with the route's pinned model written into it.
+ *
+ * A fixture records the model id its own source illustrated, and a fixture is
+ * never rewritten to follow a re-pinned route. A request the plan sends and an
+ * answer the vendor gives both carry the PIN, so both are read through here:
+ * that keeps every expectation about shape independent of which release the
+ * route is pinned to, and leaves a mismatch to the tests that mean to cause one.
+ *
+ * @param name The fixture's file name.
+ * @param evidence The evidence class the caller relies on.
+ * @returns The body, addressed to the pin.
+ */
+function fixtureBodyAtPin(name: string, evidence: DecisionEvidenceClass): Readonly<Record<string, unknown>> {
+  return { ...recordOf(fixtureBody(name, evidence)), model: PIN };
 }
 
 /** One request the scripted vendor received, as the runtime would have sent it. */
@@ -331,11 +348,15 @@ const VENDOR_HEADERS: Readonly<Record<string, string>> = {
  * which is all there is for that status.
  */
 const CONTRACT_ANSWERS: Readonly<Record<ProbeShape, () => ProbeFetchResponse>> = {
-  choice: () => reply(OK, fixtureBody("response.choice.documented.json", "documented-verbatim"), VENDOR_HEADERS),
+  choice: () => reply(OK, fixtureBodyAtPin("response.choice.documented.json", "documented-verbatim"), VENDOR_HEADERS),
   noul: () =>
-    reply(OK, fixtureBody("response.noul.constructed.json", "constructed-from-documented-fields"), VENDOR_HEADERS),
+    reply(OK, fixtureBodyAtPin("response.noul.constructed.json", "constructed-from-documented-fields"), VENDOR_HEADERS),
   score: () =>
-    reply(OK, fixtureBody("response.score.constructed.json", "constructed-from-documented-fields"), VENDOR_HEADERS),
+    reply(
+      OK,
+      fixtureBodyAtPin("response.score.constructed.json", "constructed-from-documented-fields"),
+      VENDOR_HEADERS,
+    ),
   [PROBE_REFUSAL_SHAPE]: () =>
     reply(422, fixtureBody("error.422.unobserved.json", "synthetic-unobserved"), VENDOR_HEADERS),
 };
@@ -513,12 +534,14 @@ describe("the plan", () => {
 
     const documented = recordOf(fixtureBody("request.choice.documented.json", "documented-verbatim"));
     expect(documented.model).not.toBe(PIN);
-    expect(JSON.stringify(plan.requests[0].body)).toBe(JSON.stringify({ ...documented, model: PIN }));
+    expect(JSON.stringify(plan.requests[0].body)).toBe(
+      JSON.stringify(fixtureBodyAtPin("request.choice.documented.json", "documented-verbatim")),
+    );
     expect(JSON.stringify(plan.requests[1].body)).toBe(
-      JSON.stringify(fixtureBody("request.noul.constructed.json", "constructed-from-documented-fields")),
+      JSON.stringify(fixtureBodyAtPin("request.noul.constructed.json", "constructed-from-documented-fields")),
     );
     expect(JSON.stringify(plan.requests[2].body)).toBe(
-      JSON.stringify(fixtureBody("request.score.constructed.json", "constructed-from-documented-fields")),
+      JSON.stringify(fixtureBodyAtPin("request.score.constructed.json", "constructed-from-documented-fields")),
     );
   });
 
@@ -1137,7 +1160,7 @@ describe("a run", () => {
       [PROBE_REFUSAL_SHAPE]: [40],
     };
     const time = fakeTime();
-    const documented = recordOf(fixtureBody("response.choice.documented.json", "documented-verbatim"));
+    const documented = fixtureBodyAtPin("response.choice.documented.json", "documented-verbatim");
     const shifted = {
       ...documented,
       answers: {
@@ -1334,7 +1357,7 @@ describe("a run", () => {
   });
 
   it("a success that does not decode fails the run, and says where in the request's own names", async () => {
-    const documented = recordOf(fixtureBody("response.choice.documented.json", "documented-verbatim"));
+    const documented = fixtureBodyAtPin("response.choice.documented.json", "documented-verbatim");
     const missingAnOption = {
       ...documented,
       answers: { department: { type: "choice", choice: "billing", probabilities: { billing: 0.9, technical: 0.1 }, confidence: 0.8 } },

@@ -417,7 +417,7 @@ describe("the public surface of the decision client", () => {
   it("no decision source holds a vendor model id or host as a literal", () => {
     const sources = decisionSources();
     expect(sources.map(({ path }) => path)).toEqual(expect.arrayContaining([...REQUIRED_REACHABLE]));
-    expect(vendorNames()).toEqual(expect.arrayContaining(["api.typesafe.ai", "typesafe.ai", "jev-1.13.0", "jev-"]));
+    expect(vendorNames()).toEqual(expect.arrayContaining(["api.typesafe.ai", "typesafe.ai", "jev-1.14.0", "jev-"]));
 
     for (const { path, text } of sources) {
       expect(vendorLiteralsIn(text), path).toEqual([]);
@@ -428,7 +428,7 @@ describe("the public surface of the decision client", () => {
     expect(vendorLiteralsIn("const url = `https://api.typesafe.ai/${path}`;")).toHaveLength(1);
     expect(vendorLiteralsIn("const model = 'jev-latest';")).toHaveLength(1);
     expect(vendorLiteralsIn("const pinned = /^jev-\\d/;")).toHaveLength(1);
-    expect(vendorLiteralsIn("// a comment may say api.typesafe.ai and jev-1.13.0\nconst n = 1;")).toEqual([]);
+    expect(vendorLiteralsIn("// a comment may say api.typesafe.ai and jev-1.14.0\nconst n = 1;")).toEqual([]);
   });
 
   it("the decision sources import no package", () => {

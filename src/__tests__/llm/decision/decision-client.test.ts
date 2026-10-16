@@ -30,7 +30,7 @@ import {
   decisionBreakerKey,
   decisionBreakers,
 } from "../../../llm/decision/decision-client";
-import { resolveDecisionRoute } from "../../../llm/decision/decision-route-table";
+import { decisionRouteTable, resolveDecisionRoute } from "../../../llm/decision/decision-route-table";
 import {
   DECISION_ERROR_BODY_EXCERPT,
   DECISION_FAULTS,
@@ -112,10 +112,10 @@ const VENDOR_LATENCY_MS = 137;
 const NOW_MS = Date.UTC(2026, 9, 1, 12, 0, 0);
 
 /** Models a vendor could report answering with that are not the route's pin. */
-const SUBSTITUTED_MODELS: readonly string[] = ["english", "typesafe/jev-1.13-20260917", "jev-1.14.0"];
+const SUBSTITUTED_MODELS: readonly string[] = ["english", "typesafe/jev-1.14-20260917", "jev-1.13.0"];
 
 /** An id a vendor could report for a pinned model that is not the pin itself: the pin with its build date. */
-const DATED_SERVED_MODEL = "jev-1.13.0-20260917";
+const DATED_SERVED_MODEL = "jev-1.14.0-20260917";
 
 /** How many consecutive faults that say nothing about the vendor's health are replayed. */
 const HEALTH_NEUTRAL_FAULTS = 10;
@@ -199,10 +199,21 @@ function requestFrom(name: string, allow: readonly DecisionEvidenceClass[]): Dec
   };
 }
 
-/** The documented request and the documented answer to it. */
+/**
+ * The documented request, and the documented answer reported as coming from the
+ * route's pinned model.
+ *
+ * The response fixture is a verbatim quote of the vendor's reference and names
+ * the model that reference happened to illustrate, which is not this route's
+ * pin and is not promised to stay equal to it. The pin is read from the shipped
+ * table, so an answer is the pin's answer by construction and a re-pinned route
+ * does not turn every call in this file into a route mismatch.
+ */
 const CHOICE_REQUEST = (): DecisionRequest => requestFrom("request.choice.documented.json", ["documented-verbatim"]);
-const CHOICE_ANSWER = (): Record<string, unknown> =>
-  fixtureBody("response.choice.documented.json", ["documented-verbatim"]);
+const CHOICE_ANSWER = (): Record<string, unknown> => ({
+  ...fixtureBody("response.choice.documented.json", ["documented-verbatim"]),
+  model: hostedRouteOf(decisionRouteTable).expected_served_model,
+});
 
 /**
  * The documented answer, reported as coming from another model.
@@ -1463,34 +1474,15 @@ describe("the decision client", () => {
   });
 
   describe("failing closed", () => {
-    it("the canonical routes fail closed", async () => {
+    it("the canonical table serves the hosted route and never the local one", async () => {
       const fetchSpy = vi.spyOn(globalThis, "fetch");
       const double = createDecisionTransportDouble((call) => scriptedAnswer(call.route, CHOICE_ANSWER()));
       configureDecisionClient({ transport: double.transport });
 
-      const hosted = asInstance(
-        await rejectionOf(callDecisionModel(HOSTED_ROUTE, CHOICE_REQUEST(), { correlationId: CORRELATION_ID })),
-        DecisionRouteUnavailableError,
-      );
-      expect(hosted.fault).toBe("unavailable");
-      expect(hosted.code).toBe("route_not_admitted");
-      expect(hosted.reason).toContain("pending-onboarding");
-      expect(hosted.attempt).toEqual({
-        route: HOSTED_ROUTE,
-        provider: null,
-        modelPin: null,
-        status: null,
-        queueMs: null,
-        durationMs: null,
-        budgetMs: null,
-        retryAfterMs: null,
-        vendorRequestId: null,
-        servedModel: null,
-        usage: null,
-        correlationId: CORRELATION_ID,
-        outcome: "fault",
-        fault: "unavailable",
-      });
+      // The hosted route is open in the shipped table, and the call reaches the transport.
+      const answered = await callDecisionModel(HOSTED_ROUTE, CHOICE_REQUEST(), { correlationId: CORRELATION_ID });
+      expect(answered.route).toBe(HOSTED_ROUTE);
+      expect(double.calls).toHaveLength(1);
 
       const local = asInstance(
         await rejectionOf(callDecisionModel(LOCAL_ROUTE, CHOICE_REQUEST())),
@@ -1499,10 +1491,23 @@ describe("the decision client", () => {
       expect(local.fault).toBe("unavailable");
       expect(local.code).toBe("engine_served");
 
-      expect(double.calls).toHaveLength(0);
+      // The local route never reaches a transport, whoever asks for it.
+      expect(double.calls).toHaveLength(1);
       expect(fetchSpy).not.toHaveBeenCalled();
-      expect(guardSnapshots()).toEqual([]);
-      expect(decisionBreakers().snapshotAll()).toEqual([]);
+    });
+
+    it("the hosted route fails closed on a credential, without reaching the network", async () => {
+      const fetchSpy = vi.spyOn(globalThis, "fetch");
+      const { apiKeyEnv } = resolveDecisionRoute(HOSTED_ROUTE);
+      vi.stubEnv(apiKeyEnv, "");
+      configureDecisionClient({ transport: createSystemOneTransport({ fetchImpl: () => expect.unreachable() }) });
+
+      const error = asCallError(
+        await rejectionOf(callDecisionModel(HOSTED_ROUTE, CHOICE_REQUEST(), { correlationId: CORRELATION_ID })),
+      );
+      expect(error.fault).toBe("credential");
+      expect(error.message).toContain(apiKeyEnv);
+      expect(fetchSpy).not.toHaveBeenCalled();
     });
 
     it("refuses a closed route before it looks at the request or the options", async () => {
@@ -1511,9 +1516,10 @@ describe("the decision client", () => {
       const nothing = undefined as unknown as DecisionRequest;
       const unusable = null as unknown as DecisionCallOptions;
 
-      for (const route of [HOSTED_ROUTE, LOCAL_ROUTE]) {
-        expect(asCallError(await rejectionOf(callDecisionModel(route, nothing, unusable))).fault).toBe("unavailable");
-      }
+      // The local route is the closed one: this package holds no transport for it, whatever the request says.
+      expect(asCallError(await rejectionOf(callDecisionModel(LOCAL_ROUTE, nothing, unusable))).fault).toBe(
+        "unavailable",
+      );
       expect(double.calls).toHaveLength(0);
     });
 
@@ -1779,20 +1785,21 @@ describe("the decision client", () => {
       {
         source: "an option that throws when read, on a route that is closed",
         reject: () => {
-          dispatched = createDecisionTransportDouble(answers);
-          configureDecisionClient({ transport: dispatched.transport });
+          wire(answers);
           const options = {
             get correlationId(): string {
               throw foreignFailure(Error);
             },
           };
-          return rejected(HOSTED_ROUTE, CHOICE_REQUEST(), options);
+          // The local route is closed by design and never opens, so the row tests the
+          // ordering it means to test rather than a route's current onboarding state.
+          return rejected(LOCAL_ROUTE, CHOICE_REQUEST(), options);
         },
         fault: "unavailable",
         type: DecisionRouteUnavailableError,
         dispatches: 0,
         consecutiveFailures: 0,
-        says: ["route_not_admitted", "pending-onboarding"],
+        says: ["engine_served"],
       },
       {
         source: "a route that is a symbol",

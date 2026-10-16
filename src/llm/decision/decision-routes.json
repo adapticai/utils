@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "policy_source": "docs/superpowers/specs/2026-10-01-typed-decision-models-design.md (D1, section 3.2)",
-  "revised": "2026-10-16",
+  "revised": "2026-10-17",
   "defaults": {
     "circuit_breaker": {
       "failure_threshold": 5,
@@ -18,9 +18,9 @@
       "base_url_env": "TYPESAFE_BASE_URL",
       "api_key_env": "TYPESAFE_API_KEY",
       "secret_path": "llm/typesafe/apiKey",
-      "account_status": "pending-onboarding",
+      "account_status": "live",
       "docs_url": "https://docs.typesafe.ai/api.md",
-      "notes": "No account exists and no key has been issued, so account_status is pending-onboarding and every route naming this provider is refused. The base URL is the one the vendor's API reference and SDK default to. Setting account_status to live is an operator act that follows opening the account, and it ships as a release of this package."
+      "notes": "An account is open and a key is issued, so account_status is live and a route naming this provider is admitted once its own contract_evidence states that an authenticated call confirmed the contract. account_status is the one switch that closes every route naming this provider at once, which is what it is for: an account that lapses, is revoked or is moved is declared here rather than in each route. The key itself is never in this file — api_key_env names the environment variable the transport reads it from, and secret_path says where the secrets manager holds it. The base URL is the one the vendor's API reference and SDK default to, and base_url_env overrides it for an operator who means the traffic to go somewhere else. Changing account_status ships as a release of this package, so opening or closing the provider is a reviewed act and not a runtime one."
     },
     "engine-judge": {
       "api_style": "engine-judge",
@@ -34,12 +34,12 @@
       "provider": "typesafe",
       "served_by": "utils",
       "response_kind": "typed-distribution",
-      "version_pin": "jev-1.13.0",
-      "expected_served_model": "jev-1.13.0",
+      "version_pin": "jev-1.14.0",
+      "expected_served_model": "jev-1.14.0",
       "model_id_status": "confirmed",
-      "model_id_source": "https://docs.typesafe.ai/models.md",
-      "contract_evidence": "documentation",
-      "contract_verified": null,
+      "model_id_source": "https://docs.typesafe.ai/models, confirmed by a credentialed call in which the id was served and reported back. The provider's GET /v1/models lists only the aliases jev-latest and jev-preview; they resolve to jev-1.13.0 and jev-1.14.0, and a response reports the resolved versioned id rather than the alias.",
+      "contract_evidence": "authenticated-call",
+      "contract_verified": "2026-10-17",
       "budget_ms": 1500,
       "caps": {
         "max_options": 255,
@@ -51,7 +51,7 @@
       "price_per_mtok": {
         "input": 0.042,
         "output": 0,
-        "as_of": "2026-10-01",
+        "as_of": "2026-10-17",
         "source": "https://docs.typesafe.ai/models.md"
       },
       "images": {
@@ -64,10 +64,10 @@
         "max_total_px": 2458624,
         "max_image_bytes": 16777216,
         "max_total_bytes": 33554432,
-        "box": false,
-        "production_status": "Images and Box questions aren't yet up to our standards to call ready for production, but we're excited for dreamers and builders to play with them (docs.typesafe.ai/images, read 2026-10-16); accuracy will change as the vendor updates the models, and the Box page adds that the request format, the answers and the limits can change between releases."
+        "box": true,
+        "production_status": "The vendor states that images and Box questions \"aren't yet up to our standards to call ready for production, but we're excited for dreamers and builders to play with them\", and that \"the request format, the answers, and the limits on this page can change between releases\" (docs.typesafe.ai/images). Accuracy and limits therefore move with the vendor's releases, which is why every bound is declared here and re-read rather than assumed stable."
       },
-      "notes": "Pinned to the versioned id the models page lists for Jev 1.13, never to jev-latest or jev-preview: the same page says an alias \"moves when a new release ships, so the answers behind it can change without a change on your side\". contract_evidence is documentation because the request, response and error shapes were read from the API reference and never exercised with a key; only an authenticated call makes it authenticated-call, with the date in contract_verified. Caps are the documented ones: \"a maximum of 255 options per Choice\" and a Score that \"accepts up to 10\" levels; no per-request question limit is published, so max_questions is null. Price is the models page's $0.042 per 1M input tokens with \"Output tokens are free\". Three numbers on this route are free parameters of a route nothing can reach yet, to be re-derived from the first authenticated measurements. budget_ms 1500 is a ceiling and not an operating point: about twice the largest third-party median latency on record (710 ms, for five questions in one request) and well under the vendor SDK's 10000 ms per-attempt default; the consumer's own deadline for a typed step is what a call actually runs under. max_state_tokens 32000 is the documented ceiling for the state plus the longest question (\"64k tokens per request; 32k tokens for state plus the longest question\"), an upper bound and not a target: a state shared across routes is bound by the smallest ceiling among them. defaults.circuit_breaker (5 failures, 60000 ms cooldown, 15000 ms capacity cooldown, 1 half-open probe, no latency trip) is carried from the generative alias table and has not been measured against this vendor; it applies only to a route this package serves, which is this one. IMAGES, added 2026-10-16 from docs.typesafe.ai/images and docs.typesafe.ai/models read the same day: both Jev 1.13 and Jev 1.14 accept images, so this route carries them at its 1.13 pin, and every bound in the images block is the vendor's own documented one (280..1568 px per side, 78,400..2,458,624 total pixels, 16 MiB per image, 32 MiB for all images and for the whole body). box is false because the vendor serves Box questions on Jev 1.14 and later only, and this route is pinned to 1.13; a Box question is therefore refused by the codec before it is sent rather than paid for and rejected. The header is DECLARED here rather than written into the transport because the transport sends it only for a route that declares it: a body carrying an image without the header is answered with 'Images are not turned on'. The default context limits (64k per request, 32k for state plus the longest question) are unchanged and max_state_tokens still states the documented ceiling; the vendor's 262k long-context header is not sent, because the vendor states long context is slower and less accurate than staying within the defaults. What an image costs in input tokens is not documented and is therefore UNKNOWN until an authenticated call reports it."
+      "notes": "Pinned to jev-1.14.0, a versioned id the vendor serves directly, and never to jev-latest or jev-preview: an alias moves when a new release ships, so the answers behind it would change with no change on this side. An alias could not be a pin here even if drift were acceptable, because a response reports the RESOLVED versioned id, so expected_served_model would never equal an alias written into the request. 1.14.0 is the release that serves both images and Box questions; 1.13.0, which jev-latest resolves to, accepts images and refuses a Box question, so the pin is what makes box true below. A pin is transcribed from the provider's own model surface and never guessed — an id the vendor does not serve is answered \"Unknown model\", which is a refusal and not a fallback, so a mis-pinned route measures nothing rather than quietly answering from another model. contract_evidence is authenticated-call and contract_verified carries the date one credentialed call confirmed the request, response and error shapes against the live API: the assets map at the request root, an asset reached by writing its key as a plain string, the resolved model id in the response's model field, the usage counts, and the 400 bodies for an image sent without the header, for an asset nothing references and for an unknown model. Caps are the vendor's documented ones: \"up to 255 options\" per Choice and a Score that accepts up to 10 levels; no per-request question limit is published, so max_questions is null — an unpublished limit is not a limit of one. Price is the models page's $0.042 per 1M input tokens with output tokens free, re-read on the date in as_of. budget_ms 1500 is a ceiling and not an operating point: several times the measured single-call latency of an image-bearing request on this route (around 0.3 to 0.5 s for one to three questions on one image) and well under the vendor SDK's 10000 ms per-attempt default; the consumer's own deadline for a typed step is what a call actually runs under. max_state_tokens 32000 is the documented ceiling for the state plus the longest question (\"64k tokens per request; 32k tokens for state plus the longest question\"), an upper bound and not a target: a state shared across routes is bound by the smallest ceiling among them. defaults.circuit_breaker (5 failures, 60000 ms cooldown, 15000 ms capacity cooldown, 1 half-open probe, no latency trip) is carried from the generative alias table and has not been calibrated against this vendor; it applies only to a route this package serves, which is this one. These three — budget_ms, max_state_tokens and defaults.circuit_breaker — are the route's free parameters: no vendor contract pins them, so each is a ceiling set above what has been measured and is re-derived from this route's own latency and usage distributions as they accrue. IMAGES. Every bound in the images block is the vendor's own: 280..1568 px per side, 78,400..2,458,624 total pixels, 16 MiB per image, and 32 MiB both for all images together and for the whole body. The asset map sits at the REQUEST ROOT and a question reaches an image by writing the asset key as a plain string, as a whole value or inside a longer one, so N questions about one image cost one encode and one upload — widen a request before multiplying requests. An asset nothing references is refused, which is why the codec proves the reference before any bytes travel. The header is DECLARED here rather than written into the transport because the transport sends it only for a route that declares it, and an image-bearing body without it is answered \"Images are experimental. Send the header TypeSafe-Danger-Zone-Images: true to use them.\" Image input tokens are resolution-driven rather than byte-driven: two images on the same canvas bill the same whatever they weigh, so drawing more inside a fixed canvas is free in prompt cost and enlarging the canvas is not — a 1024x768 chart with one Choice question billed about 4.5k input tokens against 281 for the same question carrying no image. The vendor's long-context header is not sent, because the vendor states long context is slower and less accurate than staying inside the default limits."
     },
     "dm.local": {
       "provider": "engine-judge",

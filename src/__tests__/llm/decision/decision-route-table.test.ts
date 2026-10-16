@@ -3,15 +3,18 @@
  *
  * The table is where a typed decision route is opened or kept shut, so the
  * tests pin the properties that decide that. The canonical hosted route is
- * refused today and says why; the local route is declared and never served
- * from here; a table that breaks a bound does not load; and a route that does
- * resolve carries exactly what the table declares, with the environment's base
- * URL winning over the declared one.
+ * admitted and carries the pin, the images and the contract evidence the table
+ * declares; the local route is declared and never served from here; a table
+ * that breaks a bound does not load; and a route that resolves carries exactly
+ * what the table declares, with the environment's base URL winning over the
+ * declared one.
  *
- * The test named "the canonical hosted route is not admitted today" is the
- * package's off-contract. It goes red when the canonical table's onboarding
- * fields are changed, which makes opening the hosted route a deliberate act
- * that edits this file too.
+ * The test named "the canonical hosted route is admitted, and every onboarding
+ * field it needs says so" is the package's off-contract. It states each field
+ * admission depends on and then closes each one in turn on a copy, so it goes
+ * red both if the canonical table is closed again and if a field stops gating.
+ * Opening or closing the hosted route is therefore a deliberate act that edits
+ * this file too.
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -250,23 +253,71 @@ describe("the canonical decision-route table", () => {
     expect(() => {
       hostedRouteOf(table).caps.max_options = 1;
     }).toThrow(TypeError);
-    expect(hostedProviderOf(decisionRouteTable).account_status).toBe("pending-onboarding");
+    expect(hostedProviderOf(decisionRouteTable).account_status).toBe("live");
   });
 
-  it("the canonical hosted route is not admitted today, and says why", () => {
-    const refusal = refusalOf(HOSTED_ROUTE, decisionRouteTable);
-    expect(refusal.fault).toBe("unavailable");
-    expect(refusal.code).toBe("route_not_admitted");
-    expect(refusal.reason).toContain("pending-onboarding");
-    expect(refusal.route).toBe(HOSTED_ROUTE);
-
-    // The same refusal through the default arguments a production caller uses.
-    expect(() => resolveDecisionRoute(HOSTED_ROUTE)).toThrow(DecisionRouteUnavailableError);
-
+  it("the canonical hosted route is admitted, and every onboarding field it needs says so", () => {
     const hosted = hostedRouteOf(decisionRouteTable);
-    expect(hostedProviderOf(decisionRouteTable).account_status).toBe("pending-onboarding");
-    expect(hosted.contract_evidence).toBe("documentation");
-    expect(hosted.contract_verified).toBeNull();
+    expect(hostedProviderOf(decisionRouteTable).account_status).toBe("live");
+    expect(hosted.model_id_status).toBe("confirmed");
+    expect(hosted.contract_evidence).toBe("authenticated-call");
+    expect(hosted.contract_verified).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+
+    expect(decisionRouteAdmission(hosted, hostedProviderOf(decisionRouteTable), EMPTY_ENV)).toEqual({ admit: true });
+
+    // Through the default arguments a production caller uses, with the declared base URL.
+    const resolved = resolveDecisionRoute(HOSTED_ROUTE);
+    expect(resolved.route).toBe(HOSTED_ROUTE);
+    expect(resolved.modelPin).toBe(hosted.version_pin);
+    expect(resolved.expectedServedModel).toBe(hosted.expected_served_model);
+    expect(resolved.images).toEqual(hosted.images);
+
+    // Each onboarding field still GATES: closing any one of them on a copy refuses the route again.
+    const closings: readonly { readonly name: string; readonly close: (table: DeepMutable<DecisionRouteTable>) => void; readonly says: string }[] = [
+      {
+        name: "an account that is not open",
+        close: (table) => {
+          hostedProviderOf(table).account_status = "pending-onboarding";
+        },
+        says: 'provider account status is "pending-onboarding"',
+      },
+      {
+        name: "an account that is out of scope",
+        close: (table) => {
+          hostedProviderOf(table).account_status = "not-in-scope";
+        },
+        says: 'provider account status is "not-in-scope"',
+      },
+      {
+        name: "a contract only read and never exercised",
+        close: (table) => {
+          const route = hostedRouteOf(table);
+          route.contract_evidence = "documentation";
+          route.contract_verified = null;
+        },
+        says: 'contract evidence is "documentation"',
+      },
+      {
+        name: "a pin nobody transcribed",
+        close: (table) => {
+          hostedRouteOf(table).model_id_status = "pending-provider-confirmation";
+        },
+        says: "model id unconfirmed",
+      },
+    ];
+    for (const { name, close, says } of closings) {
+      const table = editableDecisionRouteTable();
+      close(table);
+      expect(decisionRouteViolations(table), name).toEqual([]);
+      const admission = decisionRouteAdmission(hostedRouteOf(table), hostedProviderOf(table), EMPTY_ENV);
+      expect(admission.admit, name).toBe(false);
+      if (admission.admit) {
+        throw new Error(`${name} was admitted`);
+      }
+      expect(admission.code, name).toBe("route_not_admitted");
+      expect(admission.reason, name).toContain(says);
+      expect(() => resolveDecisionRoute(HOSTED_ROUTE, table, EMPTY_ENV), name).toThrow(DecisionRouteUnavailableError);
+    }
   });
 
   it("dm.local is declared and never served by this package", () => {
@@ -619,6 +670,9 @@ describe("admission", () => {
   it("a live account with documentation-only evidence is still refused", () => {
     const table = editableDecisionRouteTable();
     hostedProviderOf(table).account_status = "live";
+    const documented = hostedRouteOf(table);
+    documented.contract_evidence = "documentation";
+    documented.contract_verified = null;
 
     const refusal = refusalOf(HOSTED_ROUTE, table);
     expect(refusal.code).toBe("route_not_admitted");
@@ -802,15 +856,15 @@ describe("resolution", () => {
       route: "dm.hosted",
       providerName: "typesafe",
       provider,
-      modelPin: "jev-1.13.0",
-      expectedServedModel: "jev-1.13.0",
+      modelPin: "jev-1.14.0",
+      expectedServedModel: "jev-1.14.0",
       budgetMs: 1500,
       caps: { maxOptions: 255, maxScoreLevels: 10, maxQuestions: null },
       maxStateTokens: 32000,
       priceAnchor: {
         input: 0.042,
         output: 0,
-        as_of: "2026-10-01",
+        as_of: "2026-10-17",
         source: "https://docs.typesafe.ai/models.md",
       },
       apiKeyEnv: "TYPESAFE_API_KEY",
@@ -825,7 +879,7 @@ describe("resolution", () => {
         max_total_px: 2458624,
         max_image_bytes: 16777216,
         max_total_bytes: 33554432,
-        box: false,
+        box: true,
         production_status: hosted.images?.production_status,
       },
     });

@@ -6,7 +6,7 @@ Design of record: `docs/superpowers/specs/2026-10-01-typed-decision-models-desig
 
 ## What the published package does today
 
-It refuses both routes. `dm.hosted` is declared `pending-onboarding` with documentation-only contract evidence, and `dm.local` is answered by the consumer's own process. `callDecisionModel` on either rejects with fault `unavailable` before the request is read, a guard is charged or a socket is opened. Opening the hosted route is a change to `decision-routes.json` and a release of this package; no running process can do it.
+It serves `dm.hosted` and refuses `dm.local`. The hosted route's provider account is `live`, its contract evidence is an authenticated call, and it is pinned to a versioned model id that serves images and Box questions; `callDecisionModel` on it reaches the vendor once the key named by `api_key_env` is in the environment, and rejects with fault `credential` before a socket is opened when it is not. `dm.local` is answered by the consumer's own process, so a call here rejects with fault `unavailable` and code `engine_served` before the request is read or a guard is charged — that one never opens. Opening or closing a route is a change to `decision-routes.json` and a release of this package; no running process can do it.
 
 ## Surface
 

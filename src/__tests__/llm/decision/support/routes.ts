@@ -1,16 +1,18 @@
 /**
  * Route tables for the decision tests.
  *
- * The canonical table declares a hosted route nobody may call yet: its provider
- * account is not open and its contract has never been confirmed by a real call.
- * A test of anything past admission therefore needs a table in which that work
- * has been done. The one built here is the canonical table with exactly the
- * fields an operator changes at onboarding changed, so every other number in it
- * (the pin, the budget, the caps, the price) is the number the package ships
- * with, and a test that passes on it says something about the shipped table.
+ * The canonical table's hosted route is open, so a test of anything past
+ * admission could read the canonical table directly. It reads a table built
+ * here instead, for one reason: a test that depends on the canonical onboarding
+ * fields would change meaning the next time an account lapses or a contract has
+ * to be re-confirmed, and a test whose subject moves with the table measures
+ * the table rather than the code. The table built here sets exactly the fields
+ * admission turns on, with a stated verification date of its own, and copies
+ * every other number (the pin, the images, the budget, the caps, the price)
+ * from the shipped table, so a test that passes on it still says something
+ * about what the package ships.
  *
- * It lives with the tests and is never bundled. Nothing in the package can
- * reach an admitted hosted route without being handed a table like this one.
+ * It lives with the tests and is never bundled.
  */
 
 import { decisionRouteTable } from "../../../../llm/decision/decision-route-table";
@@ -100,10 +102,10 @@ export function hostedProviderOf(table: DecisionRouteTable): DeepMutable<Decisio
 /**
  * A table whose hosted route is admitted.
  *
- * The canonical table with the onboarding fields set as an operator would set
- * them once an account exists and one authenticated call has confirmed the
- * contract: the provider account is live, and the route's contract evidence is
- * an authenticated call made on a stated date. Nothing else differs.
+ * The onboarding fields are SET here rather than inherited, so the table is
+ * admitted whatever the canonical table currently says: the provider account is
+ * live, and the route's contract evidence is an authenticated call made on this
+ * file's own stated date. Nothing else differs from the shipped table.
  *
  * @returns The admitted table, editable so a test can break one thing in it.
  */

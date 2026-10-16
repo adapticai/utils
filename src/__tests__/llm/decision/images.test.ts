@@ -399,14 +399,22 @@ describe("the transport sends the vendor's image header exactly where it belongs
 });
 
 describe("the canonical route table", () => {
-  it("declares images on the hosted route, with the vendor's bounds and box off at a 1.13 pin", () => {
+  it("declares images and box on the hosted route, with the vendor's bounds", () => {
     const hosted = decisionRouteTable.routes["dm.hosted"];
     expect(hosted.images?.supported).toBe(true);
     expect(hosted.images?.header).toBe("TypeSafe-Danger-Zone-Images");
     expect(hosted.images?.min_side_px).toBe(280);
     expect(hosted.images?.max_side_px).toBe(1568);
-    expect(hosted.images?.box).toBe(false);
+    expect(hosted.images?.min_total_px).toBe(280 * 280);
+    expect(hosted.images?.max_total_px).toBe(1568 * 1568);
     expect(hosted.images?.production_status).toMatch(/ready for production/);
+
+    // Box is served from Jev 1.14, so the declaration is true only of a route pinned there.
+    expect(hosted.images?.box).toBe(true);
+    if (hosted.served_by !== "utils") {
+      throw new Error("the hosted route is not served by this package");
+    }
+    expect(hosted.version_pin).toBe("jev-1.14.0");
     expect(decisionRouteViolations(decisionRouteTable)).toEqual([]);
   });
 
