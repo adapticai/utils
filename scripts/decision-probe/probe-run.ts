@@ -4,23 +4,25 @@
  * A run resolves the route, makes the calls of its plan through the hosted
  * transport, and reports what came back. It is the onboarding call: it is the
  * act that establishes that a provider account answers and that the contract
- * behind a route holds, so it runs while the table still says neither. It
- * therefore resolves the route against the table as onboarding will leave it,
- * with those two facts set and nothing else changed, and every other rule of
- * resolution still applies: a model id that is not confirmed, a route the
- * consumer serves itself and a base URL that cannot be used are refused here
- * as anywhere.
+ * behind a route holds, so it has to run whether or not the table yet declares
+ * either. It therefore resolves the route against the table as onboarding
+ * leaves it, with those two facts set and nothing else changed, which asserts
+ * nothing about how the table currently stands and is a no-op once it stands
+ * that way. Every other rule of resolution still applies: a model id that is
+ * not confirmed, a route the consumer serves itself and a base URL that cannot
+ * be used are refused here as anywhere.
  *
  * The calls are made one at a time, and never closer together than a fixed
  * spacing that holds a run to the sustained per-second pace this package set
  * for itself, whatever the limits config says, so a run cannot be a burst
- * however quickly the vendor answers. A run is a guest on an account that is being opened: when
- * the vendor says to wait, it waits at least that long, and when the vendor
- * says twice that it is being called too often, or that it is full, the run
- * stops and says so. Each call is abandoned after the longest
- * budget any route may declare and not after this route's own: the route's
- * budget is one of the numbers a run exists to re-derive, and a run that cut
- * calls off at it could never see how far past it the vendor's tail reaches.
+ * however quickly the vendor answers. A run is a guest on an account whose
+ * ceiling it cannot read: when the vendor says to wait, it waits at least that
+ * long, and when the vendor says twice that it is being called too often, or
+ * that it is full, the run stops and says so. Each call is abandoned after the
+ * longest budget any route may declare and not after this route's own: the
+ * route's budget is one of the numbers a run exists to re-derive, and a run
+ * that cut calls off at it could never see how far past it the vendor's tail
+ * reaches.
  *
  * The transport is called directly and not through the admitting client. The
  * client refuses a route that is not admitted, and this is the call that has

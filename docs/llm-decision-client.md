@@ -208,7 +208,7 @@ No authenticated call has been made from this codebase. Every vendor behaviour i
 
 ## Not verified
 
-Each row is unknown until an authenticated call is made, and the code carries it as unknown.
+Each row is a shape the vendor's reference does not pin, and one authenticated call does not settle one: observing a field present once is not a guarantee that it is always present, and a status nobody has provoked is a status nobody has seen. So the code carries every row below as unknown whatever a single response happened to contain, and the fixture corpus claims no authenticated evidence until a probe run records it.
 
 | Unverified | How the code represents it |
 | --- | --- |
@@ -223,7 +223,7 @@ Each row is unknown until an authenticated call is made, and the code carries it
 | The tokenizer and the fixed per-request overhead | This package does not estimate hosted tokens. The route declares a ceiling with its basis. |
 | Whether identical requests return identical distributions | Nothing here caches or compares answers. |
 
-Several numbers are free parameters, recorded as such in the notes beside them and to be narrowed by measurement rather than guessed: both `budget_ms` values, the breaker defaults, the hosted `max_state_tokens` ceiling and the `typesafe` limits entry. The latencies measured on the hosted routes so far are 297 to 313 ms for a one-question text call and 350 to 498 ms for a read over one 1024x768 PNG, against a declared `budget_ms` of 1500, which is a ceiling and not an operating point.
+Several numbers are free parameters, recorded as such in the notes beside them and to be narrowed by measurement rather than guessed: both `budget_ms` values, the breaker defaults, the hosted `max_state_tokens` ceiling and the `typesafe` limits entry. The latencies measured on the hosted routes so far are a band and not a point: 281 to 313 ms for a one-question text call and 468 to 515 ms for a read over one 1024x768 PNG, against a declared `budget_ms` of 1500, which is a ceiling and not an operating point.
 
 The provider guard holds the hosted routes to a per-second pace the vendor does not publish a figure for. The vendor enforces per second, on tokens and on requests, and answers `429` over either; its own ceiling for an organisation is visible only in its console, so the limits entry declares a `max_burst` separate from its refill rate and sets it to one second of that refill. A cold process therefore offers no more in one instant than the sustained pace already chosen, and the eleventh call in an instant is paced rather than refused. No token-per-second bound is enforced at all: this package does not count hosted tokens, so a single large request can cross the vendor's token bound while every request bound holds.
 

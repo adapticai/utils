@@ -416,10 +416,13 @@ function observedErrorMessage(body: string): string | null {
  *
  * Recognised by the header's own NAME standing in the vendor's message, and
  * not by the sentence the documentation prints around it. The name is a fact of
- * the contract — it is what this transport sends — whereas the wording of a
- * message is the vendor's and has never been observed from a live call, so a
- * sentence matched from the docs would be a guess that fails silently the day
- * the wording changes. The match is case-insensitive because a header name is.
+ * the contract — it is what this transport sends — whereas the wording around
+ * it is the vendor's to change between releases, so a sentence matched from the
+ * docs would be a guess that fails silently the day the wording moves. An
+ * authenticated call confirms the choice: a request carrying an image without
+ * the header is answered 400 in the shape this reads, and the header's name
+ * stands in the message while the sentence around it matches no documented
+ * wording. The match is case-insensitive because a header name is.
  *
  * @param body The response body as text.
  * @returns True when the vendor named the images header in a body of the
