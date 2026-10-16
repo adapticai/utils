@@ -97,18 +97,35 @@ function burstCapacityFailures(name, entry) {
       `${name}: declares max_burst but says nothing about where the number came from, and a capacity of unstated provenance is a guess that throttles whatever this guard serves`,
     );
   }
-  // The demand is what makes the capacity safe rather than merely small. Its
-  // duty ends at the concurrency ceiling: a call past that waits for a permit
-  // whatever the bucket holds.
+  // The demand is what makes the capacity safe rather than merely small, and
+  // the concurrency ceiling does not discharge that duty: the two bounds queue
+  // differently. A permit is returned by every call that completes, so the
+  // overflow past the concurrency ceiling is served at the rate calls finish
+  // and waits at most its caller's own budget; a token arrives only with the
+  // refill, and the caller waiting for one is bounded by acquire_timeout_ms
+  // with no fallback behind it. A capacity at the concurrency ceiling
+  // therefore turns a permit wait a completing call would have cleared into a
+  // token wait that can expire, which is a refused call and not merely a late
+  // one. Only a published vendor ceiling may hold the capacity below the
+  // demand, and there the conflict is the vendor's and must be named.
   if (typeof entry.max_burst_measured_demand !== "number" || entry.max_burst_measured_demand < 0) {
     failures.push(
       `${name}: declares max_burst but no measured instantaneous demand to judge it against`,
     );
   } else {
-    const owed = Math.min(entry.max_burst_measured_demand, entry.max_concurrent);
+    const publishedCeiling =
+      typeof entry.max_burst_vendor_ceiling === "number"
+        ? entry.max_burst_vendor_ceiling
+        : Number.POSITIVE_INFINITY;
+    const owed = Math.min(entry.max_burst_measured_demand, publishedCeiling);
     if (entry.max_burst < owed) {
       failures.push(
-        `${name}: max_burst ${entry.max_burst} is below the ${owed} calls measured demand puts on this guard in one instant, so it paces the demand it was sized for`,
+        `${name}: max_burst ${entry.max_burst} is below the ${owed} calls measured demand puts on this guard in one instant, so that demand's overflow queues for a refill bounded by acquire_timeout_ms alone instead of for a permit a completing call returns, and a call outlasting that wait is refused rather than paced`,
+      );
+    }
+    if (entry.max_burst_measured_demand > publishedCeiling) {
+      failures.push(
+        `${name}: measured demand ${entry.max_burst_measured_demand} exceeds the vendor's published ${publishedCeiling} for one instant, so no capacity satisfies both and the conflict must be resolved with the vendor rather than chosen between here`,
       );
     }
   }

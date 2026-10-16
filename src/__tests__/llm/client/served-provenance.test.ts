@@ -217,6 +217,23 @@ function tokensOf(provider: string, modelId: string): number {
 }
 
 /**
+ * Whether a guard's concurrency bound is holding nothing at all.
+ *
+ * Read so that a refused duplicate can be attributed to the bound that refused
+ * it: with no call in flight and none queued, only the rate bound is short.
+ *
+ * @param provider The provider key.
+ * @param modelId The model the guard covers.
+ * @returns Whether nothing is in flight and nothing is queued for a permit.
+ */
+function concurrencyIdle(provider: string, modelId: string): boolean {
+  const guard = guardSnapshots().find(
+    (candidate) => candidate.provider === provider && candidate.modelId === modelId,
+  );
+  return guard?.inFlight === 0 && guard?.concurrencyQueueLength === 0;
+}
+
+/**
  * Wait out one token's refill on the real clock.
  *
  * A spent token returns by the passage of time and by nothing else, so this is
@@ -271,14 +288,24 @@ describe("duplicate headroom", () => {
     }
     await Promise.all(calls);
 
-    // Two reserves are kept, one per bound, and a hedge needs both. This guard
-    // holds a bucket the size of its concurrency ceiling, so the same fraction
-    // of the same number is reserved twice over and the two bounds reach their
-    // reserve together — but they RECOVER differently. Returning the permits
-    // restores the concurrency reserve at once; a spent token comes back only
-    // with the refill, so a hedge is still refused by the bound that is still
-    // short, which is what keeps a busy provider from seeing duplicates.
-    expect(tokensOf(provider, model)).toBeLessThan(Math.ceil(capacity * reserve) + TOKENS_PER_REQUEST);
+    // Returning the permits restores the concurrency reserve at once, so the
+    // hedge is admitted again by that bound.
+    expect(hasDuplicateHeadroom(provider, model, reserve)).toBe(true);
+
+    // Two reserves are kept, one per bound, and a hedge needs BOTH. The bucket
+    // is drawn to its own reserve while every permit is free, which is what
+    // separates the two bounds instead of relying on their coincidence: the
+    // rate bound alone refuses the duplicate here, with nothing in flight and
+    // nothing queued. The bounds also RECOVER differently — a returned permit
+    // is immediate where a spent token comes back only with the refill — and
+    // that is what keeps a provider that has just been busy from seeing
+    // duplicates while it is still short.
+    const reserveTokens = Math.ceil(capacity * reserve);
+    while (tokensOf(provider, model) >= reserveTokens + TOKENS_PER_REQUEST) {
+      await withProviderGuards(provider, () => Promise.resolve(), undefined, { modelId: model });
+    }
+    expect(tokensOf(provider, model)).toBeLessThan(reserveTokens + TOKENS_PER_REQUEST);
+    expect(concurrencyIdle(provider, model)).toBe(true);
     expect(hasDuplicateHeadroom(provider, model, reserve)).toBe(false);
 
     await refillOneToken(limits.requests_per_minute);

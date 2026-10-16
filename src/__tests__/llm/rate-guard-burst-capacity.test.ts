@@ -56,6 +56,12 @@ const MS_PER_MINUTE = 60_000;
 /** Enough microtask turns for an admitted call to have settled, so a still-pending one was genuinely not admitted. */
 const SETTLE_TURNS = 8;
 
+/** How long one provider answer is held, so a permit returns while the bucket is still refilling. */
+const CALL_DURATION_MS = 2_000;
+
+/** The hot-path leg budget a caller passes, which bounds its wait for a permit but not for a token. */
+const LEG_BUDGET_MS = 30_000;
+
 /** A provider name no entry claims, so its guard runs on the defaults block. */
 const UNREGISTERED_PROVIDER = "a-provider-with-no-entry";
 
@@ -102,7 +108,7 @@ const GUARDS: readonly GuardUnderTest[] = [
     entry: "anthropic/claude-haiku-4-5",
     provider: "anthropic",
     modelId: "claude-haiku-4-5",
-    expected: { requestsPerMinute: 300, capacity: 48, maxConcurrent: 48, measuredDemand: 100, vendorCeiling: null },
+    expected: { requestsPerMinute: 300, capacity: 100, maxConcurrent: 48, measuredDemand: 100, vendorCeiling: null },
   },
   {
     entry: "openai",
@@ -276,10 +282,14 @@ describe("the capacity each provider entry declares", () => {
       // reached by convention rather than by measurement.
       expect(capacity, where).toBeGreaterThanOrEqual(limits.max_concurrent);
 
-      // And the capacity's duty ends there: a call past the concurrency
-      // ceiling waits for a permit whatever the bucket holds.
-      const owed = Math.min(limits.max_burst_measured_demand ?? 0, limits.max_concurrent);
-      expect(capacity, where).toBeGreaterThanOrEqual(owed);
+      // And the whole demand, not the part of it the concurrency ceiling can
+      // hold at once. The ceiling does not discharge the capacity's duty: the
+      // overflow past a permit is served as calls complete and waits only its
+      // caller's own budget, while the overflow past a TOKEN waits for a
+      // refill bounded by acquire_timeout_ms with no fallback behind it. A
+      // capacity clamped to the concurrency ceiling therefore refuses part of
+      // the demand it records, which the divert below measures.
+      expect(capacity, where).toBeGreaterThanOrEqual(limits.max_burst_measured_demand ?? 0);
     }
   });
 
@@ -366,6 +376,55 @@ describe("a COLD guard, in one instant", () => {
       await vi.advanceTimersByTimeAsync(limits.acquire_timeout_ms);
       await beyondCapacity;
       expect(settled).toBe("admitted");
+    });
+  }
+});
+
+describe("the whole demand an entry records, arriving at once", () => {
+  it("is measured on at least one entry whose demand outruns its concurrency ceiling", () => {
+    // Without such an entry every divert below would be admitted by permits
+    // alone and never reach the rate queue whose expiry loses the call, so the
+    // suite would pass against the clamp it exists to refuse.
+    const reachesTheRateQueue = GUARDS.filter(
+      (guard) => guard.expected.measuredDemand > guard.expected.maxConcurrent,
+    );
+    expect(reachesTheRateQueue.length).toBeGreaterThan(0);
+  });
+
+  for (const guard of GUARDS.filter((candidate) => candidate.expected.measuredDemand > 0)) {
+    it(`loses none of ${guard.entry}'s ${guard.expected.measuredDemand} calls`, async () => {
+      const limits = limitsFor(guard.provider, guard.modelId);
+      const demand = limits.max_burst_measured_demand ?? 0;
+
+      expect(demand).toBe(guard.expected.measuredDemand);
+
+      vi.useFakeTimers();
+      resetProviderGuards();
+
+      let served = 0;
+      let refused = 0;
+      const calls = Array.from({ length: demand }, () =>
+        withProviderGuards(
+          guard.provider,
+          async () => {
+            await new Promise<void>((resolve) => setTimeout(resolve, CALL_DURATION_MS));
+            served += 1;
+          },
+          LEG_BUDGET_MS,
+          scopeFor(guard.modelId),
+        ).catch(() => {
+          refused += 1;
+        }),
+      );
+
+      await vi.advanceTimersByTimeAsync(LEG_BUDGET_MS + CALL_DURATION_MS);
+      await Promise.all(calls);
+
+      // Every call ANSWERED. A refusal here is a lost decision, not a late one:
+      // the rate queue has no fallback behind it, so the caller that outlasts
+      // acquire_timeout_ms returns nothing at all.
+      expect(served, guard.entry).toBe(demand);
+      expect(refused, guard.entry).toBe(0);
     });
   }
 });

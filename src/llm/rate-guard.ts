@@ -110,9 +110,16 @@ export interface ProviderLimits {
    * A capacity is only safe relative to the demand it has to admit, so the
    * demand is recorded beside it rather than argued about afterwards: a
    * capacity below it paces that demand, and pacing is latency a caller on a
-   * decision path cannot spend. The capacity's duty ends at
-   * {@link ProviderLimits.max_concurrent}, because a call past the concurrency
-   * ceiling waits for a permit whatever the bucket holds.
+   * decision path cannot spend. {@link ProviderLimits.max_concurrent} does not
+   * discharge that duty, because the two bounds queue differently. A permit is
+   * returned by every call that completes, so the overflow past the
+   * concurrency ceiling is served at the rate calls finish and waits at most
+   * its caller's own budget; a token arrives only with the refill, and the
+   * caller waiting for one is bounded by
+   * {@link ProviderLimits.acquire_timeout_ms} alone with no fallback behind it.
+   * So a capacity at the concurrency ceiling turns a permit wait a completing
+   * call would have cleared into a token wait that can expire — a refused call
+   * rather than a late one.
    */
   readonly max_burst_measured_demand?: number;
   /**

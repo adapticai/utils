@@ -476,13 +476,33 @@ describe("the limits verifier", () => {
     });
     expect(throttle.status).toBe(1);
     // Both bounds are reported, because a capacity set below them fails each
-    // for its own reason: it paces the demand it was sized for, and it paces
-    // calls the concurrency bound admits.
+    // for its own reason: it sends the demand's overflow to the rate queue,
+    // where the wait expires into a refusal instead of being cleared by a
+    // completing call, and it paces calls the concurrency bound admits.
     expect(throttle.stderr).toContain(
-      "FAIL typesafe: max_burst 1 is below the 4 calls measured demand puts on this guard in one instant, so it paces the demand it was sized for",
+      "FAIL typesafe: max_burst 1 is below the 4 calls measured demand puts on this guard in one instant, so that demand's overflow queues for a refill bounded by acquire_timeout_ms alone instead of for a permit a completing call returns, and a call outlasting that wait is refused rather than paced",
     );
     expect(throttle.stderr).toContain(
       "FAIL typesafe: max_burst 1 is below max_concurrent 8, so the bucket paces calls the concurrency bound admits; only a published capacity may sit below it",
+    );
+  });
+
+  it("refuses a demand no capacity could satisfy under the vendor's published ceiling", () => {
+    // A demand above a PUBLISHED instantaneous ceiling is a conflict with the
+    // vendor, not a number to choose between here: every capacity either paces
+    // the demand or exceeds what the vendor admits, so the verifier refuses the
+    // entry rather than letting one of the two be picked silently.
+    const unsatisfiable = runVerifierOnEditedCopy(({ limits }) => {
+      Object.assign(limits.providers.typesafe, {
+        max_burst_measured_demand: HOSTED_MAX_BURST + 1,
+        max_burst_vendor_ceiling: HOSTED_MAX_BURST,
+        max_burst_vendor_ceiling_unit: "requests per second",
+        source: "https://docs.example.com/rate-limits",
+      });
+    });
+    expect(unsatisfiable.status).toBe(1);
+    expect(unsatisfiable.stderr).toContain(
+      `FAIL typesafe: measured demand ${HOSTED_MAX_BURST + 1} exceeds the vendor's published ${HOSTED_MAX_BURST} for one instant`,
     );
   });
 
