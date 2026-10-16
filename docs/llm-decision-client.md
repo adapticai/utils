@@ -6,7 +6,20 @@ Design of record: `docs/superpowers/specs/2026-10-01-typed-decision-models-desig
 
 ## What the published package does today
 
-It refuses both routes. `dm.hosted` is declared `pending-onboarding` with documentation-only contract evidence, and `dm.local` is answered by the consumer's own process. `callDecisionModel` on either rejects with fault `unavailable` before the request is read, a guard is charged or a socket is opened. Opening the hosted route is a change to `decision-routes.json` and a release of this package; no running process can do it.
+It refuses all three routes. `dm.hosted` and `dm.hosted.preview` name a provider declared `pending-onboarding` with documentation-only contract evidence, and `dm.local` is answered by the consumer's own process. `callDecisionModel` on any of them rejects with fault `unavailable` before the request is read, a guard is charged or a socket is opened. Opening a hosted route is a change to `decision-routes.json` and a release of this package; no running process can do it.
+
+The vendor's image surface, its question that locates something in an image, and its long-context ceiling are all implemented against the published contract and none of them has been exercised against the vendor, because no account exists and no key has been issued. Every limit is enforced here before dispatch, so a request this package knows the vendor will refuse never leaves; what the vendor actually answers on that surface is unmeasured.
+
+## The two hosted routes
+
+A route IS its pinned model together with the caps, budget and price that model is served under, so the vendor's two releases are two routes rather than one route with a choice of model. A caller able to name the model could move the answering model without a reviewed change to the table.
+
+| Route | Pin | Locates something in an image |
+| --- | --- | --- |
+| `dm.hosted` | `jev-1.13.0` | No. The vendor serves it on the newer model alone. |
+| `dm.hosted.preview` | `jev-1.14.0` | Yes. |
+
+The vendor also publishes two moving names, `jev-latest` and `jev-preview`. They are recorded in the provider's `model_aliases` with the versioned id each pointed at when the models page was read, and neither is ever sent: the vendor states that an alias moves when a new release ships, so sending one would change the answering model with no change on this side. The loader refuses a pin that ends in either name, and re-pointing an entry in `model_aliases` is a reviewed edit of one file that changes no request.
 
 ## Surface
 
@@ -36,9 +49,12 @@ const result = await callDecisionModel(
 | `decisionBreakers()`, `decisionBreakerKey(route)` | The decision routes' own breaker registry, keyed `decision:<route>`. |
 | `decisionRouteTable`, `listDecisionRoutes()`, `decisionRouteDeclaration(route)`, `decisionRouteAdmission(route, provider)`, `decisionRouteViolations(table)` | The route table and its pure readers. A consumer that serves `dm.local` reads its checkpoint, caps and budget from here. |
 | `encodeDecisionRequest`, `decodeDecisionResponse` | The pure codec, for a consumer that serves a route itself. |
+| `DECISION_IMAGE_LIMITS`, `DECISION_IMAGE_FORMATS` | The vendor's image limits and accepted formats, as published. |
+| `measureDecisionImage`, `formatsAgree` | What a file's own bytes say it is: its format, its pixel dimensions and its size, or the defect that stopped them being read. |
+| `encodeDecisionBase64`, `normaliseDecisionBase64`, `isStrictDecisionBase64`, `utf8ByteLength` | The base64 encoding the contract fixes, and the byte count its size limits are written in. |
 | `decisionUsageOf` | Usage and cost at a route's declared price. |
-| `DECISION_ROUTES`, `DECISION_FAULTS`, `DECISION_UNAVAILABLE_CODES`, `DECISION_CLIENT_FAULT_STAGES` | The closed vocabularies. |
-| `DecisionCallError` and its nine subclasses | The typed rejections. |
+| `DECISION_ROUTES`, `DECISION_FAULTS`, `DECISION_UNAVAILABLE_CODES`, `DECISION_CLIENT_FAULT_STAGES`, `DECISION_REQUEST_VIOLATIONS` | The closed vocabularies. |
+| `DecisionCallError` and its ten subclasses | The typed rejections. |
 
 The function that builds the hosted transport is deliberately not exported. It checks no admission and holds no breaker, guard or budget, so the client is the only exported way to reach the vendor. Its types are exported, because typing a transport for `configureDecisionClient` needs them.
 
@@ -50,6 +66,64 @@ The function that builds the hosted transport is deliberately not exported. It c
 | `signal` | The caller's cancellation. |
 | `correlationId` | Recorded on the attempt. Never sent to the vendor. |
 | `probabilitySumTolerance` | How far a distribution's sum may differ from one before the answer is rejected. Absent: the sum is reported in `probabilitySums` and not enforced. |
+| `dangerZone` | The vendor surfaces this one call opts in to: `{ images: true }` and `{ longContext: true }`. Absent means neither, which is what every call that does not name them gets. Only `true` turns one on; `false` is refused, because it reads as a choice no header carries. |
+
+### Images
+
+An image is listed once in the request's `assets` map under a reference string, and that reference is written wherever the image belongs: in the `state`, in a question's `instructions`, or in its `criteria`. Each entry carries either `bytes` (a `Uint8Array`, which this package encodes) or `data_base64` (text, normalised before it is checked — a `data:` header and the line breaks a wrapping encoder adds are stripped, because both describe the same bytes).
+
+```ts
+const chart = await renderChartPng();           // 1024 x 768, inside every bound
+const reference = crypto.randomUUID();          // a value that cannot occur in the text by accident
+
+await callDecisionModel(
+  "dm.hosted.preview",
+  {
+    state: { chart: reference },
+    assets: { [reference]: { bytes: chart } },
+    questions: {
+      broke_out: { type: "noul", instructions: "Did price break the marked level in `chart`?" },
+      where: { type: "box", instructions: "where price broke the marked level in `chart`" },
+    },
+  },
+  { dangerZone: { images: true } },
+);
+```
+
+What is checked before anything is sent, each refusal carrying the rule's own code in `DecisionRequestInvalidError.violation`:
+
+| Rule | Code |
+| --- | --- |
+| 280 to 1568 pixels per side | `asset_side_too_small`, `asset_side_too_large` |
+| 78,400 to 2,458,624 pixels in total | `asset_pixels_too_few`, `asset_pixels_too_many` |
+| 16 MiB per image file, measured after base64 is decoded | `asset_file_too_large` |
+| 32 MiB for every distinct image together | `assets_combined_too_large` |
+| 32 MiB once every reference is replaced by its image — each use counts again | `expanded_request_too_large` |
+| 32 MiB for the request body, counted as the UTF-8 that is sent | `request_body_too_large` |
+| 1,024 bytes per reference, 65,536 bytes for all of them | `reference_too_long`, `references_too_long` |
+| Every asset is referenced somewhere | `asset_unreferenced` |
+| PNG or JPEG, still, readable, and the format the file's own signature says | `asset_format_unknown`, `asset_animated`, `asset_header_unreadable`, `asset_format_mismatch` |
+| An image given once, as bytes or as base64 | `asset_source_missing`, `asset_source_ambiguous`, `asset_base64_malformed` |
+| A box question on a route whose model serves one, with an image to look in | `box_unsupported_by_route`, `box_needs_image` |
+
+The format and the pixel dimensions are read from the file's own bytes and never from what the caller said about them: a PNG labelled `jpg` is refused here rather than refused by the vendor as a damaged file. Nothing is resized, re-encoded or repaired — the contract rejects a file outside its limits rather than fitting it, and a library that quietly fitted one would change the picture the model was asked about.
+
+Base64 makes each image about a third larger and that growth counts against the 32 MiB body limit, so the body limit binds well before the images' own combined limit does. This package sends a JSON body only; the contract's multipart form, which the vendor recommends for exactly this reason, is not built here.
+
+A request that carries an image, or a box question, without `dangerZone.images` is refused with `DecisionImagesNotEnabledError` before the image is even read. The header is never derived from the body: deriving it would enable a surface the vendor itself calls unready on behalf of a caller who never asked.
+
+### What the model is poor at, and what that means for a chart question
+
+The vendor publishes a list of its own model's failure modes. The ones that decide how a question about a chart should be written, and which belong in the question rather than in this package:
+
+- **It is not a calculator, and it does not count.** Reading a number off a picture — a price, a level, how many times something happened — is squarely inside the documented weak zone, and so is comparing two numbers or two dates. Ask what a number *means* (did price close above the marked level?) and keep the arithmetic in code. Ask where something is with a box, and convert the edges to pixels in code.
+- **A numeric representation underperforms a semantic one.** A question framed in named terms beats the same question framed in raw values.
+- **Context rot.** Accuracy falls as the state grows with material the question does not need. An image in a question's `instructions` is sent once per question that holds it, so an image several questions ask about belongs in the `state` once and is referred to by path — that is fewer tokens and less of every size limit as well as a better answer.
+- **A choice leans toward its first option.** Reorder the options and check the answer is the same before relying on one.
+- **It reads the question literally, and generates nothing.** Where interpretation is unavoidable, split it into two literal questions and combine them in code.
+- **A box is always four edges.** There is no answer meaning "not found", so a box says where the target would be and nothing about whether it is there. Ask a yes/no question beside it and read the box only when that answer says yes.
+
+That list is published for the older of the two pinned models and was last reviewed by the vendor on 2026-10-02. **No equivalent list is published for the newer model**, which is the one that serves a box question, so its known limitations are unstated rather than absent.
 
 ### Result
 
@@ -76,7 +150,8 @@ Every rejection is a `DecisionCallError` whose own enumerable `fault` is one of 
 | Error | `fault` | Raised when | Breaker |
 | --- | --- | --- | --- |
 | `DecisionRouteUnavailableError` | `unavailable` | The route is not admitted (`route_not_admitted`), is served by the consumer (`engine_served`), or its breaker is open (`breaker_open`). | untouched |
-| `DecisionRequestInvalidError` | `schema` | The request or an option breaks the contract or the route's caps, before any call; or the vendor answers 422. | none, or reachable for a 422 |
+| `DecisionRequestInvalidError` | `schema` | The request or an option breaks the contract or the route's caps, before any call; or the vendor answers 400, 413, 415 or 422. Carries `violation`, the broken rule's own code, for a refusal made here. | none |
+| `DecisionImagesNotEnabledError` | `schema` | The request carries an image or a box question and the call did not name `dangerZone.images` (`request_validation`); or the vendor names its images header in a 400 (`vendor_rejected`). | none |
 | `DecisionAdmissionError` | `admission` | The call ended before dispatch: the guard refused it (`provider_guard`), the budget ran out in the queue (`route_budget`), or the caller left (`caller_signal`). The vendor was never contacted. | none |
 | `DecisionCredentialError` | `credential` | The key variable is unset or holds a value that cannot be sent (no request made), or the vendor answers 401 or 403. | none, or reachable for a 401 or 403 |
 | `DecisionTransportError` | `transport` | 408, 429, 503, 529 (capacity), any other 5xx, any other non-2xx, or a network failure. Carries `retryable` and `retryAfterMs`. | failure: capacity or hard |
@@ -85,7 +160,7 @@ Every rejection is a `DecisionCallError` whose own enumerable `fault` is one of 
 | `DecisionRouteMismatchError` | `route_mismatch` | A model other than the route's pin answered. Carries both ids and the billed usage. | reachable |
 | `DecisionClientFaultError` | `internal` | The client's own machinery failed, or something it was wired with did: the route table, the breaker, the guards, the clock. Carries the `stage` (`resolving`, `admitting`, `recording`) and a `description` by class and code. Never retryable. | none |
 
-The breaker measures whether the vendor can be reached in time. A rejected key, a rejected request, a malformed answer and a substituted model each arrived in time from a reachable vendor and each has its own fault, so none is charged to the route. A fault raised before a request existed gives no verdict. A guard refusal on a half-open route returns its probe slot.
+The breaker measures whether the vendor can be reached in time. A rejected key, a rejected request, a malformed answer and a substituted model each arrived in time from a reachable vendor and each has its own fault, so none is charged to the route. That is why the four statuses with which the vendor rejects a request — 400, 413, 415 and 422 — are request faults and not transport faults: counted as the vendor failing, one caller repeating a malformed request would open the breaker and shut the route for every other caller. A fault raised before a request existed gives no verdict. A guard refusal on a half-open route returns its probe slot.
 
 ### A failure nobody classified
 

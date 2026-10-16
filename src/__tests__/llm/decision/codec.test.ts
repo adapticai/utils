@@ -35,13 +35,53 @@ import {
   DecisionResponseFormatError,
 } from "../../../llm/decision/errors";
 import type { DecisionRouteCaps } from "../../../llm/decision/route-types";
-import type { DecisionAnswer, DecisionChoiceAnswer, DecisionRequest } from "../../../llm/decision/types";
+import type {
+  DecisionAnswer,
+  DecisionChoiceAnswer,
+  DecisionQuestion,
+  DecisionRequest,
+} from "../../../llm/decision/types";
 import type { LlmUsageRecord } from "../../../llm/types";
 import { loadDecisionFixture } from "./support/fixtures";
 import type { DecisionEvidenceClass } from "./support/fixtures";
 
 /** The limits the hosted contract documents: 255 options, 10 levels, no question limit. */
-const HOSTED_CAPS: DecisionRouteCaps = { maxOptions: 255, maxScoreLevels: 10, maxQuestions: null };
+const HOSTED_CAPS: DecisionRouteCaps = { maxOptions: 255, maxScoreLevels: 10, maxQuestions: null, box: false };
+
+/**
+ * The levels of the `grade` question of a request, read through its own kind.
+ *
+ * A question's criteria are reached through the kind that has them, because not
+ * every kind does: the one that locates something in an image carries none.
+ *
+ * @param body The request.
+ * @returns The level descriptions.
+ * @throws When `grade` is not a score.
+ */
+function scoreLevelsOf(body: { readonly questions: Readonly<Record<string, DecisionQuestion>> }): readonly unknown[] {
+  const question = body.questions.grade;
+  if (question === undefined || question.type !== "score") {
+    throw new Error("the request does not ask grade as a score");
+  }
+  return question.criteria;
+}
+
+/**
+ * The options of the `department` question of a request.
+ *
+ * @param body The request.
+ * @returns The option map, whose keys are the options.
+ * @throws When `department` is not a choice.
+ */
+function choiceOptionsOf(body: {
+  readonly questions: Readonly<Record<string, DecisionQuestion>>;
+}): Readonly<Record<string, unknown>> {
+  const question = body.questions.department;
+  if (question === undefined || question.type !== "choice") {
+    throw new Error("the request does not ask department as a choice");
+  }
+  return question.criteria;
+}
 
 /** The moving model name the documented request example sends. */
 const DOCUMENTED_REQUEST_MODEL = "jev-latest";
@@ -1049,11 +1089,11 @@ describe("encodeDecisionRequest", () => {
     expect(
       Object.keys(encodeDecisionRequest(choiceRequestWithOptions(HOSTED_CAPS.maxOptions), options).questions.pick),
     ).toEqual(["type", "instructions", "criteria"]);
+    expect(scoreLevelsOf(encodeDecisionRequest(scoreRequestWithLevels(MIN_SCORE_LEVELS), options))).toHaveLength(
+      MIN_SCORE_LEVELS,
+    );
     expect(
-      encodeDecisionRequest(scoreRequestWithLevels(MIN_SCORE_LEVELS), options).questions.grade.criteria,
-    ).toHaveLength(MIN_SCORE_LEVELS);
-    expect(
-      encodeDecisionRequest(scoreRequestWithLevels(HOSTED_CAPS.maxScoreLevels), options).questions.grade.criteria,
+      scoreLevelsOf(encodeDecisionRequest(scoreRequestWithLevels(HOSTED_CAPS.maxScoreLevels), options)),
     ).toHaveLength(HOSTED_CAPS.maxScoreLevels);
     expect(Object.keys(encodeDecisionRequest(requestWithQuestions(MANY_QUESTIONS), options).questions)).toHaveLength(
       MANY_QUESTIONS,
@@ -1324,7 +1364,7 @@ describe("decodeDecisionResponse", () => {
   });
 
   it("probability key order is canonical", () => {
-    const requestOrder = Object.keys(DOCUMENTED_CHOICE_REQUEST.questions.department.criteria ?? {});
+    const requestOrder = Object.keys(choiceOptionsOf(DOCUMENTED_CHOICE_REQUEST));
     const decodedFrom = (probabilities: Record<string, number>): ReturnType<typeof decodeDecisionResponse> =>
       decodeDecisionResponse(
         {
@@ -1544,11 +1584,17 @@ describe("the codec as a whole", () => {
 
     expect(references.map(({ specifier }) => specifier).sort()).toEqual([
       "../types",
+      "./assets",
+      "./assets",
+      "./errors",
       "./errors",
       "./route-types",
       "./types",
     ]);
-    expect(references.filter(({ typeOnly }) => !typeOnly).map(({ specifier }) => specifier)).toEqual(["./errors"]);
+    expect(references.filter(({ typeOnly }) => !typeOnly).map(({ specifier }) => specifier)).toEqual([
+      "./assets",
+      "./errors",
+    ]);
     expect(ambientNames).toEqual([]);
   });
 

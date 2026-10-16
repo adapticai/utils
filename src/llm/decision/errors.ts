@@ -101,6 +101,47 @@ export const DECISION_UNAVAILABLE_CODES = ["route_not_admitted", "engine_served"
 export type DecisionUnavailableCode = (typeof DECISION_UNAVAILABLE_CODES)[number];
 
 /**
+ * The limits and shape rules a request is refused by name for breaking.
+ *
+ * Each names one rule of the hosted contract, so a caller can tell an image
+ * that is too small from one that is too large from a reference nothing used,
+ * and act on the difference. Every one of them is checked before a request is
+ * dispatched: a request this package knows the vendor will reject never leaves
+ * the process, and a refusal costs nothing.
+ *
+ * A refusal for a rule that has no code here carries `null`. A code is added
+ * when a rule is one a caller would branch on, never to re-state a message.
+ */
+export const DECISION_REQUEST_VIOLATIONS = [
+  "asset_map_empty",
+  "asset_not_object",
+  "asset_source_missing",
+  "asset_source_ambiguous",
+  "asset_base64_malformed",
+  "asset_format_unknown",
+  "asset_format_mismatch",
+  "asset_animated",
+  "asset_header_unreadable",
+  "asset_side_too_small",
+  "asset_side_too_large",
+  "asset_pixels_too_few",
+  "asset_pixels_too_many",
+  "asset_file_too_large",
+  "assets_combined_too_large",
+  "asset_unreferenced",
+  "reference_blank",
+  "reference_too_long",
+  "references_too_long",
+  "request_body_too_large",
+  "expanded_request_too_large",
+  "box_unsupported_by_route",
+  "box_needs_image",
+] as const;
+
+/** One rule a request was refused by name for breaking. See {@link DECISION_REQUEST_VIOLATIONS}. */
+export type DecisionRequestViolation = (typeof DECISION_REQUEST_VIOLATIONS)[number];
+
+/**
  * Maximum characters of vendor or lower-layer text carried in one field of an
  * error.
  *
@@ -357,6 +398,12 @@ export type DecisionRequestInvalidDetails =
       /** Path of the offending field, such as `questions.tone.criteria`. */
       readonly fieldPath: string;
       readonly reason: string;
+      /**
+       * The rule that was broken, where it is one a caller would branch on.
+       *
+       * Absent for a refusal whose only useful account is its message.
+       */
+      readonly violation?: DecisionRequestViolation;
     }
   | {
       /** The vendor refused the request as invalid. */
@@ -395,6 +442,15 @@ export class DecisionRequestInvalidError extends DecisionCallError {
   public readonly vendorErrorType: string | null;
 
   /**
+   * The named rule the request broke, or `null`.
+   *
+   * `null` means no code was stated, never that no rule was broken: the vendor
+   * names the offending field in a body shape this package does not parse, and
+   * a refusal made here for a rule with no code carries its message alone.
+   */
+  public readonly violation: DecisionRequestViolation | null;
+
+  /**
    * @param details Where the request was refused, and what was wrong with it.
    */
   public constructor(details: DecisionRequestInvalidDetails) {
@@ -418,6 +474,82 @@ export class DecisionRequestInvalidError extends DecisionCallError {
     this.fieldPath = sent ? null : decisionErrorExcerpt(details.fieldPath);
     this.bodyExcerpt = sent ? decisionErrorExcerpt(details.body) : null;
     this.vendorErrorType = sent ? excerptOrNull(details.vendorErrorType) : null;
+    this.violation = sent ? null : (details.violation ?? null);
+  }
+}
+
+/** How a {@link DecisionImagesNotEnabledError} is built. */
+export type DecisionImagesNotEnabledDetails =
+  | {
+      /**
+       * The request carries an image or an image-locating question and the
+       * caller did not ask for images. Refused here, before anything is sent.
+       */
+      readonly source: "request_validation";
+      readonly route?: DecisionRoute;
+      /** Path of the field that needs images turned on. */
+      readonly fieldPath: string;
+    }
+  | {
+      /** The vendor answered that images are not turned on for the request. */
+      readonly source: "vendor_rejected";
+      readonly route?: DecisionRoute;
+      readonly status: number;
+      readonly body: string;
+      readonly vendorRequestId: string | null;
+    };
+
+/**
+ * Thrown when a request needs the vendor's image surface and it was not asked for.
+ *
+ * Its own class rather than a reason on another, because it is the one request
+ * fault a caller can clear by its own act: every other invalid request has to
+ * be rewritten, and this one is answered by opting in. Kept apart from a
+ * transport fault for the same reason the credential fault is — a surface that
+ * was never turned on is not a vendor that could not be reached, and counting
+ * it as one would open a breaker on a defect of this side.
+ *
+ * It is raised here, before dispatch, on every path this package controls: a
+ * request carrying an image without the opt-in is refused rather than sent and
+ * charged for. The vendor-answered form exists because the surface can also be
+ * closed on the vendor's side, for an account or a model, and a caller reading
+ * `source` can tell which happened.
+ */
+export class DecisionImagesNotEnabledError extends DecisionCallError {
+  public declare readonly fault: "schema";
+
+  /** Whether the request was refused here or by the vendor. */
+  public readonly source: "request_validation" | "vendor_rejected";
+
+  /** An excerpt of the path of the field that needs images, or `null` when the vendor refused. */
+  public readonly fieldPath: string | null;
+
+  /** A bounded excerpt of the vendor's body, or `null` when no request was sent. */
+  public readonly bodyExcerpt: string | null;
+
+  /**
+   * @param details Where the refusal came from.
+   */
+  public constructor(details: DecisionImagesNotEnabledDetails) {
+    const route = details.route ?? null;
+    const sent = details.source === "vendor_rejected";
+    super({
+      fault: "schema",
+      message: sent
+        ? `${describeRoute(route)} answered that images are not turned on (HTTP ${details.status}): ` +
+          decisionErrorExcerpt(details.body)
+        : `The request to ${describeRoute(route)} carries an image or a box question at ` +
+          `${decisionErrorExcerpt(details.fieldPath)}, and the call did not ask for images`,
+      route,
+      status: sent ? details.status : null,
+      retryAfterMs: null,
+      vendorRequestId: sent ? details.vendorRequestId : null,
+      usage: null,
+    });
+    this.name = "DecisionImagesNotEnabledError";
+    this.source = details.source;
+    this.fieldPath = sent ? null : decisionErrorExcerpt(details.fieldPath);
+    this.bodyExcerpt = sent ? decisionErrorExcerpt(details.body) : null;
   }
 }
 

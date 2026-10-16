@@ -1,7 +1,7 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "policy_source": "docs/superpowers/specs/2026-10-01-typed-decision-models-design.md (D1, section 3.2)",
-  "revised": "2026-10-01",
+  "revised": "2026-10-16",
   "defaults": {
     "circuit_breaker": {
       "failure_threshold": 5,
@@ -19,8 +19,12 @@
       "api_key_env": "TYPESAFE_API_KEY",
       "secret_path": "llm/typesafe/apiKey",
       "account_status": "pending-onboarding",
+      "model_aliases": {
+        "jev-latest": "jev-1.13.0",
+        "jev-preview": "jev-1.14.0"
+      },
       "docs_url": "https://docs.typesafe.ai/api.md",
-      "notes": "No account exists and no key has been issued, so account_status is pending-onboarding and every route naming this provider is refused. The base URL is the one the vendor's API reference and SDK default to. Setting account_status to live is an operator act that follows opening the account, and it ships as a release of this package."
+      "notes": "No account exists and no key has been issued, so account_status is pending-onboarding and every route naming this provider is refused. The base URL is the one the vendor's API reference and SDK default to. Setting account_status to live is an operator act that follows opening the account, and it ships as a release of this package. model_aliases records the two moving names the vendor publishes and what each pointed at when the models page was read on 2026-10-16: jev-latest is \"the most recent stable, official release\" and jev-preview \"the most recent release, official or not\". They are recorded and never sent. The vendor states that \"an alias moves when a new release ships, so its answers can change without any change to your code\", which is the whole reason a route pins a versioned id instead; the loader refuses a pin that ends in either name. Re-pointing an entry here is a reviewed edit of this file and changes no request."
     },
     "engine-judge": {
       "api_style": "engine-judge",
@@ -44,7 +48,8 @@
       "caps": {
         "max_options": 255,
         "max_score_levels": 10,
-        "max_questions": null
+        "max_questions": null,
+        "supports_box": false
       },
       "max_state_tokens": 32000,
       "max_state_tokens_basis": "vendor-documented-ceiling",
@@ -54,7 +59,34 @@
         "as_of": "2026-10-01",
         "source": "https://docs.typesafe.ai/models.md"
       },
-      "notes": "Pinned to the versioned id the models page lists for Jev 1.13, never to jev-latest or jev-preview: the same page says an alias \"moves when a new release ships, so the answers behind it can change without a change on your side\". contract_evidence is documentation because the request, response and error shapes were read from the API reference and never exercised with a key; only an authenticated call makes it authenticated-call, with the date in contract_verified. Caps are the documented ones: \"a maximum of 255 options per Choice\" and a Score that \"accepts up to 10\" levels; no per-request question limit is published, so max_questions is null. Price is the models page's $0.042 per 1M input tokens with \"Output tokens are free\". Three numbers on this route are free parameters of a route nothing can reach yet, to be re-derived from the first authenticated measurements. budget_ms 1500 is a ceiling and not an operating point: about twice the largest third-party median latency on record (710 ms, for five questions in one request) and well under the vendor SDK's 10000 ms per-attempt default; the consumer's own deadline for a typed step is what a call actually runs under. max_state_tokens 32000 is the documented ceiling for the state plus the longest question (\"64k tokens per request; 32k tokens for state plus the longest question\"), an upper bound and not a target: a state shared across routes is bound by the smallest ceiling among them. defaults.circuit_breaker (5 failures, 60000 ms cooldown, 15000 ms capacity cooldown, 1 half-open probe, no latency trip) is carried from the generative alias table and has not been measured against this vendor; it applies only to a route this package serves, which is this one."
+      "notes": "Pinned to the versioned id the models page lists for Jev 1.13, never to jev-latest or jev-preview: the same page says an alias \"moves when a new release ships, so the answers behind it can change without a change on your side\". contract_evidence is documentation because the request, response and error shapes were read from the API reference and never exercised with a key; only an authenticated call makes it authenticated-call, with the date in contract_verified. Caps are the documented ones: \"a maximum of 255 options per Choice\" and a Score that \"accepts up to 10\" levels; no per-request question limit is published, so max_questions is null. supports_box is false because the vendor states \"Box questions need Jev 1.14\": images are accepted on both models, and the question that locates something in one is served by the newer alone, so a box sent here is refused before it is paid for. Price is the models page's $0.042 per 1M input tokens with \"Output tokens are free\". Three numbers on this route are free parameters of a route nothing can reach yet, to be re-derived from the first authenticated measurements. budget_ms 1500 is a ceiling and not an operating point: about twice the largest third-party median latency on record (710 ms, for five questions in one request) and well under the vendor SDK's 10000 ms per-attempt default; the consumer's own deadline for a typed step is what a call actually runs under. max_state_tokens 32000 is the documented ceiling for the state plus the longest question (\"64k tokens per request; 32k tokens for state plus the longest question\"), an upper bound and not a target: a state shared across routes is bound by the smallest ceiling among them. defaults.circuit_breaker (5 failures, 60000 ms cooldown, 15000 ms capacity cooldown, 1 half-open probe, no latency trip) is carried from the generative alias table and has not been measured against this vendor; it applies only to a route this package serves, which is this one. max_state_tokens is the DEFAULT ceiling. The vendor raises both of its context limits to 262000 tokens for a request sent with its long-context header, which this package sends only when a call names that surface; the vendor states that long context \"is slower and less accurate than staying within the default limits\", so the default is what the table declares and the raised ceiling is a per-call fact a caller that opts in already holds."
+    },
+    "dm.hosted.preview": {
+      "provider": "typesafe",
+      "served_by": "utils",
+      "response_kind": "typed-distribution",
+      "version_pin": "jev-1.14.0",
+      "expected_served_model": "jev-1.14.0",
+      "model_id_status": "confirmed",
+      "model_id_source": "https://docs.typesafe.ai/models.md",
+      "contract_evidence": "documentation",
+      "contract_verified": null,
+      "budget_ms": 1500,
+      "caps": {
+        "max_options": 255,
+        "max_score_levels": 10,
+        "max_questions": null,
+        "supports_box": true
+      },
+      "max_state_tokens": 32000,
+      "max_state_tokens_basis": "vendor-documented-ceiling",
+      "price_per_mtok": {
+        "input": 0.042,
+        "output": 0,
+        "as_of": "2026-10-01",
+        "source": "https://docs.typesafe.ai/models.md"
+      },
+      "notes": "The vendor's newest release, pinned to the versioned id its models page lists for Jev 1.14 and never to the moving name that currently points at it. It exists as a route of its own rather than as a model a caller could name on dm.hosted, because a route IS its pinned model together with the caps, budget and price that model is served under: a caller able to choose the model could move the answering model without a reviewed change to this file. It is the only route whose caps admit a question locating something in an image, which the vendor serves on this model alone (\"Box questions need Jev 1.14\"). Everything else about it is dm.hosted's, because the models page publishes the same figures for both releases and the same endpoint serves them: the same $0.042 per 1M input tokens with output free, the same 64k per-request and 32k per-question context, the same 255 options and 10 score levels, and no published per-request question limit. budget_ms is dm.hosted's 1500 unchanged, which is a ceiling and not an operating point: no latency figure for this release has been measured here, and carrying the older route's number states no measurement about the newer one. The vendor's images page calls this surface not ready for production in its own words, which is why the headers that reach it are per-call opt-ins a caller names rather than anything this table turns on. contract_evidence is documentation and contract_verified null for the same reason dm.hosted's are: the shapes were read from the vendor's reference on 2026-10-16 and never exercised with a key, because no account exists. max_state_tokens is the DEFAULT ceiling. The vendor raises both of its context limits to 262000 tokens for a request sent with its long-context header, which this package sends only when a call names that surface; the vendor states that long context \"is slower and less accurate than staying within the default limits\", so the default is what the table declares and the raised ceiling is a per-call fact a caller that opts in already holds."
     },
     "dm.local": {
       "provider": "engine-judge",

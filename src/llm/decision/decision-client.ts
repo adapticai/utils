@@ -78,6 +78,7 @@ import type {
   DecisionAttemptMeasurement,
   DecisionCallOptions,
   DecisionCallResult,
+  DecisionDangerZone,
   DecisionRequest,
   DecisionRoute,
   DecisionWireRequest,
@@ -172,6 +173,8 @@ interface PreparedCall {
   readonly budgetMs: number;
   readonly callerSignal: AbortSignal | undefined;
   readonly probabilitySumTolerance: number | undefined;
+  /** The vendor surfaces the call opted in to, carried to the transport's headers. */
+  readonly dangerZone: DecisionDangerZone | undefined;
 }
 
 /** Active wiring. */
@@ -499,7 +502,7 @@ function usableOptions(options: DecisionCallOptions): DecisionCallOptions {
   if (typeof given !== "object" || given === null) {
     throw invalidCall(OPTIONS_PATH, "a call's options must be an object; leave them out to run on the route's own terms");
   }
-  const { timeoutMs, signal, correlationId, probabilitySumTolerance } = options;
+  const { timeoutMs, signal, correlationId, probabilitySumTolerance, dangerZone } = options;
   if (timeoutMs !== undefined && (typeof timeoutMs !== "number" || Number.isNaN(timeoutMs))) {
     throw invalidCall(
       "options.timeoutMs",
@@ -513,7 +516,30 @@ function usableOptions(options: DecisionCallOptions): DecisionCallOptions {
     throw invalidCall("options.correlationId", "a correlation id must be a string");
   }
   resolveProbabilitySumTolerance(probabilitySumTolerance);
-  return { timeoutMs, signal, correlationId, probabilitySumTolerance };
+  if (dangerZone !== undefined) {
+    if (typeof dangerZone !== "object" || dangerZone === null) {
+      throw invalidCall(
+        "options.dangerZone",
+        "the vendor surfaces a call opts in to are an object; leave them out to opt in to neither",
+      );
+    }
+    for (const surface of Object.keys(dangerZone)) {
+      if (surface !== "images" && surface !== "longContext") {
+        throw invalidCall(`options.dangerZone.${surface}`, "the only surfaces that can be opted in to are images and longContext");
+      }
+      // Only `true` turns a surface on. `false` would read as a decision to
+      // keep it off, which is already what leaving it out means, and admitting
+      // it would let a caller believe it had made a choice the header never
+      // carries.
+      if (dangerZone[surface] !== undefined && dangerZone[surface] !== true) {
+        throw invalidCall(
+          `options.dangerZone.${surface}`,
+          "a surface is opted in to with true; leave it out to keep it off",
+        );
+      }
+    }
+  }
+  return { timeoutMs, signal, correlationId, probabilitySumTolerance, dangerZone };
 }
 
 /**
@@ -570,12 +596,13 @@ function prepareCall(
   measured.modelPin = resolved.modelPin;
 
   progress.stage = "options";
-  const { timeoutMs, signal, probabilitySumTolerance } = usableOptions(options);
+  const { timeoutMs, signal, probabilitySumTolerance, dangerZone } = usableOptions(options);
 
   progress.stage = "request";
   const body = encodeDecisionRequest(rebuildTree(request, unchanged) as DecisionRequest, {
     model: resolved.modelPin,
     caps: resolved.caps,
+    ...(dangerZone === undefined ? {} : { dangerZone }),
   });
   assertWritable(body);
 
@@ -584,7 +611,7 @@ function prepareCall(
   const budgetMs = timeoutMs === undefined ? resolved.budgetMs : Math.max(0, Math.min(resolved.budgetMs, timeoutMs));
   measured.budgetMs = budgetMs;
   progress.stage = "admitting";
-  return { resolved, body, budgetMs, callerSignal: signal, probabilitySumTolerance };
+  return { resolved, body, budgetMs, callerSignal: signal, probabilitySumTolerance, dangerZone };
 }
 
 /**
@@ -821,7 +848,7 @@ async function runAttempt(
   progress: CallProgress,
   now: () => number,
 ): Promise<DecisionCallResult> {
-  const { resolved, body, budgetMs, callerSignal } = prepared;
+  const { resolved, body, budgetMs, callerSignal, dangerZone } = prepared;
   const route = resolved.route;
   if (budgetMs <= 0) {
     throw new DecisionAdmissionError({ route, source: "route_budget", budgetMs });
@@ -897,7 +924,12 @@ async function runAttempt(
       progress.dispatchedAtMs = now();
       progress.stage = "dispatched";
       progress.key = (process.env[resolved.apiKeyEnv] ?? "").trim();
-      return transport.execute({ route: resolved, body, signal: controller.signal });
+      return transport.execute({
+        route: resolved,
+        body,
+        signal: controller.signal,
+        ...(dangerZone === undefined ? {} : { dangerZone }),
+      });
     };
 
     // The guarded dispatch is raced against the call's end. The guards hear

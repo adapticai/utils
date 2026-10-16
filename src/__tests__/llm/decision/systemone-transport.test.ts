@@ -24,6 +24,7 @@ import {
   DECISION_ERROR_BODY_EXCERPT,
   DecisionCallError,
   DecisionCredentialError,
+  DecisionImagesNotEnabledError,
   DecisionRequestInvalidError,
   DecisionResponseFormatError,
   DecisionTransportError,
@@ -31,6 +32,8 @@ import {
 import type { DecisionFault } from "../../../llm/decision/errors";
 import type { ResolvedDecisionRoute } from "../../../llm/decision/route-types";
 import {
+  DANGER_ZONE_IMAGES_HEADER,
+  DANGER_ZONE_LONG_CONTEXT_HEADER,
   SYSTEMONE_PATH,
   VENDOR_REQUEST_ID_HEADER,
   createSystemOneTransport,
@@ -152,7 +155,7 @@ const ROUTE: ResolvedDecisionRoute = {
   modelPin: MODEL_PIN,
   expectedServedModel: MODEL_PIN,
   budgetMs: 1_500,
-  caps: { maxOptions: 255, maxScoreLevels: 10, maxQuestions: null },
+  caps: { maxOptions: 255, maxScoreLevels: 10, maxQuestions: null, box: false },
   maxStateTokens: 32_000,
   priceAnchor: { input: 0.042, output: 0, as_of: "2026-10-01" },
   apiKeyEnv: KEY_ENV,
@@ -189,7 +192,11 @@ function expectedFaultFor(status: number): ExpectedStatusFault {
   if (status === 401 || status === 403) {
     return { fault: "credential", retryable: false, breakerKind: null };
   }
-  if (status === 422) {
+  // The four statuses with which the vendor rejects the request itself. Each
+  // says nothing about the vendor's health, so none counts against the route's
+  // breaker: the same request would fail the same way on every retry, and
+  // counting it would let one caller's malformed request shut the route.
+  if (status === 400 || status === 413 || status === 415 || status === 422) {
     return { fault: "schema", retryable: false, breakerKind: null };
   }
   if (status === 408 || status === 429 || status === 503 || status === 529) {
@@ -407,6 +414,106 @@ describe("the hosted decision transport", () => {
     expect(sent.signal).toBe(controller.signal);
     // The encoded request is sent as given, with nothing added and nothing reordered.
     expect(sent.body).toBe(JSON.stringify(WIRE_REQUEST));
+  });
+
+  it("sends a danger-zone header only for the surface the call named", async () => {
+    const baseHeaders = {
+      authorization: `Bearer ${SENTINEL_KEY}`,
+      "content-type": "application/json",
+      accept: "application/json",
+    };
+    const cases = [
+      { dangerZone: undefined, extra: {} },
+      { dangerZone: {}, extra: {} },
+      { dangerZone: { images: true } as const, extra: { [DANGER_ZONE_IMAGES_HEADER]: "true" } },
+      { dangerZone: { longContext: true } as const, extra: { [DANGER_ZONE_LONG_CONTEXT_HEADER]: "true" } },
+      {
+        dangerZone: { images: true, longContext: true } as const,
+        extra: { [DANGER_ZONE_IMAGES_HEADER]: "true", [DANGER_ZONE_LONG_CONTEXT_HEADER]: "true" },
+      },
+    ];
+
+    for (const { dangerZone, extra } of cases) {
+      const { transport, double } = harnessOver(() => documentedSuccess());
+      await transport.execute({
+        route: ROUTE,
+        body: WIRE_REQUEST,
+        signal: new AbortController().signal,
+        ...(dangerZone === undefined ? {} : { dangerZone }),
+      });
+      const where = JSON.stringify(dangerZone ?? null);
+      // The whole header set each time: a surface the call did not name sends
+      // no header at all, rather than a header saying false.
+      expect(double.calls[0].headers, where).toEqual({ ...baseHeaders, ...extra });
+    }
+
+    // The header names are the vendor's, exactly.
+    expect(DANGER_ZONE_IMAGES_HEADER).toBe("typesafe-danger-zone-images");
+    expect(DANGER_ZONE_LONG_CONTEXT_HEADER).toBe("typesafe-danger-zone-long-context");
+  });
+
+  it("nothing in the body turns a surface on", async () => {
+    // A request carrying an image does not acquire the header by carrying one.
+    // The encoder refuses such a request when the call did not ask for images,
+    // and the transport adds nothing of its own, so there is no path by which
+    // the surface is enabled for a caller who never named it.
+    const withAsset: DecisionWireRequest = {
+      ...WIRE_REQUEST,
+      assets: { "a-reference": { type: "image", format: "png", data_base64: "AAAA" } },
+    };
+    const { transport, double } = harnessOver(() => documentedSuccess());
+
+    await transport.execute({ route: ROUTE, body: withAsset, signal: new AbortController().signal });
+
+    expect(Object.keys(double.calls[0].headers).sort()).toEqual(["accept", "authorization", "content-type"]);
+  });
+
+  it("a 400 that names the images header is the images-not-enabled fault, not a transport one", async () => {
+    const body = JSON.stringify({
+      detail: {
+        error_type: "bad_request",
+        message:
+          "Images are not turned on: the request has an image or a Box question but no " +
+          "`TypeSafe-Danger-Zone-Images: true` header.",
+      },
+    });
+    const { transport } = harnessOver(() => decisionResponse(400, body));
+
+    const error = asInstance(await rejectionOf(call(transport)), DecisionImagesNotEnabledError);
+
+    expect(error.source).toBe("vendor_rejected");
+    expect(error.status).toBe(400);
+    expect(error.fault).toBe("schema");
+    expect(error.bodyExcerpt).toContain("not turned on");
+    expect(error.fieldPath).toBeNull();
+    // It is not a transport fault, so no breaker counts it and no retry is invited.
+    expect(error).not.toBeInstanceOf(DecisionTransportError);
+    expect(error.retryAfterMs).toBeNull();
+  });
+
+  it("recognises the images refusal by the header's name and never by a sentence", async () => {
+    // The header name is a fact of the contract: it is what this transport
+    // sends. The wording around it is the vendor's and has never been observed
+    // from a live call, so a match on a documented sentence would be a guess
+    // that fails silently the day the wording changes.
+    const named = JSON.stringify({
+      detail: { error_type: "bad_request", message: `needs typesafe-danger-zone-images: true` },
+    });
+    const { transport: byName } = harnessOver(() => decisionResponse(400, named));
+    expect(await rejectionOf(call(byName))).toBeInstanceOf(DecisionImagesNotEnabledError);
+
+    // A body of a shape nobody has observed yields nothing, however plausible
+    // a field in it looks, so it stays the plain request fault.
+    const unobserved = JSON.stringify({ error: "TypeSafe-Danger-Zone-Images header missing" });
+    const { transport: unknownShape } = harnessOver(() => decisionResponse(400, unobserved));
+    const plain = asInstance(await rejectionOf(call(unknownShape)), DecisionRequestInvalidError);
+    expect(plain).not.toBeInstanceOf(DecisionImagesNotEnabledError);
+    expect(plain.fault).toBe("schema");
+
+    // A 400 about something else is the plain request fault too.
+    const other = JSON.stringify({ detail: { error_type: "bad_request", message: "too much nesting" } });
+    const { transport: elsewhere } = harnessOver(() => decisionResponse(400, other));
+    expect(await rejectionOf(call(elsewhere))).not.toBeInstanceOf(DecisionImagesNotEnabledError);
   });
 
   it("joins the path to a base URL written with a trailing slash", async () => {

@@ -137,7 +137,7 @@ function runVerifierOnEditedCopy(
 describe("limits for the decision providers", () => {
   it("every utils-served decision provider has its own limits entry", () => {
     const served = utilsServedRoutes();
-    expect(served.map(({ name }) => name)).toEqual(["dm.hosted"]);
+    expect(served.map(({ name }) => name)).toEqual(["dm.hosted", "dm.hosted.preview"]);
 
     const registered = limitsInventory().map(({ provider }) => provider);
     expect(registered).toContain("typesafe");
@@ -229,10 +229,14 @@ describe("the limits verifier", () => {
     });
     expect(result.status).toBe(1);
     expect(result.stdout).not.toContain(SUCCESS_TOKEN);
-    expect(result.stderr).toContain(
-      "FAIL typesafe: serves decision route dm.hosted but is absent from the limits config",
-    );
-    expect(result.stderr).toContain("1 failure(s)");
+    // One failure per route the provider serves: the provider is shared, so
+    // removing its entry leaves both hosted routes running on defaults.
+    for (const route of ["dm.hosted", "dm.hosted.preview"]) {
+      expect(result.stderr).toContain(
+        `FAIL typesafe: serves decision route ${route} but is absent from the limits config`,
+      );
+    }
+    expect(result.stderr).toContain("2 failure(s)");
   });
 
   it("refuses a queue timeout longer than the route's budget", () => {
@@ -240,10 +244,12 @@ describe("the limits verifier", () => {
       limits.providers.typesafe.acquire_timeout_ms = PACKAGE_DEFAULT_ACQUIRE_TIMEOUT_MS;
     });
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain(
-      "FAIL typesafe: acquire_timeout_ms 15000 exceeds the 1500 ms budget of decision route dm.hosted",
-    );
-    expect(result.stderr).toContain("1 failure(s)");
+    for (const route of ["dm.hosted", "dm.hosted.preview"]) {
+      expect(result.stderr).toContain(
+        `FAIL typesafe: acquire_timeout_ms 15000 exceeds the 1500 ms budget of decision route ${route}`,
+      );
+    }
+    expect(result.stderr).toContain("2 failure(s)");
 
     // The bound is the route's budget, so tightening the route alone trips it too.
     const tightened = runVerifierOnEditedCopy(({ decisionRoutes }) => {
@@ -281,8 +287,10 @@ describe("the limits verifier", () => {
     // The override, not the provider entry, is what the pinned model's calls wait on.
     const slow = runVerifierOnEditedCopy(({ limits }) => scopePerModel(limits, PACKAGE_DEFAULT_ACQUIRE_TIMEOUT_MS));
     expect(slow.status).toBe(1);
+    // The override is scoped to the pinned model of the first hosted route, so
+    // only that route's calls wait on it and only it fails.
     expect(slow.stderr).toContain(
-      "FAIL typesafe: acquire_timeout_ms 15000 exceeds the 1500 ms budget of decision route dm.hosted",
+      "FAIL typesafe: acquire_timeout_ms 15000 exceeds the 1500 ms budget of decision route dm.hosted,",
     );
     expect(slow.stderr).toContain("1 failure(s)");
   });

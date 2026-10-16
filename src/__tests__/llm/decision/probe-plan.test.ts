@@ -85,6 +85,7 @@ import { loadDecisionFixture } from "./support/fixtures";
 import type { DecisionEvidenceClass } from "./support/fixtures";
 import {
   HOSTED_ROUTE,
+  PREVIEW_ROUTE,
   LOCAL_ROUTE,
   editableDecisionRouteTable,
   hostedProviderOf,
@@ -532,6 +533,7 @@ describe("the plan", () => {
       maxOptions: HOSTED.caps.max_options,
       maxScoreLevels: HOSTED.caps.max_score_levels,
       maxQuestions: HOSTED.caps.max_questions,
+      box: HOSTED.caps.supports_box === true,
     });
   });
 
@@ -1553,7 +1555,9 @@ describe("a run", () => {
     );
     expect(otherwise.verdict).toBe("confirmed");
     expect(otherwise.findings.refusal).toEqual({ outcome: "fault", status: 400, bodyShape: "detail_string" });
-    expect(sampleOf(otherwise, PROBE_REFUSAL_SHAPE).fault).toBe("transport");
+    // A 400 is the vendor rejecting the request, so it is a request fault and
+    // not a vendor one: it must not count against the route's breaker.
+    expect(sampleOf(otherwise, PROBE_REFUSAL_SHAPE).fault).toBe("schema");
 
     const omitted = await probe(vendor(answering()), { includeRefusal: false });
     expect(omitted.findings.refusal).toBeNull();
@@ -1605,7 +1609,10 @@ describe("the command", () => {
     );
     expect(text).not.toContain(LOCAL_ROUTE);
     expect(text.includes(SENTINEL_KEY)).toBe(false);
-    expect(harness.printed.filter((line) => /^ {2}request \d/.test(line))).toHaveLength(DEFAULT_PLAN_CALLS);
+    // A dry run with no route named prints a plan for every route this package
+    // serves, and there are two.
+    expect(text).toContain(`route ${PREVIEW_ROUTE}:`);
+    expect(harness.printed.filter((line) => /^ {2}request \d/.test(line))).toHaveLength(2 * DEFAULT_PLAN_CALLS);
 
     const explicit = cliHarness(double);
     expect(await runProbeCli(["--dry-run", "--route", HOSTED_ROUTE, "--samples", "20"], explicit.deps)).toBe(PROBE_EXIT_OK);

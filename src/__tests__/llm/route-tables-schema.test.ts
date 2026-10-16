@@ -108,12 +108,14 @@ describe("the decision schema", () => {
     }
   });
 
-  it("admits only the two routes, and a rule that is not a route is rejected by name", () => {
+  it("admits only the three routes, and a rule that is not a route is rejected by name", () => {
     const withBaseline = editableCopy(decisionRoutes);
     withBaseline.routes["dm.baseline"] = structuredClone(withBaseline.routes["dm.local"]);
     const errors = validateAgainstSchema(withBaseline, decisionRoutesSchema);
     expect(errors).toContain('$.routes: unexpected property "dm.baseline"');
-    expect(errors).toContain('$.routes.<key:dm.baseline>: "dm.baseline" does not match /^dm\\.(hosted|local)$/');
+    expect(errors).toContain(
+      '$.routes.<key:dm.baseline>: "dm.baseline" does not match /^dm\\.(hosted|hosted\\.preview|local)$/',
+    );
 
     const withoutLocal = editableCopy(decisionRoutes);
     Reflect.deleteProperty(withoutLocal.routes, "dm.local");

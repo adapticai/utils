@@ -75,6 +75,17 @@ export interface DecisionHostedProviderDeclaration {
   /** Where the key lives in the secrets manager. */
   readonly secret_path: string;
   readonly account_status: LlmAccountStatus;
+  /**
+   * The vendor's moving model names, each with the versioned id it points at.
+   *
+   * Recorded so a reader can see what a name the vendor publishes currently
+   * means, and never sent: a route pins a versioned id, and the loader refuses
+   * a pin that ends in one of these names. An alias moves when the vendor ships
+   * a release, so sending one would change the answering model with no change
+   * on this side. Re-pointing an entry here is a reviewed edit of this file and
+   * changes no request.
+   */
+  readonly model_aliases?: Readonly<Record<string, string>>;
   readonly docs_url?: string;
   readonly notes?: string;
 }
@@ -105,6 +116,17 @@ export interface DecisionRouteCapsDeclaration {
   readonly max_options: number;
   readonly max_score_levels: number;
   readonly max_questions: number | null;
+  /**
+   * Whether the route's model serves a question that locates something in an
+   * image.
+   *
+   * A property of the pinned model and not of the contract: the vendor serves
+   * every other question kind on both its models and this one on the newer
+   * only. Absent means it does not, so a route that says nothing serves
+   * nothing — the admitting default for a surface the vendor has not confirmed
+   * for that model.
+   */
+  readonly supports_box?: boolean;
 }
 
 /** What every route declares, whoever serves it. */
@@ -196,6 +218,8 @@ export interface DecisionRouteCaps {
   readonly maxScoreLevels: number;
   /** `null` where the route declares no per-request question limit. */
   readonly maxQuestions: number | null;
+  /** Whether the route's pinned model serves a question locating something in an image. */
+  readonly box: boolean;
 }
 
 /**

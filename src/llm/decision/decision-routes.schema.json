@@ -1,13 +1,13 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://adaptic.ai/schemas/llm-decision-routes.v1.json",
+  "$id": "https://adaptic.ai/schemas/llm-decision-routes.v2.json",
   "title": "Typed decision-route table",
-  "description": "The single authoring surface for the typed decision routes: who serves each, which model each is pinned to, how far the contract behind it has been verified, and its budget, caps and price. It is separate from the generative alias table: a decision route has one model, no fallback chain and a sub-second budget, and none of the alias table's chat-shaped fields describe it. Written in the draft-07 subset the alias table's schema uses, so one validator reads both. Rules that span two fields (which fields a route carries for its server, whether contract evidence and its date agree, whether an artifact map matches its pin status) are enforced in code when the table loads.",
+  "description": "The single authoring surface for the typed decision routes: who serves each, which model each is pinned to, how far the contract behind it has been verified, and its budget, caps and price. It is separate from the generative alias table: a decision route has one model, no fallback chain and a sub-second budget, and none of the alias table's chat-shaped fields describe it. Written in the draft-07 subset the alias table's schema uses, so one validator reads both. An image is not described here: the images a request carries are per-call data, and the vendor-wide limits they are held to live in code beside the encoder that applies them. Rules that span two fields (which fields a route carries for its server, whether contract evidence and its date agree, whether an artifact map matches its pin status) are enforced in code when the table loads.",
   "type": "object",
   "required": ["schema_version", "policy_source", "defaults", "providers", "routes"],
   "additionalProperties": false,
   "properties": {
-    "schema_version": { "type": "integer", "const": 1 },
+    "schema_version": { "type": "integer", "const": 2 },
     "policy_source": {
       "type": "string",
       "minLength": 1,
@@ -69,6 +69,17 @@
             "enum": ["live", "pending-onboarding", "not-in-scope"],
             "description": "Only live admits a route naming this provider."
           },
+          "model_aliases": {
+            "type": "object",
+            "description": "The vendor's moving model names, each with the versioned id it points at. Recorded for a reader and never sent: a route pins a versioned id, and version_pin's own pattern refuses a name ending latest or preview. An alias moves when the vendor ships a release, so sending one would change the answering model with no change on this side. Re-pointing an entry here is a reviewed edit of this file and changes no request.",
+            "minProperties": 1,
+            "propertyNames": { "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*([Ll][Aa][Tt][Ee][Ss][Tt]|[Pp][Rr][Ee][Vv][Ii][Ee][Ww])$" },
+            "additionalProperties": {
+              "type": "string",
+              "pattern": "^(?!.*([Ll][Aa][Tt][Ee][Ss][Tt]|[Pp][Rr][Ee][Vv][Ii][Ee][Ww])$)[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$",
+              "description": "The versioned model id the alias currently points at. An alias pointing at another alias would record nothing."
+            }
+          },
           "docs_url": { "type": "string", "minLength": 1 },
           "notes": { "type": "string" }
         }
@@ -76,9 +87,9 @@
     },
     "routes": {
       "type": "object",
-      "description": "The decision routes. Exactly these two: a rule that has no provider and no transport is not a route and is not declared here.",
-      "required": ["dm.hosted", "dm.local"],
-      "propertyNames": { "pattern": "^dm\\.(hosted|local)$" },
+      "description": "The decision routes. A rule that has no provider and no transport is not a route and is not declared here. The two hosted routes are two routes rather than one with a choice of model, because a route IS its pinned model together with the caps, budget and price that model is served under: a caller able to choose the model could move the answering model without a reviewed change to this file.",
+      "required": ["dm.hosted", "dm.hosted.preview", "dm.local"],
+      "propertyNames": { "pattern": "^dm\\.(hosted|hosted\\.preview|local)$" },
       "additionalProperties": false,
       "properties": {
         "dm.hosted": {
@@ -144,6 +155,96 @@
                   "type": ["integer", "null"],
                   "minimum": 1,
                   "description": "Null where the provider publishes no per-request question limit."
+                },
+                "supports_box": {
+                  "type": "boolean",
+                  "description": "Whether the route's pinned model serves a question that locates something in an image. A property of the model, not of the contract: the vendor serves every other question kind on both its models and this one on the newer alone. Absent means it does not."
+                }
+              }
+            },
+            "max_state_tokens": { "type": "integer", "minimum": 1 },
+            "max_state_tokens_basis": { "const": "vendor-documented-ceiling" },
+            "price_per_mtok": {
+              "type": ["object", "null"],
+              "required": ["input", "output", "as_of"],
+              "additionalProperties": false,
+              "properties": {
+                "input": { "type": "number", "minimum": 0 },
+                "output": { "type": "number", "minimum": 0 },
+                "as_of": { "type": "string", "format": "date" },
+                "source": { "type": "string" }
+              }
+            },
+            "notes": { "type": "string" }
+          }
+        },
+        "dm.hosted.preview": {
+          "type": "object",
+          "description": "Answered by the vendor's newest release over HTTP through this package. The only route whose caps admit a question locating something in an image.",
+          "required": [
+            "provider",
+            "served_by",
+            "response_kind",
+            "version_pin",
+            "expected_served_model",
+            "model_id_status",
+            "contract_evidence",
+            "contract_verified",
+            "budget_ms",
+            "caps",
+            "max_state_tokens",
+            "max_state_tokens_basis",
+            "price_per_mtok"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "provider": { "type": "string", "minLength": 1 },
+            "served_by": { "const": "utils" },
+            "response_kind": { "const": "typed-distribution" },
+            "version_pin": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^(?!.*([Ll][Aa][Tt][Ee][Ss][Tt]|[Pp][Rr][Ee][Vv][Ii][Ee][Ww])$)[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$",
+              "description": "The model id written into every request. A versioned id: a name ending latest or preview, in whatever case, follows the vendor's releases, so the answering model would change with no change on this side. Written in letters, digits, dots, dashes and underscores only, starting and ending with a letter or a digit, so no trailing character can hide such a name."
+            },
+            "expected_served_model": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^(?!.*([Ll][Aa][Tt][Ee][Ss][Tt]|[Pp][Rr][Ee][Vv][Ii][Ee][Ww])$)[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$",
+              "description": "The model id a response must report. Any other answering model is a fault."
+            },
+            "model_id_status": { "enum": ["confirmed", "pending-provider-confirmation"] },
+            "model_id_source": { "type": ["string", "null"] },
+            "contract_evidence": {
+              "enum": ["documentation", "authenticated-call"],
+              "description": "How the contract was established. documentation means the shapes were read and never exercised with a key; only authenticated-call admits the route."
+            },
+            "contract_verified": {
+              "type": ["string", "null"],
+              "format": "date",
+              "description": "The date an authenticated call confirmed the contract, or null when none has."
+            },
+            "budget_ms": {
+              "type": "integer",
+              "minimum": 50,
+              "maximum": 10000,
+              "description": "The longest one call may take. A ceiling the consumer's own deadline narrows."
+            },
+            "caps": {
+              "type": "object",
+              "required": ["max_options", "max_score_levels", "max_questions"],
+              "additionalProperties": false,
+              "properties": {
+                "max_options": { "type": "integer", "minimum": 1 },
+                "max_score_levels": { "type": "integer", "minimum": 2 },
+                "max_questions": {
+                  "type": ["integer", "null"],
+                  "minimum": 1,
+                  "description": "Null where the provider publishes no per-request question limit."
+                },
+                "supports_box": {
+                  "type": "boolean",
+                  "description": "Whether the route's pinned model serves a question that locates something in an image. A property of the model, not of the contract: the vendor serves every other question kind on both its models and this one on the newer alone. Absent means it does not."
                 }
               }
             },

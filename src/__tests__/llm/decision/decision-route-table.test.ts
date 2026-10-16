@@ -215,8 +215,8 @@ function aliasTableModelIds(): Set<string> {
 }
 
 describe("the canonical decision-route table", () => {
-  it("declares exactly dm.hosted and dm.local", () => {
-    expect(listDecisionRoutes()).toEqual(["dm.hosted", "dm.local"]);
+  it("declares exactly dm.hosted, dm.hosted.preview and dm.local", () => {
+    expect(listDecisionRoutes()).toEqual(["dm.hosted", "dm.hosted.preview", "dm.local"]);
     expect(Object.keys(decisionRouteTable.routes).sort()).toEqual([...DECISION_ROUTES].sort());
 
     const withBaseline = violationsAfter((table) => {
@@ -326,7 +326,11 @@ describe("the canonical decision-route table", () => {
       const price = `${route.price_per_mtok.input}/${route.price_per_mtok.output}`;
       priced.set(route.version_pin, (priced.get(route.version_pin) ?? new Set<string>()).add(price));
     }
-    expect([...priced.keys()]).toEqual([hosted.version_pin]);
+    // Two pinned models, each priced once. The vendor publishes the same
+    // figures for both releases, so what is held here is that a pin has ONE
+    // price and not that the two pins differ.
+    expect([...priced.keys()].sort()).toEqual(["jev-1.13.0", "jev-1.14.0"]);
+    expect(priced.has(hosted.version_pin)).toBe(true);
     for (const prices of priced.values()) {
       expect(prices.size).toBe(1);
     }
@@ -565,9 +569,9 @@ describe("load-time violations", () => {
       {
         name: "a table of a schema version this loader does not read",
         edit: (table) => {
-          table.schema_version = 2;
+          table.schema_version = 3;
         },
-        violation: "schema_version must be 1",
+        violation: "schema_version must be 2",
       },
       {
         name: "a table that names no policy it implements",
@@ -805,7 +809,7 @@ describe("resolution", () => {
       modelPin: "jev-1.13.0",
       expectedServedModel: "jev-1.13.0",
       budgetMs: 1500,
-      caps: { maxOptions: 255, maxScoreLevels: 10, maxQuestions: null },
+      caps: { maxOptions: 255, maxScoreLevels: 10, maxQuestions: null, box: false },
       maxStateTokens: 32000,
       priceAnchor: {
         input: 0.042,

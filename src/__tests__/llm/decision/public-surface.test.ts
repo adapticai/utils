@@ -59,6 +59,7 @@ const VERIFIER_TIMEOUT_MS = 30_000;
 /** The modules the verifier requires the barrel to reach. */
 const REQUIRED_REACHABLE: readonly string[] = [
   "src/llm/decision/index.ts",
+  "src/llm/decision/assets.ts",
   "src/llm/decision/decision-client.ts",
   "src/llm/decision/codec.ts",
   "src/llm/decision/decision-route-table.ts",
@@ -72,12 +73,16 @@ const HOSTED_TRANSPORT = "src/llm/decision/transports/systemone.ts";
 const DECISION_RUNTIME_EXPORTS: readonly string[] = [
   "DECISION_CLIENT_FAULT_STAGES",
   "DECISION_FAULTS",
+  "DECISION_IMAGE_FORMATS",
+  "DECISION_IMAGE_LIMITS",
+  "DECISION_REQUEST_VIOLATIONS",
   "DECISION_ROUTES",
   "DECISION_UNAVAILABLE_CODES",
   "DecisionAdmissionError",
   "DecisionCallError",
   "DecisionClientFaultError",
   "DecisionCredentialError",
+  "DecisionImagesNotEnabledError",
   "DecisionRequestInvalidError",
   "DecisionResponseFormatError",
   "DecisionRouteMismatchError",
@@ -94,8 +99,15 @@ const DECISION_RUNTIME_EXPORTS: readonly string[] = [
   "decisionRouteViolations",
   "decisionUsageOf",
   "decodeDecisionResponse",
+  "encodeDecisionBase64",
   "encodeDecisionRequest",
+  "formatsAgree",
+  "isDecisionImageFormat",
+  "isStrictDecisionBase64",
   "listDecisionRoutes",
+  "measureDecisionImage",
+  "normaliseDecisionBase64",
+  "utf8ByteLength",
 ];
 
 /** Every name the LLM barrel exported at runtime before the decision client hung off it. */
@@ -417,7 +429,9 @@ describe("the public surface of the decision client", () => {
   it("no decision source holds a vendor model id or host as a literal", () => {
     const sources = decisionSources();
     expect(sources.map(({ path }) => path)).toEqual(expect.arrayContaining([...REQUIRED_REACHABLE]));
-    expect(vendorNames()).toEqual(expect.arrayContaining(["api.typesafe.ai", "typesafe.ai", "jev-1.13.0", "jev-"]));
+    expect(vendorNames()).toEqual(
+      expect.arrayContaining(["api.typesafe.ai", "typesafe.ai", "jev-1.13.0", "jev-1.14.0", "jev-"]),
+    );
 
     for (const { path, text } of sources) {
       expect(vendorLiteralsIn(text), path).toEqual([]);

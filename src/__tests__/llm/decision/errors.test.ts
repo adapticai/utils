@@ -49,6 +49,9 @@ const PROVIDER = "decision-vendor";
 /** A model pin, as a route table would declare it. */
 const MODEL_PIN = "pinned-model-1.0.0";
 
+/** The pin of the second hosted route, a newer release of the same model. */
+const PREVIEW_MODEL_PIN = "pinned-model-2.0.0";
+
 /** A model a vendor reports answering with that is not the pin. */
 const OTHER_MODEL = "pinned-model-1.1.0";
 
@@ -556,11 +559,12 @@ const CONSTRUCTION_PATHS: readonly ErrorCase[] = [
 ];
 
 /**
- * A route table in the shape the package declares: one route this package
- * serves over HTTP and one the consumer serves itself.
+ * A route table in the shape the package declares: two routes this package
+ * serves over HTTP, each pinned to its own model, and one the consumer serves
+ * itself.
  */
 const ROUTE_TABLE: DecisionRouteTable = {
-  schema_version: 1,
+  schema_version: 2,
   policy_source: "test",
   defaults: {
     circuit_breaker: { failure_threshold: 5, cooldown_ms: 60_000, capacity_cooldown_ms: 15_000, half_open_probes: 1 },
@@ -588,6 +592,21 @@ const ROUTE_TABLE: DecisionRouteTable = {
       contract_verified: null,
       budget_ms: BUDGET_MS,
       caps: { max_options: 255, max_score_levels: 10, max_questions: null },
+      max_state_tokens: 32_000,
+      max_state_tokens_basis: "vendor-documented-ceiling",
+      price_per_mtok: { input: 0.042, output: 0, as_of: "2026-10-01" },
+    },
+    "dm.hosted.preview": {
+      provider: PROVIDER,
+      served_by: "utils",
+      response_kind: "typed-distribution",
+      version_pin: PREVIEW_MODEL_PIN,
+      expected_served_model: PREVIEW_MODEL_PIN,
+      model_id_status: "confirmed",
+      contract_evidence: "documentation",
+      contract_verified: null,
+      budget_ms: BUDGET_MS,
+      caps: { max_options: 255, max_score_levels: 10, max_questions: null, supports_box: true },
       max_state_tokens: 32_000,
       max_state_tokens_basis: "vendor-documented-ceiling",
       price_per_mtok: { input: 0.042, output: 0, as_of: "2026-10-01" },
@@ -1055,7 +1074,7 @@ describe("decision call errors", () => {
   });
 
   it("a route is declared in one of two shapes, and a refused route maps onto the unavailable error", () => {
-    expect([...DECISION_ROUTES]).toEqual(["dm.hosted", "dm.local"]);
+    expect([...DECISION_ROUTES]).toEqual(["dm.hosted", "dm.hosted.preview", "dm.local"]);
     expect(Object.keys(ROUTE_TABLE.routes).sort()).toEqual([...DECISION_ROUTES].sort());
 
     for (const route of DECISION_ROUTES) {

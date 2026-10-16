@@ -31,6 +31,25 @@ export {
 } from "./decision-route-table";
 export type { DecisionRouteEnvironment } from "./decision-route-table";
 
+export {
+  DECISION_IMAGE_FORMATS,
+  DECISION_IMAGE_LIMITS,
+  encodeDecisionBase64,
+  formatsAgree,
+  isDecisionImageFormat,
+  isStrictDecisionBase64,
+  measureDecisionImage,
+  normaliseDecisionBase64,
+  utf8ByteLength,
+} from "./assets";
+export type {
+  DecisionImageDefect,
+  DecisionImageFormat,
+  DecisionImageMeasurement,
+  DecisionImageReading,
+  DecisionMeasuredFormat,
+} from "./assets";
+
 export { decodeDecisionResponse, encodeDecisionRequest } from "./codec";
 export type { DecisionDecodeOptions, DecisionEncodeOptions, DecodedDecisionResponse } from "./codec";
 
@@ -40,11 +59,13 @@ export type { DecisionUsageIdentity } from "./metering";
 export {
   DECISION_CLIENT_FAULT_STAGES,
   DECISION_FAULTS,
+  DECISION_REQUEST_VIOLATIONS,
   DECISION_UNAVAILABLE_CODES,
   DecisionAdmissionError,
   DecisionCallError,
   DecisionClientFaultError,
   DecisionCredentialError,
+  DecisionImagesNotEnabledError,
   DecisionRequestInvalidError,
   DecisionResponseFormatError,
   DecisionRouteMismatchError,
@@ -59,7 +80,9 @@ export type {
   DecisionClientFaultStage,
   DecisionCredentialDetails,
   DecisionFault,
+  DecisionImagesNotEnabledDetails,
   DecisionRequestInvalidDetails,
+  DecisionRequestViolation,
   DecisionResponseFormatDetails,
   DecisionRouteMismatchDetails,
   DecisionRouteUnavailableDetails,
@@ -95,13 +118,19 @@ export { DECISION_ROUTES } from "./types";
 export type {
   DecisionAnswer,
   DecisionAnsweredAttemptRecord,
+  DecisionAssetMap,
   DecisionAttemptMeasurement,
   DecisionAttemptRecord,
+  DecisionBox,
+  DecisionBoxAnswer,
+  DecisionBoxQuestion,
   DecisionCallOptions,
   DecisionCallResult,
   DecisionChoiceAnswer,
   DecisionChoiceQuestion,
+  DecisionDangerZone,
   DecisionDescription,
+  DecisionImageAsset,
   DecisionFaultedAttemptRecord,
   DecisionInstructions,
   DecisionJson,
@@ -117,6 +146,7 @@ export type {
   DecisionScoreAnswer,
   DecisionScoreQuestion,
   DecisionState,
+  DecisionWireAsset,
   DecisionWireRequest,
   DecisionWireResponse,
   DecisionWireUsage,

@@ -54,6 +54,7 @@ import { describeFailure, withoutCredential } from "../../transports/failure-des
 import type { LlmUsageRecord } from "../../types";
 import {
   DecisionCredentialError,
+  DecisionImagesNotEnabledError,
   DecisionRequestInvalidError,
   DecisionResponseFormatError,
   DecisionTransportError,
@@ -62,7 +63,7 @@ import {
 import type { DecisionCallError } from "../errors";
 import { decisionUsageOf, parseRetryAfterMs } from "../metering";
 import type { ResolvedDecisionRoute } from "../route-types";
-import type { DecisionRoute, DecisionWireRequest } from "../types";
+import type { DecisionDangerZone, DecisionRoute, DecisionWireRequest } from "../types";
 
 /** Path of the typed-decision endpoint under a route's base URL. */
 export const SYSTEMONE_PATH = "/v1/systemone";
@@ -72,6 +73,37 @@ export const VENDOR_REQUEST_ID_HEADER = "x-typesafe-request-id";
 
 /** Media type of the request body, and the one asked for in return. */
 const JSON_MEDIA_TYPE = "application/json";
+
+/**
+ * Request header that turns on the vendor's image surface for one call.
+ *
+ * Sent only when the call asked for it. The vendor's own words on what it
+ * enables, from its images page: "Images and Box questions aren't yet up to our
+ * standards to call ready for production, but we're excited for dreamers and
+ * builders to play with them... accuracy will change as we update the models."
+ */
+export const DANGER_ZONE_IMAGES_HEADER = "typesafe-danger-zone-images";
+
+/**
+ * Request header that raises both of the vendor's context limits for one call.
+ *
+ * Sent only when the call asked for it. The vendor's own words, from its models
+ * page: long context "is slower and less accurate than staying within the
+ * default limits, so turn it on only for requests that need it."
+ */
+export const DANGER_ZONE_LONG_CONTEXT_HEADER = "typesafe-danger-zone-long-context";
+
+/** The value both danger-zone headers carry, which is the only value either accepts. */
+const DANGER_ZONE_ON = "true";
+
+/** The status with which a vendor rejects the request body as malformed or over a rule. */
+const REQUEST_MALFORMED_STATUS = 400;
+
+/** The status with which a vendor rejects the request as over a size limit. */
+const REQUEST_TOO_LARGE_STATUS = 413;
+
+/** The status with which a vendor rejects the request's content encoding. */
+const REQUEST_ENCODING_STATUS = 415;
 
 /** First status of the range that is an answer. */
 const SUCCESS_STATUS_FIRST = 200;
@@ -88,8 +120,26 @@ const SERVER_ERROR_STATUS_END = 600;
 /** Statuses with which a vendor rejects the key: one documented, one observed for a missing key. */
 const CREDENTIAL_STATUSES: ReadonlySet<number> = new Set([401, 403]);
 
-/** The status with which a vendor rejects the request body as invalid. */
+/** The status with which a vendor rejects the request body as failing validation. */
 const REQUEST_INVALID_STATUS = 422;
+
+/**
+ * Every status with which a vendor rejects the request itself.
+ *
+ * All four say the same thing about the vendor: nothing. The request broke a
+ * rule, failed validation, was too large, or was encoded in a way the vendor
+ * does not accept, and the same request will fail the same way again. They are
+ * classified as request faults rather than transport faults for a reason that
+ * is not presentational: a transport fault counts against the route's circuit
+ * breaker, so a caller sending one oversized image in a loop would open the
+ * breaker on a defect of its own and shut the route for every other caller.
+ */
+const REQUEST_REJECTED_STATUSES: ReadonlySet<number> = new Set([
+  REQUEST_MALFORMED_STATUS,
+  REQUEST_INVALID_STATUS,
+  REQUEST_TOO_LARGE_STATUS,
+  REQUEST_ENCODING_STATUS,
+]);
 
 /**
  * Statuses with which a vendor says it is full rather than broken: request
@@ -152,6 +202,11 @@ const UNEXPECTED_STATUS_FAULT: DecisionStatusFault = { fault: "transport", retry
  * including one this contract gives no meaning to, is a fault, so an
  * unforeseen status can never be read as a decision.
  *
+ * The four statuses with which the vendor rejects a request are faults of the
+ * request and not of the vendor, so none of them counts against the route's
+ * breaker: a caller repeating one malformed request would otherwise shut the
+ * route for every other caller.
+ *
  * @param status The HTTP status received.
  * @returns What the status means, or `null` when it is an answer.
  */
@@ -162,7 +217,7 @@ export function decisionFaultForStatus(status: number): DecisionStatusFault | nu
   if (CREDENTIAL_STATUSES.has(status)) {
     return CREDENTIAL_FAULT;
   }
-  if (status === REQUEST_INVALID_STATUS) {
+  if (REQUEST_REJECTED_STATUSES.has(status)) {
     return REQUEST_INVALID_FAULT;
   }
   if (CAPACITY_STATUSES.has(status)) {
@@ -227,6 +282,15 @@ export interface SystemOneTransportRequest {
   readonly route: ResolvedDecisionRoute;
   /** The encoded request, sent as it is given. */
   readonly body: DecisionWireRequest;
+  /**
+   * The vendor surfaces this call opted in to, each sent as its own header.
+   *
+   * Absent sends neither header, which is what every call that did not ask for
+   * them gets. Nothing here is inferred from the body: a request carrying an
+   * image is refused by the encoder when the caller did not ask for images,
+   * rather than having the header added for it.
+   */
+  readonly dangerZone?: DecisionDangerZone;
   /**
    * Aborts the call. An aborted call rejects with this signal's own reason,
    * the very value, so the caller that aborted recognises its own abort.
@@ -317,6 +381,53 @@ function observedErrorType(body: string): string | null {
   }
   const errorType = detail.error_type;
   return typeof errorType === "string" && errorType !== "" && typeof detail.message === "string" ? errorType : null;
+}
+
+/**
+ * The vendor's own message, read from the one body shape ever observed.
+ *
+ * The same shape {@link observedErrorType} requires, and read under the same
+ * rule: a body of another shape yields `null` however plausible a field in it
+ * looks.
+ *
+ * @param body The response body as text.
+ * @returns The message, or `null` when the body is not of the observed shape.
+ */
+function observedErrorMessage(body: string): string | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return null;
+  }
+  if (!isRecord(parsed) || !hasExactlyKeys(parsed, ["detail"])) {
+    return null;
+  }
+  const detail = parsed.detail;
+  if (!isRecord(detail) || !hasExactlyKeys(detail, ["error_type", "message"])) {
+    return null;
+  }
+  const message = detail.message;
+  return typeof message === "string" && message !== "" && typeof detail.error_type === "string" ? message : null;
+}
+
+/**
+ * Whether the vendor's rejection is that the image surface is not turned on.
+ *
+ * Recognised by the header's own NAME standing in the vendor's message, and
+ * not by the sentence the documentation prints around it. The name is a fact of
+ * the contract — it is what this transport sends — whereas the wording of a
+ * message is the vendor's and has never been observed from a live call, so a
+ * sentence matched from the docs would be a guess that fails silently the day
+ * the wording changes. The match is case-insensitive because a header name is.
+ *
+ * @param body The response body as text.
+ * @returns True when the vendor named the images header in a body of the
+ *   observed shape.
+ */
+function saysImagesAreOff(body: string): boolean {
+  const message = observedErrorMessage(body);
+  return message !== null && message.toLowerCase().includes(DANGER_ZONE_IMAGES_HEADER);
 }
 
 /**
@@ -430,7 +541,18 @@ function failureForStatus(statusFault: DecisionStatusFault, context: StatusFailu
     case "credential":
       return new DecisionCredentialError({ source: "vendor_rejected", ...answered });
     case "schema":
-      return new DecisionRequestInvalidError({ source: "vendor_rejected", ...answered });
+      // A surface that was never turned on is the one request fault a caller
+      // can clear by its own act, so it is raised as its own class rather than
+      // left for the caller to find by reading a message.
+      return saysImagesAreOff(body)
+        ? new DecisionImagesNotEnabledError({
+            source: "vendor_rejected",
+            route: route.route,
+            status: response.status,
+            body,
+            vendorRequestId,
+          })
+        : new DecisionRequestInvalidError({ source: "vendor_rejected", ...answered });
     case "transport":
       return new DecisionTransportError({
         source: "status",
@@ -493,6 +615,29 @@ function raiseWithoutAnswer(error: unknown, signal: AbortSignal, route: Decision
 }
 
 /**
+ * The headers one call is sent with.
+ *
+ * A danger-zone header is present only when the call named that surface, and
+ * carries the one value the vendor accepts. Neither is ever derived from what
+ * the body happens to hold: deriving the images header from the presence of an
+ * image would turn on a surface the vendor itself calls unready, on behalf of a
+ * caller who never asked for it and never read that sentence.
+ *
+ * @param key The credential to present.
+ * @param dangerZone The surfaces the call opted in to, if any.
+ * @returns The headers to send.
+ */
+function headersFor(key: string, dangerZone: DecisionDangerZone | undefined): Readonly<Record<string, string>> {
+  return {
+    authorization: `Bearer ${key}`,
+    "content-type": JSON_MEDIA_TYPE,
+    accept: JSON_MEDIA_TYPE,
+    ...(dangerZone?.images === true ? { [DANGER_ZONE_IMAGES_HEADER]: DANGER_ZONE_ON } : {}),
+    ...(dangerZone?.longContext === true ? { [DANGER_ZONE_LONG_CONTEXT_HEADER]: DANGER_ZONE_ON } : {}),
+  };
+}
+
+/**
  * Build the hosted typed-decision transport.
  *
  * @param config The HTTP call and the clock, each replaceable for testing.
@@ -515,11 +660,7 @@ export function createSystemOneTransport(config: SystemOneTransportConfig = {}):
       try {
         response = await send(`${route.baseUrl.replace(/\/+$/, "")}${SYSTEMONE_PATH}`, {
           method: "POST",
-          headers: {
-            authorization: `Bearer ${key}`,
-            "content-type": JSON_MEDIA_TYPE,
-            accept: JSON_MEDIA_TYPE,
-          },
+          headers: headersFor(key, request.dangerZone),
           body,
           redirect: "error",
           signal,

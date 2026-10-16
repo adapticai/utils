@@ -53,13 +53,15 @@ const ALLOWED_STATIC_PACKAGE_IMPORTS = new Set([]);
  * Sources the barrel must reach, relative to the utils root.
  *
  * The decision barrel, and the modules a decision call runs through: the
- * client, the codec, the route table and the hosted transport. The transport
+ * client, the codec, the image assets, the route table and the hosted
+ * transport. The transport
  * is reached through the client and is exported by nothing; it is listed
  * because it is the one module that speaks to a vendor, so it is the one whose
  * imports and contents most need the gates below.
  */
 const REQUIRED_REACHABLE = [
   "src/llm/decision/index.ts",
+  "src/llm/decision/assets.ts",
   "src/llm/decision/decision-client.ts",
   "src/llm/decision/codec.ts",
   "src/llm/decision/decision-route-table.ts",

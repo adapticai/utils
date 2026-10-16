@@ -38,6 +38,7 @@ import {
   DecisionCallError,
   DecisionClientFaultError,
   DecisionCredentialError,
+  DecisionImagesNotEnabledError,
   DecisionRequestInvalidError,
   DecisionResponseFormatError,
   DecisionRouteMismatchError,
@@ -1270,7 +1271,11 @@ describe("the decision client", () => {
     it("fixes what is sent when the call is made: a later change to the request cannot reach the wire", async () => {
       const harness = clientOverFetch(() => answering(CHOICE_ANSWER()));
       const state = { message: "Help! My payouts have been failing for 3 days.", attempts: [1, 2, 3] };
-      const criteria: Record<string, string | null> = { ...(CHOICE_REQUEST().questions.department.criteria as object) };
+      const asked = CHOICE_REQUEST().questions.department;
+      if (asked.type !== "choice") {
+        throw new Error("the documented request does not ask department as a choice");
+      }
+      const criteria: Record<string, string | null> = { ...(asked.criteria as Record<string, string | null>) };
       const questions: Record<string, DecisionQuestion> = {
         department: { type: "choice", instructions: "Which team should handle this?", criteria },
       };
@@ -1367,6 +1372,14 @@ describe("the decision client", () => {
         [{ signal: { aborted: false } }, "options.signal"],
         [{ signal: Object.create(AbortSignal.prototype) as unknown }, "options.signal"],
         [{ correlationId: 7 }, "options.correlationId"],
+        [{ dangerZone: null }, "options.dangerZone"],
+        [{ dangerZone: "images" }, "options.dangerZone"],
+        [{ dangerZone: { pictures: true } }, "options.dangerZone.pictures"],
+        // Only `true` turns a surface on. `false` reads as a decision to keep
+        // it off, which is already what leaving it out means, and admitting it
+        // would let a caller believe it had made a choice no header carries.
+        [{ dangerZone: { images: false } }, "options.dangerZone.images"],
+        [{ dangerZone: { longContext: "true" } }, "options.dangerZone.longContext"],
       ];
 
       for (const [options, fieldPath] of unusable) {
@@ -1378,6 +1391,48 @@ describe("the decision client", () => {
         expect(error.route).toBe(HOSTED_ROUTE);
       }
 
+      expect(harness.double.calls).toHaveLength(0);
+      expect(guardSnapshots()).toEqual([]);
+    });
+  });
+
+  describe("the vendor's danger-zone surfaces", () => {
+    it("carries a named surface to the headers of the one request that is sent", async () => {
+      const harness = clientOverFetch(() => answering(CHOICE_ANSWER()));
+
+      await callDecisionModel(HOSTED_ROUTE, CHOICE_REQUEST(), { dangerZone: { longContext: true } });
+
+      expect(harness.double.calls).toHaveLength(1);
+      expect(harness.double.calls[0].headers["typesafe-danger-zone-long-context"]).toBe("true");
+      // The surface that was not named sends no header.
+      expect("typesafe-danger-zone-images" in harness.double.calls[0].headers).toBe(false);
+    });
+
+    it("sends neither header when the call names neither", async () => {
+      const harness = clientOverFetch(() => answering(CHOICE_ANSWER()));
+
+      await ask();
+
+      expect(Object.keys(harness.double.calls[0].headers).sort()).toEqual(["accept", "authorization", "content-type"]);
+    });
+
+    it("refuses an image on a call that did not name the image surface, before anything is spent", async () => {
+      const harness = clientOverFetch(() => answering(CHOICE_ANSWER()));
+      const withImage: DecisionRequest = {
+        state: { chart: "a-reference" },
+        assets: { "a-reference": { data_base64: "AAAA", format: "png" } },
+        questions: CHOICE_REQUEST().questions,
+      };
+
+      const error = asInstance(
+        await rejectionOf(callDecisionModel(HOSTED_ROUTE, withImage)),
+        DecisionImagesNotEnabledError,
+      );
+
+      expect(error.source).toBe("request_validation");
+      expect(error.route).toBe(HOSTED_ROUTE);
+      expect(error.fault).toBe("schema");
+      // Nothing left, nothing queued, nothing charged.
       expect(harness.double.calls).toHaveLength(0);
       expect(guardSnapshots()).toEqual([]);
     });

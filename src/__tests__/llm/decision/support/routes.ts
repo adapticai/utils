@@ -29,8 +29,11 @@ export type DeepMutable<T> = T extends readonly (infer Item)[]
     ? { -readonly [Key in keyof T]: DeepMutable<T[Key]> }
     : T;
 
-/** The route this package serves over HTTP. */
+/** The route this package serves over HTTP, pinned to the vendor's stable release. */
 export const HOSTED_ROUTE: DecisionRoute = "dm.hosted";
+
+/** The route this package serves over HTTP, pinned to the vendor's newest release. */
+export const PREVIEW_ROUTE: DecisionRoute = "dm.hosted.preview";
 
 /** The route the consumer serves in its own process. */
 export const LOCAL_ROUTE: DecisionRoute = "dm.local";
@@ -67,6 +70,22 @@ export function hostedRouteOf(table: DecisionRouteTable): DeepMutable<DecisionUt
 }
 
 /**
+ * The preview route of a table: the one pinned to the vendor's newest release.
+ *
+ * @param table The table.
+ * @returns Its `dm.hosted.preview` declaration, typed as editable; the
+ *   canonical table itself stays frozen.
+ * @throws When the table does not declare the route as served by this package.
+ */
+export function previewRouteOf(table: DecisionRouteTable): DeepMutable<DecisionUtilsServedRouteDeclaration> {
+  const route = table.routes[PREVIEW_ROUTE];
+  if (route === undefined || route.served_by !== "utils") {
+    throw new Error(`the table does not declare ${PREVIEW_ROUTE} as a route this package serves`);
+  }
+  return route;
+}
+
+/**
  * The local route of a table.
  *
  * @param table The table.
@@ -98,11 +117,11 @@ export function hostedProviderOf(table: DecisionRouteTable): DeepMutable<Decisio
 }
 
 /**
- * A table whose hosted route is admitted.
+ * A table whose hosted routes are admitted.
  *
  * The canonical table with the onboarding fields set as an operator would set
  * them once an account exists and one authenticated call has confirmed the
- * contract: the provider account is live, and the route's contract evidence is
+ * contract: the provider account is live, and each route's contract evidence is
  * an authenticated call made on a stated date. Nothing else differs.
  *
  * @returns The admitted table, editable so a test can break one thing in it.
@@ -110,8 +129,12 @@ export function hostedProviderOf(table: DecisionRouteTable): DeepMutable<Decisio
 export function admittedDecisionRouteTable(): DeepMutable<DecisionRouteTable> {
   const table = editableDecisionRouteTable();
   hostedProviderOf(table).account_status = "live";
-  const hosted = hostedRouteOf(table);
-  hosted.contract_evidence = "authenticated-call";
-  hosted.contract_verified = TEST_CONTRACT_VERIFIED;
+  // Both hosted routes, because they share one provider account: an operator
+  // who opens the account opens it for every route that names it, and a table
+  // that admitted one of them would not be the table the package ships.
+  for (const route of [hostedRouteOf(table), previewRouteOf(table)]) {
+    route.contract_evidence = "authenticated-call";
+    route.contract_verified = TEST_CONTRACT_VERIFIED;
+  }
   return table;
 }

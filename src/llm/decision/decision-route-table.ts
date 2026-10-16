@@ -78,6 +78,7 @@ type DecisionRouteServer = DecisionRouteDeclaration["served_by"];
  */
 const ROUTE_SERVER: Readonly<Record<DecisionRoute, DecisionRouteServer>> = {
   "dm.hosted": "utils",
+  "dm.hosted.preview": "utils",
   "dm.local": "engine",
 };
 
@@ -138,7 +139,7 @@ const COMMIT_HASH = /^[0-9a-f]{40}$/;
 const SHA256_HEX = /^[0-9a-f]{64}$/;
 
 /** The table layout this loader reads. */
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 /** The scheme that keeps a request private between this process and the host it names. */
 const SECURE_PROTOCOL = "https:";
@@ -476,6 +477,31 @@ function providerViolations(name: string, provider: unknown): string[] {
     provider.base_url !== null || provider.base_url_env !== null,
     "base_url and base_url_env are both null, so no base URL could ever resolve",
   );
+  const aliases = provider.model_aliases;
+  if (aliases !== undefined) {
+    if (!isRecord(aliases)) {
+      violations.push(`providers.${name}.model_aliases must be an object mapping each moving name to a versioned id`);
+    } else {
+      for (const alias of Object.keys(aliases)) {
+        const target = aliases[alias];
+        // The entry is recorded, never sent, so the check is on the RELATION
+        // the vendor states: a moving name on the left and a versioned id on
+        // the right. An entry whose target also moves would record nothing.
+        if (!isStringOf(alias, MOVING_MODEL_NAME)) {
+          violations.push(
+            `providers.${name}.model_aliases.${alias} is recorded as an alias and does not move with the ` +
+              "vendor's releases; only a moving name belongs here",
+          );
+        }
+        if (!isNonEmptyString(target) || !MODEL_ID.test(target) || isStringOf(target, MOVING_MODEL_NAME)) {
+          violations.push(
+            `providers.${name}.model_aliases.${alias} must point at a versioned model id, and points at ` +
+              `${JSON.stringify(target)}`,
+          );
+        }
+      }
+    }
+  }
   return violations;
 }
 
@@ -641,6 +667,10 @@ function routeViolations(
     check(
       caps.max_questions === null || isIntegerIn(caps.max_questions, 1, Number.MAX_SAFE_INTEGER),
       "caps.max_questions must be a positive integer, or null where no limit is published",
+    );
+    check(
+      caps.supports_box === undefined || typeof caps.supports_box === "boolean",
+      "caps.supports_box must be a boolean where it is declared; absent means the route serves no box question",
     );
   }
 
@@ -955,6 +985,7 @@ export function resolveDecisionRoute(
       maxOptions: outcome.route.caps.max_options,
       maxScoreLevels: outcome.route.caps.max_score_levels,
       maxQuestions: outcome.route.caps.max_questions,
+      box: outcome.route.caps.supports_box === true,
     },
     maxStateTokens: outcome.route.max_state_tokens,
     priceAnchor: outcome.route.price_per_mtok,
