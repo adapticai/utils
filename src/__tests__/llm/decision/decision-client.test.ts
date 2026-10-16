@@ -68,6 +68,7 @@ import {
   HOSTED_ROUTE,
   LOCAL_ROUTE,
   admittedDecisionRouteTable,
+  closedDecisionRouteTable,
   hostedProviderOf,
   hostedRouteOf,
 } from "./support/routes";
@@ -1514,10 +1515,14 @@ describe("the decision client", () => {
   });
 
   describe("failing closed", () => {
-    it("the canonical routes fail closed", async () => {
+    it("a route the table leaves closed fails closed, and nothing downstream of the gate is touched", async () => {
       const fetchSpy = vi.spyOn(globalThis, "fetch");
       const double = createDecisionTransportDouble((call) => scriptedAnswer(call.route, CHOICE_ANSWER()));
-      configureDecisionClient({ transport: double.transport });
+      // The provider account closed and the contract unconfirmed: the two
+      // fields the gate reads, set as they stand before onboarding. The
+      // canonical table opens them, so the refusal is exercised on a table
+      // that closes them rather than on today's canonical value.
+      configureDecisionClient({ routeTable: closedDecisionRouteTable(), transport: double.transport });
 
       const hosted = asInstance(
         await rejectionOf(callDecisionModel(HOSTED_ROUTE, CHOICE_REQUEST(), { correlationId: CORRELATION_ID })),
@@ -1558,7 +1563,7 @@ describe("the decision client", () => {
 
     it("refuses a closed route before it looks at the request or the options", async () => {
       const double = createDecisionTransportDouble((call) => scriptedAnswer(call.route, CHOICE_ANSWER()));
-      configureDecisionClient({ transport: double.transport });
+      configureDecisionClient({ routeTable: closedDecisionRouteTable(), transport: double.transport });
       const nothing = undefined as unknown as DecisionRequest;
       const unusable = null as unknown as DecisionCallOptions;
 
@@ -1831,7 +1836,7 @@ describe("the decision client", () => {
         source: "an option that throws when read, on a route that is closed",
         reject: () => {
           dispatched = createDecisionTransportDouble(answers);
-          configureDecisionClient({ transport: dispatched.transport });
+          configureDecisionClient({ routeTable: closedDecisionRouteTable(), transport: dispatched.transport });
           const options = {
             get correlationId(): string {
               throw foreignFailure(Error);

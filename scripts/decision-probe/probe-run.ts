@@ -2,18 +2,19 @@
  * One run of the decision contract probe.
  *
  * A run resolves the route, makes the calls of its plan through the hosted
- * transport, and reports what came back. It is the onboarding call: it is made
- * before the route table says the provider account is live or the contract
- * confirmed, because it is the act that establishes both. So it resolves the
- * route against the table as onboarding will leave it, with those two facts
- * set and nothing else changed, and every other rule of resolution still
- * applies: a model id that is not confirmed, a route the consumer serves
- * itself and a base URL that cannot be used are refused here as anywhere.
+ * transport, and reports what came back. It is the onboarding call: it is the
+ * act that establishes that a provider account answers and that the contract
+ * behind a route holds, so it runs while the table still says neither. It
+ * therefore resolves the route against the table as onboarding will leave it,
+ * with those two facts set and nothing else changed, and every other rule of
+ * resolution still applies: a model id that is not confirmed, a route the
+ * consumer serves itself and a base URL that cannot be used are refused here
+ * as anywhere.
  *
  * The calls are made one at a time, and never closer together than a fixed
- * spacing that keeps a run far under the vendor's published ceiling whatever
- * the limits config says, so a run cannot be a burst however quickly the
- * vendor answers. A run is a guest on an account that is being opened: when
+ * spacing that holds a run to the sustained per-second pace this package set
+ * for itself, whatever the limits config says, so a run cannot be a burst
+ * however quickly the vendor answers. A run is a guest on an account that is being opened: when
  * the vendor says to wait, it waits at least that long, and when the vendor
  * says twice that it is being called too often, or that it is full, the run
  * stops and says so. Each call is abandoned after the longest
@@ -77,25 +78,26 @@ const MS_PER_SECOND = 1_000;
  * The most requests a second the hosted decision vendor publishes that an
  * account may send. A request over it is answered 429.
  */
-const PUBLISHED_REQUESTS_PER_SECOND = 40;
-
-/** The share of the published ceiling a run may reach at most: one part in this many. */
-const PUBLISHED_CEILING_DIVISOR = 4;
+const SELF_SET_REQUESTS_PER_SECOND = 10;
 
 /**
  * The least time a run ever leaves between two dispatches: 100 ms.
  *
  * A run sends one request at a time and starts no request sooner than this
- * after it started the last one, so it sends at most ten in any second, a
- * quarter of the forty the vendor publishes as its ceiling. The bound holds by
- * construction: it is a constant of the probe and the larger of it and the
- * limits config's own interval is used, so no edit to the limits config, and
- * no vendor however quick to answer, can bring a run closer to the ceiling
- * than this. A quarter, and not the whole, because the ceiling belongs to the
- * account and the account may be carrying other traffic, and because the
- * publisher says the ceiling can move without notice.
+ * after it started the last one, so it sends at most ten in any second. Ten is
+ * the sustained pace this package set for itself for this provider, and it is
+ * the client's own number rather than a transcription: the vendor enforces per
+ * second on requests and on tokens, and refuses over either, but publishes no
+ * figure for an organisation anywhere a client can read. A client that cannot
+ * read the ceiling can still guarantee it never offers more in an instant than
+ * the pace it already chose, so the probe is held to exactly that and no more.
+ * The bound holds by construction: it is a constant of the probe and the larger
+ * of it and the limits config's own interval is used, so no edit to the limits
+ * config, and no vendor however quick to answer, can bring a run closer
+ * together than this. The account may also be carrying other traffic, which is
+ * a second reason a run claims no more of the pace than its share.
  */
-export const PROBE_MIN_DISPATCH_SPACING_MS = (MS_PER_SECOND * PUBLISHED_CEILING_DIVISOR) / PUBLISHED_REQUESTS_PER_SECOND;
+export const PROBE_MIN_DISPATCH_SPACING_MS = MS_PER_SECOND / SELF_SET_REQUESTS_PER_SECOND;
 
 /** The status with which a vendor says it is being called too often. */
 const TOO_MANY_REQUESTS_STATUS = 429;

@@ -8,10 +8,10 @@
  * resolve carries exactly what the table declares, with the environment's base
  * URL winning over the declared one.
  *
- * The test named "the canonical hosted route is not admitted today" is the
- * package's off-contract. It goes red when the canonical table's onboarding
- * fields are changed, which makes opening the hosted route a deliberate act
- * that edits this file too.
+ * The test named "the account-status gate decides a hosted route" is the
+ * package's off-contract. It exercises the gate in both directions on the
+ * shipped table, so closing the provider account or reopening it goes red here
+ * and either move is a deliberate act that edits this file too.
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -28,7 +28,11 @@ import {
 } from "../../../llm/decision/decision-route-table";
 import decisionRoutesSchema from "../../../llm/decision/decision-routes.schema.json";
 import { DecisionCallError, DecisionRouteUnavailableError } from "../../../llm/decision/errors";
-import type { DecisionRouteTable, ResolvedDecisionRoute } from "../../../llm/decision/route-types";
+import type {
+  DecisionRouteTable,
+  DecisionUtilsServedRouteDeclaration,
+  ResolvedDecisionRoute,
+} from "../../../llm/decision/route-types";
 import { DECISION_ROUTES } from "../../../llm/decision/types";
 import type { DecisionRoute } from "../../../llm/decision/types";
 import { routeTable } from "../../../llm/route-table";
@@ -37,12 +41,15 @@ import { validateAgainstSchema } from "../support/json-schema-subset";
 import {
   HOSTED_ROUTE,
   LOCAL_ROUTE,
+  PREVIEW_ROUTE,
   TEST_CONTRACT_VERIFIED,
   admittedDecisionRouteTable,
+  closedDecisionRouteTable,
   editableDecisionRouteTable,
   hostedProviderOf,
   hostedRouteOf,
   localRouteOf,
+  previewRouteOf,
 } from "./support/routes";
 import type { DeepMutable } from "./support/routes";
 
@@ -158,6 +165,30 @@ const SUB_SECOND_BUDGET_MS = 300;
 /** A SHA-256 digest of the right form that no artifact was ever measured to have. */
 const INVENTED_DIGEST = "a".repeat(64);
 
+/** The form a date in the table is written in, so a date can be read as one without pinning the day. */
+const CALENDAR_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * One of the two hosted routes of a table, whichever is named.
+ *
+ * @param table The table.
+ * @param route The hosted route to read.
+ * @returns Its declaration, typed as editable; the canonical table itself stays frozen.
+ * @throws When the name is not one of the two hosted routes.
+ */
+function hostedOrPreviewOf(
+  table: DecisionRouteTable,
+  route: DecisionRoute,
+): DeepMutable<DecisionUtilsServedRouteDeclaration> {
+  if (route === HOSTED_ROUTE) {
+    return hostedRouteOf(table);
+  }
+  if (route === PREVIEW_ROUTE) {
+    return previewRouteOf(table);
+  }
+  throw new Error(`${route} is not a hosted route`);
+}
+
 /**
  * Resolve a route and return the refusal it is expected to end in.
  *
@@ -236,13 +267,13 @@ describe("the canonical decision-route table", () => {
     expect(decisionRouteViolations(admittedDecisionRouteTable())).toEqual([]);
   });
 
-  it("is frozen at every depth, so a route cannot be opened at runtime", () => {
+  it("is frozen at every depth, so a route cannot be closed or opened at runtime", () => {
     const table = decisionRouteTable as DeepMutable<DecisionRouteTable>;
     expect(() => {
-      hostedProviderOf(table).account_status = "live";
+      hostedProviderOf(table).account_status = "pending-onboarding";
     }).toThrow(TypeError);
     expect(() => {
-      hostedRouteOf(table).contract_evidence = "authenticated-call";
+      hostedRouteOf(table).contract_evidence = "documentation";
     }).toThrow(TypeError);
     expect(() => {
       table.routes["dm.baseline"] = structuredClone(localRouteOf(table));
@@ -250,23 +281,44 @@ describe("the canonical decision-route table", () => {
     expect(() => {
       hostedRouteOf(table).caps.max_options = 1;
     }).toThrow(TypeError);
-    expect(hostedProviderOf(decisionRouteTable).account_status).toBe("pending-onboarding");
+    expect(hostedProviderOf(decisionRouteTable).account_status).toBe("live");
   });
 
-  it("the canonical hosted route is not admitted today, and says why", () => {
-    const refusal = refusalOf(HOSTED_ROUTE, decisionRouteTable);
-    expect(refusal.fault).toBe("unavailable");
-    expect(refusal.code).toBe("route_not_admitted");
-    expect(refusal.reason).toContain("pending-onboarding");
-    expect(refusal.route).toBe(HOSTED_ROUTE);
+  it("the account-status gate decides a hosted route: pending-onboarding refuses it, live admits it", () => {
+    // One field, exercised in both directions on the shipped table's own
+    // values. The gate is what makes a key in the environment inert until this
+    // package is released with the account declared open, so a test that read
+    // only today's value would prove nothing about the gate.
+    const closed = editableDecisionRouteTable();
+    hostedProviderOf(closed).account_status = "pending-onboarding";
+    for (const route of [HOSTED_ROUTE, PREVIEW_ROUTE]) {
+      const refusal = refusalOf(route, closed);
+      expect(refusal.fault, route).toBe("unavailable");
+      expect(refusal.code, route).toBe("route_not_admitted");
+      expect(refusal.reason, route).toBe('provider account status is "pending-onboarding"');
+      expect(refusal.route, route).toBe(route);
+    }
 
-    // The same refusal through the default arguments a production caller uses.
-    expect(() => resolveDecisionRoute(HOSTED_ROUTE)).toThrow(DecisionRouteUnavailableError);
+    // The same table with that one field back as the package ships it. Nothing
+    // else is touched, so whatever changes is the gate's doing.
+    hostedProviderOf(closed).account_status = "live";
+    for (const route of [HOSTED_ROUTE, PREVIEW_ROUTE]) {
+      const declaration = decisionRouteDeclaration(route, closed);
+      if (declaration.served_by !== "utils") {
+        throw new Error(`${route} is not served by this package`);
+      }
+      expect(decisionRouteAdmission(declaration, hostedProviderOf(closed), EMPTY_ENV), route).toEqual({ admit: true });
+      expect(resolveDecisionRoute(route, closed, EMPTY_ENV).route, route).toBe(route);
+    }
 
-    const hosted = hostedRouteOf(decisionRouteTable);
-    expect(hostedProviderOf(decisionRouteTable).account_status).toBe("pending-onboarding");
-    expect(hosted.contract_evidence).toBe("documentation");
-    expect(hosted.contract_verified).toBeNull();
+    // And the shipped table itself, which is what a production caller reads.
+    expect(hostedProviderOf(decisionRouteTable).account_status).toBe("live");
+    for (const route of [HOSTED_ROUTE, PREVIEW_ROUTE]) {
+      const hosted = hostedOrPreviewOf(decisionRouteTable, route);
+      expect(hosted.contract_evidence, route).toBe("authenticated-call");
+      expect(hosted.contract_verified, route).toMatch(CALENDAR_DATE);
+      expect(resolveDecisionRoute(route, decisionRouteTable, EMPTY_ENV).route, route).toBe(route);
+    }
   });
 
   it("dm.local is declared and never served by this package", () => {
@@ -621,7 +673,7 @@ describe("load-time violations", () => {
 
 describe("admission", () => {
   it("a live account with documentation-only evidence is still refused", () => {
-    const table = editableDecisionRouteTable();
+    const table = closedDecisionRouteTable();
     hostedProviderOf(table).account_status = "live";
 
     const refusal = refusalOf(HOSTED_ROUTE, table);
@@ -814,7 +866,7 @@ describe("resolution", () => {
       priceAnchor: {
         input: 0.042,
         output: 0,
-        as_of: "2026-10-01",
+        as_of: "2026-10-17",
         source: "https://docs.typesafe.ai/models.md",
       },
       apiKeyEnv: "TYPESAFE_API_KEY",

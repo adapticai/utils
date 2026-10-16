@@ -6,9 +6,11 @@ Design of record: `docs/superpowers/specs/2026-10-01-typed-decision-models-desig
 
 ## What the published package does today
 
-It refuses all three routes. `dm.hosted` and `dm.hosted.preview` name a provider declared `pending-onboarding` with documentation-only contract evidence, and `dm.local` is answered by the consumer's own process. `callDecisionModel` on any of them rejects with fault `unavailable` before the request is read, a guard is charged or a socket is opened. Opening a hosted route is a change to `decision-routes.json` and a release of this package; no running process can do it.
+It serves the two hosted routes and refuses `dm.local`. `dm.hosted` and `dm.hosted.preview` name a provider whose account is declared `live` with `authenticated-call` contract evidence, so `callDecisionModel` on either resolves, passes the breaker and the provider guard, and dispatches one attempt inside the route's budget to the model that route pins. `dm.local` is answered by the consumer's own process and rejects with fault `unavailable` and code `engine_served`, which is a statement about the design and never becomes true here.
 
-The vendor's image surface, its question that locates something in an image, and its long-context ceiling are all implemented against the published contract and none of them has been exercised against the vendor, because no account exists and no key has been issued. Every limit is enforced here before dispatch, so a request this package knows the vendor will refuse never leaves; what the vendor actually answers on that surface is unmeasured.
+A hosted route is opened or closed by two fields of `decision-routes.json` — the provider's `account_status` and the route's `contract_evidence` — read at admission before the request is looked at, a guard is charged or a socket is opened. Both are data rather than code, because code that assumed an account existed or a contract had been confirmed would be asserting something nobody measured. Changing either is an edit to that file and a release of this package; no running process can do it, and a key present in the environment is inert while the table says the account is shut.
+
+The vendor's image surface and its question that locates something in an image are implemented against the contract its images page publishes, and that page's figures have been exercised with a real chart: a rendered 1024x768 PNG passes every limit declared here and encodes as the asset the vendor receives. The vendor calls both surfaces not ready for production in its own words, so the headers that reach them are per-call opt-ins a caller names and nothing the table turns on. Every limit is enforced here before dispatch, so a request this package knows the vendor will refuse never leaves. What the vendor's accuracy on that surface is remains the vendor's own caveat and is not a quantity this package measures. The long-context ceiling is implemented the same way and works on both releases.
 
 ## The two hosted routes
 
@@ -19,7 +21,9 @@ A route IS its pinned model together with the caps, budget and price that model 
 | `dm.hosted` | `jev-1.13.0` | No. The vendor serves it on the newer model alone. |
 | `dm.hosted.preview` | `jev-1.14.0` | Yes. |
 
-The vendor also publishes two moving names, `jev-latest` and `jev-preview`. They are recorded in the provider's `model_aliases` with the versioned id each pointed at when the models page was read, and neither is ever sent: the vendor states that an alias moves when a new release ships, so sending one would change the answering model with no change on this side. The loader refuses a pin that ends in either name, and re-pointing an entry in `model_aliases` is a reviewed edit of one file that changes no request.
+The vendor also publishes two moving names, `jev-latest` and `jev-preview`. They are recorded in the provider's `model_aliases` with the versioned id each resolves to, measured from an authenticated call — a request naming `jev-latest` is answered by `jev-1.13.0` and one naming `jev-preview` by `jev-1.14.0`, each reported back in the response's `model` field — and neither is ever sent: the vendor states that an alias moves when a new release ships, so sending one would change the answering model with no change on this side. The loader refuses a pin that ends in either name, and re-pointing an entry in `model_aliases` is a reviewed edit of one file that changes no request.
+
+`GET /v1/models` lists only those two aliases. A versioned id is accepted by the `model` field whether or not it appears in that list, which the vendor states and an authenticated call confirms, so that list is the set of names an account may send and never the set of ids a route may pin. An id the vendor does not serve comes back `400` with `Unknown model`, so a pin is validated by the vendor rather than passed through.
 
 ## Surface
 
@@ -219,15 +223,15 @@ Each row is unknown until an authenticated call is made, and the code carries it
 | The tokenizer and the fixed per-request overhead | This package does not estimate hosted tokens. The route declares a ceiling with its basis. |
 | Whether identical requests return identical distributions | Nothing here caches or compares answers. |
 
-Several numbers are free parameters of routes nothing can reach yet. They are recorded as such in the notes beside them and are to be re-derived from the first authenticated measurements: both `budget_ms` values, the breaker defaults, the hosted `max_state_tokens` ceiling and the `typesafe` limits entry.
+Several numbers are free parameters, recorded as such in the notes beside them and to be narrowed by measurement rather than guessed: both `budget_ms` values, the breaker defaults, the hosted `max_state_tokens` ceiling and the `typesafe` limits entry. The latencies measured on the hosted routes so far are 297 to 313 ms for a one-question text call and 350 to 498 ms for a read over one 1024x768 PNG, against a declared `budget_ms` of 1500, which is a ceiling and not an operating point.
 
-One limit of the provider guard binds before the hosted route is admitted. A cold guard admits the whole per-minute allowance in one burst, fifteen times the vendor's published per-second ceiling; the limits entry says what the guard needs to hold it.
+The provider guard holds the hosted routes to a per-second pace the vendor does not publish a figure for. The vendor enforces per second, on tokens and on requests, and answers `429` over either; its own ceiling for an organisation is visible only in its console, so the limits entry declares a `max_burst` separate from its refill rate and sets it to one second of that refill. A cold process therefore offers no more in one instant than the sustained pace already chosen, and the eleventh call in an instant is paced rather than refused. No token-per-second bound is enforced at all: this package does not count hosted tokens, so a single large request can cross the vendor's token bound while every request bound holds.
 
 ## Onboarding order
 
 1. **Key.** The operator opens the account and provisions the key under the variable the provider declares (`api_key_env`), at the secret path it declares.
 2. **Probe.** The operator runs the contract probe, which calls the hosted transport directly with that key and records the authenticated request and response shapes as fixtures.
-3. **Table edit.** `account_status` becomes `live`, and `contract_evidence` becomes `authenticated-call` with the date in `contract_verified`. The test "the canonical routes fail closed" goes red by design: changing it is part of this step.
+3. **Table edit.** `account_status` becomes `live`, and `contract_evidence` becomes `authenticated-call` with the date in `contract_verified`. The test "the account-status gate decides a hosted route" exercises that field in both directions on the shipped table, so either move goes red there by design and changing it is part of this step.
 4. **Publish.** A push to `main` publishes the package.
 5. **Consumer bump.** The consumer pins the new version. Its own contract test that the hosted route refuses goes red, which makes the flip a deliberate change there too.
 6. **Consumer fleet rows.** Only now do the consumer's governed per-site mode and route rows mean anything for the hosted route.

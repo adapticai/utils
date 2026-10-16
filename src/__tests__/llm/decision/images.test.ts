@@ -12,19 +12,26 @@
  * changed in the module without being changed here fails rather than agreeing
  * with itself.
  *
- * The measurement instrument is proved against a file no code here produced: a
+ * The measurement instrument is proved against files no code here produced: a
  * real JPEG from a system image converter, carrying the JFIF and Exif segments
- * a camera or an editor puts before the frame. An instrument that could not
- * read that file would report every real image as a defect, so an absence it
- * reported would mean nothing. The PNGs are built here with a real deflate, so
- * they are real PNG files and not shapes the parser happens to accept.
+ * a camera or an editor puts before the frame, and a production chart PNG as
+ * the engine's renderer emitted it, carried in beside this file. An instrument
+ * that could not read either would report a real image as a defect, so an
+ * absence it reported would mean nothing. The PNGs built here use a real
+ * deflate, so they are real PNG files and not shapes the parser happens to
+ * accept; a built file still has only the chunks the builder writes, which is
+ * why the rendered one is carried in rather than imitated.
  *
- * Nothing here makes a live call. No account exists and no key has been issued
- * for the vendor, so every assertion is against the documented contract and the
- * code that implements it, and nothing in this file claims the vendor behaved
- * as its documentation says it will.
+ * Nothing here makes a live call. The assertions are against the contract as
+ * the vendor publishes it and the code that implements it; where a figure was
+ * instead measured from an authenticated call, the test that rests on it says
+ * so. No test in this file infers a vendor behaviour from a number this
+ * package chose.
  */
 
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { deflateSync } from "node:zlib";
 
 import { describe, expect, it } from "vitest";
@@ -129,6 +136,20 @@ const PIN = "pinned-model-1.0.0";
 
 /** The reference the tests write an image under. */
 const REF = "e48a6f30-door";
+
+/**
+ * A chart PNG exactly as the engine's renderer emitted it.
+ *
+ * Carried in as a file rather than built here, because what is at stake is
+ * whether the picture this system actually renders survives the limits this
+ * package declares. A PNG assembled in a test holds only the chunks the builder
+ * writes; a rendered one carries whatever its renderer put in it, in whatever
+ * order, and it is the one whose refusal would mean the declared limits are
+ * wrong rather than the image.
+ */
+const RENDERED_CHART: Uint8Array = new Uint8Array(
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "assets", "chart-coin-1024x768.png")),
+);
 
 /** Bytes of a big-endian unsigned 32-bit number. */
 function uint32(value: number): number[] {
@@ -293,6 +314,48 @@ describe("the measurement instrument", () => {
       measured: true,
       measurement: { format: "jpg", widthPx: 280, heightPx: 280, byteLength: 2_097 },
     });
+  });
+
+  it("a rendered production chart passes every limit this package declares, and encodes as the asset the vendor receives", () => {
+    // The limits are declared by this package; the chart is what the system
+    // renders. If the two disagree, the limits are what is wrong, so the
+    // measurement is taken from the file's own bytes and each bound is read
+    // from the vendor's figures transcribed above rather than from the module
+    // under test.
+    const reading = measureDecisionImage(RENDERED_CHART);
+    if (!reading.measured) {
+      throw new Error(`the rendered chart could not be measured: ${reading.defect}`);
+    }
+    const { format, widthPx, heightPx, byteLength } = reading.measurement;
+    expect(format).toBe("png");
+    expect(widthPx).toBe(1_024);
+    expect(heightPx).toBe(768);
+    expect(byteLength).toBe(RENDERED_CHART.length);
+
+    // Colour type 6, truecolour with alpha, read from the file's own IHDR: the
+    // renderer's output is not the three-channel shape a builder defaults to.
+    const COLOUR_TYPE_OFFSET = 25;
+    const TRUECOLOUR_WITH_ALPHA = 6;
+    expect(RENDERED_CHART[COLOUR_TYPE_OFFSET]).toBe(TRUECOLOUR_WITH_ALPHA);
+
+    expect(Math.min(widthPx, heightPx)).toBeGreaterThanOrEqual(VENDOR.minSidePx);
+    expect(Math.max(widthPx, heightPx)).toBeLessThanOrEqual(VENDOR.maxSidePx);
+    expect(widthPx * heightPx).toBeGreaterThanOrEqual(VENDOR.minTotalPx);
+    expect(widthPx * heightPx).toBeLessThanOrEqual(VENDOR.maxTotalPx);
+    expect(byteLength).toBeLessThanOrEqual(VENDOR.maxImageBytes);
+
+    // And through the encoder, on both hosted routes' limits, as the body that
+    // would be sent: the asset carried once under its reference, in the strict
+    // base64 the contract fixes, with the whole body inside the body limit.
+    for (const caps of [STABLE_CAPS, PREVIEW_CAPS]) {
+      const body = encodeWithImages(requestWith({ bytes: RENDERED_CHART }), caps);
+      const asset = body.assets?.[REF];
+      expect(asset?.type).toBe("image");
+      expect(asset?.format).toBe("png");
+      expect(isStrictDecisionBase64(asset?.data_base64 ?? "")).toBe(true);
+      expect(decodeDecisionBase64(asset?.data_base64 ?? "")).toEqual(RENDERED_CHART);
+      expect(utf8ByteLength(JSON.stringify(body))).toBeLessThanOrEqual(VENDOR.maxRequestBodyBytes);
+    }
   });
 
   it("reads the chart renderer's own output: 1024 by 768, truecolour with alpha", () => {

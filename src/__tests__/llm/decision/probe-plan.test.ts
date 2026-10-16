@@ -156,10 +156,17 @@ const VENDOR_LATENCY_MS = 30;
 /** How long a scripted vendor takes to send a body once its headers have arrived, on the injected clock. */
 const BODY_READ_MS = 7;
 
-/** The most requests a second the hosted vendor publishes that an account may send. */
-const PUBLISHED_REQUESTS_PER_SECOND = 40;
+/**
+ * The sustained requests a second this package set for itself for the hosted
+ * provider, which is the pace a run may not exceed.
+ *
+ * The client's own number and not a transcription: the vendor enforces per
+ * second and publishes no figure an organisation's client can read, so what a
+ * run can be held to is the pace already chosen on this side.
+ */
+const SELF_SET_REQUESTS_PER_SECOND = 10;
 
-/** One second, the span the published ceiling is counted over. */
+/** One second, the span a per-second pace is counted over. */
 const ONE_SECOND_MS = 1_000;
 
 /** The status a vendor answers with when it is being called too often. */
@@ -927,7 +934,7 @@ describe("a run", () => {
     expect(slow.waits).toEqual([]);
   });
 
-  it("never comes near the vendor's published ceiling, whatever the limits config says and however fast the vendor answers", async () => {
+  it("never exceeds the per-second pace this package set for itself, whatever the limits config says and however fast the vendor answers", async () => {
     expect(PROBE_MIN_DISPATCH_SPACING_MS).toBe(100);
     expect(probeDispatchSpacingMs(1)).toBe(PROBE_MIN_DISPATCH_SPACING_MS);
     expect(probeDispatchSpacingMs(0)).toBe(PROBE_MIN_DISPATCH_SPACING_MS);
@@ -948,7 +955,7 @@ describe("a run", () => {
       ...dispatchedAt.map((from) => dispatchedAt.filter((at) => at >= from && at < from + ONE_SECOND_MS).length),
     );
     expect(mostInOneSecond).toBe(ONE_SECOND_MS / PROBE_MIN_DISPATCH_SPACING_MS);
-    expect(mostInOneSecond * 4).toBeLessThanOrEqual(PUBLISHED_REQUESTS_PER_SECOND);
+    expect(mostInOneSecond).toBeLessThanOrEqual(SELF_SET_REQUESTS_PER_SECOND);
     expect(instant.peakInFlight()).toBe(1);
   });
 

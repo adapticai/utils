@@ -1,16 +1,20 @@
 /**
  * Route tables for the decision tests.
  *
- * The canonical table declares a hosted route nobody may call yet: its provider
- * account is not open and its contract has never been confirmed by a real call.
- * A test of anything past admission therefore needs a table in which that work
- * has been done. The one built here is the canonical table with exactly the
- * fields an operator changes at onboarding changed, so every other number in it
- * (the pin, the budget, the caps, the price) is the number the package ships
- * with, and a test that passes on it says something about the shipped table.
+ * Two tables are built here, from the shipped one, by setting exactly the
+ * fields onboarding decides: one in which the hosted provider's account is open
+ * and its contract confirmed, and one in which neither is. Every other number
+ * in each (the pin, the budget, the caps, the price) is the number the package
+ * ships with, so a test that passes on either says something about the shipped
+ * table.
  *
- * It lives with the tests and is never bundled. Nothing in the package can
- * reach an admitted hosted route without being handed a table like this one.
+ * Both are written out rather than read off the canonical table, because the
+ * canonical table's own onboarding fields are the subject of a test and a
+ * fixture that merely copied them would move with them. A test that needs an
+ * admitted route and a test that needs a closed one each ask for the table it
+ * needs, whichever way the shipped table currently stands.
+ *
+ * They live with the tests and are never bundled.
  */
 
 import { decisionRouteTable } from "../../../../llm/decision/decision-route-table";
@@ -119,10 +123,10 @@ export function hostedProviderOf(table: DecisionRouteTable): DeepMutable<Decisio
 /**
  * A table whose hosted routes are admitted.
  *
- * The canonical table with the onboarding fields set as an operator would set
- * them once an account exists and one authenticated call has confirmed the
- * contract: the provider account is live, and each route's contract evidence is
- * an authenticated call made on a stated date. Nothing else differs.
+ * The canonical table with the onboarding fields set as an operator sets them
+ * once an account exists and one authenticated call has confirmed the contract:
+ * the provider account is live, and each route's contract evidence is an
+ * authenticated call made on a stated date. Nothing else differs.
  *
  * @returns The admitted table, editable so a test can break one thing in it.
  */
@@ -135,6 +139,28 @@ export function admittedDecisionRouteTable(): DeepMutable<DecisionRouteTable> {
   for (const route of [hostedRouteOf(table), previewRouteOf(table)]) {
     route.contract_evidence = "authenticated-call";
     route.contract_verified = TEST_CONTRACT_VERIFIED;
+  }
+  return table;
+}
+
+/**
+ * A table whose hosted routes are closed.
+ *
+ * The inverse of {@link admittedDecisionRouteTable}, and the same two fields:
+ * the provider account is not open, and neither route's contract has been
+ * confirmed by a call. It is what a test asking what the client does with a
+ * route it may not call needs, and it stays that table whatever the shipped
+ * one says, so the refusal a test exercises is the refusal the gate makes and
+ * not a reading of today's canonical value.
+ *
+ * @returns The closed table, editable so a test can open one thing in it.
+ */
+export function closedDecisionRouteTable(): DeepMutable<DecisionRouteTable> {
+  const table = editableDecisionRouteTable();
+  hostedProviderOf(table).account_status = "pending-onboarding";
+  for (const route of [hostedRouteOf(table), previewRouteOf(table)]) {
+    route.contract_evidence = "documentation";
+    route.contract_verified = null;
   }
   return table;
 }
