@@ -14,7 +14,11 @@
  * failing over — the same unchosen routing change, arrived at by under-driving.
  *
  * Two distinct bounds are applied because they fail differently. The rate bound
- * (requests per minute) protects the provider's published ceiling. The
+ * (requests per minute) protects the provider's published ceiling, and carries
+ * two quantities rather than one: the pace requests are replaced at, and the
+ * size of the bucket they are drawn from. A provider that enforces its ceiling
+ * over a shorter window than the client paces over is held only by the second,
+ * because the first is an average and an average permits any burst. The
  * concurrency bound protects the caller: a hundred simultaneous in-flight
  * requests will each wait behind the other ninety-nine at the provider, so
  * every one of them blows its latency budget and the fan-out produces a hundred
@@ -78,6 +82,27 @@ export interface ProviderLimits {
    * published label of the bound that was transcribed.
    */
   readonly requests_per_minute_basis?: ProviderLimitBasis;
+  /**
+   * The most requests admissible in one instant, separately from the rate they
+   * are replaced at.
+   *
+   * A token bucket has two independent quantities, and collapsing them into one
+   * enforces the long-run average while leaving the instant unbounded: a bucket
+   * sized at the per-minute allowance starts full, so the first moment of a cold
+   * process admits a whole minute's worth at once. A provider enforcing its
+   * ceiling per second refuses that burst however correct the minute's average
+   * is. Absent, the capacity stays the per-minute allowance, which is the
+   * tolerance an entry sized against measured starvation of its own callers
+   * already carries; set, it bounds the burst without changing the sustained
+   * pace.
+   */
+  readonly max_burst?: number;
+  /**
+   * Provenance of `max_burst` when it differs from `basis`. A capacity derived
+   * from the client's own refill rate is the client's choice even where the
+   * entry's other numbers were transcribed, and must not borrow their label.
+   */
+  readonly max_burst_basis?: ProviderLimitBasis;
   readonly max_concurrent: number;
   readonly acquire_timeout_ms: number;
   /** Where a published limit was read from. Null while the basis is a conservative default. */
@@ -101,6 +126,10 @@ export interface ModelLimitOverride {
   readonly basis: ProviderLimitBasis;
   readonly requests_per_minute: number;
   readonly requests_per_minute_basis?: ProviderLimitBasis;
+  /** This model's burst capacity. Absent, the model bursts to its own per-minute allowance. */
+  readonly max_burst?: number;
+  /** Provenance of this override's {@link ModelLimitOverride.max_burst}. */
+  readonly max_burst_basis?: ProviderLimitBasis;
   readonly max_concurrent: number;
   readonly acquire_timeout_ms: number;
   readonly source?: string | null;
@@ -149,11 +178,33 @@ export function limitsFor(provider: string, modelId?: string): ProviderLimits {
     basis: override.basis,
     requests_per_minute: override.requests_per_minute,
     requests_per_minute_basis: override.requests_per_minute_basis,
+    // Taken from the override even when it declares none, so a provider-wide
+    // capacity never leaks onto a model whose numbers replaced it: an override
+    // that states a rate and no capacity bursts to its own rate, not to the
+    // capacity chosen for a different one.
+    max_burst: override.max_burst,
+    max_burst_basis: override.max_burst_basis,
     max_concurrent: override.max_concurrent,
     acquire_timeout_ms: override.acquire_timeout_ms,
     source: override.source ?? null,
     note: override.note,
   };
+}
+
+/**
+ * The most requests an entry admits in one instant.
+ *
+ * This is the bucket's size, which the refill rate does not determine: a bucket
+ * holds whatever it was built to hold and is replenished at its own pace. An
+ * entry that declares no capacity keeps the per-minute allowance as its
+ * capacity, which is what the guard has always enforced, so adding the field
+ * changes nothing for an entry that does not use it.
+ *
+ * @param limits The entry in force.
+ * @returns The bucket's maximum, in requests.
+ */
+export function burstCapacityFor(limits: ProviderLimits): number {
+  return limits.max_burst ?? limits.requests_per_minute;
 }
 
 /** Every provider with a recorded limit, plus whether it is published or a default. */
@@ -433,7 +484,11 @@ function rateLimiterFor(identity: GuardIdentity): TokenBucketRateLimiter {
   if (limiter === undefined) {
     const limits = limitsFor(identity.provider, identity.modelId);
     limiter = new TokenBucketRateLimiter({
-      maxTokens: limits.requests_per_minute,
+      // The bucket's size and its refill rate are read from separate fields.
+      // Sized at the refill rate's own period the bucket would bound only the
+      // average, and the burst that a per-second ceiling refuses is admitted in
+      // the instant before any averaging applies.
+      maxTokens: burstCapacityFor(limits),
       refillRate: limits.requests_per_minute / SECONDS_PER_MINUTE,
       label: `llm:${identity.key}`,
       timeoutMs: limits.acquire_timeout_ms,
@@ -555,7 +610,12 @@ export function hasDuplicateHeadroom(
   const tokensAfter = limiter.getAvailableTokens() - TOKENS_PER_REQUEST;
   return (
     freeAfter >= Math.ceil(limits.max_concurrent * reserveFraction) &&
-    tokensAfter >= Math.ceil(limits.requests_per_minute * reserveFraction)
+    // The reserve is a fraction of the ceiling the tokens are counted against,
+    // which is the bucket's capacity. Measured against the per-minute allowance
+    // instead, a bucket smaller than that allowance could never hold the
+    // reserve, and the hedge would be refused at every level of business
+    // including an idle one — a reserve nothing can satisfy is a prohibition.
+    tokensAfter >= Math.ceil(burstCapacityFor(limits) * reserveFraction)
   );
 }
 
@@ -569,6 +629,8 @@ export interface GuardSnapshot {
   readonly scope: ProviderLimitScope;
   readonly basis: ProviderLimits["basis"];
   readonly requestsPerMinute: number;
+  /** The bucket's size: the most this guard admits in one instant. */
+  readonly burstCapacity: number;
   readonly maxConcurrent: number;
   readonly inFlight: number;
   readonly rateQueueLength: number;
@@ -595,12 +657,16 @@ export function guardSnapshots(): GuardSnapshot[] {
         scope: limits.scope ?? "provider",
         basis: limits.basis,
         requestsPerMinute: limits.requests_per_minute,
+        burstCapacity: burstCapacityFor(limits),
         maxConcurrent: limits.max_concurrent,
         inFlight: gate?.inFlightCount() ?? 0,
         rateQueueLength: limiter?.getQueueLength() ?? 0,
         concurrencyQueueLength: gate?.queueLength() ?? 0,
+        // A guard that has never run holds a full bucket, so the stand-in is the
+        // capacity. The per-minute allowance would overstate it by every token
+        // the bucket was deliberately built not to hold.
         availableTokens:
-          limiter?.getAvailableTokens() ?? limits.requests_per_minute * TOKENS_PER_REQUEST,
+          limiter?.getAvailableTokens() ?? burstCapacityFor(limits) * TOKENS_PER_REQUEST,
       };
     });
 }

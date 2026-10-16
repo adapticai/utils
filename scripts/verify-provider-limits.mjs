@@ -117,6 +117,61 @@ function checkConfig() {
     ) {
       failures.push(`${name}: claims a published per-minute ceiling but cites no source`);
     }
+    // The bucket's size is held to the same rules as the rate it refills at,
+    // and to one more of its own: a capacity above the refill period's own
+    // allowance is not a bucket the rate ever fills, so it bounds nothing and
+    // reads as a limit while behaving as none.
+    if (entry.max_burst !== undefined) {
+      if (typeof entry.max_burst !== "number" || entry.max_burst < MIN_SENSIBLE_RPM) {
+        failures.push(`${name}: max_burst must be a positive number`);
+      } else if (entry.max_burst > entry.requests_per_minute) {
+        failures.push(
+          `${name}: max_burst ${entry.max_burst} exceeds requests_per_minute ${entry.requests_per_minute}, so the refill never fills it and it bounds no burst`,
+        );
+      }
+    }
+    if (
+      entry.max_burst_basis !== undefined &&
+      entry.max_burst_basis !== "published" &&
+      entry.max_burst_basis !== "conservative-default"
+    ) {
+      failures.push(
+        `${name}: max_burst_basis must be "published" or "conservative-default", got ${JSON.stringify(entry.max_burst_basis)}`,
+      );
+    }
+    if (
+      entry.max_burst_basis === "published" &&
+      (typeof entry.source !== "string" || entry.source.length === 0)
+    ) {
+      failures.push(`${name}: claims a published burst capacity but cites no source`);
+    }
+  }
+
+  // A decision route is admitted against a vendor that enforces its ceiling
+  // over a window shorter than this client paces over, where the refill rate
+  // bounds only the average. Without a declared capacity such a route is
+  // admitted with its burst unbounded, so the capacity is a precondition of
+  // admitting the route rather than a refinement available afterwards.
+  // Checked against the limits actually in force for the route's calls: on a
+  // per-model provider the pinned model's override replaces the provider's
+  // numbers wholesale, so a provider-wide capacity does not bound a route whose
+  // model overrides it.
+  for (const [routeName, route] of guardedDecisionRoutes) {
+    const entry = limits.providers?.[route.provider];
+    if (entry === undefined) {
+      continue;
+    }
+    const override =
+      entry.scope === "model" && typeof route.version_pin === "string"
+        ? entry.models?.[route.version_pin]
+        : undefined;
+    const inForce = override ?? entry;
+    const where = override === undefined ? route.provider : `${route.provider}/${route.version_pin}`;
+    if (inForce.max_burst === undefined) {
+      failures.push(
+        `${where}: serves decision route ${routeName} but declares no max_burst, so a cold guard admits its whole per-minute allowance of ${inForce.requests_per_minute} in one instant`,
+      );
+    }
   }
 
   // A per-model override is a separate limit decision and carries the same
@@ -157,6 +212,34 @@ function checkConfig() {
         if (typeof override[field] !== "number" || override[field] < MIN_SENSIBLE_RPM) {
           failures.push(`${name}: ${field} must be a positive number`);
         }
+      }
+      // An override replaces the provider's numbers for this model, capacity
+      // included, so it is checked against its OWN rate: a capacity carried
+      // over from the provider would be judged against a rate that no longer
+      // applies to the calls it bounds.
+      if (override.max_burst !== undefined) {
+        if (typeof override.max_burst !== "number" || override.max_burst < MIN_SENSIBLE_RPM) {
+          failures.push(`${name}: max_burst must be a positive number`);
+        } else if (override.max_burst > override.requests_per_minute) {
+          failures.push(
+            `${name}: max_burst ${override.max_burst} exceeds requests_per_minute ${override.requests_per_minute}, so the refill never fills it and it bounds no burst`,
+          );
+        }
+      }
+      if (
+        override.max_burst_basis !== undefined &&
+        override.max_burst_basis !== "published" &&
+        override.max_burst_basis !== "conservative-default"
+      ) {
+        failures.push(
+          `${name}: max_burst_basis must be "published" or "conservative-default", got ${JSON.stringify(override.max_burst_basis)}`,
+        );
+      }
+      if (
+        override.max_burst_basis === "published" &&
+        (typeof override.source !== "string" || override.source.length === 0)
+      ) {
+        failures.push(`${name}: claims a published burst capacity but cites no source`);
       }
       if (typeof override.note !== "string" || override.note.length === 0) {
         failures.push(`${name}: an override must say why this model runs at different numbers from its siblings`);

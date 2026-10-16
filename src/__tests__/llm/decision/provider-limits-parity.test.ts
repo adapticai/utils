@@ -27,6 +27,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { decisionRouteTable } from "../../../llm/decision/decision-route-table";
 import type { DecisionUtilsServedRouteDeclaration } from "../../../llm/decision/route-types";
 import {
+  burstCapacityFor,
   guardSnapshots,
   limitsFor,
   limitsInventory,
@@ -55,11 +56,17 @@ const SUCCESS_TOKEN = "PROVIDER_LIMITS_OK";
 /** The package default queue timeout, which is what an unregistered provider would wait for. */
 const PACKAGE_DEFAULT_ACQUIRE_TIMEOUT_MS = 15_000;
 
-/** The hosted vendor's published ceiling on requests in one second, as the limits entry transcribes it. */
-const HOSTED_PUBLISHED_REQUESTS_PER_SECOND = 40;
+/** Seconds in a minute, converting the entry's per-minute refill to the per-second pace the vendor enforces in. */
+const SECONDS_PER_MINUTE = 60;
 
-/** How many hosted calls a cold guard admits before any has to wait for a token. */
-const HOSTED_COLD_BURST = 600;
+/** The hosted entry's per-minute refill rate, which is NOT its bucket size. */
+const HOSTED_REQUESTS_PER_MINUTE = 600;
+
+/** The hosted entry's bucket size: one second of its own refill, the tightest bound derivable with no vendor figure. */
+const HOSTED_MAX_BURST = 10;
+
+/** Enough microtask turns for an admitted call to have settled, so a still-pending one was genuinely not admitted. */
+const SETTLE_TURNS = 8;
 
 /** Longest the verifier may run before the test gives up on it, in milliseconds. */
 const VERIFIER_TIMEOUT_MS = 30_000;
@@ -156,42 +163,103 @@ describe("limits for the decision providers", () => {
     expect(limitsFor("a-provider-with-no-entry").acquire_timeout_ms).toBe(PACKAGE_DEFAULT_ACQUIRE_TIMEOUT_MS);
   });
 
-  it("states the hosted provider's numbers as a conservative default, below the published ceiling", () => {
+  it("states the hosted provider's numbers as a conservative default, citing no figure it cannot source", () => {
     const limits = limitsFor("typesafe");
     expect(limits.basis).toBe("conservative-default");
     expect(limits.source).toBeNull();
-    expect(limits).toMatchObject({ requests_per_minute: 600, max_concurrent: 8, acquire_timeout_ms: 250 });
-    expect(limits.note).toContain("40 requests per second");
-    expect(limits.note).toContain("can change without notice");
+    expect(limits).toMatchObject({
+      requests_per_minute: HOSTED_REQUESTS_PER_MINUTE,
+      max_burst: HOSTED_MAX_BURST,
+      max_burst_basis: "conservative-default",
+      max_concurrent: 8,
+      acquire_timeout_ms: 250,
+    });
+
+    // The vendor publishes the UNIT it enforces in and no figure for either
+    // bound, so the entry rests on the unit alone. A figure would have to come
+    // with a source, and a number that cannot be sourced is a guess whichever
+    // confident label it is given.
+    expect(limits.note).toContain("THE VENDOR PUBLISHES NO NUMBER");
+    expect(limits.note).toContain("Limits are measured in tokens per second and requests per second");
+    expect(limits.note).toContain("the UNIT: the vendor enforces per SECOND");
+
+    // An earlier revision cited figures to a page that does not carry them.
+    // Naming that keeps the correction from being silently re-reverted by
+    // whoever next reads the stale citation somewhere else.
+    expect(limits.note).toContain("the citation is not verifiable and the figures are not carried");
+
+    // The vendor's other published unit is not guarded here at all, and an
+    // entry that bounds one of two bounds says which one it leaves open.
+    expect(limits.note).toContain("No token-per-second bound is enforced here");
   });
 
-  const coldBurst =
-    "a cold guard admits 600 hosted calls in one burst, fifteen times the vendor's published 40 per second";
-  it(coldBurst, async () => {
+  it("holds the hosted burst capacity to one second of its own refill", () => {
     const limits = limitsFor("typesafe");
-    expect(limits.note).toContain(`${HOSTED_PUBLISHED_REQUESTS_PER_SECOND} requests per second`);
+
+    // The vendor enforces per second, so a bucket is safe at one second of the
+    // pace the entry has already chosen whatever the vendor's own figure turns
+    // out to be: a client cannot exceed, in any instant, a rate it sustains.
+    // This is the one bound derivable with no vendor number to read.
+    expect(limits.max_burst).toBe(limits.requests_per_minute / SECONDS_PER_MINUTE);
+
+    // The two quantities are distinct in the data, not just in the code that
+    // reads it. Equal, the entry would be back to bounding only the average.
+    expect(limits.max_burst).toBeLessThan(limits.requests_per_minute);
+    expect(burstCapacityFor(limits)).toBe(HOSTED_MAX_BURST);
+  });
+
+  const coldStart =
+    "a COLD hosted guard admits no more than its capacity in one instant, and paces the next call";
+  it(coldStart, async () => {
+    const limits = limitsFor("typesafe");
+    const capacity = HOSTED_MAX_BURST;
+    expect(limits.max_burst).toBe(capacity);
 
     const tokensLeft = (): number =>
       guardSnapshots().find(({ provider }) => provider === "typesafe")?.availableTokens ?? Number.NaN;
 
-    // The clock is held still, so nothing refills: every call admitted below is admitted in one instant.
+    // The clock is held still for the whole burst, so nothing refills and every
+    // call admitted below is admitted in ONE instant. A per-second ceiling is a
+    // statement about an instant, so only a frozen clock can test it.
     vi.useFakeTimers();
     resetProviderGuards();
     try {
       let admitted = 0;
-      do {
+      while (admitted < capacity) {
         await withProviderGuards("typesafe", () => Promise.resolve());
         admitted += 1;
-      } while (tokensLeft() >= 1 && admitted < HOSTED_COLD_BURST * HOSTED_PUBLISHED_REQUESTS_PER_SECOND);
+      }
+      expect(admitted).toBe(capacity);
 
-      // max_concurrent bounds how many are in flight together, not how many are admitted in a second.
-      expect(admitted).toBe(HOSTED_COLD_BURST);
-      expect(admitted / HOSTED_PUBLISHED_REQUESTS_PER_SECOND).toBe(15);
-      // The bucket is the per-minute allowance and nothing smaller.
-      expect(admitted).toBe(limits.requests_per_minute);
-      // The entry names the missing bound, so the number above is not read as a chosen one.
-      expect(limits.note).toContain("admits 600 calls at once");
-      expect(limits.note).toContain("a bucket capacity of its own");
+      // The bucket is now empty, and it was the capacity that emptied it rather
+      // than the per-minute allowance: were the two still conflated there would
+      // be a further 590 tokens standing here.
+      expect(tokensLeft()).toBeLessThan(1);
+      expect(capacity).toBeLessThan(limits.requests_per_minute);
+
+      // One more call in the SAME instant. It must not be admitted, and the
+      // assertion is that it has not settled: a guard that still held the
+      // minute's allowance would resolve it here without the clock moving.
+      let settled: "admitted" | "refused" | "pending" = "pending";
+      const beyondCapacity = withProviderGuards("typesafe", () => Promise.resolve()).then(
+        () => {
+          settled = "admitted";
+        },
+        () => {
+          settled = "refused";
+        },
+      );
+      for (let turn = 0; turn < SETTLE_TURNS; turn += 1) {
+        await Promise.resolve();
+      }
+      expect(settled).toBe("pending");
+
+      // Moving the clock by one token's worth of refill admits it. That is the
+      // difference the capacity makes: the call is PACED rather than refused,
+      // so the bound costs latency and not decisions.
+      await vi.advanceTimersByTimeAsync(limits.acquire_timeout_ms);
+      await beyondCapacity;
+      expect(settled).toBe("admitted");
     } finally {
       resetProviderGuards();
       vi.useRealTimers();
@@ -265,7 +333,12 @@ describe("the limits verifier", () => {
     const pin = utilsServedRoutes()[0].route.version_pin;
     const overrideFor = (acquireTimeoutMs: number): Record<string, unknown> => ({
       basis: "conservative-default",
-      requests_per_minute: 600,
+      requests_per_minute: HOSTED_REQUESTS_PER_MINUTE,
+      // The override replaces the provider's numbers wholesale, so it states a
+      // capacity of its own: the provider's does not reach a model whose
+      // numbers it no longer governs.
+      max_burst: HOSTED_MAX_BURST,
+      max_burst_basis: "conservative-default",
       max_concurrent: 8,
       acquire_timeout_ms: acquireTimeoutMs,
       source: null,
@@ -293,6 +366,78 @@ describe("the limits verifier", () => {
       "FAIL typesafe: acquire_timeout_ms 15000 exceeds the 1500 ms budget of decision route dm.hosted,",
     );
     expect(slow.stderr).toContain("1 failure(s)");
+  });
+
+  it("refuses a guarded decision provider that declares no burst capacity", () => {
+    const result = runVerifierOnEditedCopy(({ limits }) => {
+      Reflect.deleteProperty(limits.providers.typesafe, "max_burst");
+    });
+    expect(result.status).toBe(1);
+    expect(result.stdout).not.toContain(SUCCESS_TOKEN);
+    // One failure per route the provider serves: without a capacity every route
+    // naming it is admitted with its burst unbounded, not just the first.
+    for (const route of ["dm.hosted", "dm.hosted.preview"]) {
+      expect(result.stderr).toContain(
+        `FAIL typesafe: serves decision route ${route} but declares no max_burst, so a cold guard admits its whole per-minute allowance of ${HOSTED_REQUESTS_PER_MINUTE} in one instant`,
+      );
+    }
+    expect(result.stderr).toContain("2 failure(s)");
+  });
+
+  it("refuses a per-model override that drops the capacity the provider declared", () => {
+    const pin = utilsServedRoutes()[0].route.version_pin;
+    const result = runVerifierOnEditedCopy(({ limits }) => {
+      Object.assign(limits.providers.typesafe, {
+        scope: "model",
+        scope_source: "https://docs.example.com/rate-limits",
+        models: {
+          [pin]: {
+            basis: "conservative-default",
+            requests_per_minute: HOSTED_REQUESTS_PER_MINUTE,
+            max_concurrent: 8,
+            acquire_timeout_ms: 250,
+            source: null,
+            note: "An override that states a rate and no capacity.",
+          },
+        },
+      });
+    });
+    // The provider's own capacity is still declared, and still does not reach
+    // this model: an override is read instead of the entry, not alongside it.
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      `FAIL typesafe/${pin}: serves decision route dm.hosted but declares no max_burst`,
+    );
+    expect(result.stderr).toContain("1 failure(s)");
+  });
+
+  it("refuses a burst capacity the refill rate could never fill", () => {
+    const result = runVerifierOnEditedCopy(({ limits }) => {
+      limits.providers.typesafe.max_burst = HOSTED_REQUESTS_PER_MINUTE + 1;
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      `FAIL typesafe: max_burst ${HOSTED_REQUESTS_PER_MINUTE + 1} exceeds requests_per_minute ${HOSTED_REQUESTS_PER_MINUTE}, so the refill never fills it and it bounds no burst`,
+    );
+    expect(result.stderr).toContain("1 failure(s)");
+  });
+
+  it("refuses a burst capacity that calls itself published while citing no source", () => {
+    const result = runVerifierOnEditedCopy(({ limits }) => {
+      limits.providers.typesafe.max_burst_basis = "published";
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("FAIL typesafe: claims a published burst capacity but cites no source");
+
+    // And the label itself must be one of the two the file defines, so a third
+    // word cannot pass as provenance.
+    const invented = runVerifierOnEditedCopy(({ limits }) => {
+      limits.providers.typesafe.max_burst_basis = "measured";
+    });
+    expect(invented.status).toBe(1);
+    expect(invented.stderr).toContain(
+      'FAIL typesafe: max_burst_basis must be "published" or "conservative-default", got "measured"',
+    );
   });
 
   it("refuses limits for a provider this package never guards, and for one no table declares", () => {
