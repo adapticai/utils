@@ -24,6 +24,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   RateGuardTimeoutError,
+  burstCapacityFor,
   guardSnapshots,
   limitsFor,
   resetProviderGuards,
@@ -34,8 +35,14 @@ import type { GuardSnapshot } from "../../llm/rate-guard";
 /** The provider with the tightest limits in the config, so every bound is reached quickly. */
 const PROVIDER = "groq";
 
-/** Its limits as configured: thirty requests a minute, two at once, a ten second wait. */
+/**
+ * Its limits as configured: thirty requests a minute refilling a bucket of
+ * two, two calls at once, a ten second wait. The refill rate and the bucket's
+ * size are separate numbers, and on this entry the bucket is the tighter of
+ * the two bounds on an instant, so the script below is paced by it.
+ */
 const REQUESTS_PER_MINUTE = 30;
+const BURST_CAPACITY = 2;
 const MAX_CONCURRENT = 2;
 const ACQUIRE_TIMEOUT_MS = 10_000;
 
@@ -45,11 +52,20 @@ const REFILL_INTERVAL_MS = 2_000;
 /** The instant the faked clock starts at. */
 const START_MS = Date.UTC(2026, 0, 5, 14, 30, 0);
 
-/** How long each call of the opening burst holds its permit. */
-const BURST_HOLD_MS = 40;
+/** How long the two opening calls hold their permits: long enough to outlast several refills. */
+const OPENER_HOLD_MS = 5_000;
 
-/** How long a caller of the opening burst will queue for a permit. */
+/** When the queued callers arrive: just after the openers, so no token lands on a caller's own deadline. */
+const BURST_AT_MS = 100;
+
+/** How many callers arrive at an emptied bucket. */
+const QUEUED_CALLS = 7;
+
+/** How long the first queued caller will wait for a permit once it holds a token. */
 const BURST_WAIT_MS = 300;
+
+/** When a caller arrives long after the burst, at a bucket that has recovered. */
+const LATE_AT_MS = 12_000;
 
 /** How long the scripted sequence is run for: past its last arrival and every wait. */
 const SCRIPT_SPAN_MS = 25_000;
@@ -76,56 +92,53 @@ interface CallOutcome {
 /**
  * The scripted sequence.
  *
- * An opening burst as large as the whole bucket, which the two permits admit
- * a pair at a time until the callers still queued run out of patience; five
- * stragglers that find the bucket empty and are admitted one refill apart,
- * the first two holding their permits long enough to overlap; a sixth whose
- * token would arrive after the guard's own wait has run out; and one arrival
- * after the bucket has had time to recover.
+ * Two openers that take the whole bucket and both permits and hold them past
+ * several refills; seven callers arriving at the emptied bucket, admitted one
+ * refill apart as tokens accrue, of which the first will not wait for a permit
+ * and the last two cannot be granted a token inside the guard's own wait; and
+ * one arrival long afterwards, at a bucket that has recovered.
  */
 const SCRIPT: readonly ScriptedCall[] = [
-  ...Array.from({ length: REQUESTS_PER_MINUTE }, (_, index) => ({
-    id: `burst-${String(index + 1).padStart(2, "0")}`,
+  ...Array.from({ length: BURST_CAPACITY }, (_, index) => ({
+    id: `opener-${String(index + 1)}`,
     atMs: 0,
-    holdMs: BURST_HOLD_MS,
-    maxWaitMs: BURST_WAIT_MS,
+    holdMs: OPENER_HOLD_MS,
   })),
-  { id: "straggler-1", atMs: 1_000, holdMs: 3_000 },
-  { id: "straggler-2", atMs: 1_010, holdMs: 3_000 },
-  { id: "straggler-3", atMs: 1_020, holdMs: 100, maxWaitMs: 1_500 },
-  { id: "straggler-4", atMs: 1_030, holdMs: 100 },
-  { id: "straggler-5", atMs: 1_040, holdMs: 100 },
-  { id: "straggler-6", atMs: 1_050, holdMs: 100 },
-  { id: "late", atMs: 20_000, holdMs: 0 },
+  ...Array.from({ length: QUEUED_CALLS }, (_, index) => ({
+    id: `queued-${String(index + 1)}`,
+    atMs: BURST_AT_MS,
+    holdMs: 0,
+    // Only the first states a wait, so it is the one refused at the permit
+    // queue while the openers still hold them; the rest wait out the guard's
+    // own ten seconds for a token.
+    ...(index === 0 ? { maxWaitMs: BURST_WAIT_MS } : {}),
+  })),
+  { id: "late", atMs: LATE_AT_MS, holdMs: 0 },
 ];
-
-/** The burst callers the two permits reach before the queue's patience runs out. */
-const BURST_ADMITTED = 16;
 
 /**
  * What the scripted sequence is admitted and refused as, in the order it happens.
  *
- * Recorded from the guard as it stood before its rate queue heard a signal.
+ * Derived from the guard's two bounds and not from a recording: the bucket
+ * holds two, so the openers run at once and empty it; a token accrues every
+ * two seconds and is granted to the queued callers in the order they arrived;
+ * the first of them holds a token at 2000 ms but will wait only 300 ms for a
+ * permit the openers hold until 5000 ms, so it is refused there; the next four
+ * are admitted at their tokens, the first of them once a permit frees; and the
+ * last two queued for a token that cannot arrive before the guard's own ten
+ * second wait runs out, so they are refused on the rate bound.
  */
 const OUTCOMES: readonly CallOutcome[] = [
-  ...Array.from({ length: BURST_ADMITTED }, (_, index) => ({
-    id: `burst-${String(index + 1).padStart(2, "0")}`,
-    outcome: "ran" as const,
-    atMs: Math.floor(index / MAX_CONCURRENT) * BURST_HOLD_MS,
-  })),
-  ...Array.from({ length: REQUESTS_PER_MINUTE - BURST_ADMITTED }, (_, index) => ({
-    id: `burst-${String(BURST_ADMITTED + index + 1).padStart(2, "0")}`,
-    outcome: "refused by concurrency" as const,
-    atMs: BURST_WAIT_MS,
-    abandoned: false,
-  })),
-  { id: "straggler-1", outcome: "ran", atMs: REFILL_INTERVAL_MS },
-  { id: "straggler-2", outcome: "ran", atMs: REFILL_INTERVAL_MS * 2 },
-  { id: "straggler-3", outcome: "ran", atMs: REFILL_INTERVAL_MS * 3 },
-  { id: "straggler-4", outcome: "ran", atMs: REFILL_INTERVAL_MS * 4 },
-  { id: "straggler-5", outcome: "ran", atMs: REFILL_INTERVAL_MS * 5 },
-  { id: "straggler-6", outcome: "refused by rate", atMs: 1_050 + ACQUIRE_TIMEOUT_MS, abandoned: false },
-  { id: "late", outcome: "ran", atMs: 20_000 },
+  { id: "opener-1", outcome: "ran", atMs: 0 },
+  { id: "opener-2", outcome: "ran", atMs: 0 },
+  { id: "queued-1", outcome: "refused by concurrency", atMs: REFILL_INTERVAL_MS + BURST_WAIT_MS, abandoned: false },
+  { id: "queued-2", outcome: "ran", atMs: OPENER_HOLD_MS },
+  { id: "queued-3", outcome: "ran", atMs: REFILL_INTERVAL_MS * 3 },
+  { id: "queued-4", outcome: "ran", atMs: REFILL_INTERVAL_MS * 4 },
+  { id: "queued-5", outcome: "ran", atMs: REFILL_INTERVAL_MS * 5 },
+  { id: "queued-6", outcome: "refused by rate", atMs: BURST_AT_MS + ACQUIRE_TIMEOUT_MS, abandoned: false },
+  { id: "queued-7", outcome: "refused by rate", atMs: BURST_AT_MS + ACQUIRE_TIMEOUT_MS, abandoned: false },
+  { id: "late", outcome: "ran", atMs: LATE_AT_MS },
 ];
 
 /**
@@ -225,7 +238,10 @@ async function runScript(
  * @returns When the bucket is empty.
  */
 async function drainBucket(): Promise<void> {
-  for (let token = 0; token < REQUESTS_PER_MINUTE; token += 1) {
+  // The bucket's SIZE, which the refill rate does not set: spending a minute's
+  // allowance out of a bucket that never held one would queue on a token the
+  // frozen clock is not going to produce.
+  for (let token = 0; token < BURST_CAPACITY; token += 1) {
     await withProviderGuards(PROVIDER, () => Promise.resolve());
   }
   expect(guard()?.availableTokens).toBe(0);
@@ -246,6 +262,7 @@ describe("the provider guard's rate queue and the caller's signal", () => {
   it("is configured as the script assumes", () => {
     const limits = limitsFor(PROVIDER);
     expect(limits.requests_per_minute).toBe(REQUESTS_PER_MINUTE);
+    expect(burstCapacityFor(limits)).toBe(BURST_CAPACITY);
     expect(limits.max_concurrent).toBe(MAX_CONCURRENT);
     expect(limits.acquire_timeout_ms).toBe(ACQUIRE_TIMEOUT_MS);
   });
@@ -367,8 +384,11 @@ describe("the provider guard's rate queue and the caller's signal", () => {
         { id: "late", outcome: "ran", atMs: LATE_AT_MS },
       ]);
       expect(asked.queueAfterLeaving).toBe(1);
-      // Two tokens were spent where four were, so two more are in the bucket.
-      expect(asked.tokensAtEnd).toBe(3);
+      // Two tokens were spent where four were, and the two unspent ones are in
+      // the bucket rather than four of them: a bucket holds what it was built
+      // to hold, and this one is built to hold two, so the refill it does not
+      // need accrues into a full bucket and stops there.
+      expect(asked.tokensAtEnd).toBe(BURST_CAPACITY);
     });
   });
 
@@ -487,7 +507,7 @@ describe("the provider guard's rate queue and the caller's signal", () => {
       expect((error as RateGuardTimeoutError).bound).toBe("rate");
       expect((error as RateGuardTimeoutError).abandoned).toBe(true);
       expect(ran).toBe(false);
-      expect(guard()?.availableTokens).toBe(REQUESTS_PER_MINUTE);
+      expect(guard()?.availableTokens).toBe(BURST_CAPACITY);
       expect(guard()?.inFlight ?? 0).toBe(0);
     });
   });

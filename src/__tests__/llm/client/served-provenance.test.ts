@@ -5,6 +5,8 @@ import {
   modelClassRelationOf,
 } from "../../../llm/fallback-chain";
 import {
+  burstCapacityFor,
+  guardSnapshots,
   hasDuplicateHeadroom,
   limitsFor,
   resetProviderGuards,
@@ -191,6 +193,45 @@ describe("route table: model class, equivalents and tail-latency bounds", () => 
   });
 });
 
+/** One request's worth of rate token, the unit the bucket is drawn down in. */
+const TOKENS_PER_REQUEST = 1;
+
+/** Milliseconds in a minute, for turning a per-minute refill into one token's wait. */
+const MS_PER_MINUTE = 60_000;
+
+/** Slack on a refill wait, so a token is whole by the time it is read. */
+const REFILL_SLACK_MS = 50;
+
+/**
+ * The rate tokens a guard holds.
+ *
+ * @param provider The provider key.
+ * @param modelId The model the guard covers.
+ * @returns Its available tokens, or NaN before any call reached it.
+ */
+function tokensOf(provider: string, modelId: string): number {
+  return (
+    guardSnapshots().find((guard) => guard.provider === provider && guard.modelId === modelId)
+      ?.availableTokens ?? Number.NaN
+  );
+}
+
+/**
+ * Wait out one token's refill on the real clock.
+ *
+ * A spent token returns by the passage of time and by nothing else, so this is
+ * the wait itself rather than a stand-in for it. Waiting longer than one
+ * interval can only add tokens, and the bucket caps them at its capacity, so
+ * the wait is a floor and not a race.
+ *
+ * @param requestsPerMinute The entry's refill rate.
+ * @returns When at least one whole token has accrued.
+ */
+async function refillOneToken(requestsPerMinute: number): Promise<void> {
+  const oneTokenMs = MS_PER_MINUTE / requestsPerMinute;
+  await new Promise((resolve) => setTimeout(resolve, oneTokenMs + REFILL_SLACK_MS));
+}
+
 describe("duplicate headroom", () => {
   beforeEach(() => {
     resetProviderGuards();
@@ -200,10 +241,12 @@ describe("duplicate headroom", () => {
     resetProviderGuards();
   });
 
-  it("admits a duplicate on an idle provider and refuses one that would eat the reserve", async () => {
+  it("admits a duplicate on an idle provider and refuses one that would eat either reserve", async () => {
     const provider = "anthropic";
     const model = "claude-haiku-4-5";
-    const { max_concurrent: maxConcurrent } = limitsFor(provider, model);
+    const limits = limitsFor(provider, model);
+    const maxConcurrent = limits.max_concurrent;
+    const capacity = burstCapacityFor(limits);
     const reserve = 0.25;
     expect(hasDuplicateHeadroom(provider, model, reserve)).toBe(true);
 
@@ -227,6 +270,18 @@ describe("duplicate headroom", () => {
       release();
     }
     await Promise.all(calls);
+
+    // Two reserves are kept, one per bound, and a hedge needs both. This guard
+    // holds a bucket the size of its concurrency ceiling, so the same fraction
+    // of the same number is reserved twice over and the two bounds reach their
+    // reserve together — but they RECOVER differently. Returning the permits
+    // restores the concurrency reserve at once; a spent token comes back only
+    // with the refill, so a hedge is still refused by the bound that is still
+    // short, which is what keeps a busy provider from seeing duplicates.
+    expect(tokensOf(provider, model)).toBeLessThan(Math.ceil(capacity * reserve) + TOKENS_PER_REQUEST);
+    expect(hasDuplicateHeadroom(provider, model, reserve)).toBe(false);
+
+    await refillOneToken(limits.requests_per_minute);
     expect(hasDuplicateHeadroom(provider, model, reserve)).toBe(true);
   });
 });

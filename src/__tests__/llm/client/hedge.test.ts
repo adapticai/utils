@@ -180,6 +180,18 @@ function byOrder(
   return (call) => (behaviours[call.index] ?? (() => hangs()))(call);
 }
 
+// The provider guards are process-wide, so a bucket drawn down by one test is
+// the bucket the next one starts on and the file's order decides its results.
+// Every test here is about the chain's own decisions and none is about pacing,
+// so each starts from a full bucket.
+beforeEach(() => {
+  resetProviderGuards();
+});
+
+afterEach(() => {
+  resetProviderGuards();
+});
+
 describe("same-model hedging", () => {
   let breakers: CircuitBreakerRegistry;
 

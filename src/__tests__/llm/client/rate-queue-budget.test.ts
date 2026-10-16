@@ -27,7 +27,7 @@ import { CircuitBreakerRegistry } from "../../../llm/circuit-breaker";
 import { ChainExhaustedError, executeChain } from "../../../llm/fallback-chain";
 import type { ChainLeg } from "../../../llm/fallback-chain";
 import { HedgeLoserError, classify, startAttempt } from "../../../llm/leg-attempt";
-import { RateGuardTimeoutError, guardSnapshots, limitsFor, resetProviderGuards, withProviderGuards } from "../../../llm/rate-guard";
+import { RateGuardTimeoutError, burstCapacityFor, guardSnapshots, limitsFor, resetProviderGuards, withProviderGuards } from "../../../llm/rate-guard";
 import { routeTable } from "../../../llm/route-table";
 import type { ResolvedRoute } from "../../../llm/types";
 import { rejection } from "./support/rejections";
@@ -67,7 +67,10 @@ const REFUSED_AT_THE_GATE =
  * @returns When the bucket is empty.
  */
 async function drainPacedBucket(): Promise<void> {
-  const tokens = limitsFor(PACED_PROVIDER).requests_per_minute;
+  // The bucket's SIZE, which is not its refill rate: draining a per-minute
+  // allowance out of a bucket that never held one would queue on the first
+  // token it does not have and wait out a frozen clock.
+  const tokens = burstCapacityFor(limitsFor(PACED_PROVIDER));
   for (let token = 0; token < tokens; token += 1) {
     await withProviderGuards(PACED_PROVIDER, () => Promise.resolve());
   }

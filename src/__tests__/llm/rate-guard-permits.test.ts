@@ -2,6 +2,15 @@
  * Tests for the unit a provider guard is keyed by, and for the guard's permit
  * accounting on every way a call can end.
  *
+ * The permit tests hold a token in hand before each caller reaches the permit
+ * queue, on a faked clock. That is not scaffolding but the guard's order: the
+ * rate token is taken BEFORE the permit, and a bucket sized at the guard's own
+ * concurrency ceiling is emptied by the very calls that saturate it, so a
+ * caller arriving in that same instant waits for a token and never reaches the
+ * permits at all. The permit queue is reached, in production as here, by a
+ * caller that arrives once the bucket has refilled while earlier calls are
+ * still in flight.
+ *
  * Two properties are asserted here because each one, broken, produces the same
  * symptom in production — a healthy provider that the chain refuses to call.
  *
@@ -22,10 +31,11 @@
  * @module __tests__/llm/rate-guard-permits
  */
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   RateGuardTimeoutError,
+  burstCapacityFor,
   guardSnapshots,
   limitsFor,
   resetProviderGuards,
@@ -41,6 +51,9 @@ const PER_PROVIDER_PROVIDER = "groq";
 
 /** Concurrency limit configured for groq; the tightest in the config. */
 const GROQ_MAX_CONCURRENT = 2;
+
+/** Milliseconds in a minute, for turning a per-minute refill into one token's wait. */
+const MS_PER_MINUTE = 60_000;
 
 /** Two distinct model ids on the same provider. */
 const MODEL_A = "vendor/model-a";
@@ -102,6 +115,31 @@ function nextMacrotask(): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, 0);
   });
+}
+
+/**
+ * Yield one macrotask on a faked clock.
+ *
+ * @returns Resolves once pending work has run.
+ */
+async function settle(): Promise<void> {
+  await vi.advanceTimersByTimeAsync(0);
+}
+
+/**
+ * Let a guard's bucket accrue whole tokens, on a faked clock.
+ *
+ * A token returns by the passage of time and by nothing else, so a test that
+ * needs a caller to reach the permit queue has to wait for one exactly as a
+ * caller does.
+ *
+ * @param provider The provider whose refill rate sets the wait.
+ * @param tokens How many whole tokens to accrue.
+ * @returns Resolves once they have.
+ */
+async function grantTokens(provider: string, tokens: number): Promise<void> {
+  const oneTokenMs = MS_PER_MINUTE / limitsFor(provider).requests_per_minute;
+  await vi.advanceTimersByTimeAsync(oneTokenMs * tokens);
 }
 
 /**
@@ -222,8 +260,15 @@ describe("provider guard scope and permit accounting", () => {
 
   describe("a caller that stops waiting", () => {
     it("leaves the queue at once and never takes a permit", async () => {
+      vi.useFakeTimers();
       const { release, held } = saturate(PER_PROVIDER_PROVIDER, GROQ_MAX_CONCURRENT);
-      await nextMacrotask();
+      await settle();
+      // The saturating calls spent this guard's bucket as well as its permits,
+      // because the bucket holds exactly the concurrency ceiling. A caller
+      // arriving now waits for a token and never reaches the permits, so the
+      // permit queue this test is about is reached only once a token has
+      // accrued behind the calls still in flight.
+      await grantTokens(PER_PROVIDER_PROVIDER, 1);
 
       const controller = new AbortController();
       let ranAfterAbandoning = false;
@@ -237,7 +282,7 @@ describe("provider guard scope and permit accounting", () => {
         LONG_WAIT_MS,
         { signal: controller.signal },
       ).catch((error: unknown) => error);
-      await nextMacrotask();
+      await settle();
       expect(snapshotOf(PER_PROVIDER_PROVIDER)?.concurrencyQueueLength).toBe(1);
 
       controller.abort(new Error("the caller's own deadline passed"));
@@ -251,11 +296,12 @@ describe("provider guard scope and permit accounting", () => {
 
       release();
       await Promise.all(held);
-      await nextMacrotask();
+      await settle();
       // A permit freed after the caller left must go to a caller still waiting,
       // not to one that has already given up.
       expect(ranAfterAbandoning).toBe(false);
       expect(snapshotOf(PER_PROVIDER_PROVIDER)?.inFlight).toBe(0);
+      vi.useRealTimers();
     });
 
     it("is refused before taking a permit when its signal has already fired, even with permits free", async () => {
@@ -282,6 +328,14 @@ describe("provider guard scope and permit accounting", () => {
   describe("permit accounting", () => {
     it("returns every permit however a call ends, so N timed-out, failed or abandoned calls never shrink the limit", async () => {
       const provider = PER_PROVIDER_PROVIDER;
+      // Every call below takes a token before it takes a permit, and this
+      // guard's bucket holds only its concurrency ceiling, so the clock is
+      // faked and tokens are accrued where a caller would wait for one. What
+      // is asserted is unchanged: whatever each call's fate, its permit comes
+      // back, and the full limit is admitted at once at the end.
+      vi.useFakeTimers();
+      const capacity = burstCapacityFor(limitsFor(provider));
+      expect(capacity).toBe(GROQ_MAX_CONCURRENT);
 
       // Success.
       await withProviderGuards(provider, async () => "ok");
@@ -292,6 +346,7 @@ describe("provider guard scope and permit accounting", () => {
       }).catch(() => undefined);
 
       // Synchronous throw from the call itself, before any promise exists.
+      await grantTokens(provider, 1);
       await withProviderGuards(provider, () => {
         throw new Error("threw before returning a promise");
       }).catch(() => undefined);
@@ -313,32 +368,46 @@ describe("provider guard scope and permit accounting", () => {
           { signal: controller.signal },
         ).catch(() => undefined);
       });
+      await grantTokens(provider, TIMED_OUT_CALLS);
       await Promise.all(timedOut);
 
-      // Waiters that time out in the queue.
+      // Waiters that time out in the queue. The blockers hold the permits; a
+      // waiter reaches that queue once its own token has accrued, and is
+      // refused there by its own wait budget.
+      await grantTokens(provider, GROQ_MAX_CONCURRENT);
       const blockers = saturate(provider, GROQ_MAX_CONCURRENT);
-      await nextMacrotask();
-      await Promise.all(
-        Array.from({ length: QUEUED_WAITERS }, () =>
-          withProviderGuards(provider, async () => "x", SHORT_WAIT_MS).catch(() => undefined),
-        ),
+      await settle();
+      const queuedOut = Array.from({ length: QUEUED_WAITERS }, () =>
+        withProviderGuards(provider, async () => "x", SHORT_WAIT_MS).catch(() => undefined),
       );
+      await grantTokens(provider, QUEUED_WAITERS);
+      // The last waiter's token arrives at the end of that stretch, and its own
+      // wait budget runs from there, so the budget is given its time too.
+      await vi.advanceTimersByTimeAsync(SHORT_WAIT_MS);
+      await Promise.all(queuedOut);
       blockers.release();
       await Promise.all(blockers.held);
 
-      // Waiters whose callers stop waiting.
+      // Waiters whose callers stop waiting. Those holding a token leave the
+      // permit queue the moment they are abandoned; one still waiting for a
+      // token is granted it, because the rate queue does not hear a signal
+      // unless the caller asks, and is then refused at the gate as a caller
+      // that has gone. Neither path consumes a permit.
+      await grantTokens(provider, GROQ_MAX_CONCURRENT);
       const moreBlockers = saturate(provider, GROQ_MAX_CONCURRENT);
-      await nextMacrotask();
+      await settle();
       const controllers = Array.from({ length: QUEUED_WAITERS }, () => new AbortController());
       const abandoned = controllers.map((controller) =>
-        withProviderGuards(provider, async () => "x", SHORT_WAIT_MS, {
+        withProviderGuards(provider, async () => "x", LONG_WAIT_MS, {
           signal: controller.signal,
         }).catch(() => undefined),
       );
-      await nextMacrotask();
+      await settle();
       for (const controller of controllers) {
         controller.abort(new Error("caller gave up"));
       }
+      await grantTokens(provider, QUEUED_WAITERS);
+      await vi.advanceTimersByTimeAsync(SHORT_WAIT_MS);
       await Promise.all(abandoned);
       moreBlockers.release();
       await Promise.all(moreBlockers.held);
@@ -347,6 +416,7 @@ describe("provider guard scope and permit accounting", () => {
       expect(snapshotOf(provider)?.concurrencyQueueLength).toBe(0);
 
       // The full limit is admitted at once: nothing above was kept.
+      await grantTokens(provider, GROQ_MAX_CONCURRENT);
       const gate = deferred();
       let admitted = 0;
       const fresh = Array.from({ length: GROQ_MAX_CONCURRENT }, () =>
@@ -359,10 +429,11 @@ describe("provider guard scope and permit accounting", () => {
           SHORT_WAIT_MS,
         ),
       );
-      await nextMacrotask();
+      await settle();
       expect(admitted).toBe(GROQ_MAX_CONCURRENT);
       gate.resolve();
       await Promise.all(fresh);
+      vi.useRealTimers();
     });
   });
 });

@@ -339,6 +339,9 @@ describe("the limits verifier", () => {
       // numbers it no longer governs.
       max_burst: HOSTED_MAX_BURST,
       max_burst_basis: "conservative-default",
+      max_burst_measured_demand: 0,
+      max_burst_vendor_ceiling: null,
+      max_burst_source: "One second of this override's own refill, the bound derivable where the vendor publishes the unit and no figure.",
       max_concurrent: 8,
       acquire_timeout_ms: acquireTimeoutMs,
       source: null,
@@ -420,6 +423,94 @@ describe("the limits verifier", () => {
       `FAIL typesafe: max_burst ${HOSTED_REQUESTS_PER_MINUTE + 1} exceeds requests_per_minute ${HOSTED_REQUESTS_PER_MINUTE}, so the refill never fills it and it bounds no burst`,
     );
     expect(result.stderr).toContain("1 failure(s)");
+  });
+
+  it("refuses a burst capacity that states no provenance of its own", () => {
+    const basisless = runVerifierOnEditedCopy(({ limits }) => {
+      Reflect.deleteProperty(limits.providers.typesafe, "max_burst_basis");
+    });
+    expect(basisless.status).toBe(1);
+    expect(basisless.stderr).toContain(
+      "FAIL typesafe: declares max_burst but no max_burst_basis, so the capacity's provenance is inherited from a different quantity",
+    );
+
+    // A label is not a provenance. The capacity names the measurement it came
+    // from, because a capacity nobody can trace is a guess that throttles
+    // whatever the guard serves.
+    const sourceless = runVerifierOnEditedCopy(({ limits }) => {
+      Reflect.deleteProperty(limits.providers.typesafe, "max_burst_source");
+    });
+    expect(sourceless.status).toBe(1);
+    expect(sourceless.stderr).toContain(
+      "FAIL typesafe: declares max_burst but says nothing about where the number came from",
+    );
+  });
+
+  it("refuses a burst capacity with no demand and no vendor ceiling to judge it against", () => {
+    const demandless = runVerifierOnEditedCopy(({ limits }) => {
+      Reflect.deleteProperty(limits.providers.typesafe, "max_burst_measured_demand");
+    });
+    expect(demandless.status).toBe(1);
+    expect(demandless.stderr).toContain(
+      "FAIL typesafe: declares max_burst but no measured instantaneous demand to judge it against",
+    );
+
+    // Null is a real answer for a vendor that publishes no bound on an instant,
+    // and absent is not: an unstated ceiling is indistinguishable from an
+    // unread one.
+    const ceilingless = runVerifierOnEditedCopy(({ limits }) => {
+      Reflect.deleteProperty(limits.providers.typesafe, "max_burst_vendor_ceiling");
+    });
+    expect(ceilingless.status).toBe(1);
+    expect(ceilingless.stderr).toContain(
+      "FAIL typesafe: declares max_burst but does not say what the vendor publishes for one instant",
+    );
+  });
+
+  it("refuses a capacity below the demand it was sized for, or below its own concurrency ceiling", () => {
+    const throttle = runVerifierOnEditedCopy(({ limits }) => {
+      Object.assign(limits.providers.typesafe, {
+        max_burst: 1,
+        max_burst_measured_demand: 4,
+      });
+    });
+    expect(throttle.status).toBe(1);
+    // Both bounds are reported, because a capacity set below them fails each
+    // for its own reason: it paces the demand it was sized for, and it paces
+    // calls the concurrency bound admits.
+    expect(throttle.stderr).toContain(
+      "FAIL typesafe: max_burst 1 is below the 4 calls measured demand puts on this guard in one instant, so it paces the demand it was sized for",
+    );
+    expect(throttle.stderr).toContain(
+      "FAIL typesafe: max_burst 1 is below max_concurrent 8, so the bucket paces calls the concurrency bound admits; only a published capacity may sit below it",
+    );
+  });
+
+  it("refuses a vendor ceiling the capacity exceeds, or one cited without its unit", () => {
+    const overCeiling = runVerifierOnEditedCopy(({ limits }) => {
+      Object.assign(limits.providers.typesafe, {
+        max_burst_vendor_ceiling: HOSTED_MAX_BURST - 1,
+        max_burst_vendor_ceiling_unit: "requests per second",
+        source: "https://docs.example.com/rate-limits",
+      });
+    });
+    expect(overCeiling.status).toBe(1);
+    expect(overCeiling.stderr).toContain(
+      `FAIL typesafe: max_burst ${HOSTED_MAX_BURST} exceeds the vendor's published ${HOSTED_MAX_BURST - 1} for one instant`,
+    );
+
+    // A figure read across units bounds something other than it appears to, so
+    // a cited ceiling states the unit it was published in and where it was read.
+    const unitless = runVerifierOnEditedCopy(({ limits }) => {
+      Object.assign(limits.providers.typesafe, { max_burst_vendor_ceiling: HOSTED_MAX_BURST });
+    });
+    expect(unitless.status).toBe(1);
+    expect(unitless.stderr).toContain(
+      "FAIL typesafe: cites a vendor ceiling without the unit it was published in",
+    );
+    expect(unitless.stderr).toContain(
+      "FAIL typesafe: cites a vendor ceiling for one instant but no source to read it from",
+    );
   });
 
   it("refuses a burst capacity that calls itself published while citing no source", () => {

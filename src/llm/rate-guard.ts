@@ -103,6 +103,41 @@ export interface ProviderLimits {
    * entry's other numbers were transcribed, and must not borrow their label.
    */
   readonly max_burst_basis?: ProviderLimitBasis;
+  /**
+   * The largest number of calls measured live demand can put on this guard in
+   * one instant.
+   *
+   * A capacity is only safe relative to the demand it has to admit, so the
+   * demand is recorded beside it rather than argued about afterwards: a
+   * capacity below it paces that demand, and pacing is latency a caller on a
+   * decision path cannot spend. The capacity's duty ends at
+   * {@link ProviderLimits.max_concurrent}, because a call past the concurrency
+   * ceiling waits for a permit whatever the bucket holds.
+   */
+  readonly max_burst_measured_demand?: number;
+  /**
+   * The vendor's own published bound on one instant, or null where the vendor
+   * publishes none.
+   *
+   * Null is a real answer and the common one: several vendors publish only a
+   * per-minute allowance, which is not a bound on an instant, and recording one
+   * here would reinstate the conflation the capacity field exists to end.
+   */
+  readonly max_burst_vendor_ceiling?: number | null;
+  /**
+   * The unit {@link ProviderLimits.max_burst_vendor_ceiling} was published in,
+   * stated because a figure read across units bounds something other than what
+   * it appears to.
+   */
+  readonly max_burst_vendor_ceiling_unit?: string;
+  /**
+   * Where the demand figure and the ceiling figure each came from, and the read
+   * that would settle a null ceiling.
+   *
+   * A capacity whose provenance is unstated is indistinguishable from a guess,
+   * and a guess on this field is a throttle on whatever the guard serves.
+   */
+  readonly max_burst_source?: string;
   readonly max_concurrent: number;
   readonly acquire_timeout_ms: number;
   /** Where a published limit was read from. Null while the basis is a conservative default. */
@@ -130,6 +165,14 @@ export interface ModelLimitOverride {
   readonly max_burst?: number;
   /** Provenance of this override's {@link ModelLimitOverride.max_burst}. */
   readonly max_burst_basis?: ProviderLimitBasis;
+  /** The instantaneous demand on THIS model's guard, which is its own measurement. */
+  readonly max_burst_measured_demand?: number;
+  /** The vendor's published bound on one instant for this model, or null where it publishes none. */
+  readonly max_burst_vendor_ceiling?: number | null;
+  /** The unit this override's ceiling was published in. */
+  readonly max_burst_vendor_ceiling_unit?: string;
+  /** Where this override's demand and ceiling figures came from. */
+  readonly max_burst_source?: string;
   readonly max_concurrent: number;
   readonly acquire_timeout_ms: number;
   readonly source?: string | null;
@@ -184,6 +227,13 @@ export function limitsFor(provider: string, modelId?: string): ProviderLimits {
     // capacity chosen for a different one.
     max_burst: override.max_burst,
     max_burst_basis: override.max_burst_basis,
+    // The capacity's provenance travels with the capacity, for the same reason:
+    // a demand or a ceiling measured for the provider's other models says
+    // nothing about the one whose numbers replaced them.
+    max_burst_measured_demand: override.max_burst_measured_demand,
+    max_burst_vendor_ceiling: override.max_burst_vendor_ceiling,
+    max_burst_vendor_ceiling_unit: override.max_burst_vendor_ceiling_unit,
+    max_burst_source: override.max_burst_source,
     max_concurrent: override.max_concurrent,
     acquire_timeout_ms: override.acquire_timeout_ms,
     source: override.source ?? null,

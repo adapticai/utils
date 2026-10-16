@@ -41,6 +41,121 @@ const DECISION_ROUTES_PATH = join(UTILS_ROOT, "src/llm/decision/decision-routes.
 /** A rate ceiling at or below this is treated as suspiciously permissive to have been guessed. */
 const MIN_SENSIBLE_RPM = 1;
 
+/** The two labels a limit's provenance may carry. */
+const BASIS_LABELS = ["published", "conservative-default"];
+
+/**
+ * Assert one entry's burst capacity is bounded, provenanced, and not a throttle.
+ *
+ * The capacity is the bucket's size and the per-minute number is the rate it
+ * refills at, so the capacity is judged against its own three quantities: the
+ * allowance that has to be able to fill it, the demand it has to admit, and
+ * the vendor bound it has to sit under. Applied to a provider entry and to a
+ * per-model override alike, each against ITS OWN numbers, because an override
+ * replaces the provider's wholesale and a capacity judged against a rate that
+ * no longer applies to the calls it bounds is judged against nothing.
+ *
+ * @param {string} name Where to attribute a failure.
+ * @param {Record<string, unknown>} entry The entry or override.
+ * @returns {string[]} Failures.
+ */
+function burstCapacityFailures(name, entry) {
+  /** @type {string[]} */
+  const failures = [];
+  if (entry.max_burst === undefined) {
+    return failures;
+  }
+  // A capacity above the refill period's own allowance is not a bucket the
+  // rate ever fills, so it bounds nothing and reads as a limit while behaving
+  // as none.
+  if (typeof entry.max_burst !== "number" || entry.max_burst < MIN_SENSIBLE_RPM) {
+    failures.push(`${name}: max_burst must be a positive number`);
+    return failures;
+  }
+  if (entry.max_burst > entry.requests_per_minute) {
+    failures.push(
+      `${name}: max_burst ${entry.max_burst} exceeds requests_per_minute ${entry.requests_per_minute}, so the refill never fills it and it bounds no burst`,
+    );
+  }
+  // Provenance is never inherited from `basis`: that label speaks for the rate,
+  // and the capacity is a different quantity that a vendor publishing a rate
+  // may not publish at all.
+  if (entry.max_burst_basis === undefined) {
+    failures.push(`${name}: declares max_burst but no max_burst_basis, so the capacity's provenance is inherited from a different quantity`);
+  } else if (!BASIS_LABELS.includes(entry.max_burst_basis)) {
+    failures.push(
+      `${name}: max_burst_basis must be "published" or "conservative-default", got ${JSON.stringify(entry.max_burst_basis)}`,
+    );
+  } else if (
+    entry.max_burst_basis === "published" &&
+    (typeof entry.source !== "string" || entry.source.length === 0)
+  ) {
+    failures.push(`${name}: claims a published burst capacity but cites no source`);
+  }
+  if (typeof entry.max_burst_source !== "string" || entry.max_burst_source.length === 0) {
+    failures.push(
+      `${name}: declares max_burst but says nothing about where the number came from, and a capacity of unstated provenance is a guess that throttles whatever this guard serves`,
+    );
+  }
+  // The demand is what makes the capacity safe rather than merely small. Its
+  // duty ends at the concurrency ceiling: a call past that waits for a permit
+  // whatever the bucket holds.
+  if (typeof entry.max_burst_measured_demand !== "number" || entry.max_burst_measured_demand < 0) {
+    failures.push(
+      `${name}: declares max_burst but no measured instantaneous demand to judge it against`,
+    );
+  } else {
+    const owed = Math.min(entry.max_burst_measured_demand, entry.max_concurrent);
+    if (entry.max_burst < owed) {
+      failures.push(
+        `${name}: max_burst ${entry.max_burst} is below the ${owed} calls measured demand puts on this guard in one instant, so it paces the demand it was sized for`,
+      );
+    }
+  }
+  // Null is a real answer, and the common one: a vendor publishing only a
+  // per-minute allowance publishes no bound on an instant, and recording that
+  // allowance here would reinstate the conflation this field ends.
+  if (entry.max_burst_vendor_ceiling === undefined) {
+    failures.push(
+      `${name}: declares max_burst but does not say what the vendor publishes for one instant, and an unstated ceiling is indistinguishable from an unread one`,
+    );
+  } else if (entry.max_burst_vendor_ceiling !== null) {
+    if (
+      typeof entry.max_burst_vendor_ceiling !== "number" ||
+      entry.max_burst_vendor_ceiling < MIN_SENSIBLE_RPM
+    ) {
+      failures.push(`${name}: max_burst_vendor_ceiling must be a positive number or null`);
+    } else {
+      if (entry.max_burst > entry.max_burst_vendor_ceiling) {
+        failures.push(
+          `${name}: max_burst ${entry.max_burst} exceeds the vendor's published ${entry.max_burst_vendor_ceiling} for one instant`,
+        );
+      }
+      if (
+        typeof entry.max_burst_vendor_ceiling_unit !== "string" ||
+        entry.max_burst_vendor_ceiling_unit.length === 0
+      ) {
+        failures.push(
+          `${name}: cites a vendor ceiling without the unit it was published in, and a figure read across units bounds something other than it appears to`,
+        );
+      }
+      if (typeof entry.source !== "string" || entry.source.length === 0) {
+        failures.push(`${name}: cites a vendor ceiling for one instant but no source to read it from`);
+      }
+    }
+  }
+  // A bucket tighter than the concurrency ceiling paces calls that ceiling
+  // admits, which on an entry whose concurrency was sized against measured
+  // starvation is a throttle reached by convention. A published capacity may be
+  // tighter: there the vendor's figure outranks the client's own choice.
+  if (entry.max_burst < entry.max_concurrent && entry.max_burst_basis !== "published") {
+    failures.push(
+      `${name}: max_burst ${entry.max_burst} is below max_concurrent ${entry.max_concurrent}, so the bucket paces calls the concurrency bound admits; only a published capacity may sit below it`,
+    );
+  }
+  return failures;
+}
+
 /**
  * Assert the limits config is complete and honestly labelled.
  *
@@ -117,34 +232,7 @@ function checkConfig() {
     ) {
       failures.push(`${name}: claims a published per-minute ceiling but cites no source`);
     }
-    // The bucket's size is held to the same rules as the rate it refills at,
-    // and to one more of its own: a capacity above the refill period's own
-    // allowance is not a bucket the rate ever fills, so it bounds nothing and
-    // reads as a limit while behaving as none.
-    if (entry.max_burst !== undefined) {
-      if (typeof entry.max_burst !== "number" || entry.max_burst < MIN_SENSIBLE_RPM) {
-        failures.push(`${name}: max_burst must be a positive number`);
-      } else if (entry.max_burst > entry.requests_per_minute) {
-        failures.push(
-          `${name}: max_burst ${entry.max_burst} exceeds requests_per_minute ${entry.requests_per_minute}, so the refill never fills it and it bounds no burst`,
-        );
-      }
-    }
-    if (
-      entry.max_burst_basis !== undefined &&
-      entry.max_burst_basis !== "published" &&
-      entry.max_burst_basis !== "conservative-default"
-    ) {
-      failures.push(
-        `${name}: max_burst_basis must be "published" or "conservative-default", got ${JSON.stringify(entry.max_burst_basis)}`,
-      );
-    }
-    if (
-      entry.max_burst_basis === "published" &&
-      (typeof entry.source !== "string" || entry.source.length === 0)
-    ) {
-      failures.push(`${name}: claims a published burst capacity but cites no source`);
-    }
+    failures.push(...burstCapacityFailures(name, entry));
   }
 
   // A decision route is admitted against a vendor that enforces its ceiling
@@ -213,34 +301,7 @@ function checkConfig() {
           failures.push(`${name}: ${field} must be a positive number`);
         }
       }
-      // An override replaces the provider's numbers for this model, capacity
-      // included, so it is checked against its OWN rate: a capacity carried
-      // over from the provider would be judged against a rate that no longer
-      // applies to the calls it bounds.
-      if (override.max_burst !== undefined) {
-        if (typeof override.max_burst !== "number" || override.max_burst < MIN_SENSIBLE_RPM) {
-          failures.push(`${name}: max_burst must be a positive number`);
-        } else if (override.max_burst > override.requests_per_minute) {
-          failures.push(
-            `${name}: max_burst ${override.max_burst} exceeds requests_per_minute ${override.requests_per_minute}, so the refill never fills it and it bounds no burst`,
-          );
-        }
-      }
-      if (
-        override.max_burst_basis !== undefined &&
-        override.max_burst_basis !== "published" &&
-        override.max_burst_basis !== "conservative-default"
-      ) {
-        failures.push(
-          `${name}: max_burst_basis must be "published" or "conservative-default", got ${JSON.stringify(override.max_burst_basis)}`,
-        );
-      }
-      if (
-        override.max_burst_basis === "published" &&
-        (typeof override.source !== "string" || override.source.length === 0)
-      ) {
-        failures.push(`${name}: claims a published burst capacity but cites no source`);
-      }
+      failures.push(...burstCapacityFailures(name, override));
       if (typeof override.note !== "string" || override.note.length === 0) {
         failures.push(`${name}: an override must say why this model runs at different numbers from its siblings`);
       }
