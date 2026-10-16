@@ -576,6 +576,7 @@ function prepareCall(
   const body = encodeDecisionRequest(rebuildTree(request, unchanged) as DecisionRequest, {
     model: resolved.modelPin,
     caps: resolved.caps,
+    images: resolved.images,
   });
   assertWritable(body);
 

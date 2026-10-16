@@ -1270,7 +1270,11 @@ describe("the decision client", () => {
     it("fixes what is sent when the call is made: a later change to the request cannot reach the wire", async () => {
       const harness = clientOverFetch(() => answering(CHOICE_ANSWER()));
       const state = { message: "Help! My payouts have been failing for 3 days.", attempts: [1, 2, 3] };
-      const criteria: Record<string, string | null> = { ...(CHOICE_REQUEST().questions.department.criteria as object) };
+      const department = CHOICE_REQUEST().questions.department;
+      if (department.type !== "choice") {
+        throw new Error("the fixture's question must be a choice");
+      }
+      const criteria: Record<string, string | null> = { ...(department.criteria as Record<string, string | null>) };
       const questions: Record<string, DecisionQuestion> = {
         department: { type: "choice", instructions: "Which team should handle this?", criteria },
       };

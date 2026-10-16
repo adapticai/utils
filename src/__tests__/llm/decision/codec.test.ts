@@ -35,10 +35,41 @@ import {
   DecisionResponseFormatError,
 } from "../../../llm/decision/errors";
 import type { DecisionRouteCaps } from "../../../llm/decision/route-types";
-import type { DecisionAnswer, DecisionChoiceAnswer, DecisionRequest } from "../../../llm/decision/types";
+import type { DecisionAnswer, DecisionChoiceAnswer, DecisionQuestion, DecisionRequest } from "../../../llm/decision/types";
 import type { LlmUsageRecord } from "../../../llm/types";
 import { loadDecisionFixture } from "./support/fixtures";
 import type { DecisionEvidenceClass } from "./support/fixtures";
+
+/**
+ * The options of a question the test built as a choice.
+ *
+ * The question union now also carries a box question, which has no criteria at
+ * all, so a test that means "the choice I just built" says so rather than
+ * reading a field off the union.
+ *
+ * @param question The question under test.
+ * @returns Its options.
+ */
+function choiceCriteriaOf(question: DecisionQuestion): Readonly<Record<string, unknown>> {
+  if (question.type !== "choice") {
+    throw new Error(`the question under test must be a choice, and is a ${question.type}`);
+  }
+  return question.criteria;
+}
+
+/**
+ * The levels of a question the test built as a score.
+ *
+ * @param question The question under test.
+ * @returns Its levels, lowest first.
+ */
+function scoreLevelsOf(question: DecisionQuestion): readonly unknown[] {
+  if (question.type !== "score") {
+    throw new Error(`the question under test must be a score, and is a ${question.type}`);
+  }
+  return question.criteria;
+}
+
 
 /** The limits the hosted contract documents: 255 options, 10 levels, no question limit. */
 const HOSTED_CAPS: DecisionRouteCaps = { maxOptions: 255, maxScoreLevels: 10, maxQuestions: null };
@@ -1050,10 +1081,10 @@ describe("encodeDecisionRequest", () => {
       Object.keys(encodeDecisionRequest(choiceRequestWithOptions(HOSTED_CAPS.maxOptions), options).questions.pick),
     ).toEqual(["type", "instructions", "criteria"]);
     expect(
-      encodeDecisionRequest(scoreRequestWithLevels(MIN_SCORE_LEVELS), options).questions.grade.criteria,
+      scoreLevelsOf(encodeDecisionRequest(scoreRequestWithLevels(MIN_SCORE_LEVELS), options).questions.grade),
     ).toHaveLength(MIN_SCORE_LEVELS);
     expect(
-      encodeDecisionRequest(scoreRequestWithLevels(HOSTED_CAPS.maxScoreLevels), options).questions.grade.criteria,
+      scoreLevelsOf(encodeDecisionRequest(scoreRequestWithLevels(HOSTED_CAPS.maxScoreLevels), options).questions.grade),
     ).toHaveLength(HOSTED_CAPS.maxScoreLevels);
     expect(Object.keys(encodeDecisionRequest(requestWithQuestions(MANY_QUESTIONS), options).questions)).toHaveLength(
       MANY_QUESTIONS,
@@ -1324,7 +1355,7 @@ describe("decodeDecisionResponse", () => {
   });
 
   it("probability key order is canonical", () => {
-    const requestOrder = Object.keys(DOCUMENTED_CHOICE_REQUEST.questions.department.criteria ?? {});
+    const requestOrder = Object.keys(choiceCriteriaOf(DOCUMENTED_CHOICE_REQUEST.questions.department));
     const decodedFrom = (probabilities: Record<string, number>): ReturnType<typeof decodeDecisionResponse> =>
       decodeDecisionResponse(
         {
@@ -1545,10 +1576,26 @@ describe("the codec as a whole", () => {
     expect(references.map(({ specifier }) => specifier).sort()).toEqual([
       "../types",
       "./errors",
+      "./images",
+      "./images",
       "./route-types",
       "./types",
     ]);
-    expect(references.filter(({ typeOnly }) => !typeOnly).map(({ specifier }) => specifier)).toEqual(["./errors"]);
+    expect(references.filter(({ typeOnly }) => !typeOnly).map(({ specifier }) => specifier)).toEqual([
+      "./errors",
+      "./images",
+    ]);
+    expect(ambientNames).toEqual([]);
+  });
+
+  it("the image module it reaches for is just as pure, so the codec's purity is not laundered through it", () => {
+    const source = readFileSync(fileURLToPath(new URL("../../../llm/decision/images.ts", import.meta.url)), "utf8");
+
+    const { references, ambientNames } = outwardSurface(source);
+
+    // Only the contract. No clock, no environment, no randomness and no
+    // network: the same asset map validates identically wherever it runs.
+    expect(references.map(({ specifier }) => specifier).sort()).toEqual(["./types", "./types"]);
     expect(ambientNames).toEqual([]);
   });
 

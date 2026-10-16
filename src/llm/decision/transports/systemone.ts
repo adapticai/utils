@@ -493,6 +493,31 @@ function raiseWithoutAnswer(error: unknown, signal: AbortSignal, route: Decision
 }
 
 /**
+ * The header a request carrying images must travel with.
+ *
+ * The vendor REQUIRES it on every request that holds an image or a Box
+ * question, and answers a request that omits it with "Images are not turned
+ * on". The name is the route's own declaration rather than a constant here, so
+ * a vendor that renames the header is followed by a table edit and not by a
+ * release of this file.
+ *
+ * A body carrying images on a route that declares none gets NO header. That
+ * combination is already refused by the codec, which is where a refusal costs
+ * nothing; inventing a header name here would send an image under a header the
+ * table never declared.
+ *
+ * @param request The call being made.
+ * @returns The header, or an empty object for a text-only request.
+ */
+function imageHeaders(request: SystemOneTransportRequest): Readonly<Record<string, string>> {
+  const images = request.route.images;
+  if (images === null || !images.supported) return {};
+  const assets = request.body.assets;
+  if (assets === undefined || Object.keys(assets).length === 0) return {};
+  return { [images.header.toLowerCase()]: "true" };
+}
+
+/**
  * Build the hosted typed-decision transport.
  *
  * @param config The HTTP call and the clock, each replaceable for testing.
@@ -519,6 +544,7 @@ export function createSystemOneTransport(config: SystemOneTransportConfig = {}):
             authorization: `Bearer ${key}`,
             "content-type": JSON_MEDIA_TYPE,
             accept: JSON_MEDIA_TYPE,
+            ...imageHeaders(request),
           },
           body,
           redirect: "error",

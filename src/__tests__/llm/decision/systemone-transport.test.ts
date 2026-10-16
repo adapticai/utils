@@ -139,6 +139,7 @@ const INSPECT_DEPTH = 8;
 
 /** The route every test calls, as the route table's loader would resolve one. */
 const ROUTE: ResolvedDecisionRoute = {
+  images: null,
   route: "dm.hosted",
   providerName: PROVIDER,
   provider: {

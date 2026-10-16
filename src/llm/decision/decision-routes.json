@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "policy_source": "docs/superpowers/specs/2026-10-01-typed-decision-models-design.md (D1, section 3.2)",
-  "revised": "2026-10-01",
+  "revised": "2026-10-16",
   "defaults": {
     "circuit_breaker": {
       "failure_threshold": 5,
@@ -54,7 +54,20 @@
         "as_of": "2026-10-01",
         "source": "https://docs.typesafe.ai/models.md"
       },
-      "notes": "Pinned to the versioned id the models page lists for Jev 1.13, never to jev-latest or jev-preview: the same page says an alias \"moves when a new release ships, so the answers behind it can change without a change on your side\". contract_evidence is documentation because the request, response and error shapes were read from the API reference and never exercised with a key; only an authenticated call makes it authenticated-call, with the date in contract_verified. Caps are the documented ones: \"a maximum of 255 options per Choice\" and a Score that \"accepts up to 10\" levels; no per-request question limit is published, so max_questions is null. Price is the models page's $0.042 per 1M input tokens with \"Output tokens are free\". Three numbers on this route are free parameters of a route nothing can reach yet, to be re-derived from the first authenticated measurements. budget_ms 1500 is a ceiling and not an operating point: about twice the largest third-party median latency on record (710 ms, for five questions in one request) and well under the vendor SDK's 10000 ms per-attempt default; the consumer's own deadline for a typed step is what a call actually runs under. max_state_tokens 32000 is the documented ceiling for the state plus the longest question (\"64k tokens per request; 32k tokens for state plus the longest question\"), an upper bound and not a target: a state shared across routes is bound by the smallest ceiling among them. defaults.circuit_breaker (5 failures, 60000 ms cooldown, 15000 ms capacity cooldown, 1 half-open probe, no latency trip) is carried from the generative alias table and has not been measured against this vendor; it applies only to a route this package serves, which is this one."
+      "images": {
+        "supported": true,
+        "header": "TypeSafe-Danger-Zone-Images",
+        "formats": ["png", "jpg", "jpeg"],
+        "min_side_px": 280,
+        "max_side_px": 1568,
+        "min_total_px": 78400,
+        "max_total_px": 2458624,
+        "max_image_bytes": 16777216,
+        "max_total_bytes": 33554432,
+        "box": false,
+        "production_status": "Images and Box questions aren't yet up to our standards to call ready for production, but we're excited for dreamers and builders to play with them (docs.typesafe.ai/images, read 2026-10-16); accuracy will change as the vendor updates the models, and the Box page adds that the request format, the answers and the limits can change between releases."
+      },
+      "notes": "Pinned to the versioned id the models page lists for Jev 1.13, never to jev-latest or jev-preview: the same page says an alias \"moves when a new release ships, so the answers behind it can change without a change on your side\". contract_evidence is documentation because the request, response and error shapes were read from the API reference and never exercised with a key; only an authenticated call makes it authenticated-call, with the date in contract_verified. Caps are the documented ones: \"a maximum of 255 options per Choice\" and a Score that \"accepts up to 10\" levels; no per-request question limit is published, so max_questions is null. Price is the models page's $0.042 per 1M input tokens with \"Output tokens are free\". Three numbers on this route are free parameters of a route nothing can reach yet, to be re-derived from the first authenticated measurements. budget_ms 1500 is a ceiling and not an operating point: about twice the largest third-party median latency on record (710 ms, for five questions in one request) and well under the vendor SDK's 10000 ms per-attempt default; the consumer's own deadline for a typed step is what a call actually runs under. max_state_tokens 32000 is the documented ceiling for the state plus the longest question (\"64k tokens per request; 32k tokens for state plus the longest question\"), an upper bound and not a target: a state shared across routes is bound by the smallest ceiling among them. defaults.circuit_breaker (5 failures, 60000 ms cooldown, 15000 ms capacity cooldown, 1 half-open probe, no latency trip) is carried from the generative alias table and has not been measured against this vendor; it applies only to a route this package serves, which is this one. IMAGES, added 2026-10-16 from docs.typesafe.ai/images and docs.typesafe.ai/models read the same day: both Jev 1.13 and Jev 1.14 accept images, so this route carries them at its 1.13 pin, and every bound in the images block is the vendor's own documented one (280..1568 px per side, 78,400..2,458,624 total pixels, 16 MiB per image, 32 MiB for all images and for the whole body). box is false because the vendor serves Box questions on Jev 1.14 and later only, and this route is pinned to 1.13; a Box question is therefore refused by the codec before it is sent rather than paid for and rejected. The header is DECLARED here rather than written into the transport because the transport sends it only for a route that declares it: a body carrying an image without the header is answered with 'Images are not turned on'. The default context limits (64k per request, 32k for state plus the longest question) are unchanged and max_state_tokens still states the documented ceiling; the vendor's 262k long-context header is not sent, because the vendor states long context is slower and less accurate than staying within the defaults. What an image costs in input tokens is not documented and is therefore UNKNOWN until an authenticated call reports it."
     },
     "dm.local": {
       "provider": "engine-judge",

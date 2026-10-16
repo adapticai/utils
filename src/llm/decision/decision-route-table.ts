@@ -40,7 +40,7 @@ import type {
   DecisionUtilsServedRouteDeclaration,
   ResolvedDecisionRoute,
 } from "./route-types";
-import { DECISION_ROUTES } from "./types";
+import { DECISION_IMAGE_FORMATS, DECISION_ROUTES } from "./types";
 import type { DecisionRoute } from "./types";
 
 /**
@@ -592,6 +592,66 @@ function engineServedViolations(at: string, route: Readonly<Record<string, unkno
  * @param providers The table's providers, as parsed.
  * @returns One message per violation.
  */
+/**
+ * Everything wrong with a route's image declaration.
+ *
+ * An absent declaration is sound: it means the route carries no image, which
+ * is what every route declared before images existed. A declaration that IS
+ * present is checked field by field, because three behaviours read it — whether
+ * the codec may send an asset map, which bounds each image is held to, and
+ * which header the transport sends — and a half-written declaration would let
+ * a request be built that only the vendor could refuse.
+ *
+ * The bands are checked for ORDER as well as for type: a minimum above its
+ * maximum admits nothing, and a declaration that admits nothing would read as
+ * support while refusing every image.
+ *
+ * @param at Where the route sits, for the message.
+ * @param images The declaration, as parsed.
+ * @returns One message per violation; empty when absent or sound.
+ */
+function imageViolations(at: string, images: unknown): string[] {
+  if (images === undefined) return [];
+  const violations: string[] = [];
+  const check = (ok: boolean, message: string): void => {
+    if (!ok) {
+      violations.push(`${at}.images.${message}`);
+    }
+  };
+  if (!isRecord(images)) {
+    return [`${at}.images must be an object when it is declared`];
+  }
+  check(typeof images.supported === "boolean", "supported must be a boolean");
+  check(typeof images.box === "boolean", "box must be a boolean");
+  check(isNonEmptyString(images.header), "header must name the header the transport sends");
+  check(isNonEmptyString(images.production_status), "production_status must carry the vendor's own readiness statement");
+  const formats = images.formats;
+  check(
+    Array.isArray(formats) &&
+      formats.length > 0 &&
+      formats.every((format): boolean => (DECISION_IMAGE_FORMATS as readonly unknown[]).includes(format)),
+    `formats must be a non-empty subset of ${DECISION_IMAGE_FORMATS.join(", ")}`,
+  );
+  for (const field of ["min_side_px", "max_side_px", "min_total_px", "max_total_px", "max_image_bytes", "max_total_bytes"]) {
+    check(
+      isIntegerIn(ownField(images, field), 1, Number.MAX_SAFE_INTEGER),
+      `${field} must be a positive integer`,
+    );
+  }
+  const ordered = (low: unknown, high: unknown): boolean =>
+    typeof low === "number" && typeof high === "number" && low <= high;
+  check(ordered(images.min_side_px, images.max_side_px), "min_side_px must not exceed max_side_px");
+  check(ordered(images.min_total_px, images.max_total_px), "min_total_px must not exceed max_total_px");
+  check(
+    ordered(images.max_image_bytes, images.max_total_bytes),
+    "max_image_bytes must not exceed max_total_bytes: one image cannot be allowed more than all of them",
+  );
+  if (images.box === true && images.supported !== true) {
+    violations.push(`${at}.images declares box support without image support, and a box question is answered about an image`);
+  }
+  return violations;
+}
+
 function routeViolations(
   name: DecisionRoute,
   route: unknown,
@@ -653,6 +713,7 @@ function routeViolations(
     `max_state_tokens_basis must be "${SERVER_STATE_BUDGET_BASIS[server]}" for a route served by ${server}`,
   );
   violations.push(...priceViolations(at, route.price_per_mtok));
+  violations.push(...imageViolations(at, route.images));
   violations.push(...(server === "utils" ? utilsServedViolations(at, route) : engineServedViolations(at, route)));
   return violations;
 }
@@ -960,5 +1021,6 @@ export function resolveDecisionRoute(
     priceAnchor: outcome.route.price_per_mtok,
     apiKeyEnv: outcome.provider.api_key_env,
     baseUrl: outcome.baseUrl,
+    images: outcome.route.images ?? null,
   };
 }

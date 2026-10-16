@@ -20,7 +20,7 @@
 
 import type { LlmAccountStatus, LlmBreakerDefaults, LlmModelIdStatus, LlmPriceAnchor } from "../types";
 import type { DecisionUnavailableCode } from "./errors";
-import type { DecisionRoute } from "./types";
+import type { DecisionImageFormat, DecisionRoute } from "./types";
 
 /**
  * How a provider is spoken to.
@@ -108,6 +108,46 @@ export interface DecisionRouteCapsDeclaration {
 }
 
 /** What every route declares, whoever serves it. */
+/**
+ * What a route declares about images, and about the Box question only an image
+ * can carry.
+ *
+ * It is a DECLARATION rather than a capability this package infers. Three
+ * things depend on it and none of them can be guessed: whether the codec may
+ * send an asset map at all, which bounds it holds each image to, and whether
+ * the transport sends the vendor's image header — a body with an image and no
+ * header is answered with a 400, so a route that has not declared support
+ * could only produce a rejection.
+ *
+ * `box` is separate from `supported` because the vendor serves images on more
+ * models than it serves Box questions on: Jev 1.13 and 1.14 both accept
+ * images, and Box needs 1.14. A route pinned to 1.13 therefore declares
+ * `supported: true` and `box: false`.
+ *
+ * `production_status` carries the vendor's own readiness statement, so a reader
+ * of the table sees it where the limits are rather than in a release note.
+ */
+export interface DecisionRouteImages {
+  /** Whether the route carries images at all. */
+  readonly supported: boolean;
+  /** The header name the transport sends as `true` on a request carrying images. */
+  readonly header: string;
+  /** The still-image formats the route accepts. */
+  readonly formats: readonly DecisionImageFormat[];
+  readonly min_side_px: number;
+  readonly max_side_px: number;
+  readonly min_total_px: number;
+  readonly max_total_px: number;
+  /** Ceiling on one image, in bytes. */
+  readonly max_image_bytes: number;
+  /** Ceiling on all images together, in bytes. */
+  readonly max_total_bytes: number;
+  /** Whether the route's pinned model serves Box questions. */
+  readonly box: boolean;
+  /** The vendor's own readiness statement for images on this route. */
+  readonly production_status: string;
+}
+
 interface DecisionRouteDeclarationCommon {
   /** Key of the provider in the table's `providers`. */
   readonly provider: string;
@@ -129,6 +169,12 @@ interface DecisionRouteDeclarationCommon {
   readonly max_state_tokens_basis: DecisionStateBudgetBasis;
   /** The price anchor, or `null` for a route that bills nothing per token. */
   readonly price_per_mtok: LlmPriceAnchor | null;
+  /**
+   * What the route declares about images, or absent for a route that carries
+   * none. Absent is NOT permission: a request carrying an image under it is
+   * refused before it is sent.
+   */
+  readonly images?: DecisionRouteImages;
   readonly notes?: string;
 }
 
@@ -234,4 +280,6 @@ export interface ResolvedDecisionRoute {
   readonly apiKeyEnv: string;
   /** The base URL to call, with the environment override applied. */
   readonly baseUrl: string;
+  /** What the route declares about images, or `null` when it declares none. */
+  readonly images: DecisionRouteImages | null;
 }

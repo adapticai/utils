@@ -815,8 +815,22 @@ describe("resolution", () => {
       },
       apiKeyEnv: "TYPESAFE_API_KEY",
       baseUrl: "https://api.typesafe.ai",
+      images: {
+        supported: true,
+        header: "TypeSafe-Danger-Zone-Images",
+        formats: ["png", "jpg", "jpeg"],
+        min_side_px: 280,
+        max_side_px: 1568,
+        min_total_px: 78400,
+        max_total_px: 2458624,
+        max_image_bytes: 16777216,
+        max_total_bytes: 33554432,
+        box: false,
+        production_status: hosted.images?.production_status,
+      },
     });
     // What resolved is what the table declares, read once.
+    expect(resolved.images).toEqual(hosted.images);
     expect(resolved.modelPin).toBe(hosted.version_pin);
     expect(resolved.expectedServedModel).toBe(hosted.expected_served_model);
     expect(resolved.baseUrl).toBe(provider.base_url);

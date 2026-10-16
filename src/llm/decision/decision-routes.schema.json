@@ -160,6 +160,37 @@
                 "source": { "type": "string" }
               }
             },
+            "images": {
+              "type": "object",
+              "description": "What the route declares about images, and about the Box question only an image can carry. Absent means the route carries no image, and absent is not permission: a request carrying one is refused before it is sent. The header is declared here because the transport sends it only for a route that declares it, and the vendor answers an image-bearing body without it with \"Images are not turned on\". box is separate from supported because the vendor accepts images on Jev 1.13 and 1.14 and serves Box questions on 1.14 and later only.",
+              "required": [
+                "supported",
+                "header",
+                "formats",
+                "min_side_px",
+                "max_side_px",
+                "min_total_px",
+                "max_total_px",
+                "max_image_bytes",
+                "max_total_bytes",
+                "box",
+                "production_status"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "supported": { "type": "boolean", "description": "Whether the route carries images at all." },
+                "header": { "type": "string", "minLength": 1, "description": "The header the transport sends as true on a request carrying images." },
+                "formats": { "type": "array", "minItems": 1, "items": { "type": "string", "enum": ["png", "jpg", "jpeg"] } },
+                "min_side_px": { "type": "integer", "minimum": 1, "description": "Fewest pixels the vendor accepts on a side." },
+                "max_side_px": { "type": "integer", "minimum": 1, "description": "Most pixels the vendor accepts on a side." },
+                "min_total_px": { "type": "integer", "minimum": 1, "description": "Fewest total pixels." },
+                "max_total_px": { "type": "integer", "minimum": 1, "description": "Most total pixels." },
+                "max_image_bytes": { "type": "integer", "minimum": 1, "description": "Ceiling on one image, in bytes." },
+                "max_total_bytes": { "type": "integer", "minimum": 1, "description": "Ceiling on all images together, in bytes." },
+                "box": { "type": "boolean", "description": "Whether the route's pinned model serves Box questions." },
+                "production_status": { "type": "string", "minLength": 1, "description": "The vendor's own readiness statement for images on this route, carried so a reader of the table sees it beside the limits." }
+              }
+            },
             "notes": { "type": "string" }
           }
         },

@@ -34,9 +34,12 @@
 
 import type { LlmUsageRecord } from "../types";
 import { DecisionRequestInvalidError, DecisionResponseFormatError } from "./errors";
-import type { DecisionRouteCaps } from "./route-types";
+import { validateAssets } from "./images";
+import type { DecisionImageLimits } from "./images";
+import type { DecisionRouteCaps, DecisionRouteImages } from "./route-types";
 import type {
   DecisionAnswer,
+  DecisionAssets,
   DecisionChoiceQuestion,
   DecisionDescription,
   DecisionJsonArray,
@@ -86,6 +89,17 @@ export interface DecisionEncodeOptions {
   readonly model: string;
   /** The request-size limits of the route being called. */
   readonly caps: DecisionRouteCaps;
+  /**
+   * What the route declares about images, or `null`/absent for a route that
+   * declares nothing.
+   *
+   * An absent declaration is NOT permission: a request carrying images, or a
+   * Box question, is refused under it. A route gains image support by
+   * declaring it in the route table, which is also what makes the transport
+   * send the vendor's required image header — so a body with an image and a
+   * table that says nothing could only produce a vendor rejection.
+   */
+  readonly images?: DecisionRouteImages | null;
 }
 
 /** How a response is decoded. */
@@ -520,8 +534,8 @@ function readQuestion(raw: unknown, fieldPath: string, caps: DecisionRouteCaps |
     throw invalidRequest(fieldPath, `a question must be an object, and is ${kindOf(raw)}`);
   }
   const { type, instructions } = raw;
-  if (type !== "noul" && type !== "choice" && type !== "score") {
-    throw invalidRequest(`${fieldPath}.type`, "a question's type must be noul, choice or score");
+  if (type !== "noul" && type !== "choice" && type !== "score" && type !== "box") {
+    throw invalidRequest(`${fieldPath}.type`, "a question's type must be noul, choice, score or box");
   }
   assertStructured(instructions, `${fieldPath}.instructions`, invalidRequest);
   const criteriaPath = `${fieldPath}.criteria`;
@@ -534,6 +548,12 @@ function readQuestion(raw: unknown, fieldPath: string, caps: DecisionRouteCaps |
       return { type, instructions, criteria: readChoiceCriteria(raw.criteria, criteriaPath, caps) };
     case "score":
       return { type, instructions, criteria: readScoreCriteria(raw.criteria, criteriaPath, caps) };
+    case "box": {
+      if (raw.criteria !== undefined) {
+        throw invalidRequest(criteriaPath, "a box question takes no criteria: there is nothing to choose between");
+      }
+      return { type, instructions };
+    }
   }
 }
 
@@ -568,6 +588,110 @@ function readQuestions(raw: unknown, caps: DecisionRouteCaps | null): Readonly<R
 }
 
 /**
+ * Read the asset map a request carries, or `null` when it carries none.
+ *
+ * Every bound is the route's own declaration, so a route that declares no
+ * image support refuses images outright rather than sending a body the vendor
+ * answers with a 400. The reference check uses the request's own text — the
+ * state and the questions as they will be sent — because that is exactly where
+ * the vendor looks for a reference.
+ *
+ * The map is REBUILT with the wire's fields only, in the wire's order, so a
+ * caller's own annotation on an asset is not sent.
+ *
+ * @param raw The caller's asset map, or `undefined`.
+ * @param state The state as it will be sent.
+ * @param questions The questions as they will be sent.
+ * @param images What the route declares about images, or `null`.
+ * @returns The assets as they are sent, or `null` when none are.
+ * @throws DecisionRequestInvalidError naming the offending field.
+ */
+function readAssets(
+  raw: unknown,
+  state: Structured,
+  questions: Readonly<Record<string, DecisionQuestion>>,
+  images: DecisionRouteImages | null,
+): DecisionAssets | null {
+  if (raw === undefined) return null;
+  if (!isPlainObject(raw)) {
+    throw invalidRequest("assets", `must be an object mapping each reference to its image, and is ${kindOf(raw)}`);
+  }
+  const keys = Object.keys(raw);
+  if (keys.length === 0) {
+    throw invalidRequest("assets", "an assets map must declare at least one image, or be absent");
+  }
+  if (images === null || !images.supported) {
+    throw invalidRequest(
+      "assets",
+      "the route declares no image support, so an image could only be refused by the vendor",
+    );
+  }
+  const entries: Record<string, { readonly format: unknown; readonly data_base64: unknown; readonly type?: unknown }> = {};
+  for (const key of keys) {
+    const asset = ownValue(raw, key);
+    if (!isPlainObject(asset)) {
+      throw invalidRequest(`assets.${key}`, `an image must be an object, and is ${kindOf(asset)}`);
+    }
+    entries[key] = { format: asset.format, data_base64: asset.data_base64, type: asset.type };
+  }
+  const referenceText = `${JSON.stringify(state)}${JSON.stringify(questions)}`;
+  const limits: DecisionImageLimits = {
+    formats: images.formats,
+    minSidePx: images.min_side_px,
+    maxSidePx: images.max_side_px,
+    minTotalPx: images.min_total_px,
+    maxTotalPx: images.max_total_px,
+    maxImageBytes: images.max_image_bytes,
+    maxTotalBytes: images.max_total_bytes,
+  };
+  const validation = validateAssets(entries, limits, (key) => referenceText.includes(key));
+  if (validation.violations.length > 0) {
+    throw invalidRequest("assets", validation.violations.join("; "));
+  }
+  return Object.fromEntries(
+    validation.assets.map((asset): [string, { readonly type: "image"; readonly format: typeof asset.format; readonly data_base64: string }] => {
+      const source = ownValue(raw, asset.key);
+      const data = isPlainObject(source) ? source.data_base64 : undefined;
+      if (typeof data !== "string") {
+        throw invalidRequest(`assets.${asset.key}.data_base64`, "must be base64 text");
+      }
+      return [asset.key, { type: "image", format: asset.format, data_base64: data }];
+    }),
+  );
+}
+
+/**
+ * Refuse a Box question the route cannot serve.
+ *
+ * Two conditions, both the vendor's: a Box question is served by Jev 1.14 and
+ * later only, and it is answered about an image, so a request that asks one
+ * without sending an image is asking about nothing.
+ *
+ * @param questions The questions as they will be sent.
+ * @param hasAssets Whether the request carries images.
+ * @param images What the route declares about images, or `null`.
+ * @throws DecisionRequestInvalidError naming the first offending question.
+ */
+function assertBoxServable(
+  questions: Readonly<Record<string, DecisionQuestion>>,
+  hasAssets: boolean,
+  images: DecisionRouteImages | null,
+): void {
+  for (const [id, question] of Object.entries(questions)) {
+    if (question.type !== "box") continue;
+    if (images === null || !images.box) {
+      throw invalidRequest(
+        `questions.${id}`,
+        "a box question needs a route whose declaration states box support, which the vendor serves on Jev 1.14 and later only",
+      );
+    }
+    if (!hasAssets) {
+      throw invalidRequest(`questions.${id}`, "a box question is answered about an image, and the request carries none");
+    }
+  }
+}
+
+/**
  * Encode a caller's request as the body that is sent.
  *
  * The body has its fields in the contract's order: `state`, `model`,
@@ -598,7 +722,11 @@ export function encodeDecisionRequest(request: DecisionRequest, options: Decisio
   const fields = fieldsOfRequest(request);
   const { state } = fields;
   assertStructured(state, "state", invalidRequest);
-  return { state, model, questions: readQuestions(fields.questions, caps) };
+  const questions = readQuestions(fields.questions, caps);
+  const images = options.images ?? null;
+  const assets = readAssets(fields.assets, state, questions, images);
+  assertBoxServable(questions, assets !== null, images);
+  return assets === null ? { state, model, questions } : { state, model, questions, assets };
 }
 
 /**
@@ -798,6 +926,43 @@ function decodeChoice(
  * @param context The caller's tolerance and the rejection builder.
  * @returns The answer and the sum of its distribution.
  */
+/**
+ * Read a box answer.
+ *
+ * Each edge is a fraction of the image's own size measured from its top-left
+ * corner, so each is held to [0, 1] and the two pairs are held to their order:
+ * a box whose top is below its bottom describes no region, and reporting it as
+ * one would hand a consumer coordinates it could draw.
+ *
+ * Nothing is clamped and nothing is swapped. A malformed box is rejected whole,
+ * because a repaired box is a location no model returned.
+ *
+ * A box has no distribution, so its probability sum is `null` rather than zero.
+ *
+ * @param raw The answer as received.
+ * @param fieldPath Where the answer sits, for the error.
+ * @param context The caller's tolerance and the rejection builder.
+ * @returns The answer, with no distribution sum.
+ */
+function decodeBox(raw: PlainObject, fieldPath: string, context: DecodeContext): DecodedAnswer {
+  const box = raw.box;
+  if (!isPlainObject(box)) {
+    throw context.malformed(`${fieldPath}.box`, `a box answer carries a box object, and carries ${kindOf(box)}`);
+  }
+  const top = readProbability(box.top, `${fieldPath}.box.top`, context.malformed);
+  const bottom = readProbability(box.bottom, `${fieldPath}.box.bottom`, context.malformed);
+  const left = readProbability(box.left, `${fieldPath}.box.left`, context.malformed);
+  const right = readProbability(box.right, `${fieldPath}.box.right`, context.malformed);
+  if (!(top <= bottom)) {
+    throw context.malformed(`${fieldPath}.box`, "top must not lie below bottom: edges are measured from the top-left corner");
+  }
+  if (!(left <= right)) {
+    throw context.malformed(`${fieldPath}.box`, "left must not lie right of right: edges are measured from the top-left corner");
+  }
+  const confidence = readFinite(raw.confidence, `${fieldPath}.confidence`, context.malformed);
+  return { answer: { type: "box", box: { top, bottom, left, right }, confidence }, probabilitySum: null };
+}
+
 function decodeScore(
   raw: PlainObject,
   question: DecisionScoreQuestion,
@@ -852,6 +1017,8 @@ function decodeAnswer(
       return decodeChoice(raw, question, fieldPath, context);
     case "score":
       return decodeScore(raw, question, fieldPath, context);
+    case "box":
+      return decodeBox(raw, fieldPath, context);
   }
 }
 

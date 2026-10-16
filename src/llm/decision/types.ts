@@ -100,11 +100,65 @@ export interface DecisionScoreQuestion {
   readonly criteria: readonly DecisionDescription[];
 }
 
+/**
+ * A question answered by WHERE something is in an image.
+ *
+ * It takes no criteria: there is nothing to choose between and no scale to
+ * rate against, only a location to return. It is served by Jev 1.14 and later
+ * (`jev-preview`, `jev-1.14.0`) and by no earlier release, so a route whose
+ * declaration does not state Box support refuses it before it is sent rather
+ * than paying for a vendor rejection.
+ *
+ * The vendor states that a Box answer has NO "not found" form: a target that
+ * is absent from the image still comes back with coordinates. A consumer
+ * therefore reads the confidence beside the box and never treats coordinates
+ * alone as evidence that anything was located.
+ */
+export interface DecisionBoxQuestion {
+  readonly type: "box";
+  readonly instructions: DecisionInstructions;
+}
+
 /** One question, discriminated on `type`. */
-export type DecisionQuestion = DecisionNoulQuestion | DecisionChoiceQuestion | DecisionScoreQuestion;
+export type DecisionQuestion =
+  | DecisionNoulQuestion
+  | DecisionChoiceQuestion
+  | DecisionScoreQuestion
+  | DecisionBoxQuestion;
 
 /** The three kinds of question, and so of answer. */
 export type DecisionQuestionType = DecisionQuestion["type"];
+
+/** The still-image formats the vendor accepts. */
+export const DECISION_IMAGE_FORMATS = ["png", "jpg", "jpeg"] as const;
+
+/** One accepted image format. See {@link DECISION_IMAGE_FORMATS}. */
+export type DecisionImageFormat = (typeof DECISION_IMAGE_FORMATS)[number];
+
+/**
+ * One image, as the request's asset map carries it.
+ *
+ * The bytes travel base64-encoded in `data_base64`: standard alphabet, padded,
+ * with no line breaks and no data-URL prefix. The vendor also accepts a `part`
+ * naming a file in a multipart request; this package writes a JSON body and so
+ * carries no part, because declaring a part a body does not contain is a 400.
+ */
+export interface DecisionImageAsset {
+  /** Optional on the wire; written so an asset map always says what it holds. */
+  readonly type?: "image";
+  readonly format: DecisionImageFormat;
+  readonly data_base64: string;
+}
+
+/**
+ * The request's assets, keyed by the reference each is addressed by.
+ *
+ * A key is referenced from the state, a question's instructions or a criteria
+ * description, as a whole string value or inside one. The vendor REQUIRES every
+ * declared asset to be referenced somewhere, so an unreferenced asset is
+ * refused here rather than sent.
+ */
+export type DecisionAssets = Readonly<Record<string, DecisionImageAsset>>;
 
 /**
  * The request body, in the order its fields are sent.
@@ -118,6 +172,8 @@ export interface DecisionWireRequest {
   readonly state: DecisionState;
   readonly model: string;
   readonly questions: Readonly<Record<string, DecisionQuestion>>;
+  /** The images the state and the questions reference. Absent when none are sent. */
+  readonly assets?: DecisionAssets;
 }
 
 /**
@@ -166,8 +222,26 @@ export interface DecisionScoreAnswer {
   readonly confidence: number;
 }
 
+/**
+ * Where the answer puts what the Box question asked for.
+ *
+ * Each edge is a FRACTION of the image's own size, measured from its top-left
+ * corner, so a box is independent of how the image was scaled. `confidence` is
+ * the vendor's own statistic, carried verbatim.
+ */
+export interface DecisionBoxAnswer {
+  readonly type: "box";
+  readonly box: {
+    readonly top: number;
+    readonly bottom: number;
+    readonly left: number;
+    readonly right: number;
+  };
+  readonly confidence: number;
+}
+
 /** One answer, discriminated on `type`. */
-export type DecisionAnswer = DecisionNoulAnswer | DecisionChoiceAnswer | DecisionScoreAnswer;
+export type DecisionAnswer = DecisionNoulAnswer | DecisionChoiceAnswer | DecisionScoreAnswer | DecisionBoxAnswer;
 
 /**
  * Token usage as the response reports it.
@@ -198,6 +272,13 @@ export interface DecisionWireResponse {
 export interface DecisionRequest {
   readonly state: DecisionState;
   readonly questions: Readonly<Record<string, DecisionQuestion>>;
+  /**
+   * The images the state and the questions reference, keyed by reference.
+   *
+   * Absent means a text-only request, which is every request the package made
+   * before images existed: nothing about a request without this field changes.
+   */
+  readonly assets?: DecisionAssets;
 }
 
 /** Options a caller passes alongside a request. */

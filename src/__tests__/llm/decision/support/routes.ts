@@ -63,7 +63,7 @@ export function hostedRouteOf(table: DecisionRouteTable): DeepMutable<DecisionUt
   if (route === undefined || route.served_by !== "utils") {
     throw new Error(`the table does not declare ${HOSTED_ROUTE} as a route this package serves`);
   }
-  return route;
+  return route as DeepMutable<DecisionUtilsServedRouteDeclaration>;
 }
 
 /**
@@ -78,7 +78,7 @@ export function localRouteOf(table: DecisionRouteTable): DeepMutable<DecisionEng
   if (route === undefined || route.served_by !== "engine") {
     throw new Error(`the table does not declare ${LOCAL_ROUTE} as a route the consumer serves`);
   }
-  return route;
+  return route as DeepMutable<DecisionEngineServedRouteDeclaration>;
 }
 
 /**
