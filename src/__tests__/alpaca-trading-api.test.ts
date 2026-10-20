@@ -77,12 +77,80 @@ function requestedUrl(callIndex: number): string {
   return String(mockFetch.mock.calls[callIndex][0]);
 }
 
+/**
+ * Shortest top-level array the server could still have capped at PAGE_LIMIT,
+ * given Alpaca folds at most a parent plus two legs into one entry. Mirrors
+ * MIN_PAGE_LENGTH_POSSIBLY_CAPPED in the module under test.
+ */
+const POSSIBLY_CAPPED = Math.ceil(PAGE_LIMIT / 3); // 167
+
+/**
+ * The walk no longer ends just because the array came back shorter than
+ * PAGE_LIMIT. That premise was written down three times — in this method's
+ * doc comment, in the legacy `getOrders`, and in the name of the test that
+ * used to live here ("terminating on a short page") — so a green test was
+ * holding it in place as the specification.
+ *
+ * Under `nested: true` a parent order carries its protective legs inside
+ * `legs` rather than as top-level entries, so a full server page can surface
+ * as a short array. The walk then stops early and the caller holds a
+ * truncated order pool indistinguishable from a complete one, which on the
+ * reconciliation path is what closes a live position.
+ *
+ * The first two tests are the discriminating pair: they sit either side of
+ * POSSIBLY_CAPPED, which is the only length the walk now consults.
+ */
 describe("AlpacaTradingAPI.getOrders", () => {
   let api: AlpacaTradingAPI;
 
   beforeEach(() => {
     vi.clearAllMocks();
     api = new AlpacaTradingAPI(testCredentials);
+  });
+
+  it("keeps paging past a short page that could still be a capped one", async () => {
+    // Neither page reaches PAGE_LIMIT, both are long enough that nesting
+    // could account for the shortfall, and history continues behind both.
+    const page1 = makeOrders(300, "p1", 0);
+    const page2 = makeOrders(200, "p2", 1000);
+    mockFetch
+      .mockResolvedValueOnce(jsonResponse(page1))
+      .mockResolvedValueOnce(jsonResponse(page2))
+      .mockResolvedValueOnce(jsonResponse([]));
+
+    const result = await api.getOrders({ status: "open", nested: true });
+
+    // Named so a failure says WHICH rule the walk fell back to.
+    expect(result).toHaveLength(500); // every order — correct
+    expect(result).not.toHaveLength(300); // stopped on the first short page
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+
+    const boundary1 = page1[page1.length - 1].submitted_at as string;
+    expect(requestedUrl(1)).toContain(`until=${encodeURIComponent(boundary1)}`);
+  });
+
+  it("stops on a page too short for nesting to explain, without a probe request", async () => {
+    // One below the bound: no amount of leg-folding makes this a capped page,
+    // so there is nothing behind it and no second request is worth paying for.
+    const page1 = makeOrders(POSSIBLY_CAPPED - 1, "p1", 0);
+    mockFetch.mockResolvedValueOnce(jsonResponse(page1));
+
+    const result = await api.getOrders({ status: "open", nested: true });
+
+    expect(result).toHaveLength(POSSIBLY_CAPPED - 1);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the single-symbol lookup to one request (the protective-stop hot path)", async () => {
+    // updateTrailingStop and the qty-reservation scans call getOrders per
+    // symbol and get one or two resting orders back. Paging must not add a
+    // round trip or a pagination sleep to that.
+    mockFetch.mockResolvedValueOnce(jsonResponse(makeOrders(2, "s", 0)));
+
+    const result = await api.getOrders({ status: "open", symbols: ["AAPL"] });
+
+    expect(result).toHaveLength(2);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 
   it("requests limit=500 explicitly when the caller omits limit (never Alpaca's silent 50 default)", async () => {
@@ -112,7 +180,7 @@ describe("AlpacaTradingAPI.getOrders", () => {
     expect(requestedUrl(0)).toContain("limit=100");
   });
 
-  it("paginates with an until cursor when a full page returns, terminating on a short page", async () => {
+  it("paginates with an until cursor set to the oldest order on the page", async () => {
     const page1 = makeOrders(PAGE_LIMIT, "p1", 0);
     const page2 = makeOrders(3, "p2", PAGE_LIMIT + 1);
     mockFetch
@@ -125,10 +193,20 @@ describe("AlpacaTradingAPI.getOrders", () => {
     expect(mockFetch).toHaveBeenCalledTimes(2);
     // Page 2 cursor = oldest order on page 1 (until walks backwards for desc).
     const boundary = page1[page1.length - 1].submitted_at as string;
-    expect(requestedUrl(1)).toContain(
-      `until=${encodeURIComponent(boundary)}`,
-    );
+    expect(requestedUrl(1)).toContain(`until=${encodeURIComponent(boundary)}`);
     expect(requestedUrl(1)).toContain(`limit=${PAGE_LIMIT}`);
+  });
+
+  it("ends on an empty page when the last full page sits exactly on the window edge", async () => {
+    const page1 = makeOrders(PAGE_LIMIT, "p1", 0);
+    mockFetch
+      .mockResolvedValueOnce(jsonResponse(page1))
+      .mockResolvedValueOnce(jsonResponse([]));
+
+    const result = await api.getOrders({ status: "all" });
+
+    expect(result).toHaveLength(PAGE_LIMIT);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 
   it("dedups boundary orders by id when pages overlap at a shared timestamp", async () => {
@@ -175,24 +253,8 @@ describe("AlpacaTradingAPI.getOrders", () => {
 
     expect(result).toHaveLength(PAGE_LIMIT + 2);
     const boundary = page1[page1.length - 1].submitted_at as string;
-    expect(requestedUrl(1)).toContain(
-      `after=${encodeURIComponent(boundary)}`,
-    );
+    expect(requestedUrl(1)).toContain(`after=${encodeURIComponent(boundary)}`);
     expect(requestedUrl(1)).not.toContain("until=");
-  });
-
-  it("stops paginating when the boundary order has no usable submitted_at", async () => {
-    const page1 = makeOrders(PAGE_LIMIT, "p1", 0);
-    page1[page1.length - 1] = {
-      ...page1[page1.length - 1],
-      submitted_at: undefined,
-    } as unknown as AlpacaOrder;
-    mockFetch.mockResolvedValueOnce(jsonResponse(page1));
-
-    const result = await api.getOrders({ status: "open" });
-
-    expect(result).toHaveLength(PAGE_LIMIT);
-    expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 
   it("preserves a caller-supplied until as the initial cursor", async () => {
@@ -204,6 +266,76 @@ describe("AlpacaTradingAPI.getOrders", () => {
     expect(requestedUrl(0)).toContain(
       `until=${encodeURIComponent(callerUntil)}`,
     );
+  });
+});
+
+/**
+ * When the walk is still inside the window and cannot reach the rest of it, it
+ * throws rather than returning what it has. Returning the partial set is the
+ * silent truncation this change exists to remove, so each previously-silent
+ * `break` is now a refusal and the caller fails closed (utils rule 3).
+ */
+describe("AlpacaTradingAPI.getOrders refuses to return a partial set", () => {
+  let api: AlpacaTradingAPI;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    api = new AlpacaTradingAPI(testCredentials);
+  });
+
+  it("throws when the boundary order carries no submitted_at to move the cursor to", async () => {
+    const page1 = makeOrders(PAGE_LIMIT, "p1", 0);
+    page1[page1.length - 1] = {
+      ...page1[page1.length - 1],
+      submitted_at: undefined,
+    } as unknown as AlpacaOrder;
+    mockFetch.mockResolvedValueOnce(jsonResponse(page1));
+
+    await expect(api.getOrders({ status: "open" })).rejects.toThrow(
+      /no submitted_at/,
+    );
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("throws when the cursor cannot narrow because the boundary sits on the cursor", async () => {
+    // Every order shares one submitted_at, so `until` can never move past it
+    // and the walk would otherwise re-request the same page forever.
+    const at = "2026-06-12T15:00:00.000Z";
+    const flat = (count: number, prefix: string) =>
+      makeOrders(count, prefix, 0).map((o) => ({
+        ...o,
+        submitted_at: at,
+      })) as AlpacaOrder[];
+    mockFetch
+      .mockResolvedValueOnce(jsonResponse(flat(PAGE_LIMIT, "p1")))
+      .mockResolvedValueOnce(jsonResponse(flat(PAGE_LIMIT, "p2")));
+
+    await expect(api.getOrders({ status: "all" })).rejects.toThrow(
+      /cannot narrow/,
+    );
+  });
+
+  it("throws rather than walking without bound when the cursor advances forever", async () => {
+    // Every page is new, full-length and advances the cursor, so neither
+    // refusal above fires. The page ceiling is what stops a reconciliation
+    // cycle hanging on the broker.
+    let batch = 0;
+    mockFetch.mockImplementation(() =>
+      Promise.resolve(
+        jsonResponse(makeOrders(PAGE_LIMIT, `u${batch}`, PAGE_LIMIT * batch++)),
+      ),
+    );
+
+    vi.useFakeTimers();
+    try {
+      const walk = api.getOrders({ status: "all" });
+      const assertion = expect(walk).rejects.toThrow(/exceeded 200 pages/);
+      await vi.runAllTimersAsync();
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(mockFetch).toHaveBeenCalledTimes(200);
   });
 });
 

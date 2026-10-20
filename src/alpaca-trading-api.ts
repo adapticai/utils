@@ -32,6 +32,7 @@ import {
 import { validateAlpacaCredentials } from "./utils/auth-validator";
 import {
   alpacaHttpError,
+  AlpacaApiError,
   DuplicateClientOrderIdError,
   enrichAlpacaError,
   isPendingCancelRejection,
@@ -53,6 +54,40 @@ const ORDER_PAGE_LIMIT = 500;
 
 /** Delay between order pagination pages to stay clear of rate limits. */
 const ORDER_PAGINATION_DELAY_MS = 300;
+
+/**
+ * Hard ceiling on the {@link AlpacaTradingAPI.getOrders} paging walk. Both
+ * ways the cursor can fail to advance are caught explicitly; this bounds the
+ * loop against a vendor behaviour we have not anticipated, so a reconciliation
+ * cycle cannot hang on the broker. At `ORDER_PAGE_LIMIT` per page it admits
+ * 100k orders.
+ */
+const MAX_ORDER_PAGES = 200;
+
+/**
+ * Most orders Alpaca can fold into ONE top-level entry of a `nested: true`
+ * response: the parent plus its two protective legs (stop_loss, take_profit).
+ * Alpaca nests at most one level, so this is the arity bound, not a guess at
+ * typical shape.
+ */
+const MAX_ORDERS_PER_TOP_LEVEL_ENTRY = 3;
+
+/**
+ * Shortest top-level array that could still be a server page capped at
+ * `ORDER_PAGE_LIMIT`.
+ *
+ * `limit` caps what the server counts; what we receive is the top-level array,
+ * and under `nested: true` those differ because a parent's legs ride inside it
+ * rather than as separate entries. So a FULL server page can surface as few as
+ * `ORDER_PAGE_LIMIT / MAX_ORDERS_PER_TOP_LEVEL_ENTRY` entries, and any array at
+ * least this long has to be treated as possibly capped. Below it, nesting
+ * cannot account for the shortfall and the page is genuinely the end of the
+ * window — which keeps single-symbol lookups (one or two resting orders) to a
+ * single request instead of probing for a page that cannot exist.
+ */
+const MIN_PAGE_LENGTH_POSSIBLY_CAPPED = Math.ceil(
+  ORDER_PAGE_LIMIT / MAX_ORDERS_PER_TOP_LEVEL_ENTRY,
+);
 
 /**
  * HTTP status at or above which a Multi-Status (207) sub-result is a failure.
@@ -927,12 +962,38 @@ export class AlpacaTradingAPI {
    * When `limit` is omitted, Alpaca's silent server-side default of 50
    * records is NOT allowed to apply — that default truncated open-order
    * visibility on protective-stop and qty-reservation paths. Instead the
-   * API maximum (500) is requested explicitly and, whenever a full page
-   * comes back, the result is paginated with a `submitted_at` cursor walk
-   * (`until` for desc — the default — or `after` for asc) until a short
-   * page indicates the window is exhausted. Pages are deduplicated by
-   * order id so same-timestamp boundary orders can never be double
-   * counted, and the walk terminates if a full page yields no new orders.
+   * API maximum (500) is requested explicitly and the result is paginated
+   * with a `submitted_at` cursor walk (`until` for desc — the default — or
+   * `after` for asc). Pages are deduplicated by order id, and the walk ends
+   * on the first page that yields no order we have not already seen.
+   *
+   * It does NOT end merely because the array came back shorter than
+   * `ORDER_PAGE_LIMIT`. That was the termination here until 2026-10-20, and it
+   * assumes the top-level array length is what the server capped — which
+   * `nested: true` breaks, because a parent order carries its protective legs
+   * inside `legs` rather than as top-level entries. A full server page can
+   * then surface as a short array, the walk stops early, and the caller holds
+   * a truncated order pool it cannot distinguish from a complete one. On the
+   * reconciliation path "no broker order exists for this trade" is what closes
+   * a live position.
+   *
+   * What bounds the problem is that nesting is one level deep and at most two
+   * legs wide, so the shortfall is bounded: see
+   * {@link MIN_PAGE_LENGTH_POSSIBLY_CAPPED}. An array shorter than that cannot
+   * be a capped page however the server counts, so the walk stops there and a
+   * single-symbol lookup still costs one request.
+   *
+   * NOT established: whether Alpaca in fact counts nested legs against
+   * `limit`. The only direct evidence is a fake broker that encodes it that
+   * way, and a live paged read against a bracket-heavy account would settle
+   * it. The change does not rest on it — a termination that assumes an
+   * undocumented vendor guarantee is wrong on its own terms, and this one is
+   * correct under either answer.
+   *
+   * When the walk cannot reach the whole result set — a boundary order with no
+   * `submitted_at`, or a cursor that will not narrow — it throws rather than
+   * returning the partial set, so the caller fails closed instead of trading
+   * on a short pool.
    *
    * @param params (GetOrdersParams) - optional parameters to filter the orders
    * - status: 'open' | 'closed' | 'all'
@@ -957,7 +1018,14 @@ export class AlpacaTradingAPI {
     // `after` walks forwards for asc. Both are exclusive on Alpaca's side.
     let cursor = isAsc ? params.after : params.until;
 
-    while (true) {
+    for (let pageNumber = 1; ; pageNumber++) {
+      if (pageNumber > MAX_ORDER_PAGES) {
+        throw new AlpacaApiError(
+          `getOrders exceeded ${MAX_ORDER_PAGES} pages with the cursor at ${cursor ?? "the window start"} (${allOrders.length} orders read); refusing to return a partial order set`,
+          "ORDER_PAGINATION_UNBOUNDED",
+        );
+      }
+
       const pageParams: GetOrdersParams = {
         ...params,
         ...(isAsc ? { after: cursor } : { until: cursor }),
@@ -973,14 +1041,33 @@ export class AlpacaTradingAPI {
         }
       }
 
-      // Short page = window exhausted (same termination as legacy getOrders).
-      if (page.length < ORDER_PAGE_LIMIT) break;
+      // Window exhausted: nothing on this page was new, so there is nothing
+      // behind it either.
+      if (addedCount === 0) break;
 
+      // Too short to be a capped page however the server counted it, so this
+      // is the end of the window. This is the ONLY use of page length, and it
+      // is a bound on what nesting can hide — not the old "short page means
+      // done" rule, which trusted length to within a single entry.
+      if (page.length < MIN_PAGE_LENGTH_POSSIBLY_CAPPED) break;
+
+      // Past here there IS more to read, so the cursor has to move. Returning
+      // what we have instead would be the silent truncation this replaces.
       const lastOrder = page[page.length - 1];
-      // No usable cursor, or a full page of already-seen orders (cursor not
-      // advancing): stop rather than risk an unbounded walk.
-      if (!lastOrder.submitted_at || addedCount === 0) break;
-      cursor = lastOrder.submitted_at;
+      const nextCursor = lastOrder.submitted_at;
+      if (!nextCursor) {
+        throw new AlpacaApiError(
+          `getOrders cannot page past ${cursor ?? "the window start"}: ${addedCount} new order(s) read, but the boundary order carries no submitted_at to move the cursor to`,
+          "ORDER_PAGINATION_NO_CURSOR",
+        );
+      }
+      if (nextCursor === cursor) {
+        throw new AlpacaApiError(
+          `getOrders cannot page past ${cursor}: ${addedCount} new order(s) read, but the boundary order sits on the cursor itself, so the window cannot narrow`,
+          "ORDER_PAGINATION_STALLED",
+        );
+      }
+      cursor = nextCursor;
 
       await new Promise((resolve) =>
         setTimeout(resolve, ORDER_PAGINATION_DELAY_MS),
