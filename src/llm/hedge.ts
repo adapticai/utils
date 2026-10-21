@@ -546,6 +546,9 @@ export function runSameModelGroup<T>(
             reason: "answered after a same-model attempt had already won",
             failureClass: "hedge_loser",
             servedModel: response.servedModel ?? null,
+            ...(response.fenceStripped === undefined
+              ? {}
+              : { fenceStripped: response.fenceStripped }),
             usage: response.usage,
           },
           response.servedProvider,
@@ -562,6 +565,9 @@ export function runSameModelGroup<T>(
           ...fields,
           outcome: "ok",
           servedModel: response.servedModel ?? null,
+          ...(response.fenceStripped === undefined
+            ? {}
+            : { fenceStripped: response.fenceStripped }),
           usage: response.usage,
         },
         response.servedProvider,

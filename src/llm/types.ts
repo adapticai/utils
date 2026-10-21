@@ -443,6 +443,12 @@ export interface LlmTransportResponse<T> {
    * verbatim and why absence stays `null`.
    */
   readonly finishReason?: LlmFinishReason | null;
+  /**
+   * Whether the structured answer arrived inside one enclosing markdown fence
+   * that was removed before parsing. Absent when the transport does not parse
+   * the answer itself (the degraded direct path).
+   */
+  readonly fenceStripped?: boolean;
 }
 
 /**
@@ -571,6 +577,8 @@ export interface AliasAttemptRecord {
   readonly budgetMs?: number;
   /** Provider-reported serving model of an answered leg; `null` when unreported. */
   readonly servedModel?: string | null;
+  /** On an answered leg, whether one enclosing markdown fence was removed to parse it. */
+  readonly fenceStripped?: boolean;
   readonly reason?: string;
   readonly usage?: LlmUsageRecord;
   /** The provider that served, or was asked to serve, this attempt; `null` when unknown. */

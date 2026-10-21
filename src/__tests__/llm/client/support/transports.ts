@@ -44,6 +44,8 @@ export type LegBehaviour =
       readonly response: unknown;
       readonly usage: LlmUsageRecord;
       readonly toolCalls?: readonly LlmToolCall[];
+      /** What the transport reports about removing an enclosing fence, if anything. */
+      readonly fenceStripped?: boolean;
     }
   | { readonly kind: "fail"; readonly error: Error }
   /** Answers after a delay on the (fake) clock, unless its signal aborts first. */
@@ -100,8 +102,9 @@ export function answers(
   response: unknown,
   usage: LlmUsageRecord,
   toolCalls?: readonly LlmToolCall[],
+  fenceStripped?: boolean,
 ): LegBehaviour {
-  return { kind: "ok", response, usage, toolCalls };
+  return { kind: "ok", response, usage, toolCalls, fenceStripped };
 }
 
 /**
@@ -231,6 +234,11 @@ export class ScriptedTransport implements LlmTransport {
         response: asPayload<T>(behaviour.response),
         usage: behaviour.usage,
         tool_calls: behaviour.toolCalls,
+        // Absent unless the scripted leg says otherwise, like the degraded
+        // direct transport that does not parse the answer itself.
+        ...(behaviour.fenceStripped === undefined
+          ? {}
+          : { fenceStripped: behaviour.fenceStripped }),
       };
     }
 
