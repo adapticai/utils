@@ -5,7 +5,8 @@
 import Alpaca from "@alpacahq/alpaca-trade-api";
 
 import type { AlpacaSdk } from "./sdk-types";
-import { getTradingApiUrl } from "../config/api-endpoints";
+import { type AccountType, getTradingApiUrl } from "../config/api-endpoints";
+import { ValidationError } from "../errors";
 import { createTimeoutSignal, DEFAULT_TIMEOUTS } from "../http-timeout";
 import { log as baseLog } from "../logging";
 import { BrokerageProvider } from "../types/broker-types";
@@ -268,18 +269,52 @@ export function createAlpacaClient(config: AlpacaClientConfig): AlpacaClient {
 }
 
 /**
- * Create a client from environment variables
+ * Create a trading client whose CREDENTIAL comes from the process environment
+ * and whose HOST comes from the caller.
+ *
+ * `accountType` is a required argument and is deliberately NOT read from
+ * `ALPACA_ACCOUNT_TYPE`. An Alpaca key authenticates against exactly one
+ * trading host — a paper-class key is accepted by `paper-api.alpaca.markets`
+ * and rejected by `api.alpaca.markets` — and which host an account lives on
+ * is stated authoritatively by `AlpacaAccount.type`, never by a process-level
+ * declaration. Reading the host from the environment made a trading client
+ * silently address the wrong host whenever the declaration and the account
+ * disagreed, and a silent wrong host fails with an opaque HTTP 401 at the
+ * call site rather than at the point the host was chosen. Callers pass the
+ * account's own `type`.
+ *
+ * @param accountType - The account's type, from `AlpacaAccount.type`.
+ * @returns A client addressing the trading host that account lives on.
+ * @throws {ValidationError} If `accountType` is not `PAPER` or `LIVE`, or if
+ *   the process credential is absent. Both fail closed: an unresolved host is
+ *   never guessed.
+ *
+ * @example
+ * ```typescript
+ * const client = createClientFromEnv(account.type);
+ * ```
  */
-export function createClientFromEnv(): AlpacaClient {
+export function createClientFromEnv(accountType: AccountType): AlpacaClient {
   const apiKey = process.env.ALPACA_API_KEY;
   const apiSecret =
     process.env.ALPACA_API_SECRET || process.env.ALPACA_SECRET_KEY;
-  const accountType =
-    (process.env.ALPACA_ACCOUNT_TYPE as "PAPER" | "LIVE") || "PAPER";
+
+  // Guarded at runtime as well as in the type, because a JavaScript consumer
+  // can reach this with anything and the failure mode being prevented is a
+  // wrong host rather than a type error.
+  if (accountType !== "PAPER" && accountType !== "LIVE") {
+    throw new ValidationError(
+      `Alpaca account type must be "PAPER" or "LIVE" to resolve a trading host; received ${JSON.stringify(accountType)}`,
+      ALPACA_PROVIDER,
+      "accountType",
+    );
+  }
 
   if (!apiKey || !apiSecret) {
-    throw new Error(
+    throw new ValidationError(
       "ALPACA_API_KEY and ALPACA_SECRET_KEY environment variables are required",
+      ALPACA_PROVIDER,
+      "apiKey",
     );
   }
 

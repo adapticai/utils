@@ -226,7 +226,6 @@ export class AlpacaTradingAPI {
     validateAlpacaCredentials({
       apiKey: credentials.apiKey,
       apiSecret: credentials.apiSecret,
-      isPaper: credentials.type === "PAPER",
     });
 
     this.credentials = credentials;

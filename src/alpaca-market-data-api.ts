@@ -304,7 +304,22 @@ export class AlpacaMarketDataAPI extends EventEmitter {
   private static instance: AlpacaMarketDataAPI;
   private headers: Record<string, string>;
   private dataURL: string;
-  private apiURL: string;
+  /**
+   * Trading-host base URL used by the few endpoints on this class that are
+   * TRADING endpoints rather than market-data ones — `/v2/assets` and
+   * `/v2/assets/{symbol}`. Named for what it is: the market-data hosts are
+   * `dataURL` and `v1beta1url`, and conflating this one with them is what let
+   * a wrong trading host read as a market-data concern.
+   *
+   * Resolved from the PROCESS-level `ALPACA_ACCOUNT_TYPE` declaration,
+   * because this class holds the process credential and no account is in
+   * scope at an asset lookup. An Alpaca key authenticates against exactly one
+   * trading host, so a declaration that contradicts the provisioned key makes
+   * every read through this URL fail HTTP 401 / Alpaca code 40110000. Nothing
+   * here can detect that; the engine measures it at boot
+   * (`engine/src/services/health/alpaca-trading-host-probe.ts`).
+   */
+  private tradingApiUrl: string;
   private v1beta1url: string;
   /** Whether API credentials are valid and available. False during build time when env vars are missing. */
   private credentialsValid: boolean = false;
@@ -415,19 +430,15 @@ export class AlpacaMarketDataAPI extends EventEmitter {
     const apiSecret =
       process.env.ALPACA_API_SECRET || process.env.ALPACA_SECRET_KEY || "";
     this.credentialsValid = validateAlpacaCredentials(
-      {
-        apiKey,
-        apiSecret,
-        isPaper: process.env.ALPACA_ACCOUNT_TYPE === "PAPER",
-      },
+      { apiKey, apiSecret },
       { throwOnMissing: false },
     );
 
     this.dataURL = MARKET_DATA_API.STOCKS;
-    this.apiURL =
+    this.tradingApiUrl =
       process.env.ALPACA_ACCOUNT_TYPE === "PAPER"
         ? getTradingApiUrl("PAPER")
-        : getTradingApiUrl("LIVE"); // used by some, e.g. getAssets
+        : getTradingApiUrl("LIVE");
     this.v1beta1url = MARKET_DATA_API.OPTIONS; // used for options endpoints
     this.setMode("production"); // sets stockStreamUrl and optionStreamUrl
     this.headers = {
@@ -902,7 +913,7 @@ export class AlpacaMarketDataAPI extends EventEmitter {
       baseUrlName === "data"
         ? this.dataURL
         : baseUrlName === "api"
-          ? this.apiURL
+          ? this.tradingApiUrl
           : this.v1beta1url;
     const url = new URL(`${baseUrl}${endpoint}`);
 
@@ -1405,7 +1416,7 @@ export class AlpacaMarketDataAPI extends EventEmitter {
     asset_class?: string;
   }): Promise<AlpacaAsset[]> {
     // Endpoint: GET /v2/assets
-    return this.makeRequest("/assets", "GET", params, "api"); // use apiURL
+    return this.makeRequest("/assets", "GET", params, "api");
   }
 
   /**
