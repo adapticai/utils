@@ -12,6 +12,12 @@
  * This module is the pure resolution step. It never guesses a unit, never
  * defaults a reference price, and refuses rather than send a value the broker
  * would reject or treat as effectively zero.
+ *
+ * A caller may opt in ({@link ReplaceTrailOptions.subFloorClamp}) to having a
+ * tightening conversion that lands below {@link MIN_CONVERTED_TRAIL_PERCENT}
+ * sent at that floor instead of refused. The option is off by default, and
+ * off it changes nothing: whether a near-zero trail should rest at all is a
+ * calibration the caller owns, not a unit question this module can settle.
  */
 import { AdapticUtilsError } from "../../errors";
 import { AlpacaOrder } from "../../types/alpaca-types";
@@ -46,6 +52,29 @@ export interface ResolvedTrail {
   readonly referencePrice: number | null;
 }
 
+/**
+ * A resolution whose converted percent fell below
+ * {@link MIN_CONVERTED_TRAIL_PERCENT} and was sent at the floor because the
+ * caller opted in ({@link ReplaceTrailOptions.subFloorClamp}).
+ */
+export interface ClampedResolvedTrail extends ResolvedTrail {
+  /** The percent the caller's distance converted to, before the clamp. */
+  readonly clampedFromPercent: number;
+}
+
+/** Caller options for {@link resolveReplaceTrail}. */
+export interface ReplaceTrailOptions {
+  /**
+   * Send a TIGHTENING conversion that lands below
+   * {@link MIN_CONVERTED_TRAIL_PERCENT} at the floor instead of refusing it.
+   * Applies only to a positive dollar distance on a percent order whose own
+   * `trail_percent` is wider than the floor, so the clamped trail is strictly
+   * tighter than the resting one. Default `false`: the conversion is refused,
+   * exactly as without the option.
+   */
+  readonly subFloorClamp?: boolean;
+}
+
 /** Why a trail replace was refused before reaching the broker. */
 export type TrailUnitRefusalReason =
   | "unit_unknown"
@@ -66,6 +95,12 @@ export class TrailUnitConversionRefusedError extends AdapticUtilsError {
   public readonly pct: number | null;
   /** The conversion reference price, or `null` when none was usable. */
   public readonly ref: number | null;
+  /**
+   * Whether {@link ReplaceTrailOptions.subFloorClamp} would have sent this
+   * refused conversion at the floor. Lets a caller measure what opting in
+   * would change without opting in.
+   */
+  public readonly subFloorClampEligible: boolean;
 
   constructor(params: {
     orderId: string;
@@ -73,6 +108,7 @@ export class TrailUnitConversionRefusedError extends AdapticUtilsError {
     pct: number | null;
     ref: number | null;
     detail: string;
+    subFloorClampEligible?: boolean;
   }) {
     super(
       `Trailing stop replace refused for ${params.orderId} (${params.reason}): ${params.detail}`,
@@ -84,6 +120,7 @@ export class TrailUnitConversionRefusedError extends AdapticUtilsError {
     this.reason = params.reason;
     this.pct = params.pct;
     this.ref = params.ref;
+    this.subFloorClampEligible = params.subFloorClampEligible ?? false;
   }
 }
 
@@ -132,7 +169,9 @@ export function readTrailUnit(
  * @param orderId - The order being replaced (for the refusal record).
  * @param order - The resting order as returned by the broker.
  * @param requested - Exactly one of a positive dollar distance or percent.
- * @returns The resolved `trail` value and its unit.
+ * @param options - Opt-in behaviours; see {@link ReplaceTrailOptions}.
+ * @returns The resolved `trail` value and its unit; a
+ *   {@link ClampedResolvedTrail} only when the opt-in sub-floor clamp applied.
  * @throws {TrailUnitConversionRefusedError} When the unit is unknown, no
  *   finite reference exists, the converted percent falls outside
  *   [{@link MIN_CONVERTED_TRAIL_PERCENT}, {@link ALPACA_MAX_TRAIL_PERCENT}],
@@ -142,7 +181,8 @@ export function resolveReplaceTrail(
   orderId: string,
   order: Pick<AlpacaOrder, "trail_price" | "trail_percent" | "hwm" | "stop_price">,
   requested: { trailPercent: number } | { trailPrice: number },
-): ResolvedTrail {
+  options: ReplaceTrailOptions = {},
+): ResolvedTrail | ClampedResolvedTrail {
   const unit = readTrailUnit(order);
   if (unit === null) {
     throw new TrailUnitConversionRefusedError({
@@ -187,6 +227,21 @@ export function resolveReplaceTrail(
   const pct =
     Math.floor((requested.trailPrice / ref) * PERCENT_PER_UNIT * PERCENT_DECIMALS_SCALE) /
     PERCENT_DECIMALS_SCALE;
+  const restingPercent = positiveOrNull(order.trail_percent);
+  const subFloorClampEligible =
+    requested.trailPrice > 0 &&
+    Number.isFinite(pct) &&
+    pct < MIN_CONVERTED_TRAIL_PERCENT &&
+    restingPercent !== null &&
+    restingPercent > MIN_CONVERTED_TRAIL_PERCENT;
+  if (subFloorClampEligible && options.subFloorClamp === true) {
+    return {
+      trail: MIN_CONVERTED_TRAIL_PERCENT.toFixed(2),
+      unit,
+      referencePrice: ref,
+      clampedFromPercent: pct,
+    };
+  }
   if (
     !Number.isFinite(pct) ||
     pct < MIN_CONVERTED_TRAIL_PERCENT ||
@@ -198,6 +253,7 @@ export function resolveReplaceTrail(
       pct,
       ref,
       detail: `$${requested.trailPrice} against ref ${ref} is ${pct}%, outside [${MIN_CONVERTED_TRAIL_PERCENT}, ${ALPACA_MAX_TRAIL_PERCENT}]`,
+      subFloorClampEligible,
     });
   }
   return { trail: pct.toFixed(2), unit, referencePrice: ref };
