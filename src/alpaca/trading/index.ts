@@ -104,6 +104,8 @@ export {
   MIN_CONVERTED_TRAIL_PERCENT,
   TrailUnit,
   ResolvedTrail,
+  ClampedResolvedTrail,
+  ReplaceTrailOptions,
   TrailUnitRefusalReason,
 } from "./trail-unit";
 
