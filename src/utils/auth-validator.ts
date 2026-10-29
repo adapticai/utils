@@ -4,7 +4,19 @@
  */
 
 /**
- * Validates Alpaca API credentials
+ * Validates Alpaca API credentials — their PRESENCE and shape, nothing more.
+ *
+ * It takes no account type and no paper/live flag, and must not acquire one.
+ * Whether a key belongs to the paper or the live trading host is not
+ * derivable from the key string — the `PK`/`AK` prefix is a vendor
+ * convention, not a contract — so that question is answered only by
+ * presenting the key to a host and reading the response, which is a network
+ * measurement rather than a synchronous shape check.
+ *
+ * A parameter this function accepted but no branch read would be worse than
+ * its absence: at every call site it reads as a check that is happening, so
+ * it conceals the very gap it appears to close.
+ *
  * @param auth - Authentication object containing API key and secret
  * @param options - Validation options
  * @param options.throwOnMissing - If false, missing credentials will log a warning instead of throwing (default: true)
@@ -15,7 +27,6 @@ export function validateAlpacaCredentials(
   auth: {
     apiKey?: string;
     apiSecret?: string;
-    isPaper?: boolean;
   },
   options: { throwOnMissing?: boolean } = { throwOnMissing: true },
 ): boolean {

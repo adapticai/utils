@@ -12,7 +12,6 @@ describe("Auth Validator", () => {
         validateAlpacaCredentials({
           apiKey: "VALID_API_KEY_12345",
           apiSecret: "VALID_SECRET_KEY_12345",
-          isPaper: true,
         }),
       ).not.toThrow();
     });
@@ -22,7 +21,6 @@ describe("Auth Validator", () => {
         validateAlpacaCredentials({
           apiKey: "",
           apiSecret: "VALID_SECRET_KEY",
-          isPaper: true,
         }),
       ).toThrow("Invalid Alpaca API key: must be a non-empty string");
     });
@@ -32,7 +30,6 @@ describe("Auth Validator", () => {
         validateAlpacaCredentials({
           apiKey: "VALID_API_KEY",
           apiSecret: "",
-          isPaper: true,
         }),
       ).toThrow("Invalid Alpaca API secret: must be a non-empty string");
     });
@@ -42,7 +39,6 @@ describe("Auth Validator", () => {
         validateAlpacaCredentials({
           apiKey: "SHORT",
           apiSecret: "VALID_SECRET_KEY",
-          isPaper: true,
         }),
       ).toThrow("Alpaca API key appears to be too short");
     });
@@ -52,7 +48,6 @@ describe("Auth Validator", () => {
         validateAlpacaCredentials({
           apiKey: "   ",
           apiSecret: "VALID_SECRET_KEY",
-          isPaper: true,
         }),
       ).toThrow("Invalid Alpaca API key: must be a non-empty string");
     });

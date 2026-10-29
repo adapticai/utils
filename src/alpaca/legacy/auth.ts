@@ -72,7 +72,6 @@ export async function validateAuth(auth: AlpacaAuth): Promise<ValidatedAuth> {
     validateAlpacaCredentials({
       apiKey: inlineKey,
       apiSecret: inlineSecret,
-      isPaper: accountType === "PAPER",
     });
 
     return {
@@ -135,7 +134,6 @@ export async function resolveBrokerCredentials(
   validateAlpacaCredentials({
     apiKey: alpacaAccount.APIKey,
     apiSecret: alpacaAccount.APISecret,
-    isPaper: alpacaAccount.type === "PAPER",
   });
 
   return {
