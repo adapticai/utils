@@ -58,7 +58,14 @@ import type {
   DecisionState,
 } from "../../../llm/decision/types";
 import * as rateGuard from "../../../llm/rate-guard";
-import { RateGuardTimeoutError, guardSnapshots, resetProviderGuards, withProviderGuards } from "../../../llm/rate-guard";
+import {
+  RateGuardTimeoutError,
+  burstCapacityFor,
+  guardSnapshots,
+  limitsFor,
+  resetProviderGuards,
+  withProviderGuards,
+} from "../../../llm/rate-guard";
 import { routeTable } from "../../../llm/route-table";
 import { createDecisionFetchDouble, decisionResponse, decisionResponseFromFixture } from "./support/fetch-double";
 import type { DecisionFetchDouble, DecisionFetchScript, RecordedDecisionFetch } from "./support/fetch-double";
@@ -126,14 +133,8 @@ const HEALTH_NEUTRAL_FAULTS = 10;
 const NARROWING_TIMEOUT_MS = 300;
 const WIDENING_TIMEOUT_MS = 5_000;
 
-/** A caller deadline shorter than the wait for the next rate token. */
-const SHORTER_THAN_A_REFILL_MS = 50;
-
-/** A caller deadline that outlasts two rate refills and not the third. */
+/** A caller deadline that outlasts several rate refills and not the queue built ahead of it. */
 const QUEUED_BUDGET_MS = 200;
-
-/** How many callers are queued ahead, so that no token frees inside {@link QUEUED_BUDGET_MS}. */
-const WAITERS_AHEAD = 2;
 
 /** How many microtask turns after a call starts the abort sweep reaches. */
 const ABORT_SWEEP_TURNS = 12;
@@ -156,11 +157,46 @@ const PROBE_FRACTION = 0.5;
 /** A marker for a promise that has not settled. */
 const PENDING = Symbol("pending");
 
-/** How long the hosted provider's bucket takes to accrue one token, at its configured rate. */
-const RATE_REFILL_INTERVAL_MS = 100;
+/** Milliseconds in one second, converting the configured per-minute rate to the per-second one it accrues at. */
+const MS_PER_SECOND = 1_000;
 
-/** How many refills an emptied bucket is left to accrue before it is counted. */
+/** Seconds in one minute, the unit a limits entry states its rate over. */
+const SECONDS_PER_MINUTE = 60;
+
+/**
+ * The hosted provider's limits as configured.
+ *
+ * The waits below are derived from them rather than written as figures, so a
+ * change to the entry moves these tests with it instead of leaving them
+ * asserting a bound the guard no longer has.
+ */
+const HOSTED_LIMITS = limitsFor(hostedRouteOf(admittedDecisionRouteTable()).provider);
+
+/** How long the hosted provider's bucket takes to accrue one whole token, at its configured rate. */
+const RATE_REFILL_INTERVAL_MS = Math.ceil(
+  (SECONDS_PER_MINUTE * MS_PER_SECOND) / HOSTED_LIMITS.requests_per_minute,
+);
+
+/** A caller deadline shorter than the wait for the next rate token. */
+const SHORTER_THAN_A_REFILL_MS = RATE_REFILL_INTERVAL_MS - 1;
+
+/**
+ * How many callers queue ahead, so that no token frees for the one behind them
+ * inside {@link QUEUED_BUDGET_MS}: each takes the next whole token, so a queue
+ * as long as the budget holds tokens outlasts the budget.
+ */
+const WAITERS_AHEAD = Math.ceil(QUEUED_BUDGET_MS / RATE_REFILL_INTERVAL_MS);
+
+/** How many whole tokens an emptied bucket is left to accrue before it is counted. */
 const REFILLS_COUNTED = 2;
+
+/**
+ * How long that many whole tokens take to accrue, less the deadline a caller
+ * has already waited out: the bucket is counted exactly
+ * {@link REFILLS_COUNTED} token-periods after it was emptied, whichever of the
+ * two runs put the time there.
+ */
+const ACCRUAL_WINDOW_MS = REFILLS_COUNTED * RATE_REFILL_INTERVAL_MS - SHORTER_THAN_A_REFILL_MS;
 
 /**
  * Text standing for what a failure's own message could quote: the request it
@@ -1016,7 +1052,7 @@ describe("the decision client", () => {
         } else {
           await vi.advanceTimersByTimeAsync(SHORTER_THAN_A_REFILL_MS);
         }
-        await vi.advanceTimersByTimeAsync(RATE_REFILL_INTERVAL_MS * REFILLS_COUNTED);
+        await vi.advanceTimersByTimeAsync(ACCRUAL_WINDOW_MS);
         return guardOf(provider)?.availableTokens;
       };
 
@@ -1052,8 +1088,8 @@ describe("the decision client", () => {
       const harness = clientOverTransport((call) => scriptedAnswer(call.route, CHOICE_ANSWER()));
       const releases: (() => void)[] = [];
       const held: Promise<void>[] = [];
-      await withProviderGuards(provider, () => Promise.resolve());
-      const permits = guardOf(provider)?.maxConcurrent ?? 0;
+      const permits = HOSTED_LIMITS.max_concurrent;
+      expect(permits).toBeGreaterThan(0);
       for (let permit = 0; permit < permits; permit += 1) {
         held.push(
           withProviderGuards(
@@ -1069,6 +1105,16 @@ describe("the decision client", () => {
         setImmediate(resolve);
       });
       expect(guardOf(provider)?.inFlight).toBe(permits);
+
+      // Holding every permit empties the bucket too, because the entry sets the
+      // capacity and the permit count equal. The rate token is taken first, so a
+      // call made now would queue for a TOKEN and never reach the gate under
+      // test; one token-period of real time puts a token back and leaves the
+      // gate as the only bound left. Running longer only adds tokens, which no
+      // held permit lets through, so the wait cannot be too long.
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, RATE_REFILL_INTERVAL_MS);
+      });
 
       const caller = new AbortController();
       const pending = rejectionOf(ask({ signal: caller.signal }));

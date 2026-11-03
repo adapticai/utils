@@ -59,11 +59,20 @@ const PACKAGE_DEFAULT_ACQUIRE_TIMEOUT_MS = 15_000;
 /** Seconds in a minute, converting the entry's per-minute refill to the per-second pace the vendor enforces in. */
 const SECONDS_PER_MINUTE = 60;
 
-/** The hosted entry's per-minute refill rate, which is NOT its bucket size. */
-const HOSTED_REQUESTS_PER_MINUTE = 600;
+/** The vendor's own request ceiling, as the organisation's console states it, in requests per second. */
+const VENDOR_REQUESTS_PER_SECOND = 80;
 
-/** The hosted entry's bucket size: one second of its own refill, the tightest bound derivable with no vendor figure. */
-const HOSTED_MAX_BURST = 10;
+/** The vendor's own input-token ceiling, in tokens per second. It bounds a quantity this package does not count. */
+const VENDOR_INPUT_TOKENS_PER_SECOND = 100_000;
+
+/** The hosted entry's per-minute refill rate, which is NOT its bucket size and is NOT the vendor's figure. */
+const HOSTED_REQUESTS_PER_MINUTE = 1920;
+
+/** The hosted entry's bucket size: one second of its own refill, which is the client's own derating. */
+const HOSTED_MAX_BURST = 32;
+
+/** The hosted entry's permit count, held equal to the capacity so the bucket is the binding bound. */
+const HOSTED_MAX_CONCURRENT = 32;
 
 /** Enough microtask turns for an admitted call to have settled, so a still-pending one was genuinely not admitted. */
 const SETTLE_TURNS = 8;
@@ -163,34 +172,63 @@ describe("limits for the decision providers", () => {
     expect(limitsFor("a-provider-with-no-entry").acquire_timeout_ms).toBe(PACKAGE_DEFAULT_ACQUIRE_TIMEOUT_MS);
   });
 
-  it("states the hosted provider's numbers as a conservative default, citing no figure it cannot source", () => {
+  it("states the hosted provider's numbers against the vendor ceiling it cites, derated and labelled as its own", () => {
     const limits = limitsFor("typesafe");
-    expect(limits.basis).toBe("conservative-default");
-    expect(limits.source).toBeNull();
+
+    // The ceiling is known and cited, so the entry's basis is published. None
+    // of its numbers IS the ceiling, which is why each derated one carries its
+    // own conservative-default label rather than inheriting this one.
+    expect(limits.basis).toBe("published");
+    expect(limits.source).toBeTruthy();
     expect(limits).toMatchObject({
       requests_per_minute: HOSTED_REQUESTS_PER_MINUTE,
+      requests_per_minute_basis: "conservative-default",
       max_burst: HOSTED_MAX_BURST,
       max_burst_basis: "conservative-default",
-      max_concurrent: 8,
+      max_concurrent: HOSTED_MAX_CONCURRENT,
       acquire_timeout_ms: 250,
     });
 
-    // The vendor publishes the UNIT it enforces in and no figure for either
-    // bound, so the entry rests on the unit alone. A figure would have to come
-    // with a source, and a number that cannot be sourced is a guess whichever
-    // confident label it is given.
-    expect(limits.note).toContain("THE VENDOR PUBLISHES NO NUMBER");
+    // The pace is a fraction of the cited ceiling, which a reader can check by
+    // arithmetic against the source. A number at or above it would be the
+    // ceiling itself, which no client should offer.
+    expect(HOSTED_REQUESTS_PER_MINUTE / SECONDS_PER_MINUTE).toBeLessThan(VENDOR_REQUESTS_PER_SECOND);
+
+    // The source states what was read and that it cannot be re-opened from
+    // here, because the vendor publishes the figure only behind a login. A
+    // source that cannot be followed must say so rather than read like a link.
+    expect(limits.source).toContain(`${VENDOR_REQUESTS_PER_SECOND} requests/second`);
+    expect(limits.source).toContain("Not a link");
+
+    // The unit is the fact that survives every revision of the figures.
     expect(limits.note).toContain("Limits are measured in tokens per second and requests per second");
-    expect(limits.note).toContain("the UNIT: the vendor enforces per SECOND");
+    expect(limits.note).toContain("the vendor enforces per SECOND");
 
     // An earlier revision cited figures to a page that does not carry them.
     // Naming that keeps the correction from being silently re-reverted by
     // whoever next reads the stale citation somewhere else.
-    expect(limits.note).toContain("the citation is not verifiable and the figures are not carried");
+    expect(limits.note).toContain("the citation was withdrawn");
 
     // The vendor's other published unit is not guarded here at all, and an
-    // entry that bounds one of two bounds says which one it leaves open.
-    expect(limits.note).toContain("No token-per-second bound is enforced here");
+    // entry that bounds one of two bounds says which one it leaves open — and
+    // here, that the open one is the tighter.
+    expect(limits.note).toContain("NOT GUARDED HERE");
+    expect(limits.note).toContain(`${VENDOR_INPUT_TOKENS_PER_SECOND.toLocaleString("en-US")} tokens/second`);
+
+    // Raising the permit count is what enlarges the admit set, so the entry
+    // says so in the place a reader deciding whether to roll it back will look.
+    expect(limits.note).toContain("ENLARGES");
+    expect(limits.note).toContain("ROLLBACK");
+  });
+
+  it("holds the permit count at the capacity, so the bucket is the bound that binds", () => {
+    const limits = limitsFor("typesafe");
+
+    // The bounds apply in series, each waiting only acquire_timeout_ms. Fewer
+    // permits than the capacity makes the capacity unreachable rather than
+    // redundant: the surplus of a burst waits a whole call for a permit, which
+    // is longer than the timeout at the latency these routes measured.
+    expect(limits.max_concurrent).toBeGreaterThanOrEqual(burstCapacityFor(limits));
   });
 
   it("holds the hosted burst capacity to one second of its own refill", () => {
@@ -339,7 +377,7 @@ describe("the limits verifier", () => {
       // numbers it no longer governs.
       max_burst: HOSTED_MAX_BURST,
       max_burst_basis: "conservative-default",
-      max_concurrent: 8,
+      max_concurrent: HOSTED_MAX_CONCURRENT,
       acquire_timeout_ms: acquireTimeoutMs,
       source: null,
       note: "The pinned model runs at numbers of its own.",
@@ -424,7 +462,14 @@ describe("the limits verifier", () => {
 
   it("refuses a burst capacity that calls itself published while citing no source", () => {
     const result = runVerifierOnEditedCopy(({ limits }) => {
-      limits.providers.typesafe.max_burst_basis = "published";
+      // The entry now cites a source, so the rule is only reachable from the
+      // provenance it had before the ceiling was read: no source, a basis that
+      // claims none, and a capacity labelled published on top of that.
+      Object.assign(limits.providers.typesafe, {
+        basis: "conservative-default",
+        source: null,
+        max_burst_basis: "published",
+      });
     });
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("FAIL typesafe: claims a published burst capacity but cites no source");

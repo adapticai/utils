@@ -908,7 +908,15 @@ describe("a run", () => {
 
   it("never dispatches faster than the refill rate the limits config declares for the provider", async () => {
     const interval = probeDispatchIntervalMs(HOSTED.provider, PIN);
-    expect(interval).toBe(60_000 / limitsFor(HOSTED.provider, PIN).requests_per_minute);
+    const configured = 60_000 / limitsFor(HOSTED.provider, PIN).requests_per_minute;
+
+    // A run keeps the LARGER of the config's interval and the probe's own
+    // floor, so it is never the faster caller. The two are separate decisions:
+    // the config paces production against the vendor's ceiling, while the floor
+    // keeps a diagnostic to a share of an account production is also using, so
+    // raising the config's pace must not speed a run up with it.
+    expect(interval).toBe(probeDispatchSpacingMs(configured));
+    expect(interval).toBe(Math.max(PROBE_MIN_DISPATCH_SPACING_MS, configured));
     expect(VENDOR_LATENCY_MS).toBeLessThan(interval);
 
     const fast = fakeTime();

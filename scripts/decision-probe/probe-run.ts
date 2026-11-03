@@ -77,8 +77,10 @@ const MS_PER_MINUTE = 60_000;
 const MS_PER_SECOND = 1_000;
 
 /**
- * The most requests a second the hosted decision vendor publishes that an
- * account may send. A request over it is answered 429.
+ * The most requests a second a RUN sends. The probe's own number, not the
+ * vendor's: the vendor enforces per second on requests and on tokens and
+ * refuses over either, and the organisation's own request ceiling is recorded
+ * in the limits config, well above this.
  */
 const SELF_SET_REQUESTS_PER_SECOND = 10;
 
@@ -87,17 +89,14 @@ const SELF_SET_REQUESTS_PER_SECOND = 10;
  *
  * A run sends one request at a time and starts no request sooner than this
  * after it started the last one, so it sends at most ten in any second. Ten is
- * the sustained pace this package set for itself for this provider, and it is
- * the client's own number rather than a transcription: the vendor enforces per
- * second on requests and on tokens, and refuses over either, but publishes no
- * figure for an organisation anywhere a client can read. A client that cannot
- * read the ceiling can still guarantee it never offers more in an instant than
- * the pace it already chose, so the probe is held to exactly that and no more.
- * The bound holds by construction: it is a constant of the probe and the larger
- * of it and the limits config's own interval is used, so no edit to the limits
- * config, and no vendor however quick to answer, can bring a run closer
- * together than this. The account may also be carrying other traffic, which is
- * a second reason a run claims no more of the pace than its share.
+ * the share of the account's pace a diagnostic claims for itself, and it is
+ * deliberately independent of the ceiling: the account carries production
+ * traffic against the same per-second bound, and a run exists to observe that
+ * account rather than to compete with it for the bound. The bound holds by
+ * construction: it is a constant of the probe and the larger of it and the
+ * limits config's own interval is used, so no edit to the limits config, and no
+ * vendor however quick to answer, can bring a run closer together than this —
+ * which is why raising the config's pace leaves a run's unchanged.
  */
 export const PROBE_MIN_DISPATCH_SPACING_MS = MS_PER_SECOND / SELF_SET_REQUESTS_PER_SECOND;
 
