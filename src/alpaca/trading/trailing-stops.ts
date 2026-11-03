@@ -23,7 +23,7 @@ import {
   AlpacaPosition,
 } from "../../types/alpaca-types";
 import { ALPACA_MAX_TRAIL_PERCENT } from "./trail-limits";
-import { resolveReplaceTrail } from "./trail-unit";
+import { MIN_CONVERTED_TRAIL_PERCENT, resolveReplaceTrail, type ReplaceTrailOptions } from "./trail-unit";
 
 const LOG_SOURCE = "TrailingStops";
 
@@ -262,9 +262,14 @@ export async function createTrailingStop(
  * replace, so the resting stop keeps protecting. The unit is never guessed and
  * the conversion reference is never defaulted.
  *
+ * `options.subFloorClamp` (default off) opts in to sending a tightening
+ * conversion that lands below the 0.1% floor at the floor; see
+ * {@link ReplaceTrailOptions}. Off, behaviour is unchanged.
+ *
  * @param client - AlpacaClient instance
  * @param orderId - The ID of the order to update
  * @param updates - New trail parameters (specify exactly one of trailPercent or trailPrice)
+ * @param options - Opt-in resolution behaviours ({@link ReplaceTrailOptions})
  * @returns The replacement order
  * @throws {Error} If no/both update parameters are given, or a value is not positive
  * @throws {TrailUnitConversionRefusedError} If the request cannot be expressed
@@ -287,6 +292,7 @@ export async function updateTrailingStop(
     trailPercent?: number;
     trailPrice?: number;
   },
+  options: ReplaceTrailOptions = {},
 ): Promise<AlpacaOrder> {
   // Validate that at least one update is provided
   if (updates.trailPercent === undefined && updates.trailPrice === undefined) {
@@ -340,14 +346,19 @@ export async function updateTrailingStop(
 
   let resolved: ReturnType<typeof resolveReplaceTrail>;
   try {
-    resolved = resolveReplaceTrail(orderId, resting, requested);
+    resolved = resolveReplaceTrail(orderId, resting, requested, options);
   } catch (refusal) {
     log(`Trailing stop update refused for ${orderId}: ${(refusal as Error).message}`, {
       type: "warn",
     });
     throw refusal;
   }
-  if (resolved.referencePrice !== null) {
+  if ("clampedFromPercent" in resolved) {
+    log(
+      `Trailing stop ${orderId}: ${updateDescription} on percent order → ${resolved.trail}% (ref ${resolved.referencePrice}; converted ${resolved.clampedFromPercent}%, sent at the ${MIN_CONVERTED_TRAIL_PERCENT}% floor by subFloorClamp)`,
+      { type: "warn" },
+    );
+  } else if (resolved.referencePrice !== null) {
     log(
       `Trailing stop ${orderId}: ${updateDescription} on percent order → ${resolved.trail}% (ref ${resolved.referencePrice})`,
       { type: "info" },

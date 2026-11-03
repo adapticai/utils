@@ -12,7 +12,7 @@ vi.mock("../../../logging", () => ({
 }));
 
 import { updateTrailingStop } from "../trailing-stops";
-import { TrailUnitConversionRefusedError } from "../trail-unit";
+import { TrailUnitConversionRefusedError, resolveReplaceTrail } from "../trail-unit";
 
 type TrailingStopClient = Parameters<typeof updateTrailingStop>[0];
 
@@ -123,6 +123,72 @@ describe("updateTrailingStop replace-unit contract", () => {
     expect(error.reason).toBe("converted_percent_out_of_range");
     expect(error.pct).toBeLessThan(0.1);
     expect(replaceOrderMock).not.toHaveBeenCalled();
+  });
+
+  it("(c2a) the default-path refusal says whether the opt-in clamp would have sent it", async () => {
+    getOrderMock.mockResolvedValue(
+      resting({ trail_percent: "1", trail_price: null, hwm: "90", stop_price: "89.1", side: "sell" }),
+    );
+
+    const error = await refusal(updateTrailingStop(client, "ord-1", { trailPrice: 0.081 }));
+
+    expect(error.reason).toBe("converted_percent_out_of_range");
+    expect(error.pct).toBe(0.09);
+    expect(error.subFloorClampEligible).toBe(true);
+    expect(replaceOrderMock).not.toHaveBeenCalled();
+  });
+
+  it("(c3) opted in, a tightening conversion below the 0.1% floor is sent AT the floor", async () => {
+    getOrderMock.mockResolvedValue(
+      resting({ trail_percent: "1", trail_price: null, hwm: "90", stop_price: "89.1", side: "sell" }),
+    );
+
+    await updateTrailingStop(client, "ord-1", { trailPrice: 0.081 }, { subFloorClamp: true });
+
+    expect(sentTrail()).toBe("0.10");
+  });
+
+  it("(c3b) opted in, the clamp reports the percent the caller's distance converted to", () => {
+    const resolved = resolveReplaceTrail(
+      "ord-1",
+      { trail_percent: "1", trail_price: null, hwm: "90", stop_price: "89.1" },
+      { trailPrice: 0.081 },
+      { subFloorClamp: true },
+    );
+
+    expect(resolved).toStrictEqual({ trail: "0.10", unit: "percent", referencePrice: 90, clampedFromPercent: 0.09 });
+  });
+
+  it("(c3c) opted in, an order already trailing at the floor is still refused (the clamp would not tighten it)", async () => {
+    getOrderMock.mockResolvedValue(
+      resting({ trail_percent: "0.1", trail_price: null, hwm: "90", stop_price: "89.91", side: "sell" }),
+    );
+
+    const error = await refusal(updateTrailingStop(client, "ord-1", { trailPrice: 0.05 }, { subFloorClamp: true }));
+
+    expect(error.reason).toBe("converted_percent_out_of_range");
+    expect(error.subFloorClampEligible).toBe(false);
+    expect(replaceOrderMock).not.toHaveBeenCalled();
+  });
+
+  it("(c3d) opted in, a non-positive distance is never clamped", () => {
+    expect(() =>
+      resolveReplaceTrail(
+        "ord-1",
+        { trail_percent: "1", trail_price: null, hwm: "90", stop_price: "89.1" },
+        { trailPrice: 0 },
+        { subFloorClamp: true },
+      ),
+    ).toThrow(TrailUnitConversionRefusedError);
+  });
+
+  it("(c3e) no-op: an in-range conversion resolves to the identical object with the option off or on", () => {
+    const order = { trail_percent: "2.3", trail_price: null, hwm: "963.54", stop_price: "941.38" };
+    const expected = { trail: "1.99", unit: "percent", referencePrice: 963.54 };
+
+    expect(resolveReplaceTrail("ord-1", order, { trailPrice: 19.26 })).toStrictEqual(expected);
+    expect(resolveReplaceTrail("ord-1", order, { trailPrice: 19.26 }, { subFloorClamp: false })).toStrictEqual(expected);
+    expect(resolveReplaceTrail("ord-1", order, { trailPrice: 19.26 }, { subFloorClamp: true })).toStrictEqual(expected);
   });
 
   it("(d) no-op: a dollar distance on a dollar-trail order is sent byte-identical to the prior path", async () => {
