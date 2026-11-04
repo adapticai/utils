@@ -69,6 +69,16 @@ const SETTLE_TURNS = 8;
 /** A wait budget short enough to run in a test and long enough to be a wait. */
 const SHORT_WAIT_MS = 20;
 
+/**
+ * Longest a prefix-bounded canvas read of a 4 MiB image may take.
+ *
+ * A full decode of 4 MiB measured about 90 ms; the prefix read is a 64 KiB
+ * decode and measured about 2 ms. 40 ms sits between them with room for a busy
+ * machine, so the assertion fails if the bound is removed and does not flake
+ * when it is in place.
+ */
+const PREFIX_DECODE_CEILING_MS = 40;
+
 /** A clock a test owns, so the refill arithmetic is asserted rather than the machine's load. */
 class TestClock {
   private ms = 1_000_000;
@@ -334,6 +344,35 @@ function pngAt(widthPx: number, heightPx: number, padBytes = 0): string {
 }
 
 /**
+ * A PNG whose header chunk sits PAST the prefix the estimator reads first.
+ *
+ * A large ancillary chunk is written before IHDR, so the canvas is readable
+ * only from the whole file. It exists to exercise the fallback: the prefix
+ * bound is a saving and must never be a correctness condition.
+ *
+ * @param widthPx The canvas width.
+ * @param heightPx The canvas height.
+ * @returns The base64 the wire carries.
+ */
+function pngBeyondPrefix(widthPx: number, heightPx: number): string {
+  const LEAD = 80 * 1024;
+  const bytes = new Uint8Array(8 + (12 + LEAD) + (12 + 13));
+  bytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0);
+  const view = new DataView(bytes.buffer);
+  // A private ancillary chunk: lower-case first letter, which a reader skips.
+  view.setUint32(8, LEAD);
+  bytes.set([0x74, 0x45, 0x58, 0x74], 12);
+  const ihdrAt = 8 + 12 + LEAD;
+  view.setUint32(ihdrAt, 13);
+  bytes.set([0x49, 0x48, 0x44, 0x52], ihdrAt + 4);
+  view.setUint32(ihdrAt + 8, widthPx);
+  view.setUint32(ihdrAt + 12, heightPx);
+  bytes[ihdrAt + 16] = 8;
+  bytes[ihdrAt + 17] = 6;
+  return encodeDecisionBase64(bytes);
+}
+
+/**
  * A wire request with the given assets.
  *
  * @param assets The images, keyed by reference.
@@ -390,6 +429,48 @@ describe("the input-token estimate", () => {
     // base64 would add about 13,000 tokens here and charge one image twice.
     expect(padded.textTokens).toBe(small.textTokens);
     expect(padded.inputTokens).toBe(small.inputTokens);
+  });
+
+  const prefixName =
+    "reads the canvas from a header prefix, giving the same answer as the whole file and much faster";
+  it(prefixName, () => {
+    // 4 MiB of padding after the header. The encoder has already decoded these
+    // same bytes once; decoding them again to re-read a header near the front
+    // is the whole cost this bound removes.
+    const large = wireRequest({ chart: { type: "image", format: "png", data_base64: pngAt(1024, 768, 4 << 20) } });
+    const small = wireRequest({ chart: { type: "image", format: "png", data_base64: pngAt(1024, 768) } });
+
+    const started = performance.now();
+    const reading = estimateDecisionInputTokens(large);
+    const elapsedMs = performance.now() - started;
+
+    expect(reading.estimated).toBe(true);
+    const baseline = estimateDecisionInputTokens(small);
+    expect(baseline.estimated).toBe(true);
+    if (!reading.estimated || !baseline.estimated) {
+      return;
+    }
+    // Identical, because the header bytes are the same bytes either way.
+    expect(reading.imageTokens).toBe(baseline.imageTokens);
+    expect(reading.imageTokens).toBe(MEASURED_IMAGE_TOKENS);
+    // And bounded: a full decode of 4 MiB measured around 90 ms on this
+    // machine, so this ceiling is loose enough not to be a timing flake and
+    // tight enough to fail if the prefix bound is removed.
+    expect(elapsedMs).toBeLessThan(PREFIX_DECODE_CEILING_MS);
+  });
+
+  it("falls back to the whole file when the prefix does not carry the header", () => {
+    // A PNG that pads its first chunk past the prefix, so the canvas is only
+    // readable from the whole file. Correctness must not rest on the bound.
+    const beyond = wireRequest({
+      chart: { type: "image", format: "png", data_base64: pngBeyondPrefix(1024, 768) },
+    });
+    const reading = estimateDecisionInputTokens(beyond);
+    expect(reading.estimated).toBe(true);
+    if (!reading.estimated) {
+      return;
+    }
+    expect(reading.imageTokens).toBe(MEASURED_IMAGE_TOKENS);
   });
 
   it("refuses to estimate a request whose image it cannot read, rather than leaving it out", () => {

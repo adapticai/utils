@@ -41,7 +41,13 @@
  * @module llm/decision/input-size
  */
 
-import { decodeDecisionBase64, measureDecisionImage, utf8ByteLength } from "./assets";
+import {
+  decodeDecisionBase64,
+  isStrictDecisionBase64,
+  measureDecisionImage,
+  normaliseDecisionBase64,
+  utf8ByteLength,
+} from "./assets";
 
 import type { DecisionWireRequest } from "./types";
 
@@ -74,6 +80,32 @@ const MEASURED_IMAGE_PIXELS = 1024 * 768;
  */
 const BYTES_PER_TEXT_TOKEN = 3;
 
+/**
+ * Bytes of an image decoded to look for its canvas before the whole file is.
+ *
+ * An image's cost follows its canvas, which lives in a header near the front of
+ * the file, so decoding the whole file to read it is work spent for nothing —
+ * and it is work the ENCODER has already done once on the same bytes. Measured
+ * on the contract's 16 MiB ceiling, that second full decode costs about 306 ms
+ * of a hosted route's 1500 ms budget; on the traffic actually measured (a
+ * 1024x768 PNG of about 25 KB) it costs about 2.5 ms. The bound exists for the
+ * first case without changing the second.
+ *
+ * Correctness does not rest on the prefix being large enough. The header bytes
+ * are the same bytes either way, so a canvas read from a prefix that contains
+ * the header is identical to one read from the whole file, and a prefix that
+ * does NOT contain it falls through to decoding the whole file. 64 KiB is well
+ * past a PNG's header and past the metadata a JPEG usually carries before its
+ * first frame, including an EXIF thumbnail.
+ */
+const CANVAS_PREFIX_BYTES = 64 * 1024;
+
+/** Base64 characters per group, which decode to {@link BASE64_GROUP_BYTES} bytes. */
+const BASE64_GROUP_CHARS = 4;
+
+/** Bytes one base64 group carries. */
+const BASE64_GROUP_BYTES = 3;
+
 /** Why a request's input size could not be estimated. */
 export type DecisionInputSizeDefect =
   /** The request could not be written as JSON, so its text could not be weighed. */
@@ -95,6 +127,55 @@ export type DecisionInputSizeReading =
       readonly imageCount: number;
     }
   | { readonly estimated: false; readonly defect: DecisionInputSizeDefect };
+
+/**
+ * The canvas of one image, read from as few of its bytes as will say.
+ *
+ * A whole-group prefix of strict base64 is itself strict base64 and decodes to
+ * exactly the file's leading bytes, so the prefix is read first and the whole
+ * file only when the prefix did not carry the header. Only the canvas is
+ * returned: a measurement taken from a prefix would carry that prefix's
+ * `byteLength` and not the file's, and handing a caller a record with one true
+ * field and one quietly wrong one is worse than handing it none.
+ *
+ * The format and animation rules are the ENCODER's and are not re-judged here.
+ * This answers one question — how large is the canvas the vendor will bill —
+ * about a request the encoder has already accepted.
+ *
+ * @param base64 The image as the wire carries it.
+ * @returns The canvas, or `null` when no canvas could be read from the bytes.
+ */
+function canvasOf(base64: string): { readonly widthPx: number; readonly heightPx: number } | null {
+  let normalised: string;
+  try {
+    normalised = normaliseDecisionBase64(base64);
+  } catch {
+    return null;
+  }
+  const prefixChars = Math.ceil(CANVAS_PREFIX_BYTES / BASE64_GROUP_BYTES) * BASE64_GROUP_CHARS;
+  if (normalised.length > prefixChars) {
+    const prefix = normalised.slice(0, prefixChars);
+    if (isStrictDecisionBase64(prefix)) {
+      try {
+        const reading = measureDecisionImage(decodeDecisionBase64(prefix));
+        if (reading.measured) {
+          return { widthPx: reading.measurement.widthPx, heightPx: reading.measurement.heightPx };
+        }
+      } catch {
+        // The prefix said nothing. The whole file is read below, which is the
+        // answer this was only ever trying to reach sooner.
+      }
+    }
+  }
+  try {
+    const reading = measureDecisionImage(decodeDecisionBase64(normalised));
+    return reading.measured
+      ? { widthPx: reading.measurement.widthPx, heightPx: reading.measurement.heightPx }
+      : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * The input tokens one image of a given canvas is taken to cost.
@@ -175,16 +256,11 @@ export function estimateDecisionInputTokens(body: DecisionWireRequest): Decision
   const references = Object.keys(assets);
   let imageTokens = 0;
   for (const reference of references) {
-    let reading;
-    try {
-      reading = measureDecisionImage(decodeDecisionBase64(assets[reference].data_base64));
-    } catch {
+    const canvas = canvasOf(assets[reference].data_base64);
+    if (canvas === null) {
       return { estimated: false, defect: "image_unreadable" };
     }
-    if (!reading.measured) {
-      return { estimated: false, defect: "image_unreadable" };
-    }
-    imageTokens += estimateImageInputTokens(reading.measurement.widthPx, reading.measurement.heightPx);
+    imageTokens += estimateImageInputTokens(canvas.widthPx, canvas.heightPx);
   }
   return {
     estimated: true,
