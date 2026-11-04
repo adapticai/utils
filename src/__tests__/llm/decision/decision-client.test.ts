@@ -1030,6 +1030,15 @@ describe("the decision client", () => {
       resetDecisionInputTokenDrift();
       const harness = clientOverTransport((call) => scriptedAnswer(call.route, CHOICE_ANSWER()));
 
+      // The clock is held still for the whole measurement. The bucket refills
+      // at this entry's 16,000 tokens/second, which is 16 tokens per
+      // MILLISECOND, so any real time passing between the debit and the read
+      // is indistinguishable from a smaller debit. That is not a hypothetical:
+      // the first version of this test read a real clock, passed on an idle
+      // machine and reported 88 against 104 under a loaded full-suite run —
+      // exactly one millisecond of refill.
+      vi.useFakeTimers();
+
       // A guard that has never run holds its capacity, which is what a cold
       // bucket reports and what this call is debited from.
       const before = rateGuard.inputTokenBoundFor(limitsFor(provider))?.capacity ?? Number.NaN;
