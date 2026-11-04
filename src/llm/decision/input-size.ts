@@ -125,6 +125,16 @@ export type DecisionInputSizeReading =
       readonly imageTokens: number;
       /** How many images were weighed. */
       readonly imageCount: number;
+      /**
+       * Image bytes decoded to reach the answer.
+       *
+       * The cost the estimate paid, and the only deterministic way to see that
+       * the canvas was read from a header prefix rather than from the whole
+       * file — a wall-clock threshold measures the machine, not the mechanism.
+       * It is the decoded size, so a prefix read reports the prefix and a
+       * fallback reports the file.
+       */
+      readonly imageBytesRead: number;
     }
   | { readonly estimated: false; readonly defect: DecisionInputSizeDefect };
 
@@ -145,7 +155,9 @@ export type DecisionInputSizeReading =
  * @param base64 The image as the wire carries it.
  * @returns The canvas, or `null` when no canvas could be read from the bytes.
  */
-function canvasOf(base64: string): { readonly widthPx: number; readonly heightPx: number } | null {
+function canvasOf(
+  base64: string,
+): { readonly widthPx: number; readonly heightPx: number; readonly bytesRead: number } | null {
   let normalised: string;
   try {
     normalised = normaliseDecisionBase64(base64);
@@ -157,9 +169,14 @@ function canvasOf(base64: string): { readonly widthPx: number; readonly heightPx
     const prefix = normalised.slice(0, prefixChars);
     if (isStrictDecisionBase64(prefix)) {
       try {
-        const reading = measureDecisionImage(decodeDecisionBase64(prefix));
+        const bytes = decodeDecisionBase64(prefix);
+        const reading = measureDecisionImage(bytes);
         if (reading.measured) {
-          return { widthPx: reading.measurement.widthPx, heightPx: reading.measurement.heightPx };
+          return {
+            widthPx: reading.measurement.widthPx,
+            heightPx: reading.measurement.heightPx,
+            bytesRead: bytes.length,
+          };
         }
       } catch {
         // The prefix said nothing. The whole file is read below, which is the
@@ -168,9 +185,14 @@ function canvasOf(base64: string): { readonly widthPx: number; readonly heightPx
     }
   }
   try {
-    const reading = measureDecisionImage(decodeDecisionBase64(normalised));
+    const bytes = decodeDecisionBase64(normalised);
+    const reading = measureDecisionImage(bytes);
     return reading.measured
-      ? { widthPx: reading.measurement.widthPx, heightPx: reading.measurement.heightPx }
+      ? {
+          widthPx: reading.measurement.widthPx,
+          heightPx: reading.measurement.heightPx,
+          bytesRead: bytes.length,
+        }
       : null;
   } catch {
     return null;
@@ -251,16 +273,25 @@ export function estimateDecisionInputTokens(body: DecisionWireRequest): Decision
 
   const assets = body.assets;
   if (assets === undefined) {
-    return { estimated: true, inputTokens: textTokens, textTokens, imageTokens: 0, imageCount: 0 };
+    return {
+      estimated: true,
+      inputTokens: textTokens,
+      textTokens,
+      imageTokens: 0,
+      imageCount: 0,
+      imageBytesRead: 0,
+    };
   }
   const references = Object.keys(assets);
   let imageTokens = 0;
+  let imageBytesRead = 0;
   for (const reference of references) {
     const canvas = canvasOf(assets[reference].data_base64);
     if (canvas === null) {
       return { estimated: false, defect: "image_unreadable" };
     }
     imageTokens += estimateImageInputTokens(canvas.widthPx, canvas.heightPx);
+    imageBytesRead += canvas.bytesRead;
   }
   return {
     estimated: true,
@@ -268,6 +299,7 @@ export function estimateDecisionInputTokens(body: DecisionWireRequest): Decision
     textTokens,
     imageTokens,
     imageCount: references.length,
+    imageBytesRead,
   };
 }
 

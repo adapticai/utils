@@ -73,15 +73,14 @@ const SETTLE_TURNS = 8;
 /** A wait budget short enough to run in a test and long enough to be a wait. */
 const SHORT_WAIT_MS = 20;
 
-/**
- * Longest a prefix-bounded canvas read of a 4 MiB image may take.
- *
- * A full decode of 4 MiB measured about 90 ms; the prefix read is a 64 KiB
- * decode and measured about 2 ms. 40 ms sits between them with room for a busy
- * machine, so the assertion fails if the bound is removed and does not flake
- * when it is in place.
- */
-const PREFIX_DECODE_CEILING_MS = 40;
+/** The prefix of an image the estimator decodes before falling back to the whole file. */
+const CANVAS_PREFIX_BYTES = 64 * 1024;
+
+/** Padding that puts the large test image well past the prefix. */
+const LARGE_IMAGE_PAD_BYTES = 4 << 20;
+
+/** Bytes one base64 group carries, which the prefix is rounded up to a whole number of. */
+const BASE64_GROUP_BYTES = 3;
 
 /** A clock a test owns, so the refill arithmetic is asserted rather than the machine's load. */
 class TestClock {
@@ -492,17 +491,15 @@ describe("the input-token estimate", () => {
   });
 
   const prefixName =
-    "reads the canvas from a header prefix, giving the same answer as the whole file and much faster";
+    "reads the canvas from a bounded header prefix, giving the same answer as the whole file";
   it(prefixName, () => {
     // 4 MiB of padding after the header. The encoder has already decoded these
     // same bytes once; decoding them again to re-read a header near the front
     // is the whole cost this bound removes.
-    const large = wireRequest({ chart: { type: "image", format: "png", data_base64: pngAt(1024, 768, 4 << 20) } });
+    const large = wireRequest({ chart: { type: "image", format: "png", data_base64: pngAt(1024, 768, LARGE_IMAGE_PAD_BYTES) } });
     const small = wireRequest({ chart: { type: "image", format: "png", data_base64: pngAt(1024, 768) } });
 
-    const started = performance.now();
     const reading = estimateDecisionInputTokens(large);
-    const elapsedMs = performance.now() - started;
 
     expect(reading.estimated).toBe(true);
     const baseline = estimateDecisionInputTokens(small);
@@ -513,10 +510,17 @@ describe("the input-token estimate", () => {
     // Identical, because the header bytes are the same bytes either way.
     expect(reading.imageTokens).toBe(baseline.imageTokens);
     expect(reading.imageTokens).toBe(MEASURED_IMAGE_TOKENS);
-    // And bounded: a full decode of 4 MiB measured around 90 ms on this
-    // machine, so this ceiling is loose enough not to be a timing flake and
-    // tight enough to fail if the prefix bound is removed.
-    expect(elapsedMs).toBeLessThan(PREFIX_DECODE_CEILING_MS);
+
+    // And bounded, asserted on bytes rather than on a clock. A wall-clock
+    // threshold measures the machine the test ran on — the first version of
+    // this assertion passed here and failed in CI at 44 ms against a 40 ms
+    // ceiling, which said nothing about the mechanism. The decoded size is
+    // deterministic: the whole file is over 4 MiB and the prefix read must
+    // decode a small bounded fraction of it.
+    // The prefix is rounded UP to a whole base64 group, so the decoded size is
+    // the bound plus at most one group's three bytes.
+    expect(reading.imageBytesRead).toBeLessThanOrEqual(CANVAS_PREFIX_BYTES + BASE64_GROUP_BYTES);
+    expect(reading.imageBytesRead).toBeLessThan(LARGE_IMAGE_PAD_BYTES / 8);
   });
 
   it("falls back to the whole file when the prefix does not carry the header", () => {
@@ -531,6 +535,9 @@ describe("the input-token estimate", () => {
       return;
     }
     expect(reading.imageTokens).toBe(MEASURED_IMAGE_TOKENS);
+    // And it paid the full price to get there, which is what distinguishes the
+    // fallback from a prefix read that happened to work.
+    expect(reading.imageBytesRead).toBeGreaterThan(CANVAS_PREFIX_BYTES + BASE64_GROUP_BYTES);
   });
 
   it("refuses to estimate a request whose image it cannot read, rather than leaving it out", () => {

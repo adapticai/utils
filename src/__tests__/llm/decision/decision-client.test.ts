@@ -1030,26 +1030,25 @@ describe("the decision client", () => {
       resetDecisionInputTokenDrift();
       const harness = clientOverTransport((call) => scriptedAnswer(call.route, CHOICE_ANSWER()));
 
-      // The estimate the live path forms, re-derived here from the same body
-      // the encoder produces, so the figure under test is the figure the guard
-      // was debited by rather than a number this test chose.
-      const expected = estimateDecisionInputTokens(
-        codec.encodeDecisionRequest(CHOICE_REQUEST(), {
-          model: harness.route.modelPin,
-          caps: harness.route.caps,
-        }),
-      );
-      expect(expected.estimated).toBe(true);
-      if (!expected.estimated) {
-        return;
-      }
-
       // A guard that has never run holds its capacity, which is what a cold
       // bucket reports and what this call is debited from.
       const before = rateGuard.inputTokenBoundFor(limitsFor(provider))?.capacity ?? Number.NaN;
       expect(before).toBeGreaterThan(0);
       await ask();
       const after = guardOf(provider)?.inputTokens?.available ?? Number.NaN;
+
+      // Weighed on the body the transport ACTUALLY received, not on one this
+      // test encoded alongside it. An earlier version re-encoded the request
+      // here and compared against that; it passed locally and failed in CI at
+      // 88 against 104, because a body encoded beside the live path is not
+      // required to be the live path's body — and a test that cannot tell the
+      // two apart is not testing the wiring it claims to.
+      expect(harness.double.calls).toHaveLength(1);
+      const expected = estimateDecisionInputTokens(harness.double.calls[0].body);
+      expect(expected.estimated).toBe(true);
+      if (!expected.estimated) {
+        return;
+      }
 
       // The bucket is on the live path and was debited by the request's own
       // size. A guard that existed but was never debited would leave these
