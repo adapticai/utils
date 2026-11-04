@@ -57,9 +57,13 @@ export {
 } from "./param-matrix";
 
 export {
+  RateGuardRefusalError,
   RateGuardTimeoutError,
+  RateGuardTokenBoundError,
+  burstCapacityFor,
   guardSnapshots,
   hasDuplicateHeadroom,
+  inputTokenBoundFor,
   limitsFor,
   limitsInventory,
   resetProviderGuards,
@@ -67,12 +71,23 @@ export {
 } from "./rate-guard";
 export type {
   GuardCallScope,
+  GuardInputTokenSnapshot,
   GuardSnapshot,
+  InputTokenBound,
   ModelLimitOverride,
   ProviderLimitBasis,
   ProviderLimitScope,
   ProviderLimits,
+  RateGuardBound,
+  RateGuardTokenFault,
 } from "./rate-guard";
+
+export { InputTokenBucket } from "./input-token-bucket";
+export type {
+  InputTokenAdmission,
+  InputTokenBucketConfig,
+  InputTokenRefusal,
+} from "./input-token-bucket";
 
 export { LlmResponseFormatError } from "./structured-content";
 export type { StructuredResponseFormat } from "./structured-content";

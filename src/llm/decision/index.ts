@@ -23,6 +23,19 @@ export { callDecisionModel, configureDecisionClient, decisionBreakerKey, decisio
 export type { DecisionClientConfig } from "./decision-client";
 
 export {
+  decisionInputTokenDrift,
+  estimateDecisionInputTokens,
+  estimateImageInputTokens,
+  recordDecisionInputTokenDrift,
+  resetDecisionInputTokenDrift,
+} from "./input-size";
+export type {
+  DecisionInputSizeDefect,
+  DecisionInputSizeReading,
+  DecisionInputTokenDrift,
+} from "./input-size";
+
+export {
   decisionRouteAdmission,
   decisionRouteDeclaration,
   decisionRouteTable,

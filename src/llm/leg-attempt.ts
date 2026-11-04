@@ -16,7 +16,7 @@ import {
   UnsupportedCapabilityError,
   assertToolChoiceHonoured,
 } from "./param-matrix";
-import { RateGuardTimeoutError, withProviderGuards } from "./rate-guard";
+import { RateGuardRefusalError, withProviderGuards } from "./rate-guard";
 import { LlmResponseFormatError } from "./structured-content";
 import type { BreakerFailureKind } from "./circuit-breaker";
 import type {
@@ -401,7 +401,10 @@ export function classify(
   // Self-inflicted pacing, not provider ill-health. Counting it would let the
   // client's own throttling open a breaker on a perfectly healthy provider and
   // permanently reroute traffic nobody chose to reroute.
-  if (error instanceof RateGuardTimeoutError) {
+  // The base class, so every refusal a guard can raise lands here: a bound
+  // added later would otherwise fall through to the unclassified path and be
+  // counted against a provider that was never contacted.
+  if (error instanceof RateGuardRefusalError) {
     return {
       outcome: "skipped",
       reason: error.message,

@@ -53,7 +53,9 @@
 
 import { CircuitBreakerRegistry } from "../circuit-breaker";
 import type { BreakerFailureKind } from "../circuit-breaker";
-import { RateGuardTimeoutError, withProviderGuards } from "../rate-guard";
+import { RateGuardTimeoutError, RateGuardTokenBoundError, withProviderGuards } from "../rate-guard";
+import { estimateDecisionInputTokens, recordDecisionInputTokenDrift } from "./input-size";
+import type { DecisionInputSizeReading } from "./input-size";
 import { describeFailure, withoutCredential } from "../transports/failure-description";
 import { decodeDecisionResponse, encodeDecisionRequest, resolveProbabilitySumTolerance } from "./codec";
 import type { DecodedDecisionResponse } from "./codec";
@@ -175,6 +177,14 @@ interface PreparedCall {
   readonly probabilitySumTolerance: number | undefined;
   /** The vendor surfaces the call opted in to, carried to the transport's headers. */
   readonly dangerZone: DecisionDangerZone | undefined;
+  /**
+   * What this request will cost the provider in input tokens, weighed before
+   * dispatch, or the defect that stopped it being weighed.
+   *
+   * Formed here rather than at the guard because only this layer holds the
+   * request: the guard is given a number it cannot derive and must not guess.
+   */
+  readonly inputSize: DecisionInputSizeReading;
 }
 
 /** Active wiring. */
@@ -611,7 +621,11 @@ function prepareCall(
   const budgetMs = timeoutMs === undefined ? resolved.budgetMs : Math.max(0, Math.min(resolved.budgetMs, timeoutMs));
   measured.budgetMs = budgetMs;
   progress.stage = "admitting";
-  return { resolved, body, budgetMs, callerSignal: signal, probabilitySumTolerance, dangerZone };
+  // Weighed on the body that is actually sent, after every size rule the
+  // encoder enforces, so the figure the guard is debited by is the figure the
+  // vendor will bill.
+  const inputSize = estimateDecisionInputTokens(body);
+  return { resolved, body, budgetMs, callerSignal: signal, probabilitySumTolerance, dangerZone, inputSize };
 }
 
 /**
@@ -848,7 +862,7 @@ async function runAttempt(
   progress: CallProgress,
   now: () => number,
 ): Promise<DecisionCallResult> {
-  const { resolved, body, budgetMs, callerSignal, dangerZone } = prepared;
+  const { resolved, body, budgetMs, callerSignal, dangerZone, inputSize } = prepared;
   const route = resolved.route;
   if (budgetMs <= 0) {
     throw new DecisionAdmissionError({ route, source: "route_budget", budgetMs });
@@ -940,6 +954,10 @@ async function runAttempt(
       modelId: resolved.modelPin,
       signal: controller.signal,
       signalEndsRateWait: true,
+      // `null` where no estimate could be formed. A provider that meters input
+      // tokens refuses on that ground rather than being sent an unweighed
+      // request; a provider that meters none ignores the field.
+      inputTokens: inputSize.estimated ? inputSize.inputTokens : null,
     }).then(
       (result) => {
         settled.resolve({ kind: "answered", result });
@@ -957,6 +975,14 @@ async function runAttempt(
       progress.stage = "answered";
       if (isRecordableAnswer(settlement.result)) {
         recordAnswer(settlement.result, measured, progress.key);
+      }
+      if (inputSize.estimated) {
+        // The debit was this client's estimate of a quantity only the vendor
+        // measures. Comparing them on every answered call is what keeps the
+        // token guard a guard: an estimator nobody reconciles drifts below the
+        // ceiling it was built to hold, and does it silently. A vendor that
+        // reported no count is recorded as unreported, never as agreement.
+        recordDecisionInputTokenDrift(inputSize.inputTokens, measured.usage?.prompt_tokens ?? null);
       }
     }
 
@@ -989,6 +1015,20 @@ async function runAttempt(
     }
 
     const { error } = settlement;
+    if (dispatchedAtMs === null && error instanceof RateGuardTokenBoundError) {
+      // Refused on the provider's input-token ceiling, on grounds no wait
+      // would change. Reported as its own admission source so a caller is not
+      // told to lengthen a budget that never bound it.
+      throw new DecisionAdmissionError({
+        route,
+        source: "provider_token_bound",
+        budgetMs,
+        reason:
+          error.fault === "estimate_unavailable"
+            ? "the request's input-token cost could not be estimated, and this provider's ceiling is counted in input tokens"
+            : `the request is estimated at ${String(error.inputTokens)} input tokens, past the ${error.capacity} this guard admits in one instant`,
+      });
+    }
     if (dispatchedAtMs === null && error instanceof RateGuardTimeoutError) {
       throw new DecisionAdmissionError({ route, source: "provider_guard", budgetMs });
     }

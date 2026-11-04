@@ -121,9 +121,9 @@ const MUTATIONS: readonly WiringMutation[] = [
     name: "the leg attempt classifies a guard timeout",
     mutate: (s) => ({
       ...s,
-      legAttempt: replaceEvery(s.legAttempt, "error instanceof RateGuardTimeoutError", "error instanceof RangeError"),
+      legAttempt: replaceEvery(s.legAttempt, "error instanceof RateGuardRefusalError", "error instanceof RangeError"),
     }),
-    expected: new RegExp(`^${LEG}: .*does not classify a guard timeout`),
+    expected: new RegExp(`^${LEG}: .*does not classify a guard refusal`),
   },
   {
     name: "a guard timeout is not counted against provider health",
@@ -131,7 +131,7 @@ const MUTATIONS: readonly WiringMutation[] = [
       ...s,
       legAttempt: replaceAfter(
         s.legAttempt,
-        "error instanceof RateGuardTimeoutError",
+        "error instanceof RateGuardRefusalError",
         "countsAgainstHealth: false",
         "countsAgainstHealth: true",
       ),
@@ -243,12 +243,12 @@ describe("provider limits wiring verifier", () => {
 
   describe("the guard-timeout branch is read by the polarity of its condition", () => {
     /** The guard-timeout test as the leg attempt writes it. */
-    const POSITIVE = "if (error instanceof RateGuardTimeoutError) {";
+    const POSITIVE = "if (error instanceof RateGuardRefusalError) {";
 
     it.each([
-      ["a negated", "if (!(error instanceof RateGuardTimeoutError)) {"],
-      ["an or-widened", "if (error instanceof RangeError || error instanceof RateGuardTimeoutError) {"],
-      ["a negated-conjunction", "if (!(error instanceof RateGuardTimeoutError && error.message !== \"\")) {"],
+      ["a negated", "if (!(error instanceof RateGuardRefusalError)) {"],
+      ["an or-widened", "if (error instanceof RangeError || error instanceof RateGuardRefusalError) {"],
+      ["a negated-conjunction", "if (!(error instanceof RateGuardRefusalError && error.message !== \"\")) {"],
     ])("%s condition, whose branch runs for errors that are not guard timeouts, spares nothing", (_form, condition) => {
       const sources = readWiringSources();
       const failures = checkWiring({ ...sources, legAttempt: replaceEvery(sources.legAttempt, POSITIVE, condition) });
@@ -257,9 +257,9 @@ describe("provider limits wiring verifier", () => {
     });
 
     it.each([
-      ["an and-narrowed", "if (error instanceof RateGuardTimeoutError && error.message !== \"\") {"],
-      ["a doubly negated", "if (!!(error instanceof RateGuardTimeoutError)) {"],
-      ["a negated disjunction of negations", "if (!(!(error instanceof RateGuardTimeoutError) || error.message === \"\")) {"],
+      ["an and-narrowed", "if (error instanceof RateGuardRefusalError && error.message !== \"\") {"],
+      ["a doubly negated", "if (!!(error instanceof RateGuardRefusalError)) {"],
+      ["a negated disjunction of negations", "if (!(!(error instanceof RateGuardRefusalError) || error.message === \"\")) {"],
     ])("%s condition, whose branch runs only for guard timeouts, spares health", (_form, condition) => {
       const sources = readWiringSources();
       expect(checkWiring({ ...sources, legAttempt: replaceEvery(sources.legAttempt, POSITIVE, condition) })).toEqual([]);

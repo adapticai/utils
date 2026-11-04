@@ -554,19 +554,33 @@ export class DecisionImagesNotEnabledError extends DecisionCallError {
 }
 
 /** What kept a call from being admitted. */
-export type DecisionAdmissionSource = "provider_guard" | "route_budget" | "caller_signal";
+export type DecisionAdmissionSource =
+  | "provider_guard"
+  | "provider_token_bound"
+  | "route_budget"
+  | "caller_signal";
 
 /** How a {@link DecisionAdmissionError} is built. */
 export interface DecisionAdmissionDetails {
   readonly route: DecisionRoute;
   /**
-   * `provider_guard`: the rate or concurrency guard gave up waiting.
+   * `provider_guard`: a rate, token-rate or concurrency guard gave up waiting.
+   * `provider_token_bound`: the provider's input-token guard refused the call
+   *   on grounds no wait would have changed — the request stated no
+   *   input-token estimate, or stated one larger than the guard can ever admit.
+   *   Told apart from `provider_guard` because the budget is not what refused
+   *   it, so a caller that retries unchanged will be refused again.
    * `route_budget`: the budget ran out while the call was still queued.
    * `caller_signal`: the caller stopped waiting while the call was still queued.
    */
   readonly source: DecisionAdmissionSource;
   /** The budget the call ran under, in milliseconds. */
   readonly budgetMs: number;
+  /**
+   * Why a `provider_token_bound` refusal was permanent, in the guard's own
+   * words. Absent for every other source, where the budget says it.
+   */
+  readonly reason?: string;
 }
 
 /**
@@ -591,9 +605,16 @@ export class DecisionAdmissionError extends DecisionCallError {
   public constructor(details: DecisionAdmissionDetails) {
     super({
       fault: "admission",
+      // A permanent refusal does not quote the budget: the budget is not what
+      // refused it, and a message saying otherwise would send a caller to
+      // lengthen a deadline that was never the constraint.
       message:
-        `A call on ${describeRoute(details.route)} was not admitted inside its ${details.budgetMs} ms budget ` +
-        `(${details.source}); the vendor was never contacted`,
+        details.source === "provider_token_bound"
+          ? `A call on ${describeRoute(details.route)} was refused by this package's input-token guard ` +
+            `(${details.source}): ${details.reason ?? "the call stated no usable input-token estimate"}; ` +
+            "the vendor was never contacted"
+          : `A call on ${describeRoute(details.route)} was not admitted inside its ${details.budgetMs} ms budget ` +
+            `(${details.source}); the vendor was never contacted`,
       route: details.route,
       status: null,
       retryAfterMs: null,

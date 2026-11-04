@@ -42,6 +42,8 @@
 
 import { RateLimitWaitAbandonedError, TokenBucketRateLimiter } from "../rate-limiter";
 
+import { InputTokenBucket } from "./input-token-bucket";
+import type { InputTokenRefusal } from "./input-token-bucket";
 import limitsConfig from "./provider-limits.json";
 
 /** Seconds in a minute, converting a published per-minute ceiling to a refill rate. */
@@ -103,6 +105,37 @@ export interface ProviderLimits {
    * entry's other numbers were transcribed, and must not borrow their label.
    */
   readonly max_burst_basis?: ProviderLimitBasis;
+  /**
+   * The pace INPUT TOKENS are replaced at, in tokens per second, for a provider
+   * that meters them.
+   *
+   * A second ceiling, independent of the request ceiling and enforced in its
+   * own unit. Two calls the request guard cannot tell apart can differ by
+   * three orders of magnitude in what the provider bills them, so a guard that
+   * counts only requests bounds the wrong quantity for any traffic whose size
+   * varies — and leaves the provider's 429 as the only thing holding the
+   * token ceiling at all. Absent, the provider meters no tokens the client can
+   * count and no token bound is applied, which is what every entry without
+   * this field has always done.
+   */
+  readonly input_tokens_per_second?: number;
+  /** Provenance of {@link ProviderLimits.input_tokens_per_second} when it differs from `basis`. */
+  readonly input_tokens_per_second_basis?: ProviderLimitBasis;
+  /**
+   * The most input tokens admissible in one instant, separately from the pace
+   * they are replaced at.
+   *
+   * The same two quantities the request bound carries, for the same reason: a
+   * bucket sized at the sustained pace bounds only the average, and a provider
+   * enforcing its ceiling per second refuses the instant however correct the
+   * average is. It is also the size above which a single request can never be
+   * admitted, so it is set at or above the largest request the provider itself
+   * would accept — a capacity below that would make a provider-legal request
+   * permanently unservable by this client, which is a defect and not a guard.
+   */
+  readonly max_input_token_burst?: number;
+  /** Provenance of {@link ProviderLimits.max_input_token_burst} when it differs from `basis`. */
+  readonly max_input_token_burst_basis?: ProviderLimitBasis;
   readonly max_concurrent: number;
   readonly acquire_timeout_ms: number;
   /** Where a published limit was read from. Null while the basis is a conservative default. */
@@ -130,6 +163,14 @@ export interface ModelLimitOverride {
   readonly max_burst?: number;
   /** Provenance of this override's {@link ModelLimitOverride.max_burst}. */
   readonly max_burst_basis?: ProviderLimitBasis;
+  /** This model's input-token refill, for a provider that meters tokens per second. */
+  readonly input_tokens_per_second?: number;
+  /** Provenance of this override's {@link ModelLimitOverride.input_tokens_per_second}. */
+  readonly input_tokens_per_second_basis?: ProviderLimitBasis;
+  /** This model's input-token capacity. */
+  readonly max_input_token_burst?: number;
+  /** Provenance of this override's {@link ModelLimitOverride.max_input_token_burst}. */
+  readonly max_input_token_burst_basis?: ProviderLimitBasis;
   readonly max_concurrent: number;
   readonly acquire_timeout_ms: number;
   readonly source?: string | null;
@@ -184,6 +225,13 @@ export function limitsFor(provider: string, modelId?: string): ProviderLimits {
     // capacity chosen for a different one.
     max_burst: override.max_burst,
     max_burst_basis: override.max_burst_basis,
+    // Taken from the override on the same ground as the capacity above: a
+    // model whose numbers replaced the provider's must not keep the provider's
+    // token bound, which was sized against different traffic.
+    input_tokens_per_second: override.input_tokens_per_second,
+    input_tokens_per_second_basis: override.input_tokens_per_second_basis,
+    max_input_token_burst: override.max_input_token_burst,
+    max_input_token_burst_basis: override.max_input_token_burst_basis,
     max_concurrent: override.max_concurrent,
     acquire_timeout_ms: override.acquire_timeout_ms,
     source: override.source ?? null,
@@ -205,6 +253,44 @@ export function limitsFor(provider: string, modelId?: string): ProviderLimits {
  */
 export function burstCapacityFor(limits: ProviderLimits): number {
   return limits.max_burst ?? limits.requests_per_minute;
+}
+
+/** The second bound of a provider that meters input tokens per second. */
+export interface InputTokenBound {
+  /** Tokens replaced per second: the pace the client sustains. */
+  readonly refillPerSecond: number;
+  /** The most input tokens admissible in one instant, and the largest single request admissible at all. */
+  readonly capacity: number;
+}
+
+/**
+ * The input-token bound an entry declares, or `null` when it declares none.
+ *
+ * Both numbers are required together. A refill with no capacity would bound
+ * only the long-run average while leaving the instant unbounded, which is the
+ * quantity a per-second ceiling actually refuses; a capacity with no refill
+ * would admit one bucketful and then nothing for ever. An entry that states
+ * one and not the other has not declared a bound, and the limits verifier
+ * refuses it rather than this function guessing the missing half — a guessed
+ * half is a number nobody chose, holding a ceiling nobody checked.
+ *
+ * @param limits The entry in force.
+ * @returns The bound, or `null` when the provider meters no tokens here.
+ */
+export function inputTokenBoundFor(limits: ProviderLimits): InputTokenBound | null {
+  const refillPerSecond = limits.input_tokens_per_second;
+  const capacity = limits.max_input_token_burst;
+  if (
+    refillPerSecond === undefined ||
+    capacity === undefined ||
+    !Number.isFinite(refillPerSecond) ||
+    !Number.isFinite(capacity) ||
+    refillPerSecond <= 0 ||
+    capacity <= 0
+  ) {
+    return null;
+  }
+  return { refillPerSecond, capacity };
 }
 
 /** Every provider with a recorded limit, plus whether it is published or a default. */
@@ -241,6 +327,23 @@ export interface GuardCallScope {
    * changes that for itself deliberately.
    */
   readonly signalEndsRateWait?: boolean;
+  /**
+   * What this call will cost the provider in INPUT TOKENS, estimated before it
+   * is sent, or `null` when no estimate could be formed.
+   *
+   * Required by a provider that declares an input-token bound, and ignored by
+   * every provider that does not. `null` is not "free" and is not "unknown, so
+   * proceed": a provider that refuses over a token ceiling cannot be paced by
+   * a client that declines to count, so an unmeasurable call is refused with
+   * that as its stated reason. The alternative — admitting on an unknown —
+   * turns the guard off for exactly the requests whose size nobody could
+   * establish, which are the ones most likely to be large.
+   *
+   * The estimate is debited before dispatch rather than after, because a
+   * ceiling enforced per second is passed in the instant the request leaves;
+   * a count read from the response has already been billed.
+   */
+  readonly inputTokens?: number | null;
 }
 
 /** What a refusal says about the call it refused. */
@@ -252,21 +355,126 @@ interface RefusalDetail {
 }
 
 /**
+ * Which of a guard's bounds refused a call.
+ *
+ * `rate` and `concurrency` are counted in requests; `token-rate` is the
+ * independent bound a provider that meters input tokens enforces in its own
+ * unit, and a call can be admitted by both request bounds and refused by it.
+ */
+export type RateGuardBound = "rate" | "concurrency" | "token-rate";
+
+/**
+ * Thrown when a client-side guard did not admit a call.
+ *
+ * The base of every refusal the guards raise, so a caller can tell a refusal
+ * that never reached the provider from a failure of the provider itself with
+ * one check. That distinction is the whole point of raising a distinct type:
+ * the provider was never contacted, so a refusal must not be counted against
+ * route health, and a refusal that escaped unclassified would be.
+ */
+export class RateGuardRefusalError extends Error {
+  /** The provider whose guard refused the call. */
+  public readonly provider: string;
+
+  /** Which bound refused it. */
+  public readonly bound: RateGuardBound;
+
+  /** The model whose guard refused the call, when the provider's limits apply per model. */
+  public readonly modelId: string | undefined;
+
+  /**
+   * @param message What was refused and why.
+   * @param provider The provider.
+   * @param bound The bound that refused it.
+   * @param modelId The model, for a per-model guard.
+   */
+  public constructor(
+    message: string,
+    provider: string,
+    bound: RateGuardBound,
+    modelId: string | undefined,
+  ) {
+    super(message);
+    this.name = "RateGuardRefusalError";
+    this.provider = provider;
+    this.bound = bound;
+    this.modelId = modelId;
+  }
+}
+
+/** Why a token bound refused a call on grounds no amount of waiting would change. */
+export type RateGuardTokenFault =
+  /**
+   * The call stated no input-token estimate, and this provider meters input
+   * tokens. Nothing could be debited, so nothing could be paced.
+   */
+  | "estimate_unavailable"
+  /**
+   * The estimate is larger than the bucket can ever hold. No wait admits it,
+   * and the provider would refuse a request of that size on its own ceiling.
+   */
+  | "exceeds_capacity";
+
+/**
+ * Thrown when a provider's INPUT-TOKEN bound refused a call outright.
+ *
+ * Separate from a timeout because the answer is permanent for this request as
+ * written: waiting longer cannot form an estimate that could not be formed,
+ * and cannot shrink a request past a capacity it exceeds. A caller told it
+ * timed out would retry; a caller told this changes the request or stops.
+ */
+export class RateGuardTokenBoundError extends RateGuardRefusalError {
+  /** Which permanent fault refused the call. */
+  public readonly fault: RateGuardTokenFault;
+
+  /** The estimate the call carried, or `null` when it carried none. */
+  public readonly inputTokens: number | null;
+
+  /** The bucket's capacity, in input tokens. */
+  public readonly capacity: number;
+
+  /**
+   * @param provider The provider.
+   * @param fault Why the call was refused.
+   * @param capacity The bucket's capacity.
+   * @param detail The estimate the call carried, and the model for a per-model guard.
+   */
+  public constructor(
+    provider: string,
+    fault: RateGuardTokenFault,
+    capacity: number,
+    detail: { readonly inputTokens: number | null; readonly modelId?: string },
+  ) {
+    const guard =
+      detail.modelId === undefined
+        ? `client-side input-token guard for provider "${provider}"`
+        : `client-side input-token guard for provider "${provider}", model "${detail.modelId}",`;
+    const because =
+      fault === "estimate_unavailable"
+        ? "refused a call that stated no input-token estimate, and this provider's ceiling is counted in input tokens, " +
+          "so an unmeasured call cannot be paced against it"
+        : `refused a call estimated at ${String(detail.inputTokens)} input tokens, which is past the ${capacity} ` +
+          "this guard admits in one instant, so no wait could have admitted it";
+    super(
+      `${guard} ${because}. The provider was never contacted, so this says nothing about its health.`,
+      provider,
+      "token-rate",
+      detail.modelId,
+    );
+    this.name = "RateGuardTokenBoundError";
+    this.fault = fault;
+    this.inputTokens = detail.inputTokens;
+    this.capacity = capacity;
+  }
+}
+
+/**
  * Thrown when a caller could not acquire a slot within its budget.
  *
  * Distinguished from a provider failure so the chain does not count it against
  * route health: the provider was never asked, so nothing was learned about it.
  */
-export class RateGuardTimeoutError extends Error {
-  /** The provider whose guard could not admit the call. */
-  public readonly provider: string;
-
-  /** Which of the two bounds the caller waited on. */
-  public readonly bound: "rate" | "concurrency";
-
-  /** The model whose guard refused the call, when the provider's limits apply per model. */
-  public readonly modelId: string | undefined;
-
+export class RateGuardTimeoutError extends RateGuardRefusalError {
   /** Whether the caller stopped waiting before the guard's own wait budget ran out. */
   public readonly abandoned: boolean;
 
@@ -278,7 +486,7 @@ export class RateGuardTimeoutError extends Error {
    */
   public constructor(
     provider: string,
-    bound: "rate" | "concurrency",
+    bound: RateGuardBound,
     waitedMs: number,
     detail: RefusalDetail = {},
   ) {
@@ -293,11 +501,11 @@ export class RateGuardTimeoutError extends Error {
     super(
       `${guard} ${outcome}. ` +
         "The provider was never contacted, so this says nothing about its health.",
+      provider,
+      bound,
+      detail.modelId,
     );
     this.name = "RateGuardTimeoutError";
-    this.provider = provider;
-    this.bound = bound;
-    this.modelId = detail.modelId;
     this.abandoned = detail.abandoned === true;
   }
 }
@@ -467,6 +675,7 @@ class ConcurrencyGate {
 /** Guards, created on first use and shared process-wide, keyed by {@link GuardIdentity.key}. */
 const rateLimiters = new Map<string, TokenBucketRateLimiter>();
 const concurrencyGates = new Map<string, ConcurrencyGate>();
+const inputTokenBuckets = new Map<string, InputTokenBucket>();
 const guardIdentities = new Map<string, GuardIdentity>();
 
 /**
@@ -519,12 +728,112 @@ function concurrencyGateFor(identity: GuardIdentity): ConcurrencyGate {
 }
 
 /**
+ * The input-token bucket for a guard, or `null` where the provider meters none.
+ *
+ * Shared process-wide beside the request limiter and keyed by the same guard
+ * identity, because the two ceilings are the same provider's and are enforced
+ * over the same traffic. A separate identity would let one guard's model pace
+ * itself against another's allowance.
+ *
+ * @param identity The guard.
+ * @returns Its bucket, or `null`.
+ */
+function inputTokenBucketFor(identity: GuardIdentity): InputTokenBucket | null {
+  const bound = inputTokenBoundFor(limitsFor(identity.provider, identity.modelId));
+  if (bound === null) {
+    return null;
+  }
+  let bucket = inputTokenBuckets.get(identity.key);
+  if (bucket === undefined) {
+    bucket = new InputTokenBucket({
+      capacity: bound.capacity,
+      refillPerSecond: bound.refillPerSecond,
+      label: `llm:${identity.key}:input-tokens`,
+    });
+    inputTokenBuckets.set(identity.key, bucket);
+    guardIdentities.set(identity.key, identity);
+  }
+  return bucket;
+}
+
+/**
+ * Hold a call to a provider's input-token bound, where it declares one.
+ *
+ * Both of the permanent faults are answered BEFORE anything is spent. A call
+ * that can never be admitted costs no rate token and no waiter's place in the
+ * queue, and it is told so at once rather than after a wait that could not
+ * have changed the answer.
+ *
+ * @param identity The guard.
+ * @param bucket The guard's input-token bucket.
+ * @param inputTokens The call's estimated input tokens, or `null`/absent when none was formed.
+ * @param waitBudgetMs How long the caller may queue.
+ * @param signal The caller's cancellation.
+ * @returns void
+ * @throws {RateGuardTokenBoundError} When no estimate was stated, or the estimate exceeds the capacity.
+ * @throws {RateGuardTimeoutError} When the bucket did not hold the cost in time, or the caller left.
+ */
+async function holdInputTokens(
+  identity: GuardIdentity,
+  bucket: InputTokenBucket,
+  inputTokens: number | null | undefined,
+  waitBudgetMs: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  // A non-integer, negative or non-finite figure is not a token count. It is
+  // treated as no estimate rather than coerced, because coercing it would
+  // debit the bucket by a number nobody measured.
+  const cost =
+    typeof inputTokens === "number" && Number.isFinite(inputTokens) && inputTokens >= 0
+      ? Math.ceil(inputTokens)
+      : null;
+  if (cost === null) {
+    throw new RateGuardTokenBoundError(identity.provider, "estimate_unavailable", bucket.capacity(), {
+      inputTokens: typeof inputTokens === "number" ? inputTokens : null,
+      ...(identity.modelId === undefined ? {} : { modelId: identity.modelId }),
+    });
+  }
+  if (cost > bucket.capacity()) {
+    throw new RateGuardTokenBoundError(identity.provider, "exceeds_capacity", bucket.capacity(), {
+      inputTokens: cost,
+      ...(identity.modelId === undefined ? {} : { modelId: identity.modelId }),
+    });
+  }
+  const admission = await bucket.acquire(cost, waitBudgetMs, signal);
+  if (admission.admitted) {
+    return;
+  }
+  const refusal: InputTokenRefusal = admission.reason;
+  if (refusal === "exceeds_capacity") {
+    throw new RateGuardTokenBoundError(identity.provider, "exceeds_capacity", bucket.capacity(), {
+      inputTokens: cost,
+      ...(identity.modelId === undefined ? {} : { modelId: identity.modelId }),
+    });
+  }
+  throw new RateGuardTimeoutError(identity.provider, "token-rate", waitBudgetMs, {
+    modelId: identity.modelId,
+    abandoned: refusal === "abandoned",
+  });
+}
+
+/**
  * Run a call under a provider's rate and concurrency guards.
  *
  * The concurrency permit is taken AFTER the rate token. Taking it first would
  * let callers hold scarce permits while idling in the rate queue, which
  * throttles the provider twice over and turns a pacing bound into a deadlock
  * shaped like slowness.
+ *
+ * A provider that meters INPUT TOKENS carries a third bound, taken between the
+ * other two, and the three bind IN SERIES: the call is dispatched only if every
+ * bound admitted it, and a call admitted on requests and refused on tokens is
+ * raised as a typed refusal rather than quietly dropped or quietly sent. The
+ * two permanent faults — no estimate, and an estimate past the capacity — are
+ * answered before any bound is taken, so a call that could never be admitted
+ * spends nothing. A call that clears those and is then refused by the token
+ * bucket has already spent its one rate token; that token is not returned,
+ * which paces this client very slightly SLOWER than its configured rate, and
+ * slower is the side of that rounding a pacing guard belongs on.
  *
  * `maxWaitMs` bounds how long a caller may queue. It exists because the queue
  * spends the SAME budget the call itself does: a caller that waits out its whole
@@ -536,10 +845,13 @@ function concurrencyGateFor(identity: GuardIdentity): ConcurrencyGate {
  * @param provider The provider key.
  * @param call The work to run once admitted.
  * @param maxWaitMs Ceiling on queue time; the configured guard timeout applies when lower.
- * @param scope The model the call addresses, and the caller's cancellation.
+ * @param scope The model the call addresses, its estimated input-token cost, and
+ *   the caller's cancellation.
  * @returns The call's result.
- * @throws {RateGuardTimeoutError} When neither bound admitted the call in time,
+ * @throws {RateGuardTimeoutError} When a bound did not admit the call in time,
  *   or the caller stopped waiting first.
+ * @throws {RateGuardTokenBoundError} When the provider meters input tokens and
+ *   the call stated no estimate, or stated one past what the guard can ever admit.
  */
 export async function withProviderGuards<T>(
   provider: string,
@@ -565,6 +877,17 @@ export async function withProviderGuards<T>(
       modelId: identity.modelId,
       abandoned: error instanceof RateLimitWaitAbandonedError,
     });
+  }
+
+  const inputTokenBucket = inputTokenBucketFor(identity);
+  if (inputTokenBucket !== null) {
+    await holdInputTokens(
+      identity,
+      inputTokenBucket,
+      scope.inputTokens,
+      waitBudgetMs,
+      scope.signalEndsRateWait === true ? scope.signal : undefined,
+    );
   }
 
   const release = await concurrencyGateFor(identity).acquire(waitBudgetMs, scope.signal);
@@ -603,8 +926,23 @@ export function hasDuplicateHeadroom(
   const limits = limitsFor(provider, identity.modelId);
   const limiter = rateLimiterFor(identity);
   const gate = concurrencyGateFor(identity);
+  const tokens = inputTokenBucketFor(identity);
   if (limiter.getQueueLength() > 0 || gate.queueLength() > 0) {
     return false;
+  }
+  if (tokens !== null) {
+    // A duplicate costs input tokens as surely as it costs a request, and on a
+    // token-metered provider that is the tighter ceiling. Its own cost is not
+    // known here, so the test is the one this function already makes of the
+    // other bounds: nobody queued, and the reserved fraction of the ceiling
+    // still free. A hedge is worth sending only out of capacity no first
+    // attempt needs, and a bucket with waiters in it has none.
+    if (
+      tokens.queueLength() > 0 ||
+      tokens.available() < Math.ceil(tokens.capacity() * reserveFraction)
+    ) {
+      return false;
+    }
   }
   const freeAfter = limits.max_concurrent - gate.inFlightCount() - 1;
   const tokensAfter = limiter.getAvailableTokens() - TOKENS_PER_REQUEST;
@@ -636,6 +974,60 @@ export interface GuardSnapshot {
   readonly rateQueueLength: number;
   readonly concurrencyQueueLength: number;
   readonly availableTokens: number;
+  /**
+   * The input-token bound in force, or `null` where the provider meters none.
+   *
+   * `null` is a statement about the provider's entry and not a reading of an
+   * empty bucket: a reader that saw zeros for both would be unable to tell an
+   * unguarded token ceiling from a guarded one momentarily out of tokens, and
+   * those are opposite facts.
+   */
+  readonly inputTokens: GuardInputTokenSnapshot | null;
+}
+
+/** The state of a guard's input-token bound. */
+export interface GuardInputTokenSnapshot {
+  /** Tokens replaced per second. */
+  readonly refillPerSecond: number;
+  /** The most input tokens admissible in one instant. */
+  readonly capacity: number;
+  /** Tokens the bucket holds now. A guard not yet used holds its capacity. */
+  readonly available: number;
+  /** How many callers are queued for tokens. */
+  readonly queueLength: number;
+  /** Provenance of the refill, falling back to the entry's own basis. */
+  readonly refillBasis: ProviderLimitBasis;
+  /** Provenance of the capacity, falling back to the entry's own basis. */
+  readonly capacityBasis: ProviderLimitBasis;
+}
+
+/**
+ * The input-token reading for one guard, or `null` where its provider declares
+ * no token bound.
+ *
+ * @param identity The guard.
+ * @param limits Its limits in force.
+ * @returns The reading, or `null`.
+ */
+function inputTokenSnapshotOf(
+  identity: GuardIdentity,
+  limits: ProviderLimits,
+): GuardInputTokenSnapshot | null {
+  const bound = inputTokenBoundFor(limits);
+  if (bound === null) {
+    return null;
+  }
+  const bucket = inputTokenBuckets.get(identity.key);
+  return {
+    refillPerSecond: bound.refillPerSecond,
+    capacity: bound.capacity,
+    // A bucket that has never been used holds its capacity, which is the
+    // stand-in. Reporting zero would read as an exhausted guard.
+    available: bucket?.available() ?? bound.capacity,
+    queueLength: bucket?.queueLength() ?? 0,
+    refillBasis: limits.input_tokens_per_second_basis ?? limits.basis,
+    capacityBasis: limits.max_input_token_burst_basis ?? limits.basis,
+  };
 }
 
 /**
@@ -667,6 +1059,7 @@ export function guardSnapshots(): GuardSnapshot[] {
         // the bucket was deliberately built not to hold.
         availableTokens:
           limiter?.getAvailableTokens() ?? burstCapacityFor(limits) * TOKENS_PER_REQUEST,
+        inputTokens: inputTokenSnapshotOf(identity, limits),
       };
     });
 }
@@ -684,6 +1077,10 @@ export function resetProviderGuards(): void {
     limiter.reset();
   }
   rateLimiters.clear();
+  for (const bucket of inputTokenBuckets.values()) {
+    bucket.reset();
+  }
+  inputTokenBuckets.clear();
   concurrencyGates.clear();
   guardIdentities.clear();
 }

@@ -23,6 +23,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { llmBreakers } from "../../../llm/alias-client";
 import * as codec from "../../../llm/decision/codec";
+import {
+  decisionInputTokenDrift,
+  estimateDecisionInputTokens,
+  resetDecisionInputTokenDrift,
+} from "../../../llm/decision/input-size";
 import { decodeDecisionResponse } from "../../../llm/decision/codec";
 import {
   callDecisionModel,
@@ -56,11 +61,11 @@ import type {
   DecisionQuestion,
   DecisionRequest,
   DecisionState,
+  DecisionWireRequest,
 } from "../../../llm/decision/types";
 import * as rateGuard from "../../../llm/rate-guard";
 import {
   RateGuardTimeoutError,
-  burstCapacityFor,
   guardSnapshots,
   limitsFor,
   resetProviderGuards,
@@ -495,6 +500,27 @@ function guardOf(provider: string): ReturnType<typeof guardSnapshots>[number] | 
 }
 
 /**
+ * The input-token cost background traffic in these tests states.
+ *
+ * One token, so the REQUEST bound stays the bound under test. The hosted
+ * provider also holds an input-token bound, and a call that stated no estimate
+ * would be refused by it before reaching the bucket or the permit these tests
+ * are about.
+ */
+const BACKGROUND_INPUT_TOKENS = 1;
+
+/**
+ * Take a guard slot for background traffic, stating a negligible token cost.
+ *
+ * @param provider The provider's name.
+ * @param call The work to run once admitted.
+ * @returns The call's result.
+ */
+async function holdGuardSlot<T>(provider: string, call: () => Promise<T>): Promise<T> {
+  return withProviderGuards(provider, call, undefined, { inputTokens: BACKGROUND_INPUT_TOKENS });
+}
+
+/**
  * Spend every token the provider's rate bucket holds, in one instant.
  *
  * @param provider The provider's name.
@@ -502,7 +528,7 @@ function guardOf(provider: string): ReturnType<typeof guardSnapshots>[number] | 
  */
 async function drainRateBucket(provider: string): Promise<void> {
   do {
-    await withProviderGuards(provider, () => Promise.resolve());
+    await holdGuardSlot(provider, () => Promise.resolve());
   } while ((guardOf(provider)?.availableTokens ?? 0) >= 1);
 }
 
@@ -965,7 +991,7 @@ describe("the decision client", () => {
       expect(permits).toBeGreaterThan(0);
       for (let permit = 0; permit < permits; permit += 1) {
         held.push(
-          withProviderGuards(
+          holdGuardSlot(
             provider,
             () =>
               new Promise<void>((resolve) => {
@@ -997,6 +1023,77 @@ describe("the decision client", () => {
     });
   });
 
+  describe("the provider's input-token bound", () => {
+    const livePathName =
+      "weighs the request this client actually sends, debits the token guard with it, and reconciles it";
+    it(livePathName, async () => {
+      resetDecisionInputTokenDrift();
+      const harness = clientOverTransport((call) => scriptedAnswer(call.route, CHOICE_ANSWER()));
+
+      // The estimate the live path forms, re-derived here from the same body
+      // the encoder produces, so the figure under test is the figure the guard
+      // was debited by rather than a number this test chose.
+      const expected = estimateDecisionInputTokens(
+        codec.encodeDecisionRequest(CHOICE_REQUEST(), {
+          model: harness.route.modelPin,
+          caps: harness.route.caps,
+        }),
+      );
+      expect(expected.estimated).toBe(true);
+      if (!expected.estimated) {
+        return;
+      }
+
+      // A guard that has never run holds its capacity, which is what a cold
+      // bucket reports and what this call is debited from.
+      const before = rateGuard.inputTokenBoundFor(limitsFor(provider))?.capacity ?? Number.NaN;
+      expect(before).toBeGreaterThan(0);
+      await ask();
+      const after = guardOf(provider)?.inputTokens?.available ?? Number.NaN;
+
+      // The bucket is on the live path and was debited by the request's own
+      // size. A guard that existed but was never debited would leave these
+      // equal, which is the built-but-never-wired failure this asserts against.
+      expect(before - after).toBe(expected.inputTokens);
+
+      // And the debit was reconciled against what the vendor reported, so an
+      // estimator that drifts below the ceiling it holds becomes visible
+      // rather than staying silent.
+      const drift = decisionInputTokenDrift();
+      expect(drift.samples).toBe(1);
+      expect(drift.estimatedTotal).toBe(expected.inputTokens);
+      expect(drift.reportedTotal).toBeGreaterThan(0);
+    });
+
+    it("refuses a call whose input size cannot be weighed, and never dispatches it", async () => {
+      const harness = clientOverTransport((call) => scriptedAnswer(call.route, CHOICE_ANSWER()));
+      // This is the BACKSTOP, and the encoder is why it is one: a request
+      // carrying an image whose bytes cannot be measured is refused by
+      // `encodeDecisionRequest` before anything reaches a guard, so the live
+      // path as written always presents a weighable body. The encoder is
+      // bypassed here to reach the state it normally prevents, because a
+      // divergence between what the encoder accepts and what this client can
+      // weigh is exactly what the backstop exists for — and the alternative to
+      // a backstop is dispatching an unweighed request to a vendor that
+      // refuses over a token ceiling.
+      vi.spyOn(codec, "encodeDecisionRequest").mockReturnValue({
+        state: { text: "a body the encoder would never have produced" },
+        model: harness.route.modelPin,
+        assets: { chart: { type: "image", format: "png", data_base64: "AQIDBA==" } },
+        questions: CHOICE_REQUEST().questions,
+      } as unknown as DecisionWireRequest);
+
+      const refused = asInstance(await rejectionOf(ask()), DecisionAdmissionError);
+      expect(refused.fault).toBe("admission");
+      // Its own source, not the timeout's: the budget is not what refused it,
+      // so a caller is not sent to lengthen a deadline that never bound it.
+      expect(refused.source).toBe("provider_token_bound");
+      expect(refused.message).toContain("input-token guard");
+      // Refused, never sent on an unknown.
+      expect(harness.double.calls).toHaveLength(0);
+    });
+  });
+
   describe("the budget", () => {
     it("the budget bounds the client's own rate queue", async () => {
       vi.useFakeTimers();
@@ -1004,7 +1101,7 @@ describe("the decision client", () => {
       await drainRateBucket(provider);
       const ahead: Promise<void>[] = [];
       for (let waiter = 0; waiter < WAITERS_AHEAD; waiter += 1) {
-        ahead.push(withProviderGuards(provider, () => Promise.resolve()));
+        ahead.push(holdGuardSlot(provider, () => Promise.resolve()));
       }
 
       const outcome = watch(ask({ timeoutMs: QUEUED_BUDGET_MS }));
@@ -1092,7 +1189,7 @@ describe("the decision client", () => {
       expect(permits).toBeGreaterThan(0);
       for (let permit = 0; permit < permits; permit += 1) {
         held.push(
-          withProviderGuards(
+          holdGuardSlot(
             provider,
             () =>
               new Promise<void>((resolve) => {

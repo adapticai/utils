@@ -74,6 +74,31 @@ const HOSTED_MAX_BURST = 32;
 /** The hosted entry's permit count, held equal to the capacity so the bucket is the binding bound. */
 const HOSTED_MAX_CONCURRENT = 32;
 
+/** The hosted entry's input-token refill, in tokens per second. The client's own derate, not the vendor's figure. */
+const HOSTED_INPUT_TOKENS_PER_SECOND = 16_000;
+
+/**
+ * The hosted entry's input-token capacity: the vendor's own 64k-per-request
+ * context ceiling, so no request the VENDOR would accept is unservable here.
+ */
+const HOSTED_MAX_INPUT_TOKEN_BURST = 64_000;
+
+/**
+ * The fraction of the vendor's ceiling the entry's worst one-second window
+ * reaches, on BOTH bounds. A bucket holding C refilled at R admits at most
+ * C + R in any second, and both limbs are derated to this same share.
+ */
+const DERATED_SHARE_OF_VENDOR_CEILING = 0.8;
+
+/** A token cost small enough that the request bound, not the token bound, is what binds a burst test. */
+const NEGLIGIBLE_INPUT_TOKENS = 1;
+
+/**
+ * The vendor's documented per-request context ceiling, in tokens: "64k tokens
+ * per request". The floor the input-token capacity is set at or above.
+ */
+const VENDOR_PER_REQUEST_TOKEN_CEILING = 64_000;
+
 /** Enough microtask turns for an admitted call to have settled, so a still-pending one was genuinely not admitted. */
 const SETTLE_TURNS = 8;
 
@@ -209,10 +234,35 @@ describe("limits for the decision providers", () => {
     // whoever next reads the stale citation somewhere else.
     expect(limits.note).toContain("the citation was withdrawn");
 
-    // The vendor's other published unit is not guarded here at all, and an
-    // entry that bounds one of two bounds says which one it leaves open — and
-    // here, that the open one is the tighter.
-    expect(limits.note).toContain("NOT GUARDED HERE");
+    // The vendor's OTHER published unit is now bounded too, and the entry
+    // states the arithmetic that holds it under the ceiling rather than only
+    // the figures.
+    // The SECOND bound, in the vendor's other unit, with the same provenance
+    // discipline: the refill is the client's derate and says so, while the
+    // capacity is the one figure here taken from the vendor.
+    expect(limits).toMatchObject({
+      input_tokens_per_second: HOSTED_INPUT_TOKENS_PER_SECOND,
+      input_tokens_per_second_basis: "conservative-default",
+      max_input_token_burst: HOSTED_MAX_INPUT_TOKEN_BURST,
+      max_input_token_burst_basis: "published",
+    });
+
+    // The arithmetic the entry states, re-derived here rather than quoted: a
+    // bucket holding C refilled at R admits at most C + R over any one second,
+    // and that worst second is held to the same share of the vendor's ceiling
+    // on BOTH bounds. An entry that drifted on either limb fails here.
+    expect(HOSTED_MAX_INPUT_TOKEN_BURST + HOSTED_INPUT_TOKENS_PER_SECOND).toBe(
+      VENDOR_INPUT_TOKENS_PER_SECOND * DERATED_SHARE_OF_VENDOR_CEILING,
+    );
+    expect(HOSTED_MAX_BURST + HOSTED_REQUESTS_PER_MINUTE / SECONDS_PER_MINUTE).toBe(
+      VENDOR_REQUESTS_PER_SECOND * DERATED_SHARE_OF_VENDOR_CEILING,
+    );
+
+    // The capacity is at or above the largest request the VENDOR accepts, so
+    // no vendor-legal request is permanently unservable by this client.
+    expect(limits.max_input_token_burst).toBeGreaterThanOrEqual(VENDOR_PER_REQUEST_TOKEN_CEILING);
+
+    expect(limits.note).toContain("THE TOKEN CEILING IS NOW GUARDED");
     expect(limits.note).toContain(`${VENDOR_INPUT_TOKENS_PER_SECOND.toLocaleString("en-US")} tokens/second`);
 
     // Raising the permit count is what enlarges the admit set, so the entry
@@ -264,7 +314,9 @@ describe("limits for the decision providers", () => {
     try {
       let admitted = 0;
       while (admitted < capacity) {
-        await withProviderGuards("typesafe", () => Promise.resolve());
+        await withProviderGuards("typesafe", () => Promise.resolve(), undefined, {
+          inputTokens: NEGLIGIBLE_INPUT_TOKENS,
+        });
         admitted += 1;
       }
       expect(admitted).toBe(capacity);
@@ -279,7 +331,9 @@ describe("limits for the decision providers", () => {
       // assertion is that it has not settled: a guard that still held the
       // minute's allowance would resolve it here without the clock moving.
       let settled: "admitted" | "refused" | "pending" = "pending";
-      const beyondCapacity = withProviderGuards("typesafe", () => Promise.resolve()).then(
+      const beyondCapacity = withProviderGuards("typesafe", () => Promise.resolve(), undefined, {
+        inputTokens: NEGLIGIBLE_INPUT_TOKENS,
+      }).then(
         () => {
           settled = "admitted";
         },
@@ -377,6 +431,13 @@ describe("the limits verifier", () => {
       // numbers it no longer governs.
       max_burst: HOSTED_MAX_BURST,
       max_burst_basis: "conservative-default",
+      // And an input-token bound of its own, on the same ground: the token
+      // ceiling is counted per model too, and a provider-wide bound does not
+      // reach a model whose numbers replaced it.
+      input_tokens_per_second: HOSTED_INPUT_TOKENS_PER_SECOND,
+      input_tokens_per_second_basis: "conservative-default",
+      max_input_token_burst: HOSTED_MAX_INPUT_TOKEN_BURST,
+      max_input_token_burst_basis: "conservative-default",
       max_concurrent: HOSTED_MAX_CONCURRENT,
       acquire_timeout_ms: acquireTimeoutMs,
       source: null,
@@ -432,6 +493,8 @@ describe("the limits verifier", () => {
           [pin]: {
             basis: "conservative-default",
             requests_per_minute: HOSTED_REQUESTS_PER_MINUTE,
+            input_tokens_per_second: HOSTED_INPUT_TOKENS_PER_SECOND,
+            max_input_token_burst: HOSTED_MAX_INPUT_TOKEN_BURST,
             max_concurrent: 8,
             acquire_timeout_ms: 250,
             source: null,
@@ -447,6 +510,63 @@ describe("the limits verifier", () => {
       `FAIL typesafe/${pin}: serves decision route dm.hosted but declares no max_burst`,
     );
     expect(result.stderr).toContain("1 failure(s)");
+  });
+
+  it("refuses a guarded decision provider that declares no input-token bound", () => {
+    const result = runVerifierOnEditedCopy(({ limits }) => {
+      for (const field of ["input_tokens_per_second", "max_input_token_burst"]) {
+        Reflect.deleteProperty(limits.providers.typesafe, field);
+      }
+    });
+    expect(result.status).toBe(1);
+    expect(result.stdout).not.toContain(SUCCESS_TOKEN);
+    // The vendor enforces two ceilings per second and refuses over either, so
+    // a request-counting guard holds one of them twice. One failure per route
+    // the provider serves, as with the burst capacity.
+    for (const route of ["dm.hosted", "dm.hosted.preview"]) {
+      expect(result.stderr).toContain(
+        `FAIL typesafe: serves decision route ${route} but declares no input-token bound`,
+      );
+    }
+    expect(result.stderr).toContain("2 failure(s)");
+  });
+
+  it("refuses an input-token bound declared by half", () => {
+    // Either number alone reads as a token guard and behaves as none: a refill
+    // with no capacity bounds only the average a per-second ceiling does not
+    // enforce, and a capacity with no refill admits one bucketful for ever.
+    for (const dropped of ["input_tokens_per_second", "max_input_token_burst"]) {
+      const result = runVerifierOnEditedCopy(({ limits }) => {
+        Reflect.deleteProperty(limits.providers.typesafe, dropped);
+      });
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain(
+        `FAIL typesafe: declares ${dropped === "input_tokens_per_second" ? "max_input_token_burst" : "input_tokens_per_second"} without the other`,
+      );
+    }
+  });
+
+  it("refuses an input-token capacity below one second of its own refill", () => {
+    const result = runVerifierOnEditedCopy(({ limits }) => {
+      limits.providers.typesafe.max_input_token_burst = HOSTED_INPUT_TOKENS_PER_SECOND - 1;
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      `FAIL typesafe: max_input_token_burst ${HOSTED_INPUT_TOKENS_PER_SECOND - 1} is below one second of input_tokens_per_second ${HOSTED_INPUT_TOKENS_PER_SECOND}`,
+    );
+  });
+
+  it("refuses an input-token bound that calls itself published while citing no source", () => {
+    const result = runVerifierOnEditedCopy(({ limits }) => {
+      Object.assign(limits.providers.typesafe, {
+        basis: "conservative-default",
+        source: null,
+        max_burst_basis: "conservative-default",
+        input_tokens_per_second_basis: "published",
+      });
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("FAIL typesafe: claims a published input_tokens_per_second but cites no source");
   });
 
   it("refuses a burst capacity the refill rate could never fill", () => {

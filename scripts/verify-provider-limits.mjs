@@ -42,6 +42,66 @@ const DECISION_ROUTES_PATH = join(UTILS_ROOT, "src/llm/decision/decision-routes.
 const MIN_SENSIBLE_RPM = 1;
 
 /**
+ * Assert one entry's INPUT-TOKEN bound is declared whole and honestly labelled.
+ *
+ * The bound is two numbers, and the pair is what makes it a bound. A refill
+ * with no capacity bounds only the long-run average, which is not the quantity
+ * a per-second ceiling refuses; a capacity with no refill admits one bucketful
+ * and then nothing for ever. Either alone reads as a token guard and behaves
+ * as none, so a half-declared bound is a failure rather than a default.
+ *
+ * The capacity must also hold at least one second of refill. Below that the
+ * refill is partly unspendable — tokens accrue into a bucket that cannot hold
+ * them — so the declared pace is not the pace the client would actually run at.
+ *
+ * @param {string} name The entry, for the message.
+ * @param {Record<string, unknown>} entry The provider entry or model override.
+ * @returns {string[]} Failures.
+ */
+function checkInputTokenBound(name, entry) {
+  /** @type {string[]} */
+  const failures = [];
+  const refill = entry.input_tokens_per_second;
+  const capacity = entry.max_input_token_burst;
+  if (refill === undefined && capacity === undefined) {
+    return failures;
+  }
+  if (refill === undefined || capacity === undefined) {
+    failures.push(
+      `${name}: declares ${refill === undefined ? "max_input_token_burst" : "input_tokens_per_second"} without the other; ` +
+        "an input-token bound is a refill AND a capacity, and either alone bounds nothing a per-second ceiling enforces",
+    );
+    return failures;
+  }
+  for (const [field, value] of [
+    ["input_tokens_per_second", refill],
+    ["max_input_token_burst", capacity],
+  ]) {
+    if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+      failures.push(`${name}: ${field} must be a positive finite number, got ${JSON.stringify(value)}`);
+    }
+  }
+  if (typeof refill === "number" && typeof capacity === "number" && capacity < refill) {
+    failures.push(
+      `${name}: max_input_token_burst ${capacity} is below one second of input_tokens_per_second ${refill}, ` +
+        "so part of the declared refill can never be held and the stated pace is not the pace it runs at",
+    );
+  }
+  for (const field of ["input_tokens_per_second_basis", "max_input_token_burst_basis"]) {
+    const basis = entry[field];
+    if (basis !== undefined && basis !== "published" && basis !== "conservative-default") {
+      failures.push(
+        `${name}: ${field} must be "published" or "conservative-default", got ${JSON.stringify(basis)}`,
+      );
+    }
+    if (basis === "published" && (typeof entry.source !== "string" || entry.source.length === 0)) {
+      failures.push(`${name}: claims a published ${field.replace("_basis", "")} but cites no source`);
+    }
+  }
+  return failures;
+}
+
+/**
  * Assert the limits config is complete and honestly labelled.
  *
  * Complete is judged against both route tables: every provider the generative
@@ -145,6 +205,7 @@ function checkConfig() {
     ) {
       failures.push(`${name}: claims a published burst capacity but cites no source`);
     }
+    failures.push(...checkInputTokenBound(name, entry));
   }
 
   // A decision route is admitted against a vendor that enforces its ceiling
@@ -170,6 +231,19 @@ function checkConfig() {
     if (inForce.max_burst === undefined) {
       failures.push(
         `${where}: serves decision route ${routeName} but declares no max_burst, so a cold guard admits its whole per-minute allowance of ${inForce.requests_per_minute} in one instant`,
+      );
+    }
+    // The hosted decision vendor enforces TWO ceilings per second — requests
+    // and input tokens — and refuses over either. A request-counting guard
+    // holds one of them twice: two calls it cannot tell apart can differ by
+    // three orders of magnitude in what the vendor bills, so for any traffic
+    // whose size varies the request numbers bound the wrong quantity and the
+    // vendor's 429 is the only thing left holding the token ceiling. The token
+    // bound is therefore a precondition of serving the route, exactly as the
+    // burst capacity is, and not a refinement available afterwards.
+    if (inForce.input_tokens_per_second === undefined || inForce.max_input_token_burst === undefined) {
+      failures.push(
+        `${where}: serves decision route ${routeName} but declares no input-token bound (input_tokens_per_second + max_input_token_burst), so nothing paces this client against a ceiling the vendor counts in input tokens`,
       );
     }
   }
@@ -241,6 +315,7 @@ function checkConfig() {
       ) {
         failures.push(`${name}: claims a published burst capacity but cites no source`);
       }
+      failures.push(...checkInputTokenBound(name, override));
       if (typeof override.note !== "string" || override.note.length === 0) {
         failures.push(`${name}: an override must say why this model runs at different numbers from its siblings`);
       }
@@ -637,7 +712,7 @@ function ifImplyingTest(ts, test) {
  * that charges it.
  *
  * @param {typeof import("typescript")} ts The compiler API.
- * @param {import("typescript").Node[]} timeoutTests The `instanceof RateGuardTimeoutError` tests.
+ * @param {import("typescript").Node[]} timeoutTests The `instanceof` tests naming a guard refusal.
  * @returns {boolean} True when at least one branch sets it and none sets anything but `false`.
  */
 function guardTimeoutSparesHealth(ts, timeoutTests) {
@@ -701,6 +776,13 @@ export function checkWiring(sources = readWiringSources()) {
     }
   }
 
+  // Either class satisfies the assertion, and the base class is the stronger
+  // form of it: a guard raises several kinds of refusal — a bound that waited
+  // out, a caller that left, a token bound that refused outright — and every
+  // one of them means the provider was never contacted. A leg that tests only
+  // the timeout classifies the refusals that existed when it was written and
+  // lets a later one fall through to the path that charges provider health.
+  const refusalClasses = new Set(["RateGuardRefusalError", "RateGuardTimeoutError"]);
   const timeoutTests = collect(
     ts,
     leg.file,
@@ -708,11 +790,11 @@ export function checkWiring(sources = readWiringSources()) {
       ts.isBinaryExpression(node) &&
       node.operatorToken.kind === ts.SyntaxKind.InstanceOfKeyword &&
       ts.isIdentifier(node.right) &&
-      node.right.text === "RateGuardTimeoutError",
+      refusalClasses.has(node.right.text),
   );
   if (timeoutTests.length === 0) {
     failures.push(
-      `${legPath}: the leg attempt does not classify a guard timeout, so the client's own pacing would be counted against provider health and could open a breaker on a healthy route`,
+      `${legPath}: the leg attempt does not classify a guard refusal, so the client's own pacing would be counted against provider health and could open a breaker on a healthy route`,
     );
   } else if (!guardTimeoutSparesHealth(ts, timeoutTests)) {
     failures.push(`${legPath}: a guard timeout is counted against provider health; the provider was never contacted`);
