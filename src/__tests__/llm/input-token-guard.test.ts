@@ -67,6 +67,21 @@ const MEASURED_IMAGE_TOKENS = 2632;
 /** A share of the token capacity a burst of negligible calls cannot have spent. */
 const MOSTLY_UNSPENT = 0.9;
 
+/** The vendor's stated input-token ceiling, in tokens per second, which the sizing is held under. */
+const VENDOR_INPUT_TOKENS_PER_SECOND = 100_000;
+
+/** Milliseconds in one second, the window the vendor enforces over. */
+const MS_PER_SECOND = 1000;
+
+/** How long the sizing drive runs, in simulated milliseconds. */
+const DRIVE_MS = 10_000;
+
+/** How far the simulated clock moves between rounds of offers. */
+const DRIVE_STEP_MS = 5;
+
+/** Offers per round: far more than the bucket can take, so the bucket sets the rate. */
+const OFFERS_PER_STEP = 40;
+
 /** Enough microtask turns that an admitted call would have settled. */
 const SETTLE_TURNS = 8;
 
@@ -88,6 +103,11 @@ class TestClock {
 
   /** @returns The current instant. */
   public now = (): number => this.ms;
+
+  /** @returns The current instant, for a caller recording when something happened. */
+  public nowMs(): number {
+    return this.ms;
+  }
 
   /**
    * @param ms Milliseconds to advance.
@@ -204,6 +224,65 @@ describe("the input-token bucket", () => {
     // A backwards clock earns nothing rather than draining what is held: the
     // elapsed interval is unknown, and no tokens is the fail-safe reading of it.
     expect(bucket.available()).toBe(0);
+  });
+});
+
+describe("the shipped sizing, driven rather than asserted arithmetically", () => {
+  const windowName =
+    "no sliding one-second window admits more input tokens than the vendor's ceiling";
+  it(windowName, async () => {
+    const bound = inputTokenBoundFor(limitsFor(HOSTED));
+    const capacity = bound?.capacity ?? 0;
+    const refill = bound?.refillPerSecond ?? 0;
+    expect(capacity).toBeGreaterThan(0);
+
+    const clock = new TestClock();
+    // Built exactly as the guard builds it, from the entry's own numbers, so
+    // this measures the SIZING and not a bucket chosen for the test. The other
+    // tests here prove the mechanism; this one proves the figures put into it
+    // produce the share of the vendor's ceiling the entry claims.
+    const bucket = new InputTokenBucket({
+      capacity,
+      refillPerSecond: refill,
+      label: "sizing",
+      now: clock.now,
+    });
+
+    // Single-image reads offered far faster than the bucket can take them, so
+    // the bucket is the only thing setting the rate. A zero wait means each
+    // offer is admitted in this instant or not at all.
+    const admittedAtMs: number[] = [];
+    for (let elapsed = 0; elapsed < DRIVE_MS; elapsed += DRIVE_STEP_MS) {
+      for (let offer = 0; offer < OFFERS_PER_STEP; offer += 1) {
+        const outcome = await bucket.acquire(MEASURED_IMAGE_TOKENS, 0);
+        if (!outcome.admitted) {
+          break;
+        }
+        admittedAtMs.push(clock.nowMs());
+      }
+      clock.advance(DRIVE_STEP_MS);
+    }
+    expect(admittedAtMs.length).toBeGreaterThan(0);
+
+    let worstWindow = 0;
+    for (const start of admittedAtMs) {
+      const inWindow = admittedAtMs.filter((at) => at >= start && at < start + MS_PER_SECOND).length;
+      worstWindow = Math.max(worstWindow, inWindow * MEASURED_IMAGE_TOKENS);
+    }
+
+    // The property the entry's note states, measured: a bucket holding C
+    // refilled at R cannot admit more than C + R in any one second, and the
+    // figures chosen put that under the vendor's ceiling with margin.
+    expect(worstWindow).toBeLessThanOrEqual(capacity + refill);
+    expect(worstWindow).toBeLessThan(VENDOR_INPUT_TOKENS_PER_SECOND);
+
+    // Over a finite horizon the average is (C + horizon x R) / horizon, not R:
+    // the first instant gets the whole bucket on top of the refill. Asserting
+    // R alone would be wrong, and asserting nothing would miss a refill that
+    // had drifted.
+    const horizonSeconds = DRIVE_MS / MS_PER_SECOND;
+    const admittedTokens = admittedAtMs.length * MEASURED_IMAGE_TOKENS;
+    expect(admittedTokens).toBeLessThanOrEqual(capacity + refill * horizonSeconds);
   });
 });
 
