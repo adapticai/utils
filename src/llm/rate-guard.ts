@@ -757,29 +757,27 @@ function inputTokenBucketFor(identity: GuardIdentity): InputTokenBucket | null {
 }
 
 /**
- * Hold a call to a provider's input-token bound, where it declares one.
+ * The input-token cost of a call, or the permanent refusal of it.
  *
- * Both of the permanent faults are answered BEFORE anything is spent. A call
- * that can never be admitted costs no rate token and no waiter's place in the
- * queue, and it is told so at once rather than after a wait that could not
- * have changed the answer.
+ * Resolved BEFORE any bound is taken, which is the whole reason it is a
+ * separate step: a call that can never be admitted must cost nothing, and
+ * taking a rate token for it first would spend pacing on a call that was never
+ * going to be dispatched. Both faults are permanent for the request as
+ * written — waiting longer cannot form an estimate that could not be formed,
+ * and cannot shrink a request past a capacity it exceeds — so they are
+ * answered at once rather than after a wait that could not have changed them.
  *
  * @param identity The guard.
  * @param bucket The guard's input-token bucket.
  * @param inputTokens The call's estimated input tokens, or `null`/absent when none was formed.
- * @param waitBudgetMs How long the caller may queue.
- * @param signal The caller's cancellation.
- * @returns void
+ * @returns The cost to debit.
  * @throws {RateGuardTokenBoundError} When no estimate was stated, or the estimate exceeds the capacity.
- * @throws {RateGuardTimeoutError} When the bucket did not hold the cost in time, or the caller left.
  */
-async function holdInputTokens(
+function inputTokenCostOf(
   identity: GuardIdentity,
   bucket: InputTokenBucket,
   inputTokens: number | null | undefined,
-  waitBudgetMs: number,
-  signal?: AbortSignal,
-): Promise<void> {
+): number {
   // A non-integer, negative or non-finite figure is not a token count. It is
   // treated as no estimate rather than coerced, because coercing it would
   // debit the bucket by a number nobody measured.
@@ -787,18 +785,44 @@ async function holdInputTokens(
     typeof inputTokens === "number" && Number.isFinite(inputTokens) && inputTokens >= 0
       ? Math.ceil(inputTokens)
       : null;
+  const named = identity.modelId === undefined ? {} : { modelId: identity.modelId };
   if (cost === null) {
     throw new RateGuardTokenBoundError(identity.provider, "estimate_unavailable", bucket.capacity(), {
       inputTokens: typeof inputTokens === "number" ? inputTokens : null,
-      ...(identity.modelId === undefined ? {} : { modelId: identity.modelId }),
+      ...named,
     });
   }
   if (cost > bucket.capacity()) {
     throw new RateGuardTokenBoundError(identity.provider, "exceeds_capacity", bucket.capacity(), {
       inputTokens: cost,
-      ...(identity.modelId === undefined ? {} : { modelId: identity.modelId }),
+      ...named,
     });
   }
+  return cost;
+}
+
+/**
+ * Debit a resolved cost from a provider's input-token bucket.
+ *
+ * Called after the rate token, so the two bounds are taken in the order they
+ * are documented in and a call holds both or neither.
+ *
+ * @param identity The guard.
+ * @param bucket The guard's input-token bucket.
+ * @param cost The cost {@link inputTokenCostOf} resolved.
+ * @param waitBudgetMs How long the caller may queue.
+ * @param signal The caller's cancellation.
+ * @returns void
+ * @throws {RateGuardTimeoutError} When the bucket did not hold the cost in time, or the caller left.
+ * @throws {RateGuardTokenBoundError} When the capacity shrank under a rewired limits entry mid-call.
+ */
+async function spendInputTokens(
+  identity: GuardIdentity,
+  bucket: InputTokenBucket,
+  cost: number,
+  waitBudgetMs: number,
+  signal?: AbortSignal,
+): Promise<void> {
   const admission = await bucket.acquire(cost, waitBudgetMs, signal);
   if (admission.admitted) {
     return;
@@ -829,9 +853,10 @@ async function holdInputTokens(
  * bound admitted it, and a call admitted on requests and refused on tokens is
  * raised as a typed refusal rather than quietly dropped or quietly sent. The
  * two permanent faults — no estimate, and an estimate past the capacity — are
- * answered before any bound is taken, so a call that could never be admitted
- * spends nothing. A call that clears those and is then refused by the token
- * bucket has already spent its one rate token; that token is not returned,
+ * resolved before ANY bound is taken, including the rate token, so a call that
+ * could never be admitted spends nothing at all. A call that clears those and
+ * is then refused by the token bucket has already spent its one rate token;
+ * that token is not returned,
  * which paces this client very slightly SLOWER than its configured rate, and
  * slower is the side of that rounding a pacing guard belongs on.
  *
@@ -866,6 +891,14 @@ export async function withProviderGuards<T>(
       ? limits.acquire_timeout_ms
       : Math.min(maxWaitMs, limits.acquire_timeout_ms);
 
+  // Resolved before any bound is taken. A call that can never be admitted —
+  // no estimate, or an estimate past the capacity — must cost nothing, and a
+  // rate token taken first would be pacing spent on a call that was never
+  // going to be dispatched.
+  const inputTokenBucket = inputTokenBucketFor(identity);
+  const inputCost =
+    inputTokenBucket === null ? null : inputTokenCostOf(identity, inputTokenBucket, scope.inputTokens);
+
   try {
     if (scope.signalEndsRateWait === true && scope.signal !== undefined) {
       await rateLimiterFor(identity).acquire(scope.signal);
@@ -879,12 +912,14 @@ export async function withProviderGuards<T>(
     });
   }
 
-  const inputTokenBucket = inputTokenBucketFor(identity);
-  if (inputTokenBucket !== null) {
-    await holdInputTokens(
+  if (inputTokenBucket !== null && inputCost !== null) {
+    // The signal is heard here on the same terms as in the rate queue, because
+    // this is a rate bound: a caller that changed that for itself changed it
+    // for both of them.
+    await spendInputTokens(
       identity,
       inputTokenBucket,
-      scope.inputTokens,
+      inputCost,
       waitBudgetMs,
       scope.signalEndsRateWait === true ? scope.signal : undefined,
     );

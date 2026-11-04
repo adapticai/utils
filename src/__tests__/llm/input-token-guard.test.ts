@@ -38,6 +38,7 @@ import {
 } from "../../llm/decision/input-size";
 import type { DecisionWireRequest } from "../../llm/decision/types";
 import { InputTokenBucket } from "../../llm/input-token-bucket";
+import type { GuardSnapshot } from "../../llm/rate-guard";
 import {
   RateGuardTimeoutError,
   RateGuardTokenBoundError,
@@ -62,6 +63,9 @@ const MEASURED_HEIGHT_PX = 768;
 
 /** The input tokens the vendor billed for one image at that canvas. */
 const MEASURED_IMAGE_TOKENS = 2632;
+
+/** A share of the token capacity a burst of negligible calls cannot have spent. */
+const MOSTLY_UNSPENT = 0.9;
 
 /** Enough microtask turns that an admitted call would have settled. */
 const SETTLE_TURNS = 8;
@@ -294,6 +298,62 @@ describe("the bound in the series", () => {
     expect(refusal.abandoned).toBe(false);
     // Refused, not quietly sent and not quietly dropped.
     expect(dispatched).toBe(1);
+  });
+
+  const independenceName = "the two bounds are independent — either can bind with the other to spare";
+  it(independenceName, async () => {
+    const capacity = inputTokenBoundFor(limitsFor(HOSTED))?.capacity ?? 0;
+    const burst = limitsFor(HOSTED).max_burst ?? 0;
+    expect(capacity).toBeGreaterThan(0);
+    expect(burst).toBeGreaterThan(0);
+    vi.useFakeTimers();
+    const snap = (): GuardSnapshot | undefined =>
+      guardSnapshots().find(({ provider }) => provider === HOSTED);
+
+    // One call spends the whole TOKEN budget and barely touches the requests.
+    await withProviderGuards(HOSTED, async () => "ok", undefined, { inputTokens: capacity });
+    expect(snap()?.availableTokens).toBeGreaterThanOrEqual(1);
+    expect(snap()?.inputTokens?.available).toBeLessThan(1);
+
+    resetProviderGuards();
+
+    // And the converse: a full burst of negligible calls empties the REQUEST
+    // bucket and leaves the token budget all but untouched. Two buckets that
+    // were secretly one could not show both of these.
+    for (let call = 0; call < burst; call += 1) {
+      await withProviderGuards(HOSTED, async () => "ok", undefined, { inputTokens: 1 });
+    }
+    expect(snap()?.availableTokens).toBeLessThan(1);
+    expect(snap()?.inputTokens?.available).toBeGreaterThan(capacity * MOSTLY_UNSPENT);
+  });
+
+  const costsNothingName = "a permanently-refused call spends nothing at all, not even a rate token";
+  it(costsNothingName, async () => {
+    const capacity = inputTokenBoundFor(limitsFor(HOSTED))?.capacity ?? 0;
+    vi.useFakeTimers();
+    const snap = (): GuardSnapshot | undefined =>
+      guardSnapshots().find(({ provider }) => provider === HOSTED);
+
+    // Prime the guard so there is a reading to compare, then hold the clock so
+    // nothing refills and the comparison is of spending alone.
+    await withProviderGuards(HOSTED, async () => "ok", undefined, { inputTokens: 1 });
+    const requestsBefore = snap()?.availableTokens ?? Number.NaN;
+    const tokensBefore = snap()?.inputTokens?.available ?? Number.NaN;
+    expect(requestsBefore).toBeGreaterThan(0);
+
+    // Neither of these could ever be admitted. Taking a rate token for them
+    // would spend this client's pacing on calls that were never going to be
+    // dispatched — and the rate token is taken FIRST, so the only way to
+    // charge nothing is to resolve the permanent faults before it.
+    for (const scope of [{ inputTokens: capacity + 1 }, {}]) {
+      await withProviderGuards(HOSTED, async () => "sent", undefined, scope).then(
+        () => expect.unreachable("a permanent fault must refuse"),
+        () => undefined,
+      );
+    }
+
+    expect(snap()?.availableTokens).toBe(requestsBefore);
+    expect(snap()?.inputTokens?.available).toBe(tokensBefore);
   });
 
   it("leaves a provider that declares no token bound exactly as it was", async () => {
