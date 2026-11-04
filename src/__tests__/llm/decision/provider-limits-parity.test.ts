@@ -93,6 +93,18 @@ const DERATED_SHARE_OF_VENDOR_CEILING = 0.8;
 /** A token cost small enough that the request bound, not the token bound, is what binds a burst test. */
 const NEGLIGIBLE_INPUT_TOKENS = 1;
 
+/** One second, the unit the vendor enforces both of its ceilings in. */
+const ONE_SECOND_MS = 1_000;
+
+/** Offers held outstanding, above any one second's admissions, so the guard and never the supply sets the pace. */
+const SATURATION_OUTSTANDING = 200;
+
+/** How far the saturation loop advances the clock, in milliseconds. */
+const SATURATION_HORIZON_MS = 3_000;
+
+/** The clock step the saturation loop advances in, in milliseconds. */
+const SATURATION_STEP_MS = 25;
+
 /**
  * The vendor's documented per-request context ceiling, in tokens: "64k tokens
  * per request". The floor the input-token capacity is set at or above.
@@ -352,6 +364,98 @@ describe("limits for the decision providers", () => {
       await vi.advanceTimersByTimeAsync(limits.acquire_timeout_ms);
       await beyondCapacity;
       expect(settled).toBe("admitted");
+    } finally {
+      resetProviderGuards();
+      vi.useRealTimers();
+    }
+  });
+
+  const slidingName =
+    "no sliding one-second window admits more requests than the vendor's ceiling";
+  it(slidingName, async () => {
+    // The request bound's worst second is pinned ARITHMETICALLY above, by
+    // comparing two declared constants. That cannot catch a guard whose
+    // implementation admits more than its own numbers imply, which is why the
+    // token bound stopped asserting its arithmetic and started driving its
+    // shipped bucket. This does the same for requests.
+    //
+    // A bucket starts full, so the most a sliding one-second window can admit
+    // is its capacity PLUS one second of its refill. That sum, and not the
+    // refill alone, is the quantity a ceiling enforced per second refuses.
+    // Measuring it needs the offers to be REPLENISHED across the second: a
+    // single offer may wait only `acquire_timeout_ms`, far less than a second,
+    // so a saturating stream is the only thing that sees the refill arrive.
+    const limits = limitsFor("typesafe");
+    const admittedAtMs: number[] = [];
+    let outstanding = 0;
+
+    /**
+     * Keep the guard saturated with offers that settle into the record.
+     *
+     * @returns Nothing; admissions are recorded in `admittedAtMs`.
+     */
+    const topUp = (): void => {
+      while (outstanding < SATURATION_OUTSTANDING) {
+        outstanding += 1;
+        void withProviderGuards(
+          "typesafe",
+          () => {
+            admittedAtMs.push(Date.now());
+            return Promise.resolve();
+          },
+          undefined,
+          { inputTokens: NEGLIGIBLE_INPUT_TOKENS },
+        ).then(
+          () => {
+            outstanding -= 1;
+          },
+          () => {
+            outstanding -= 1;
+          },
+        );
+      }
+    };
+
+    vi.useFakeTimers();
+    resetProviderGuards();
+    try {
+      topUp();
+      for (let turn = 0; turn < SETTLE_TURNS; turn += 1) {
+        await Promise.resolve();
+      }
+      // The cold instant is the capacity, counted out of the real guard.
+      expect(admittedAtMs.length).toBe(limits.max_burst);
+
+      for (let elapsed = 0; elapsed < SATURATION_HORIZON_MS; elapsed += SATURATION_STEP_MS) {
+        await vi.advanceTimersByTimeAsync(SATURATION_STEP_MS);
+        topUp();
+      }
+
+      // The window, over recorded admission times rather than over the
+      // declared numbers. Half-open, so one admission is counted in one
+      // window position only.
+      let worstSecond = 0;
+      for (const start of admittedAtMs) {
+        const inWindow = admittedAtMs.filter(
+          (at) => at >= start && at < start + ONE_SECOND_MS,
+        ).length;
+        worstSecond = Math.max(worstSecond, inWindow);
+      }
+
+      // The vendor's own bound: the only one a 429 is measured against.
+      expect(worstSecond).toBeLessThan(VENDOR_REQUESTS_PER_SECOND);
+      // And the derate this entry claims, as an upper bound on the measurement
+      // rather than an equality: the refill accrues continuously while the
+      // window slides over discrete admissions, so the exact count at the
+      // boundary is an artefact of the step and the claim is the bound.
+      expect(worstSecond).toBeLessThanOrEqual(
+        VENDOR_REQUESTS_PER_SECOND * DERATED_SHARE_OF_VENDOR_CEILING,
+      );
+      // Bounded from BELOW too, or a guard that had seized up would satisfy
+      // every assertion above. The capacity ADDS to the refill, so the worst
+      // second strictly exceeds the refill alone -- which is exactly why
+      // reading the refill against the ceiling understates the pace.
+      expect(worstSecond).toBeGreaterThan(limits.requests_per_minute / SECONDS_PER_MINUTE);
     } finally {
       resetProviderGuards();
       vi.useRealTimers();
