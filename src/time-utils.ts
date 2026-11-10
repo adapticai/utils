@@ -2,6 +2,11 @@
 
 import ms from "ms";
 import { fromZonedTime } from "date-fns-tz";
+import {
+  formatLocaleDateString,
+  formatLocaleString,
+  formatLocaleTimeString,
+} from "./utils/intl-cache";
 
 // Helper function to convert timestamp to Unix timestamp in seconds
 export const toUnixTimestamp = (ts: string): number => {
@@ -113,7 +118,7 @@ export const timeAgo = (timestamp?: Date): string => {
     return "Just now";
   } else if (diff > 82800000) {
     // more than 23 hours – similar to how Twitter displays timestamps
-    return new Date(timestamp).toLocaleDateString("en-US", {
+    return formatLocaleDateString(new Date(timestamp), "en-US", {
       month: "short",
       day: "numeric",
       year:
@@ -127,7 +132,7 @@ export const timeAgo = (timestamp?: Date): string => {
 
 // returns date utc
 export const formatDate = (dateString: string, updateDate?: boolean) => {
-  return new Date(dateString).toLocaleDateString("en-US", {
+  return formatLocaleDateString(new Date(dateString), "en-US", {
     day: "numeric",
     month: "long",
     year:
@@ -141,14 +146,14 @@ export const formatDate = (dateString: string, updateDate?: boolean) => {
 
 export const formatDateToString = (date: Date): string => {
   return (
-    date.toLocaleDateString("en-US", {
+    formatLocaleDateString(date, "en-US", {
       weekday: "long",
       month: "short",
       day: "numeric",
       year: "numeric",
     }) +
     ", at " +
-    date.toLocaleTimeString("en-US", {
+    formatLocaleTimeString(date, "en-US", {
       hour12: false,
       hour: "2-digit",
       minute: "2-digit",
@@ -187,7 +192,7 @@ export const formatToUSEastern = (date: Date, justDate?: boolean): string => {
     options.hour12 = true;
   }
 
-  return date.toLocaleString("en-US", options);
+  return formatLocaleString(date, "en-US", options);
 };
 
 export const unixTimetoUSEastern = (

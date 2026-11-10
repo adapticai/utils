@@ -27,6 +27,7 @@ import { rateLimiters } from "./rate-limiter";
 import { createTimeoutSignal, DEFAULT_TIMEOUTS } from "./http-timeout";
 import { validateMassiveApiKey } from "./utils/auth-validator";
 import { isTransientNetworkError } from "./utils/retry";
+import { formatLocaleString } from "./utils/intl-cache";
 import {
   MassiveAggregatesResponseSchema,
   MassiveGroupedDailyResponseSchema,
@@ -98,6 +99,19 @@ function observeMassivePayload(
   );
 }
 
+/** Display options for {@link formatMassiveBarDate}; one shared formatter serves every bar. */
+const MASSIVE_BAR_DATE_OPTIONS: Intl.DateTimeFormatOptions = {
+  year: "numeric",
+  month: "short",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  timeZone: "America/New_York",
+  timeZoneName: "short",
+  hourCycle: "h23",
+};
+
 /**
  * Render a bar's UTC epoch as the human-readable exchange-local timestamp that
  * {@link MassivePriceData.date} carries.
@@ -110,17 +124,11 @@ function observeMassivePayload(
  * @returns The formatted exchange-local timestamp.
  */
 function formatMassiveBarDate(timestampMs: number): string {
-  return new Date(timestampMs).toLocaleString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    timeZone: "America/New_York",
-    timeZoneName: "short",
-    hourCycle: "h23",
-  });
+  return formatLocaleString(
+    new Date(timestampMs),
+    "en-US",
+    MASSIVE_BAR_DATE_OPTIONS,
+  );
 }
 
 /**
@@ -850,8 +858,8 @@ export function analyseMassivePriceData(priceData: MassivePriceData[]): string {
   // Format the report
   const report = `
 Report:
-* Start time of data (US Eastern): ${startTime.toLocaleString("en-US", { timeZone: "America/New_York" })}
-* End time of data (US Eastern): ${endTime.toLocaleString("en-US", { timeZone: "America/New_York" })}
+* Start time of data (US Eastern): ${formatLocaleString(startTime, "en-US", { timeZone: "America/New_York" })}
+* End time of data (US Eastern): ${formatLocaleString(endTime, "en-US", { timeZone: "America/New_York" })}
 * Number of data points: ${priceData.length}
 * Average interval between data points (seconds): ${avgInterval.toFixed(2)}
   `;

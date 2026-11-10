@@ -1,5 +1,7 @@
 // format-tools.ts
 
+import { cachedNumberFormat, formatLocaleString } from "./utils/intl-cache";
+
 /**
  * Capitalizes the first letter of a string
  * @param {string} str - The string to capitalize
@@ -41,7 +43,7 @@ export function formatCurrency(value: number): string {
     return "$0.00";
   }
 
-  return new Intl.NumberFormat("en-US", {
+  return cachedNumberFormat("en-US", {
     style: "currency",
     currency: "USD",
   }).format(value);
@@ -60,7 +62,7 @@ export function formatNumber(value: number): string {
     return "0";
   }
 
-  return new Intl.NumberFormat("en-US").format(value);
+  return cachedNumberFormat("en-US").format(value);
 }
 
 /**
@@ -79,7 +81,7 @@ export function formatPercentage(
   if (isNaN(value)) {
     return "0%";
   }
-  return new Intl.NumberFormat("en-US", {
+  return cachedNumberFormat("en-US", {
     style: "percent",
     minimumFractionDigits: decimalPlaces,
   }).format(value);
@@ -93,15 +95,13 @@ export function formatPercentage(
  * dateTimeForGS(new Date('2025-01-01T12:34:56')) // '01/01/2025 12:34:56'
  */
 export function dateTimeForGS(date: Date): string {
-  return date
-    .toLocaleString("en-AU", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-    })
-    .replace(/\./g, "/");
+  return formatLocaleString(date, "en-AU", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).replace(/\./g, "/");
 }

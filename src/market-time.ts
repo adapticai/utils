@@ -23,6 +23,11 @@ import {
   MarketTimesConfig,
 } from "./types/market-time-types";
 import { marketHolidays, marketEarlyCloses } from "./market-hours.js";
+import {
+  cachedDateTimeFormat,
+  formatLocaleString,
+  isSupportedTimeZone,
+} from "./utils/intl-cache";
 
 /**
  * Market times for NYSE
@@ -82,15 +87,17 @@ export class MarketTimeUtil {
   }
 
   /**
-   * Validates the provided timezone
+   * Validates the provided timezone.
+   *
+   * Runs on every construction, and the module-level helpers construct a
+   * fresh instance per call, so the probe goes through the shared formatter
+   * cache: a zone already accepted builds no new ICU formatter.
    * @private
    * @param {string} timezone - The timezone to validate
    * @throws {Error} If the timezone is invalid
    */
   private validateTimezone(timezone: string): void {
-    try {
-      Intl.DateTimeFormat(undefined, { timeZone: timezone });
-    } catch (error) {
+    if (!isSupportedTimeZone(timezone)) {
       throw new Error(`Invalid timezone: ${timezone}`);
     }
   }
@@ -852,7 +859,7 @@ export const getNYTimeZone = (date?: Date): "-04:00" | "-05:00" => {
     date = new Date();
   }
 
-  const dtf = new Intl.DateTimeFormat("en-US", {
+  const dtf = cachedDateTimeFormat("en-US", {
     timeZone: "America/New_York",
     timeZoneName: "shortOffset",
   });
@@ -867,22 +874,16 @@ export const getNYTimeZone = (date?: Date): "-04:00" | "-05:00" => {
   // return the correct offset
   if (shortOffset === "-4") {
     getLogger().info(
-      `New York is on EDT; using -04:00. Full date: ${date.toLocaleString(
-        "en-US",
-        {
-          timeZone: "America/New_York",
-        },
-      )}, time zone part: ${tz}`,
+      `New York is on EDT; using -04:00. Full date: ${formatLocaleString(date, "en-US", {
+        timeZone: "America/New_York",
+      })}, time zone part: ${tz}`,
     );
     return "-04:00";
   } else if (shortOffset === "-5") {
     getLogger().info(
-      `New York is on EST; using -05:00. Full date: ${date.toLocaleString(
-        "en-US",
-        {
-          timeZone: "America/New_York",
-        },
-      )}, time zone part: ${tz}`,
+      `New York is on EST; using -05:00. Full date: ${formatLocaleString(date, "en-US", {
+        timeZone: "America/New_York",
+      })}, time zone part: ${tz}`,
     );
     return "-05:00";
   } else {
