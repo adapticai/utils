@@ -8,6 +8,7 @@ import {
 import chalk from "chalk";
 
 import { LogOptions } from "./types/logging-types";
+import { formatLocaleString } from "./utils/intl-cache";
 
 // Detect whether we are running in a Node.js environment with a real stdout.
 // In browsers (or environments without process.stdout) all terminal / fs
@@ -78,7 +79,7 @@ export class DisplayManager {
 
     // Format the timestamp
     const date = new Date();
-    const timestamp = date.toLocaleString("en-US", {
+    const timestamp = formatLocaleString(date, "en-US", {
       timeZone: "America/New_York",
     });
     const account = options?.account;

@@ -1,5 +1,6 @@
 import { log as baseLog } from "./logging";
 import { LogOptions } from "./types/logging-types";
+import { formatLocaleDateString } from "./utils/intl-cache";
 import {
   Bar,
   AlpacaQuote,
@@ -1109,7 +1110,7 @@ export class AlpacaMarketDataAPI extends EventEmitter {
       // Enhanced logging with date range and progress info
       const dateRangeStr =
         earliestTimestamp && latestTimestamp
-          ? `${(earliestTimestamp as Date).toLocaleDateString("en-US", { timeZone: "America/New_York" })} to ${(latestTimestamp as Date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}`
+          ? `${formatLocaleDateString(earliestTimestamp as Date, "en-US", { timeZone: "America/New_York" })} to ${formatLocaleDateString(latestTimestamp as Date, "en-US", { timeZone: "America/New_York" })}`
           : "unknown range";
 
       log(
@@ -1578,7 +1579,7 @@ export class AlpacaMarketDataAPI extends EventEmitter {
       // Enhanced logging with date range and progress info
       const dateRangeStr =
         earliestTimestamp && latestTimestamp
-          ? `${(earliestTimestamp as Date).toLocaleDateString("en-US", { timeZone: "America/New_York" })} to ${(latestTimestamp as Date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}`
+          ? `${formatLocaleDateString(earliestTimestamp as Date, "en-US", { timeZone: "America/New_York" })} to ${formatLocaleDateString(latestTimestamp as Date, "en-US", { timeZone: "America/New_York" })}`
           : "unknown range";
 
       log(
@@ -1697,7 +1698,7 @@ export class AlpacaMarketDataAPI extends EventEmitter {
       // Enhanced logging with date range and progress info
       const dateRangeStr =
         earliestTimestamp && latestTimestamp
-          ? `${(earliestTimestamp as Date).toLocaleDateString("en-US", { timeZone: "America/New_York" })} to ${(latestTimestamp as Date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}`
+          ? `${formatLocaleDateString(earliestTimestamp as Date, "en-US", { timeZone: "America/New_York" })} to ${formatLocaleDateString(latestTimestamp as Date, "en-US", { timeZone: "America/New_York" })}`
           : "unknown range";
 
       log(
