@@ -1,4 +1,5 @@
 import { log as baseLog } from "./logging";
+import { articleIdOf } from "./alpaca/news-article-id";
 import { LogOptions } from "./types/logging-types";
 import { formatLocaleDateString } from "./utils/intl-cache";
 import {
@@ -1969,6 +1970,7 @@ export class AlpacaMarketDataAPI extends EventEmitter {
       }
       const transformedNews: SimpleNews[] = data.news.map(
         (article: AlpacaNewsArticle) => ({
+          ...articleIdOf(article),
           symbols: article.symbols,
           title: article.headline,
           summary: cleanContent(article.summary) ?? "",
