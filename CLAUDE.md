@@ -1,6 +1,15 @@
 # CLAUDE.md — @adaptic/utils
 
-Financial-calculation library and the vendor boundary: pure metrics/TA/money math plus the Alpaca / Massive / Alpha Vantage clients (`src/massive.ts`, `src/massive-indices.ts`, `src/alphavantage.ts`) and market-time utilities where errors, ids, units, timestamps, and staleness get normalized. Consumed **pinned** (`0.0.x`) by `engine` and `backend-legacy`, so a hidden clock, a silent `?? 0`, or a leaked Alpaca quirk here becomes a defect inside their decision core. The root `~/adapticai/CLAUDE.md` loads alongside this file and carries the shared standards (ownership doctrine, code standards, delivery bar, trading doctrines, publish chain, GitNexus/Graphify usage); this file adds only what is utils-specific.
+Financial-calculation library and the vendor boundary: pure metrics/TA/money math plus the Alpaca / Massive / Alpha Vantage clients (`src/massive.ts`, `src/massive-indices.ts`, `src/alphavantage.ts`) and market-time utilities where errors, ids, units, timestamps, and staleness get normalized. Consumed **pinned** (`0.0.x`) by `engine` and `backend-legacy`, so a hidden clock, a silent `?? 0`, or a leaked Alpaca quirk here becomes a defect inside their decision core. The root `~/adapticai/CLAUDE.md` loads alongside this file when the checkout sits under `~/adapticai`, and carries the shared standards (ownership doctrine, code standards, delivery bar, trading doctrines, publish chain, GitNexus/Graphify usage); otherwise the floor below is what binds. This file adds only what is utils-specific.
+
+<!-- BEGIN generated: package-floor (scripts/claude-setup/render-package-floors.mjs) -->
+Generated copy of the root `CLAUDE.md`'s lines (full text: <https://github.com/adapticai/mono/blob/main/CLAUDE.md>); edit the root, never this block.
+
+- **Code standards.** ESLint, hooks, and CI enforce these; they bind while writing regardless: no `any` / `@ts-ignore` / `eslint-disable`; no direct `process.env` in engine code (`SecretsManager`); no `console.log` in production (Pino / proper logging — scripts, tests, config exempt); floating promises handled; no mock/stub implementations, `setTimeout`-simulated async, or `Math.random()` fake data in production; no TODO/FIXME; no commented-out code (git has history); no magic numbers; no hardcoded secrets. Explicit parameter and return types; strict mode. Style: 2-space, K&R, camelCase / PascalCase / UPPER_SNAKE_CASE.
+- **Delivery standard.** Work is **delivered, not attempted**. "Done" means all of: (1) **wired to the live path**; (2) **root cause**; (3) **tests that fail without the change**; (4) **type-safe**; (5) **no new silent failure**; (6) **integrated**; (7) **gates green**. Anything less is reported as `PARTIAL`, never described as complete.
+- **Trading doctrines.** Never diagnose from a point-in-time snapshot — a snapshot hides the shape and has produced mis-diagnoses (a leveraged directional-beta drawdown read as "churn"). "No edge" is a BANNED conclusion from realized P&L — decompose ENTRY vs EXIT first. "It's churn" is a BANNED terminal diagnosis — name the mechanism.
+
+<!-- END generated: package-floor -->
 
 ## Branch & lineage (deltas to the root model)
 
@@ -59,4 +68,4 @@ Single-entry Rollup bundling makes grep noisy here — the graph traces a symbol
 
 ---
 
-Keep this file to utils deltas only — shared rules live in the root file; no point-in-time counts (warning tallies, node counts) — they rot.
+Keep this file to utils deltas only — shared rules live in the root file, and the floor above is its generated copy (`npm run check:package-floors` in mono), never edited here; no point-in-time counts (warning tallies, node counts) — they rot.
