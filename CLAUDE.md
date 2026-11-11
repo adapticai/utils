@@ -14,7 +14,8 @@ Financial-calculation library and the vendor boundary: pure metrics/TA/money mat
 npm run build && npm run lint && npm test
 # single ad-hoc check: this is a Rollup single-entry bundle (everything re-exports
 # through src/index.ts) — you cannot compile/run arbitrary TS files. Either add a
-# call in src/test.ts and `npm run test`, or build then `node dist/path/to/file.js`.
+# call in src/test.ts and `npm run test:legacy` (it builds, then runs dist/test.js), or
+# build then `node dist/path/to/file.js`. `npm run test` is Vitest and does not run src/test.ts.
 # (Vitest itself does run a single file: `npx vitest run src/__tests__/<file>.test.ts`.)
 
 npm run fixtures:indicator-parity:check   # recursive-indicator golden master is current
