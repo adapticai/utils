@@ -3,6 +3,7 @@
  * Market news and analysis using Alpaca SDK
  */
 import { AlpacaClient } from "../client";
+import { articleIdOf } from "../news-article-id";
 import { AlpacaNewsArticle, SimpleNews } from "../../types/alpaca-types";
 import { log as baseLog } from "../../logging";
 import { LogOptions } from "../../types/logging-types";
@@ -274,6 +275,7 @@ function toSimpleNews(
   const sentiment = calculateSentiment(sentimentText);
 
   return {
+    ...articleIdOf(article),
     symbols: article.symbols,
     title: stripHtml(article.headline),
     summary: cleanSummary,

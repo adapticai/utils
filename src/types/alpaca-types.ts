@@ -573,6 +573,13 @@ export interface NewsResponse {
  * Represents a simplified news article.
  */
 export interface SimpleNews {
+  /**
+   * Alpaca's own article id: the one key a consumer can join this article on
+   * across fetches and against any store that keyed it by the vendor's id.
+   * Absent only when the payload carried none, which a consumer must read as
+   * an article it cannot key, never as a key it can synthesise.
+   */
+  id?: number;
   symbols: string | string[];
   title: string;
   summary: string;

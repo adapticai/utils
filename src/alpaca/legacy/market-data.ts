@@ -13,6 +13,7 @@ import {
   SimpleNews,
 } from "../../types/alpaca-types";
 import { makeRequest } from "./orders";
+import { articleIdOf } from "../news-article-id";
 import { cleanContent } from "./utils";
 import { MARKET_DATA_API } from "../../config/api-endpoints";
 import { getLogger } from "../../logger";
@@ -295,6 +296,7 @@ export async function fetchNews(
       const data = (await response.json()) as NewsResponse;
 
       const transformedNews: SimpleNews[] = data.news.map((article) => ({
+        ...articleIdOf(article),
         symbols: article.symbols,
         title: article.headline,
         summary: cleanContent(article.summary),
