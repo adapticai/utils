@@ -158,7 +158,7 @@
                 },
                 "supports_box": {
                   "type": "boolean",
-                  "description": "Whether the route's pinned model serves a question that locates something in an image. A property of the model, not of the contract: the vendor serves every other question kind on both its models and this one on the newer alone. Absent means it does not."
+                  "description": "Whether the route admits a question that locates something in an image. Bounded by the pinned model, not equal to it: the vendor serves every other question kind on each of its releases and this one on Jev 1.14 alone, so it is never true for a model that does not serve one, and it may be false for one that does, because which model answers a route and which questions the route admits are separate reviewed decisions. Absent means it does not."
                 }
               }
             },
@@ -244,7 +244,7 @@
                 },
                 "supports_box": {
                   "type": "boolean",
-                  "description": "Whether the route's pinned model serves a question that locates something in an image. A property of the model, not of the contract: the vendor serves every other question kind on both its models and this one on the newer alone. Absent means it does not."
+                  "description": "Whether the route admits a question that locates something in an image. Bounded by the pinned model, not equal to it: the vendor serves every other question kind on each of its releases and this one on Jev 1.14 alone, so it is never true for a model that does not serve one, and it may be false for one that does, because which model answers a route and which questions the route admits are separate reviewed decisions. Absent means it does not."
                 }
               }
             },

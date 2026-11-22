@@ -117,14 +117,15 @@ export interface DecisionRouteCapsDeclaration {
   readonly max_score_levels: number;
   readonly max_questions: number | null;
   /**
-   * Whether the route's model serves a question that locates something in an
-   * image.
+   * Whether the route admits a question that locates something in an image.
    *
-   * A property of the pinned model and not of the contract: the vendor serves
-   * every other question kind on both its models and this one on the newer
-   * only. Absent means it does not, so a route that says nothing serves
-   * nothing — the admitting default for a surface the vendor has not confirmed
-   * for that model.
+   * Bounded by the pinned model, not equal to it: the vendor serves every
+   * other question kind on each of its releases and this one on Jev 1.14
+   * alone, so it is never true for a model that does not serve one, and it may
+   * be false for a model that does, because which model answers a route and
+   * which questions the route admits are separate reviewed decisions. Absent
+   * means it does not, so a route that says nothing admits nothing — the
+   * refusing default for a surface the vendor has not confirmed for that model.
    */
   readonly supports_box?: boolean;
 }

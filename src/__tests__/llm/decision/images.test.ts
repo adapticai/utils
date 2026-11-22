@@ -125,10 +125,10 @@ const REAL_JPEG_BASE64 =
   "oAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooA/9cooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKK" +
   "ACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigD/0CiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiig" +
   "AooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAP/Z";
-/** The route pinned to the vendor's stable release, which serves no box question. */
+/** The caps of a route that admits no box question, as `dm.hosted` declares. */
 const STABLE_CAPS: DecisionRouteCaps = { maxOptions: 255, maxScoreLevels: 10, maxQuestions: null, box: false };
 
-/** The route pinned to the vendor's newest release, the only one that serves a box question. */
+/** The caps of the one route that admits a box question, as `dm.hosted.preview` declares. */
 const PREVIEW_CAPS: DecisionRouteCaps = { maxOptions: 255, maxScoreLevels: 10, maxQuestions: null, box: true };
 
 /** A model id, as a route pins one. Never an alias. */
@@ -935,10 +935,10 @@ describe("the question that locates something in an image", () => {
     },
   };
 
-  it("is refused by the route pinned to the older model and served by the newer one", () => {
-    // The vendor's own words: "Box questions need Jev 1.14." The older model
-    // serves every other question kind, so this is a property of the route's
-    // pin and not of the contract.
+  it("is refused by a route that does not admit one and sent by the route that does", () => {
+    // The vendor's own words: "Box questions need Jev 1.14." What a route
+    // admits is its caps' decision and not the contract's, so the refusal is
+    // read from the caps alone, whatever model the route pins.
     const refusal = refusalOf(() => encodeWithImages(locating, STABLE_CAPS));
     expect(refusal.violation).toBe("box_unsupported_by_route");
     expect(refusal.fieldPath).toBe("questions.where.type");
@@ -947,12 +947,17 @@ describe("the question that locates something in an image", () => {
     expect(body.questions.where).toEqual({ type: "box", instructions: locating.questions.where.instructions });
   });
 
-  it("the canonical table pins the newer model on exactly one route, and admits the box there alone", () => {
+  it("the canonical table admits the box on exactly one route, pinned to a model that serves it", () => {
     const routes = Object.entries(decisionRouteTable.routes).filter(([, route]) => route.served_by === "utils");
 
     expect(routes.map(([name]) => name)).toEqual(["dm.hosted", "dm.hosted.preview"]);
     const boxing = routes.filter(([, route]) => route.served_by === "utils" && route.caps.supports_box === true);
     expect(boxing.map(([name]) => name)).toEqual(["dm.hosted.preview"]);
+    for (const [, route] of boxing) {
+      // "Box questions need Jev 1.14": a route may admit one only where its
+      // pinned model serves one.
+      expect(route.served_by === "utils" ? route.version_pin : null).toBe("jev-1.14.0");
+    }
     for (const [, route] of routes) {
       // Every pin is a versioned id. Neither route sends a name that moves with
       // the vendor's releases.
@@ -1031,7 +1036,7 @@ describe("the vendor's moving names", () => {
     const pins = Object.values(decisionRouteTable.routes)
       .filter((route) => route.served_by === "utils")
       .map((route) => (route.served_by === "utils" ? route.version_pin : ""));
-    expect(pins).toEqual(["jev-1.13.0", "jev-1.14.0"]);
+    expect(pins).toEqual(["jev-1.14.0", "jev-1.14.0"]);
     for (const alias of Object.keys(provider.model_aliases ?? {})) {
       expect(pins, alias).not.toContain(alias);
     }
@@ -1049,7 +1054,7 @@ describe("the vendor's moving names", () => {
     }
     const opened = table as unknown as typeof decisionRouteTable;
 
-    expect(resolveDecisionRoute("dm.hosted", opened, {}).modelPin).toBe("jev-1.13.0");
+    expect(resolveDecisionRoute("dm.hosted", opened, {}).modelPin).toBe("jev-1.14.0");
     expect(resolveDecisionRoute("dm.hosted", opened, {}).caps.box).toBe(false);
     expect(resolveDecisionRoute("dm.hosted.preview", opened, {}).modelPin).toBe("jev-1.14.0");
     expect(resolveDecisionRoute("dm.hosted.preview", opened, {}).caps.box).toBe(true);

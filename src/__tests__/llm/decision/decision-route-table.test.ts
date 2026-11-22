@@ -378,10 +378,9 @@ describe("the canonical decision-route table", () => {
       const price = `${route.price_per_mtok.input}/${route.price_per_mtok.output}`;
       priced.set(route.version_pin, (priced.get(route.version_pin) ?? new Set<string>()).add(price));
     }
-    // Two pinned models, each priced once. The vendor publishes the same
-    // figures for both releases, so what is held here is that a pin has ONE
-    // price and not that the two pins differ.
-    expect([...priced.keys()].sort()).toEqual(["jev-1.13.0", "jev-1.14.0"]);
+    // Both hosted routes pin one model, priced once. What is held here is that
+    // a pin has ONE price, so two routes naming one model cannot disagree on it.
+    expect([...priced.keys()].sort()).toEqual(["jev-1.14.0"]);
     expect(priced.has(hosted.version_pin)).toBe(true);
     for (const prices of priced.values()) {
       expect(prices.size).toBe(1);
@@ -858,8 +857,8 @@ describe("resolution", () => {
       route: "dm.hosted",
       providerName: "typesafe",
       provider,
-      modelPin: "jev-1.13.0",
-      expectedServedModel: "jev-1.13.0",
+      modelPin: "jev-1.14.0",
+      expectedServedModel: "jev-1.14.0",
       budgetMs: 1500,
       caps: { maxOptions: 255, maxScoreLevels: 10, maxQuestions: null, box: false },
       maxStateTokens: 32000,

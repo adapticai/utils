@@ -138,7 +138,7 @@ const VENDOR_WORDS = ["vendor", "wrote", "this", "3f9a1c"].join("-");
 const REQUEST_ID = "req_0123456789abcdef0123456789abcdef";
 
 /** A model a vendor reports answering with that is not the route's pin. */
-const SUBSTITUTED_MODEL = "jev-1.14.0";
+const SUBSTITUTED_MODEL = "jev-1.13.0";
 
 /** The date the injected clock starts on, and the instant. */
 const RUN_DATE = "2026-10-02";
@@ -339,7 +339,10 @@ const VENDOR_HEADERS: Readonly<Record<string, string>> = {
  * which is all there is for that status.
  */
 const CONTRACT_ANSWERS: Readonly<Record<ProbeShape, () => ProbeFetchResponse>> = {
-  choice: () => reply(OK, fixtureBody("response.choice.documented.json", "documented-verbatim"), VENDOR_HEADERS),
+  // The documented example names the model that answered it when the page was
+  // written; a vendor honouring the contract answers with the route's pin.
+  choice: () =>
+    reply(OK, { ...recordOf(fixtureBody("response.choice.documented.json", "documented-verbatim")), model: PIN }, VENDOR_HEADERS),
   noul: () =>
     reply(OK, fixtureBody("response.noul.constructed.json", "constructed-from-documented-fields"), VENDOR_HEADERS),
   score: () =>
@@ -1157,6 +1160,7 @@ describe("a run", () => {
     const documented = recordOf(fixtureBody("response.choice.documented.json", "documented-verbatim"));
     const shifted = {
       ...documented,
+      model: PIN,
       answers: {
         department: { type: "choice", choice: "billing", probabilities: { billing: 0.9, technical: 0.1, sales: 0.0 }, confidence: 0.85 },
       },
@@ -1351,7 +1355,8 @@ describe("a run", () => {
   });
 
   it("a success that does not decode fails the run, and says where in the request's own names", async () => {
-    const documented = recordOf(fixtureBody("response.choice.documented.json", "documented-verbatim"));
+    // Answered by the pin, so the only defect in the body is the one under test.
+    const documented = { ...recordOf(fixtureBody("response.choice.documented.json", "documented-verbatim")), model: PIN };
     const missingAnOption = {
       ...documented,
       answers: { department: { type: "choice", choice: "billing", probabilities: { billing: 0.9, technical: 0.1 }, confidence: 0.8 } },

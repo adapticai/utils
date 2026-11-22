@@ -440,7 +440,7 @@ describe("the public surface of the decision client", () => {
     const sources = decisionSources();
     expect(sources.map(({ path }) => path)).toEqual(expect.arrayContaining([...REQUIRED_REACHABLE]));
     expect(vendorNames()).toEqual(
-      expect.arrayContaining(["api.typesafe.ai", "typesafe.ai", "jev-1.13.0", "jev-1.14.0", "jev-"]),
+      expect.arrayContaining(["api.typesafe.ai", "typesafe.ai", "jev-1.14.0", "jev-"]),
     );
 
     for (const { path, text } of sources) {
