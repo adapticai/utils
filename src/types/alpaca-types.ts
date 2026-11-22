@@ -689,7 +689,21 @@ export interface AlpacaAccountDetails {
 }
 
 /**
+ * Alpaca's borrow classification for a US equity, as the vendor spells it on
+ * the asset object's `borrow_status` field.
+ */
+export type AlpacaBorrowStatus = "easy_to_borrow" | "hard_to_borrow";
+
+/**
  * Represents an asset in Alpaca.
+ *
+ * Borrow availability is carried by `borrow_status`, which Alpaca's asset
+ * schema defines for US equities and omits for every other asset class. The
+ * older boolean `easy_to_borrow` is not part of that schema, so a payload may
+ * lack it; it is kept, optional, for payloads that still carry it. Neither
+ * field is ever defaulted or derived from the other: an asset whose borrow
+ * state the vendor did not state reads as `undefined`, which a consumer must
+ * treat as unknown rather than as easy or hard to borrow.
  */
 export interface AlpacaAsset {
   id: string; // Asset ID
@@ -701,7 +715,8 @@ export interface AlpacaAsset {
   tradable: boolean; // Indicates if the asset is tradable
   marginable: boolean; // Indicates if the asset is marginable
   shortable: boolean; // Indicates if the asset is shortable
-  easy_to_borrow: boolean; // Indicates if the asset is easy to borrow
+  easy_to_borrow?: boolean; // Legacy boolean, absent from Alpaca's current asset schema; undefined means not stated
+  borrow_status?: AlpacaBorrowStatus; // US equities only; undefined means not stated, never easy-to-borrow
   fractionable: boolean; // Indicates if the asset is fractionable
   maintenance_margin_requirement?: number; // Deprecated: Maintenance margin requirement
   margin_requirement_long?: string; // Margin requirement for long positions
