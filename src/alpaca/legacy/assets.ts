@@ -7,6 +7,7 @@ import { validateAuth } from "./auth";
 import { getTradingApiUrl } from "../../config/api-endpoints";
 import { getLogger } from "../../logger";
 import { createTimeoutSignal, DEFAULT_TIMEOUTS } from "../../http-timeout";
+import { normalizeAlpacaAsset } from "../asset-normalize";
 
 /**
  * Retrieves an asset from Alpaca by symbol or asset ID.
@@ -45,7 +46,7 @@ export async function getAsset(
       );
     }
 
-    return (await response.json()) as AlpacaAsset;
+    return normalizeAlpacaAsset(await response.json());
   } catch (error) {
     getLogger().error("Error in getAsset:", error);
     throw error;

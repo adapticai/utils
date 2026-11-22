@@ -206,6 +206,14 @@ export {
 // Streams
 export * from "./streams";
 
+// Asset payload normalisation (borrow_status / easy_to_borrow)
+export {
+  ALPACA_BORROW_STATUSES,
+  isAlpacaBorrowStatus,
+  normalizeAlpacaAsset,
+  normalizeAlpacaAssets,
+} from "./asset-normalize";
+
 // Legacy AlpacaAuth-based API functions (backward compatibility)
 import * as legacyApi from "./legacy";
 export { legacyApi };

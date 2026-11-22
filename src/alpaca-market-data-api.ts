@@ -1,5 +1,9 @@
 import { log as baseLog } from "./logging";
 import { articleIdOf } from "./alpaca/news-article-id";
+import {
+  normalizeAlpacaAsset,
+  normalizeAlpacaAssets,
+} from "./alpaca/asset-normalize";
 import { LogOptions } from "./types/logging-types";
 import { formatLocaleDateString } from "./utils/intl-cache";
 import {
@@ -1418,7 +1422,9 @@ export class AlpacaMarketDataAPI extends EventEmitter {
     asset_class?: string;
   }): Promise<AlpacaAsset[]> {
     // Endpoint: GET /v2/assets
-    return this.makeRequest("/assets", "GET", params, "api");
+    return normalizeAlpacaAssets(
+      await this.makeRequest<unknown>("/assets", "GET", params, "api"),
+    );
   }
 
   /**
@@ -1429,11 +1435,13 @@ export class AlpacaMarketDataAPI extends EventEmitter {
    */
   async getAsset(symbolOrAssetId: string): Promise<AlpacaAsset> {
     // Endpoint: GET /v2/assets/{symbol_or_asset_id}
-    return this.makeRequest(
-      `/assets/${encodeURIComponent(symbolOrAssetId)}`,
-      "GET",
-      undefined,
-      "api",
+    return normalizeAlpacaAsset(
+      await this.makeRequest<unknown>(
+        `/assets/${encodeURIComponent(symbolOrAssetId)}`,
+        "GET",
+        undefined,
+        "api",
+      ),
     );
   }
 
