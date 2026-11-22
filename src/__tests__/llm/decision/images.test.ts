@@ -1020,11 +1020,13 @@ describe("the vendor's moving names", () => {
       throw new Error("the hosted provider is not reached over the hosted contract");
     }
 
-    // The vendor's models page, read 2026-10-16: jev-latest points at
-    // jev-1.13.0 and jev-preview at jev-1.14.0. Recorded exactly as stated, and
-    // not re-pointed: an alias that moved under us would change the answering
-    // model with no change on this side.
-    expect(provider.model_aliases).toEqual({ "jev-latest": "jev-1.13.0", "jev-preview": "jev-1.14.0" });
+    // What each moving name resolves to, measured by an authenticated call on
+    // 2026-11-22 (the response's `model` field) and matching the vendor's models
+    // page: jev-latest moved to jev-1.14.0 when 1.14 became the stable release,
+    // and jev-preview points at the same model while no preview build exists.
+    // Recorded as measured, never sent: an alias that moved under a route would
+    // change the answering model with no change on this side.
+    expect(provider.model_aliases).toEqual({ "jev-latest": "jev-1.14.0", "jev-preview": "jev-1.14.0" });
 
     const pins = Object.values(decisionRouteTable.routes)
       .filter((route) => route.served_by === "utils")
