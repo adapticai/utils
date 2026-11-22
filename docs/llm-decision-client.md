@@ -14,11 +14,11 @@ The vendor's image surface and its question that locates something in an image a
 
 ## The two hosted routes
 
-A route IS its pinned model together with the caps, budget and price that model is served under, so the vendor's two releases are two routes rather than one route with a choice of model. A caller able to name the model could move the answering model without a reviewed change to the table.
+A route IS its pinned model together with the caps, budget and price that model is served under, so a different model is a different route rather than one route with a choice of model. A caller able to name the model could move the answering model without a reviewed change to the table. Both routes pin `jev-1.14.0` today and stay two routes because they admit different questions, and because a release the vendor ships later can be pinned on one of them by a reviewed edit without moving the other. `dm.hosted` was pinned to `jev-1.13.0` until 2026-11-23; a threshold a consumer tuned against that model's answers moved with it, which is the vendor's own warning: "If you have tuned confidence thresholds against one version, send that version's ID instead of the alias, and switch to the new version when you are ready."
 
 | Route | Pin | Locates something in an image |
 | --- | --- | --- |
-| `dm.hosted` | `jev-1.13.0` | No. The vendor serves it on the newer model alone. |
+| `dm.hosted` | `jev-1.14.0` | No. The route does not admit one; a box-bearing request is admitted only on `dm.hosted.preview`. |
 | `dm.hosted.preview` | `jev-1.14.0` | Yes. |
 
 The vendor also publishes two moving names, `jev-latest` and `jev-preview`. They are recorded in the provider's `model_aliases` with the versioned id each resolves to, measured from an authenticated call — on 2026-11-22 a request naming `jev-latest` and one naming `jev-preview` were both answered by `jev-1.14.0`, reported back in the response's `model` field. `jev-latest` answered with `jev-1.13.0` until the vendor made 1.14 its stable release, so the alias has already moved once under a route that never followed it — and neither is ever sent: the vendor states that an alias moves when a new release ships, so sending one would change the answering model with no change on this side. The loader refuses a pin that ends in either name, and re-pointing an entry in `model_aliases` is a reviewed edit of one file that changes no request.
@@ -127,7 +127,7 @@ The vendor publishes a list of its own model's failure modes. The ones that deci
 - **It reads the question literally, and generates nothing.** Where interpretation is unavoidable, split it into two literal questions and combine them in code.
 - **A box is always four edges.** There is no answer meaning "not found", so a box says where the target would be and nothing about whether it is there. Ask a yes/no question beside it and read the box only when that answer says yes.
 
-That list is published for the older of the two pinned models and was last reviewed by the vendor on 2026-10-02. **No equivalent list is published for the newer model**, which is the one that serves a box question, so its known limitations are unstated rather than absent.
+The vendor publishes that list as one page for every Jev release (<https://docs.typesafe.ai/model-jaggedness.md>, read 2026-11-23; the per-release `jev-1.13` page it replaced now redirects there, and no `jev-1.14` page exists) and states only that "Many of these will be fixed in later versions", so which of them `jev-1.14.0` still shows is unstated rather than known to be fixed.
 
 ### Result
 

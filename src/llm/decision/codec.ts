@@ -587,16 +587,17 @@ function readQuestion(raw: unknown, fieldPath: string, caps: DecisionRouteCaps |
     case "score":
       return { type, instructions, criteria: readScoreCriteria(raw.criteria, criteriaPath, caps) };
     case "box": {
-      // The route's own model decides this, not the contract: the older pinned
-      // model serves every other kind and not this one, so a box sent to it
-      // would be refused by the vendor after the call was paid for. `caps` is
-      // null only when a response is being decoded against the request that
-      // was already sent, where the question's admissibility is settled.
+      // The route's caps decide this, not the contract: a release that serves
+      // every other kind may not serve this one, and a route may decline it
+      // even where its model does, so a box the route does not admit is
+      // refused here rather than sent and paid for. `caps` is null only when a
+      // response is being decoded against the request that was already sent,
+      // where the question's admissibility is settled.
       if (caps !== null && !caps.box) {
         throw violatesRule(
           "box_unsupported_by_route",
           `${fieldPath}.type`,
-          "a question locating something in an image is served only by the route pinned to the newer model",
+          "a question locating something in an image is admitted only on a route whose caps declare it",
         );
       }
       if (raw.criteria !== undefined) {

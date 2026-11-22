@@ -563,12 +563,16 @@ describe("the limits verifier", () => {
     // The override, not the provider entry, is what the pinned model's calls wait on.
     const slow = runVerifierOnEditedCopy(({ limits }) => scopePerModel(limits, PACKAGE_DEFAULT_ACQUIRE_TIMEOUT_MS));
     expect(slow.status).toBe(1);
-    // The override is scoped to the pinned model of the first hosted route, so
-    // only that route's calls wait on it and only it fails.
-    expect(slow.stderr).toContain(
-      "FAIL typesafe: acquire_timeout_ms 15000 exceeds the 1500 ms budget of decision route dm.hosted,",
-    );
-    expect(slow.stderr).toContain("1 failure(s)");
+    // The override is scoped to a model, not to a route: every route pinned to
+    // that model waits on it and fails, and a route pinned elsewhere does not.
+    const routesOnPin = utilsServedRoutes().filter(({ route }) => route.version_pin === pin);
+    expect(routesOnPin.map(({ name }) => name)).toContain("dm.hosted");
+    for (const { name } of routesOnPin) {
+      expect(slow.stderr).toContain(
+        `FAIL typesafe: acquire_timeout_ms 15000 exceeds the 1500 ms budget of decision route ${name},`,
+      );
+    }
+    expect(slow.stderr).toContain(`${routesOnPin.length} failure(s)`);
   });
 
   it("refuses a guarded decision provider that declares no burst capacity", () => {
@@ -609,11 +613,14 @@ describe("the limits verifier", () => {
     });
     // The provider's own capacity is still declared, and still does not reach
     // this model: an override is read instead of the entry, not alongside it.
+    // Every route pinned to the overridden model is reached by it, and only those.
+    const routesOnPin = utilsServedRoutes().filter(({ route }) => route.version_pin === pin);
+    expect(routesOnPin.map(({ name }) => name)).toContain("dm.hosted");
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain(
-      `FAIL typesafe/${pin}: serves decision route dm.hosted but declares no max_burst`,
-    );
-    expect(result.stderr).toContain("1 failure(s)");
+    for (const { name } of routesOnPin) {
+      expect(result.stderr).toContain(`FAIL typesafe/${pin}: serves decision route ${name} but declares no max_burst`);
+    }
+    expect(result.stderr).toContain(`${routesOnPin.length} failure(s)`);
   });
 
   it("refuses a guarded decision provider that declares no input-token bound", () => {

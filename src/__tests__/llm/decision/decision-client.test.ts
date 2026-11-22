@@ -126,10 +126,10 @@ const VENDOR_LATENCY_MS = 137;
 const NOW_MS = Date.UTC(2026, 9, 1, 12, 0, 0);
 
 /** Models a vendor could report answering with that are not the route's pin. */
-const SUBSTITUTED_MODELS: readonly string[] = ["english", "typesafe/jev-1.13-20260917", "jev-1.14.0"];
+const SUBSTITUTED_MODELS: readonly string[] = ["english", "typesafe/jev-1.14-20261014", "jev-1.13.0"];
 
 /** An id a vendor could report for a pinned model that is not the pin itself: the pin with its build date. */
-const DATED_SERVED_MODEL = "jev-1.13.0-20260917";
+const DATED_SERVED_MODEL = "jev-1.14.0-20261014";
 
 /** How many consecutive faults that say nothing about the vendor's health are replayed. */
 const HEALTH_NEUTRAL_FAULTS = 10;
@@ -244,8 +244,24 @@ function requestFrom(name: string, allow: readonly DecisionEvidenceClass[]): Dec
 
 /** The documented request and the documented answer to it. */
 const CHOICE_REQUEST = (): DecisionRequest => requestFrom("request.choice.documented.json", ["documented-verbatim"]);
-const CHOICE_ANSWER = (): Record<string, unknown> =>
-  fixtureBody("response.choice.documented.json", ["documented-verbatim"]);
+
+/**
+ * The documented answer, reported by the model the hosted route pins.
+ *
+ * The vendor's example names the model that answered it when the page was
+ * written, which is a fact about the vendor's page and not about this route:
+ * its model field is the one value of the example that a re-pinned route
+ * changes, so it is read from the table rather than from the quote. Every other
+ * value is the documented one.
+ *
+ * @returns The body.
+ */
+function CHOICE_ANSWER(): Record<string, unknown> {
+  return {
+    ...fixtureBody("response.choice.documented.json", ["documented-verbatim"]),
+    model: hostedRouteOf(admittedDecisionRouteTable()).expected_served_model,
+  };
+}
 
 /**
  * The documented answer, reported as coming from another model.
@@ -740,6 +756,8 @@ describe("the decision client", () => {
     it("an answering model other than the pin is a route mismatch, decided before the body is trusted", async () => {
       for (const served of SUBSTITUTED_MODELS) {
         const harness = clientOverFetch(() => answering(answerFrom(served), { [VENDOR_REQUEST_ID_HEADER]: REQUEST_ID }));
+        // A substitute that is the route's own pin would test nothing.
+        expect(served).not.toBe(harness.route.expectedServedModel);
 
         const error = asInstance(await rejectionOf(ask()), DecisionRouteMismatchError);
 

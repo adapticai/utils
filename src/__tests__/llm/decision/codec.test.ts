@@ -86,8 +86,15 @@ function choiceOptionsOf(body: {
 /** The moving model name the documented request example sends. */
 const DOCUMENTED_REQUEST_MODEL = "jev-latest";
 
-/** The versioned model id the constructed request fixtures send and the response fixtures report. */
-const PINNED_MODEL = "jev-1.13.0";
+/** The versioned model id the constructed request fixtures send and the constructed response fixtures report. */
+const PINNED_MODEL = "jev-1.14.0";
+
+/**
+ * The model the vendor's documented response example reports. It is quoted
+ * verbatim, so it names the release that answered when the page was written
+ * and not the model a route pins today.
+ */
+const DOCUMENTED_RESPONSE_MODEL = "jev-1.13.0";
 
 /** The state every request fixture carries. */
 const STATE = "Help! My payouts have been failing for 3 days.";
@@ -1189,7 +1196,7 @@ describe("decodeDecisionResponse", () => {
     const decoded = decodeDecisionResponse(documented, DOCUMENTED_CHOICE_REQUEST);
 
     expect(decoded).toStrictEqual({
-      model: PINNED_MODEL,
+      model: DOCUMENTED_RESPONSE_MODEL,
       answers: {
         department: {
           type: "choice",
