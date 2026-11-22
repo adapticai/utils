@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { LaneSizingPrefsSchema } from "./lane-sizing-prefs.schema";
 
 /**
  * Risk budget preferences schema (section 7.3).
@@ -51,6 +52,14 @@ export const RiskBudgetPrefsObjectSchema = z.object({
   pdtCheck: z.enum(["both", "entry", "exit"]).default("both"),
   /** Strict PDT enforcement — block all violations without exception. Synced to Alpaca API. */
   ptpNoExceptionEntry: z.boolean().default(false),
+
+  /**
+   * Multi-lane intraday sizing ceilings (strict, fractions, no defaults). Absent
+   * stays absent: it is optional with no `.default`, so a policy that never set
+   * it parses exactly as before. Lane risk limits will sit beside it as
+   * `laneRisk`, their own versioned sub-object.
+   */
+  laneSizing: LaneSizingPrefsSchema.optional(),
 });
 
 export const RiskBudgetPrefsSchema = RiskBudgetPrefsObjectSchema.default({});

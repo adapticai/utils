@@ -276,6 +276,8 @@ export type {
   AutonomyPrefs,
   AssetUniversePrefs,
   RiskBudgetPrefs,
+  LaneSizingPrefs,
+  IntradayLanePrefs,
   SignalConsumptionPrefs,
   ExecutionPrefs,
   PositionManagementPrefs,
