@@ -118,7 +118,7 @@ const DOCUMENTED_CHOICE_RESPONSE: DecisionWireResponse = {
 /** The constructed yes/no request, written as a value of the wire type. */
 const CONSTRUCTED_NOUL_REQUEST: DecisionWireRequest = {
   state: DOCUMENTED_STATE,
-  model: "jev-1.13.0",
+  model: "jev-1.14.0",
   questions: {
     payment_failure: {
       type: "noul",
@@ -133,7 +133,7 @@ const CONSTRUCTED_NOUL_REQUEST: DecisionWireRequest = {
 
 /** The constructed yes/no response, written as a value of the wire type. */
 const CONSTRUCTED_NOUL_RESPONSE: DecisionWireResponse = {
-  model: "jev-1.13.0",
+  model: "jev-1.14.0",
   answers: { payment_failure: { type: "noul", noul: 0.95 } },
   usage: { input_tokens: 301, output_tokens: 18 },
 };
@@ -149,7 +149,7 @@ const SCORE_LEVELS = [
 /** The constructed score request, written as a value of the wire type. */
 const CONSTRUCTED_SCORE_REQUEST: DecisionWireRequest = {
   state: DOCUMENTED_STATE,
-  model: "jev-1.13.0",
+  model: "jev-1.14.0",
   questions: {
     urgency: { type: "score", instructions: "How urgent is this request?", criteria: SCORE_LEVELS },
   },
@@ -157,7 +157,7 @@ const CONSTRUCTED_SCORE_REQUEST: DecisionWireRequest = {
 
 /** The constructed score response, written as a value of the wire type. */
 const CONSTRUCTED_SCORE_RESPONSE: DecisionWireResponse = {
-  model: "jev-1.13.0",
+  model: "jev-1.14.0",
   answers: {
     urgency: {
       type: "score",

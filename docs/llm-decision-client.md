@@ -18,7 +18,7 @@ A route IS its pinned model together with the caps, budget and price that model 
 
 | Route | Pin | Locates something in an image |
 | --- | --- | --- |
-| `dm.hosted` | `jev-1.13.0` | No. The vendor serves it on the newer model alone. |
+| `dm.hosted` | `jev-1.14.0` | No. The route does not admit one; a box-bearing request is sent on `dm.hosted.preview`. |
 | `dm.hosted.preview` | `jev-1.14.0` | Yes. |
 
 The vendor also publishes two moving names, `jev-latest` and `jev-preview`. They are recorded in the provider's `model_aliases` with the versioned id each resolves to, measured from an authenticated call — on 2026-11-22 a request naming `jev-latest` and one naming `jev-preview` were both answered by `jev-1.14.0`, reported back in the response's `model` field. `jev-latest` answered with `jev-1.13.0` until the vendor made 1.14 its stable release, so the alias has already moved once under a route that never followed it — and neither is ever sent: the vendor states that an alias moves when a new release ships, so sending one would change the answering model with no change on this side. The loader refuses a pin that ends in either name, and re-pointing an entry in `model_aliases` is a reviewed edit of one file that changes no request.

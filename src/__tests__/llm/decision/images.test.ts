@@ -1031,7 +1031,7 @@ describe("the vendor's moving names", () => {
     const pins = Object.values(decisionRouteTable.routes)
       .filter((route) => route.served_by === "utils")
       .map((route) => (route.served_by === "utils" ? route.version_pin : ""));
-    expect(pins).toEqual(["jev-1.13.0", "jev-1.14.0"]);
+    expect(pins).toEqual(["jev-1.14.0", "jev-1.14.0"]);
     for (const alias of Object.keys(provider.model_aliases ?? {})) {
       expect(pins, alias).not.toContain(alias);
     }
@@ -1049,7 +1049,7 @@ describe("the vendor's moving names", () => {
     }
     const opened = table as unknown as typeof decisionRouteTable;
 
-    expect(resolveDecisionRoute("dm.hosted", opened, {}).modelPin).toBe("jev-1.13.0");
+    expect(resolveDecisionRoute("dm.hosted", opened, {}).modelPin).toBe("jev-1.14.0");
     expect(resolveDecisionRoute("dm.hosted", opened, {}).caps.box).toBe(false);
     expect(resolveDecisionRoute("dm.hosted.preview", opened, {}).modelPin).toBe("jev-1.14.0");
     expect(resolveDecisionRoute("dm.hosted.preview", opened, {}).caps.box).toBe(true);
