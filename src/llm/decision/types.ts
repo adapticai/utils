@@ -32,7 +32,7 @@
  * @module llm/decision/types
  */
 
-import type { LlmUsageRecord } from "../types";
+import type { BreakerPath, LlmUsageRecord } from "../types";
 import type { DecisionImageFormat } from "./assets";
 import type { DecisionFault } from "./errors";
 
@@ -394,6 +394,19 @@ export interface DecisionCallOptions {
    * each before it is turned on.
    */
   readonly dangerZone?: DecisionDangerZone;
+  /**
+   * The traffic class this call belongs to. Absent means `live`.
+   *
+   * A caller whose answer is discarded — an observer measuring the route
+   * beside whatever serves — declares itself `shadow`. Such a call reads the
+   * route's live breaker to decide whether it may run at all, and charges its
+   * own outcomes to a failure run of its own, so measuring a route can never
+   * be the reason serving is refused it. A caller that leaves it unset is
+   * counted exactly as before. Any other value is refused: defaulting an
+   * unrecognised path to `live` would put an observer's failures on the run
+   * serving reads.
+   */
+  readonly breakerPath?: BreakerPath;
 }
 
 /**

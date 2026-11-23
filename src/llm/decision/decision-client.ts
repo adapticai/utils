@@ -48,11 +48,23 @@
  * client's: a typed route and a generative leg fail for unrelated reasons, and
  * a registry they shared would let either close the other.
  *
+ * A call also names the traffic class it belongs to, and the breaker keeps one
+ * run per class. A `shadow` call is an observer's: its answer is compared and
+ * discarded, and what serves is decided elsewhere. Its outcomes are written to
+ * a run of its own, so an observer can never be the reason serving is refused
+ * a route, and its admission still reads the live run, so an observer adds no
+ * load to a route serving is already struggling with and never spends the
+ * probe that decides whether serving may resume. The path is resolved to one
+ * breaker view where the call is prepared, and every observation the attempt
+ * makes goes through that view: a single site left on the registry would be a
+ * path whose outcomes still reach the live run.
+ *
  * @module llm/decision/decision-client
  */
 
-import { CircuitBreakerRegistry } from "../circuit-breaker";
-import type { BreakerFailureKind } from "../circuit-breaker";
+import { CircuitBreakerRegistry, LIVE_BREAKER_PATH } from "../circuit-breaker";
+import type { BreakerFailureKind, BreakerPathView, BreakerSnapshot } from "../circuit-breaker";
+import type { BreakerPath } from "../types";
 import { RateGuardTimeoutError, RateGuardTokenBoundError, withProviderGuards } from "../rate-guard";
 import { estimateDecisionInputTokens, recordDecisionInputTokenDrift } from "./input-size";
 import type { DecisionInputSizeReading } from "./input-size";
@@ -88,6 +100,9 @@ import type {
 
 /** What every key of the decision breaker registry begins with. */
 const BREAKER_KEY_PREFIX = "decision:";
+
+/** Every traffic class a call may name: the path that serves, and the observers' path. */
+const BREAKER_PATHS: readonly BreakerPath[] = [LIVE_BREAKER_PATH, "shadow"];
 
 /** The path that names a request body itself, not a field of it. */
 const ROOT_PATH = "$";
@@ -177,6 +192,8 @@ interface PreparedCall {
   readonly probabilitySumTolerance: number | undefined;
   /** The vendor surfaces the call opted in to, carried to the transport's headers. */
   readonly dangerZone: DecisionDangerZone | undefined;
+  /** The traffic class whose breaker run every observation of this call is counted on. */
+  readonly breakerPath: BreakerPath;
   /**
    * What this request will cost the provider in input tokens, weighed before
    * dispatch, or the defect that stopped it being weighed.
@@ -236,7 +253,14 @@ export function configureDecisionClient(next: DecisionClientConfig = {}): void {
 /**
  * Inspect decision-route health.
  *
- * @returns The live breaker registry of the decision routes.
+ * A route's live run, the one that decides whether serving may call it, is read
+ * by its route key exactly as before paths existed: `snapshot(key)` and
+ * `stateOf(key)`. An observer's run is held beside it, read with
+ * `snapshotOnPath(key, "shadow")` and listed by `snapshotAll()` under the same
+ * route key with its own `path`, so a reader that lists runs must read `path`
+ * to tell them apart.
+ *
+ * @returns The breaker registry of the decision routes.
  */
 export function decisionBreakers(): CircuitBreakerRegistry {
   return breakers;
@@ -512,7 +536,7 @@ function usableOptions(options: DecisionCallOptions): DecisionCallOptions {
   if (typeof given !== "object" || given === null) {
     throw invalidCall(OPTIONS_PATH, "a call's options must be an object; leave them out to run on the route's own terms");
   }
-  const { timeoutMs, signal, correlationId, probabilitySumTolerance, dangerZone } = options;
+  const { timeoutMs, signal, correlationId, probabilitySumTolerance, dangerZone, breakerPath } = options;
   if (timeoutMs !== undefined && (typeof timeoutMs !== "number" || Number.isNaN(timeoutMs))) {
     throw invalidCall(
       "options.timeoutMs",
@@ -549,7 +573,16 @@ function usableOptions(options: DecisionCallOptions): DecisionCallOptions {
       }
     }
   }
-  return { timeoutMs, signal, correlationId, probabilitySumTolerance, dangerZone };
+  // Refused, never defaulted: an observer whose path was misspelt and read as
+  // `live` would write its failures to the run serving reads, which is the one
+  // thing naming a path exists to prevent.
+  if (breakerPath !== undefined && !BREAKER_PATHS.includes(breakerPath)) {
+    throw invalidCall(
+      "options.breakerPath",
+      `a breaker path is one of ${BREAKER_PATHS.join(", ")}; leave it out to be counted on the live path`,
+    );
+  }
+  return { timeoutMs, signal, correlationId, probabilitySumTolerance, dangerZone, breakerPath };
 }
 
 /**
@@ -606,7 +639,7 @@ function prepareCall(
   measured.modelPin = resolved.modelPin;
 
   progress.stage = "options";
-  const { timeoutMs, signal, probabilitySumTolerance, dangerZone } = usableOptions(options);
+  const { timeoutMs, signal, probabilitySumTolerance, dangerZone, breakerPath } = usableOptions(options);
 
   progress.stage = "request";
   const body = encodeDecisionRequest(rebuildTree(request, unchanged) as DecisionRequest, {
@@ -625,22 +658,56 @@ function prepareCall(
   // encoder enforces, so the figure the guard is debited by is the figure the
   // vendor will bill.
   const inputSize = estimateDecisionInputTokens(body);
-  return { resolved, body, budgetMs, callerSignal: signal, probabilitySumTolerance, dangerZone, inputSize };
+  return {
+    resolved,
+    body,
+    budgetMs,
+    callerSignal: signal,
+    probabilitySumTolerance,
+    dangerZone,
+    inputSize,
+    breakerPath: breakerPath ?? LIVE_BREAKER_PATH,
+  };
 }
 
 /**
- * Say why a route's breaker is refusing calls.
+ * Say why one breaker run is refusing calls.
  *
- * @param registry The registry that refused the call.
- * @param key The route's breaker key.
+ * @param snapshot The run.
+ * @param subject What the run is called in the reason.
  * @returns The reason, in words an operator can act on.
  */
-function breakerRefusal(registry: CircuitBreakerRegistry, key: string): string {
-  const snapshot = registry.snapshot(key);
+function runRefusal(snapshot: BreakerSnapshot, subject: string): string {
   return snapshot.state === "open"
-    ? `the route's circuit breaker opened after ${snapshot.consecutiveFailures} consecutive failure(s) ` +
+    ? `${subject} opened after ${snapshot.consecutiveFailures} consecutive failure(s) ` +
         `and admits a probe once its ${snapshot.cooldownMs} ms cooldown has run`
-    : `the route's circuit breaker is testing recovery and its ${snapshot.probeBudget} probe(s) are in flight`;
+    : `${subject} is testing recovery and its ${snapshot.probeBudget} probe(s) are in flight`;
+}
+
+/**
+ * Say why a route's breaker is refusing a call, naming the run that refused it.
+ *
+ * A live call is refused by the live run alone, and is told so in the words it
+ * always was. An observer's call is refused by the live run whenever that run
+ * is anything but closed, which is the view's own admission rule, and
+ * otherwise by its own run. Naming which one is what lets an operator reading a
+ * skipped observation tell a route serving cannot reach from a route only the
+ * observers have been failing on.
+ *
+ * @param registry The registry that refused the call.
+ * @param path The call's traffic class.
+ * @param key The route's breaker key.
+ * @returns The reason.
+ */
+function breakerRefusal(registry: CircuitBreakerRegistry, path: BreakerPath, key: string): string {
+  if (path === LIVE_BREAKER_PATH) {
+    return runRefusal(registry.snapshot(key), "the route's circuit breaker");
+  }
+  const live = registry.stateOf(key);
+  if (live !== "closed") {
+    return `the route's live circuit breaker is ${live}, and a ${path} call is admitted only while it is closed`;
+  }
+  return runRefusal(registry.snapshotOnPath(key, path), `the route's ${path} circuit breaker`);
 }
 
 /**
@@ -811,7 +878,7 @@ function resultOf(
  * route would admit no probe for the life of the process. Returning a slot
  * already freed changes nothing.
  *
- * @param registry The registry the attempt was counted in.
+ * @param breaker The view of the run the attempt was counted on.
  * @param key The route's breaker key.
  * @param verdict What the attempt says about the vendor.
  * @param holdsProbe Whether the attempt took the route's probe slot.
@@ -820,7 +887,7 @@ function resultOf(
  * @throws Whatever telling the breaker raised, once the slot is returned.
  */
 function tellBreaker(
-  registry: CircuitBreakerRegistry,
+  breaker: BreakerPathView,
   key: string,
   verdict: BreakerVerdict,
   holdsProbe: boolean,
@@ -828,17 +895,17 @@ function tellBreaker(
 ): void {
   try {
     if (verdict.kind === "reachable") {
-      registry.onSuccess(key, dispatchedAtMs ?? undefined);
+      breaker.onSuccess(key, dispatchedAtMs ?? undefined);
     } else if (verdict.kind === "failed") {
-      registry.onFailure(key, verdict.failureKind);
+      breaker.onFailure(key, verdict.failureKind);
     } else if (holdsProbe) {
       // No verdict, but the probe slot this attempt took must come back, or a
       // half-open route admits no probe again.
-      registry.onAttemptAbandoned(key);
+      breaker.onAttemptAbandoned(key);
     }
   } catch (error) {
     if (holdsProbe) {
-      registry.onAttemptAbandoned(key);
+      breaker.onAttemptAbandoned(key);
     }
     throw error;
   }
@@ -862,7 +929,7 @@ async function runAttempt(
   progress: CallProgress,
   now: () => number,
 ): Promise<DecisionCallResult> {
-  const { resolved, body, budgetMs, callerSignal, dangerZone, inputSize } = prepared;
+  const { resolved, body, budgetMs, callerSignal, dangerZone, inputSize, breakerPath } = prepared;
   const route = resolved.route;
   if (budgetMs <= 0) {
     throw new DecisionAdmissionError({ route, source: "route_budget", budgetMs });
@@ -872,13 +939,21 @@ async function runAttempt(
   }
 
   // One registry for the whole attempt, so a rewiring made while the call is
-  // in flight cannot split its bookkeeping between two.
+  // in flight cannot split its bookkeeping between two, and one view of it,
+  // resolved here where the call's traffic class is known: every observation
+  // below goes through `breaker`, never through the registry, so no site can
+  // count an observer's outcome on the run serving reads.
   const registry = breakers;
+  const breaker = registry.forPath(breakerPath);
   const key = decisionBreakerKey(route);
-  if (!registry.allows(key)) {
-    throw new DecisionRouteUnavailableError({ route, code: "breaker_open", reason: breakerRefusal(registry, key) });
+  if (!breaker.allows(key)) {
+    throw new DecisionRouteUnavailableError({
+      route,
+      code: "breaker_open",
+      reason: breakerRefusal(registry, breakerPath, key),
+    });
   }
-  const holdsProbe = registry.onAttemptStart(key);
+  const holdsProbe = breaker.onAttemptStart(key);
   let verdict: BreakerVerdict = { kind: "none" };
 
   const controller = new AbortController();
@@ -1051,9 +1126,9 @@ async function runAttempt(
     const outcomeStage = progress.stage;
     progress.stage = "recording";
     try {
-      tellBreaker(registry, key, verdict, holdsProbe, progress.dispatchedAtMs);
+      tellBreaker(breaker, key, verdict, holdsProbe, progress.dispatchedAtMs);
     } finally {
-      registry.onAttemptEnd(key);
+      breaker.onAttemptEnd(key);
     }
     progress.stage = outcomeStage;
   }
