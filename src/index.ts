@@ -277,6 +277,7 @@ export type {
   AssetUniversePrefs,
   RiskBudgetPrefs,
   LaneSizingPrefs,
+  LaneRiskPrefs,
   IntradayLanePrefs,
   SignalConsumptionPrefs,
   ExecutionPrefs,
