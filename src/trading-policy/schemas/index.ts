@@ -20,6 +20,12 @@ export {
   type LaneSizingPrefs,
 } from "./lane-sizing-prefs.schema";
 export {
+  LANE_RISK_PREFS_SCHEMA_VERSION,
+  LaneRiskPrefsV1Schema,
+  LaneRiskPrefsSchema,
+  type LaneRiskPrefs,
+} from "./lane-risk-prefs.schema";
+export {
   INTRADAY_LANE_PREFS_SCHEMA_VERSION,
   IntradayLanePrefsDisarmedV1Schema,
   IntradayLanePrefsArmedV1Schema,

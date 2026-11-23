@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { LaneRiskPrefsSchema } from "./lane-risk-prefs.schema";
 import { LaneSizingPrefsSchema } from "./lane-sizing-prefs.schema";
 
 /**
@@ -56,10 +57,16 @@ export const RiskBudgetPrefsObjectSchema = z.object({
   /**
    * Multi-lane intraday sizing ceilings (strict, fractions, no defaults). Absent
    * stays absent: it is optional with no `.default`, so a policy that never set
-   * it parses exactly as before. Lane risk limits will sit beside it as
-   * `laneRisk`, their own versioned sub-object.
+   * it parses exactly as before.
    */
   laneSizing: LaneSizingPrefsSchema.optional(),
+
+  /**
+   * Multi-lane intraday risk limits (strict, tighten-only, no defaults). Absent
+   * stays absent, exactly as `laneSizing`: a policy that never set it parses as
+   * before, and the engine then serves its governed `lanes.risk.*` rows.
+   */
+  laneRisk: LaneRiskPrefsSchema.optional(),
 });
 
 export const RiskBudgetPrefsSchema = RiskBudgetPrefsObjectSchema.default({});

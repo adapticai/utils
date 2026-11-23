@@ -85,7 +85,7 @@ export const IntradayLanePrefsArmedV1Schema = z
  *
  * Re-entry cooldowns are not carried here; they reuse the existing
  * TradingPolicy cooldown columns. Lane risk limits are carried by
- * `riskBudgetPrefs.laneRisk`, a later schema change.
+ * `riskBudgetPrefs.laneRisk`.
  */
 export const IntradayLanePrefsV1Schema = z.discriminatedUnion("armed", [
   IntradayLanePrefsDisarmedV1Schema,
