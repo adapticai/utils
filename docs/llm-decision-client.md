@@ -50,7 +50,7 @@ const result = await callDecisionModel(
 | --- | --- |
 | `callDecisionModel(route, request, options?)` | The one way to reach a decision model. Resolves with `DecisionCallResult` or rejects with a `DecisionCallError`. |
 | `configureDecisionClient({ routeTable?, transport?, now? })` | Wiring for tests and the onboarding probe. Rebuilds the breakers. Throws on a table that breaks a load-time rule. |
-| `decisionBreakers()`, `decisionBreakerKey(route)` | The decision routes' own breaker registry, keyed `decision:<route>`. |
+| `decisionBreakers()`, `decisionBreakerKey(route)` | The decision routes' own breaker registry, keyed `decision:<route>`. `snapshot(key)` and `stateOf(key)` read a route's live run, the one serving is refused by; `snapshotOnPath(key, "shadow")` reads the observers' run, which `snapshotAll()` lists under the same key with `path: "shadow"`. |
 | `decisionRouteTable`, `listDecisionRoutes()`, `decisionRouteDeclaration(route)`, `decisionRouteAdmission(route, provider)`, `decisionRouteViolations(table)` | The route table and its pure readers. A consumer that serves `dm.local` reads its checkpoint, caps and budget from here. |
 | `encodeDecisionRequest`, `decodeDecisionResponse` | The pure codec, for a consumer that serves a route itself. |
 | `DECISION_IMAGE_LIMITS`, `DECISION_IMAGE_FORMATS` | The vendor's image limits and accepted formats, as published. |
@@ -71,6 +71,7 @@ The function that builds the hosted transport is deliberately not exported. It c
 | `correlationId` | Recorded on the attempt. Never sent to the vendor. |
 | `probabilitySumTolerance` | How far a distribution's sum may differ from one before the answer is rejected. Absent: the sum is reported in `probabilitySums` and not enforced. |
 | `dangerZone` | The vendor surfaces this one call opts in to: `{ images: true }` and `{ longContext: true }`. Absent means neither, which is what every call that does not name them gets. Only `true` turns one on; `false` is refused, because it reads as a choice no header carries. |
+| `breakerPath` | The traffic class the call is counted on: `live` (the default) or `shadow`, for an observer whose answer is compared and discarded. See [Breaker paths](#breaker-paths). Any other value is refused as `schema` before anything is charged, because reading a misspelt observer as `live` would put its failures on the run serving reads. |
 
 ### Images
 
@@ -140,7 +141,7 @@ A yes/no answer has no `confidence`, because the contract defines none. A choice
 1. **Resolve the route.** An unadmitted route rejects `unavailable` here. Nothing else has been touched.
 2. **Check the options, then copy, encode and write the request**, in one synchronous step before the call returns its promise. The request is copied with each member read once, the copy is validated against the route's caps, and it is written as JSON once to prove it can be. What is later sent is that copy, so a caller that changes its request while the call waits changes nothing that reaches the vendor, and the answer is decoded against the questions that were sent.
 3. **Fix the budget**: the smaller of the route's `budget_ms` and the caller's `timeoutMs`. One timer covers the queue and the vendor together.
-4. **Consult the breaker.** An open breaker rejects `unavailable` (`breaker_open`).
+4. **Consult the breaker on the call's path.** A refusing breaker rejects `unavailable` (`breaker_open`), with a reason that names the run that refused.
 5. **Enter the provider guards and dispatch once.** The guards are handed the call's own signal, and the client asks for that signal to end the wait for a rate token as well as the wait for a concurrency permit (`signalEndsRateWait`, which the guard leaves off unless a caller sets it). So a call that ends while it is queued leaves that queue at once and takes neither a token nor a permit. The guarded dispatch is also raced against the budget, so the end of the call decides its outcome and the guard's refusal does not.
 6. **Compare the answering model with the pin**, on the whole id as reported, before the body is decoded.
 7. **Decode** against the request as sent.
@@ -165,6 +166,15 @@ Every rejection is a `DecisionCallError` whose own enumerable `fault` is one of 
 | `DecisionClientFaultError` | `internal` | The client's own machinery failed, or something it was wired with did: the route table, the breaker, the guards, the clock. Carries the `stage` (`resolving`, `admitting`, `recording`) and a `description` by class and code. Never retryable. | none |
 
 The breaker measures whether the vendor can be reached in time. A rejected key, a rejected request, a malformed answer and a substituted model each arrived in time from a reachable vendor and each has its own fault, so none is charged to the route. That is why the four statuses with which the vendor rejects a request — 400, 413, 415 and 422 — are request faults and not transport faults: counted as the vendor failing, one caller repeating a malformed request would open the breaker and shut the route for every other caller. A fault raised before a request existed gives no verdict. A guard refusal on a half-open route returns its probe slot.
+
+### Breaker paths
+
+A route's breaker keeps one run per traffic class, the same split the generative client's breaker carries (`BreakerPath`, `CircuitBreakerRegistry.forPath`). A call names its class with `breakerPath`, and the client resolves it to one view of the registry where the call is prepared; every observation the attempt makes (admission, the probe slot, the verdict, the in-flight count) goes through that view.
+
+- **`live`**, the default, is served by the registry itself on the route key verbatim, so a call that names no path is counted exactly as every call was before paths existed, and every reader of `snapshot(key)` reads what it always read.
+- **`shadow`** is an observer's call. Its outcomes are written to a run of its own, so no number of observer failures opens the live breaker or puts a failure on the live run, and no observer's answer clears a failure run serving holds. Its admission still reads the live run: it is refused while the live run is open or half-open, so an observer adds no load to a route serving is already struggling with and never spends the half-open probe that decides whether serving may resume. Its own run opens, cools down and probes under the same tuning, and refuses only observers.
+
+The live run therefore sees vendor faults only through serving's own calls. A vendor outage observed only by observers is not lost: it opens the shadow run, which `snapshotAll()` lists with its own `opens` count, and it refuses observers. It does not refuse serving, because the breaker exists to spare a serving caller the budget of a route that cannot answer, and serving's own calls are what measure that. A transport-level signal shared between the two runs is deliberately not kept: the fault that motivated the split is itself a transport fault (an observer's 503), so a shared connect-or-5xx signal would leave exactly that path open, and it would add free parameters (which statuses count, at what threshold) that no contract fixes.
 
 ### A failure nobody classified
 
@@ -244,6 +254,8 @@ A consumer that confines the decision model to one module (design D12: a backtes
 
 | Gate | What it holds |
 | --- | --- |
+| `src/__tests__/llm/decision/decision-breaker-path.test.ts` | An observer's faults (503s past the threshold, a run of budget timeouts) leave the live run empty and closed; an observer's answer does not clear a live failure run; an observer is refused while the live run is open or half-open and spends none of its probes; an observer's run opens, probes and closes on its own and refuses only observers; an observer's probe slot and in-flight count are its own run's; interleaved observer traffic leaves the live run's trace identical to serving alone; an unknown path is refused before anything is spent. |
+| `src/__tests__/llm/decision/decision-breaker-live-trace.test.ts` | The executed no-op: a call naming no path, and one naming `live`, move the live run through literal traces (a 503 run, a run with a 500 in it, a run of budget timeouts, each through open, refusal, probe and close) that the pre-path client produces unchanged. It imports nothing that client did not export, so it runs against that source too. |
 | `src/__tests__/llm/decision/decision-client.test.ts` | Admission before anything else, one attempt, the mismatch before the decode, the breaker's namespace and verdicts, the budget over the queue and the vendor, what is sent, the key, that no failure resolves, and that every rejection, from every source in its table, is a decision error with its attempt. |
 | `src/__tests__/rate-limiter-signal.test.ts`, `src/__tests__/llm/rate-guard-signal.test.ts` | The rate queue shared with the generative client. A recorded sequence of arrivals is admitted in the same order at the same instants with no signal, with a signal that never fires, and with a caller that asks for its signal to end the rate wait. A caller that leaves without having asked stays queued and is granted its token, at the recorded instants. One that asked takes no token and leaves no timer or listener, and the callers behind it are admitted as if it had never queued. |
 | `src/__tests__/llm/client/rate-queue-budget.test.ts` | A characterisation of the generative chain, which does not ask: an attempt whose budget ends, whose caller cancels or which loses to a same-model attempt while queued for a rate token settles when the token arrives, is refused at the concurrency gate and spends the token. |
