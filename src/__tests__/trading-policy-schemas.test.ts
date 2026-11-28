@@ -552,7 +552,7 @@ describe("DEFAULT_TRADING_POLICY", () => {
     expect(DEFAULT_TRADING_POLICY.autonomyMode).toBe(
       AutonomyMode.ADVISORY_ONLY,
     );
-    expect(DEFAULT_TRADING_POLICY.realtimeTradingEnabled).toBe(true);
+    expect(DEFAULT_TRADING_POLICY.realtimeTradingEnabled).toBe(false);
     expect(DEFAULT_TRADING_POLICY.shortingEnabled).toBe(false);
     expect(DEFAULT_TRADING_POLICY.cryptoEnabled).toBe(true);
     expect(DEFAULT_TRADING_POLICY.miniModelProvider).toBeNull();
