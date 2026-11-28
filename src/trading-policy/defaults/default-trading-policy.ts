@@ -16,7 +16,12 @@ import {
  *
  * Key choices:
  * - Advisory-only autonomy (no autonomous execution)
- * - Real-time trading enabled
+ * - Real-time trading OFF: `realtimeTradingEnabled` is the switch that lets an
+ *   account trade at all, and this default stands in wherever an account's own
+ *   policy row was not read (no row, or a read that did not answer). A default
+ *   that stands in for an unread row must not grant trading, so it matches the
+ *   backend column's own default (`TradingPolicy.realtimeTradingEnabled
+ *   Boolean @default(false)`); an account trades only once its row says so
  * - Equities, ETFs, crypto, options, futures, and forex enabled
  * - No shorting or margin (user must opt-in)
  * - All protective overlays disabled (user must opt-in)
@@ -33,7 +38,7 @@ import {
 export const DEFAULT_TRADING_POLICY: EffectiveTradingPolicy =
   EffectiveTradingPolicySchema.parse({
     autonomyMode: AutonomyMode.ADVISORY_ONLY,
-    realtimeTradingEnabled: true,
+    realtimeTradingEnabled: false,
     paperTradingOnly: false,
     killSwitchEnabled: false,
     equitiesEnabled: true,
